@@ -38,6 +38,8 @@
         <div class="muted" style="margin-top:10px;line-height:1.65;">{{ recommendation.summary or recommendation.thesis or "Описание пока не заполнено" }}</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
           <span class="pill">{{ recommendation.strategy.title }}</span>
+          <span class="pill">{{ recommendation.legs|length }} legs</span>
+          <span class="pill">{{ recommendation.attachments|length }} attachments</span>
           {% if recommendation.scheduled_for %}
           <span class="pill">scheduled {{ recommendation.scheduled_for }}</span>
           {% endif %}

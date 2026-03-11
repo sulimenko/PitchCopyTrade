@@ -204,18 +204,25 @@ Acceptance:
 - recommendation CRUD
 - own-strategy scoping
 - base status/kind editing
+- structured legs editor
+- attachment upload
 
 Не сделано:
 - richer workspace UX from prototype
 - preview
 - validation depth
-- multi-leg editor
+- attachment delete/replace UX
 
-### 25. Recommendation publish flow `[todo]`
-Сделать:
-- publish/schedule
+### 25. Recommendation publish flow `[partial]`
+Сделано:
+- publish/schedule baseline
 - `new/update/close/cancel`
+- status timestamps in author editor
+
+Не сделано:
 - history/timeline
+- worker-based scheduled publish
+- moderation-aware transitions
 
 ### 26. Moderation queue `[todo]`
 Сделать:
@@ -223,17 +230,24 @@ Acceptance:
 - optional moderation rules
 - approve/reject/rework
 
-### 27. Attachments through MinIO `[todo]`
-Сделать:
+### 27. Attachments through MinIO `[partial]`
+Сделано:
 - author upload
 - validation
-- subscriber access path
+- MinIO persistence baseline
 
-### 28. Instruments and leg UX `[todo]`
-Сделать:
-- instruments management
+Не сделано:
+- subscriber access path
+- attach/delete UX
+
+### 28. Instruments and leg UX `[partial]`
+Сделано:
 - structured leg editor
-- validation logic
+- validation logic baseline
+
+Не сделано:
+- instruments management
+- richer multi-leg UX
 
 ### 29. Commerce completion `[todo]`
 Сделать:

@@ -1,21 +1,25 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import require_author
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
-from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus
 from pitchcopytrade.db.session import get_db_session
 from pitchcopytrade.services.author import (
+    blank_leg_values,
+    build_leg_rows_from_form,
     build_recommendation_form_data,
     create_author_recommendation,
     get_author_by_user,
     get_author_recommendation,
     get_author_workspace_stats,
+    leg_form_values_from_rows,
+    list_active_instruments,
     list_author_recommendations,
     list_author_strategies,
+    normalize_attachment_uploads,
     recommendation_form_values,
     update_author_recommendation,
 )
@@ -97,32 +101,35 @@ async def recommendation_create_submit(
     request: Request,
     user: User = Depends(require_author),
     session: AsyncSession = Depends(get_db_session),
-    strategy_id: str = Form(...),
-    kind: str = Form(...),
-    status_value: str = Form(..., alias="status"),
-    title: str = Form(""),
-    summary: str = Form(""),
-    thesis: str = Form(""),
-    market_context: str = Form(""),
-    requires_moderation: str | None = Form(default=None),
-    scheduled_for: str = Form(""),
 ) -> Response:
     author = await _get_author_or_403(session, user)
     strategies = await list_author_strategies(session, author)
+    instruments = await list_active_instruments(session)
+    form = await request.form()
+    leg_rows = build_leg_rows_from_form(form)
     try:
+        uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
         data = build_recommendation_form_data(
-            strategy_id=strategy_id,
-            kind_value=kind,
-            status_value=status_value,
-            title=title,
-            summary=summary,
-            thesis=thesis,
-            market_context=market_context,
-            requires_moderation=requires_moderation,
-            scheduled_for=scheduled_for,
+            strategy_id=str(form.get("strategy_id", "") or ""),
+            kind_value=str(form.get("kind", "") or ""),
+            status_value=str(form.get("status", "") or ""),
+            title=str(form.get("title", "") or ""),
+            summary=str(form.get("summary", "") or ""),
+            thesis=str(form.get("thesis", "") or ""),
+            market_context=str(form.get("market_context", "") or ""),
+            requires_moderation=str(form.get("requires_moderation")) if form.get("requires_moderation") else None,
+            scheduled_for=str(form.get("scheduled_for", "") or ""),
             allowed_strategy_ids={item.id for item in strategies},
+            allowed_instrument_ids={item.id for item in instruments},
+            leg_rows=leg_rows,
+            attachments=uploads,
         )
-        recommendation = await create_author_recommendation(session, author, data)
+        recommendation = await create_author_recommendation(
+            session,
+            author,
+            data,
+            uploaded_by_user_id=user.id,
+        )
     except ValueError as exc:
         return await _render_recommendation_form(
             request=request,
@@ -132,15 +139,16 @@ async def recommendation_create_submit(
             recommendation=None,
             error=str(exc),
             form_values={
-                "strategy_id": strategy_id,
-                "kind": kind,
-                "status": status_value,
-                "title": title,
-                "summary": summary,
-                "thesis": thesis,
-                "market_context": market_context,
-                "requires_moderation": requires_moderation is not None,
-                "scheduled_for": scheduled_for,
+                "strategy_id": str(form.get("strategy_id", "") or ""),
+                "kind": str(form.get("kind", "") or ""),
+                "status": str(form.get("status", "") or ""),
+                "title": str(form.get("title", "") or ""),
+                "summary": str(form.get("summary", "") or ""),
+                "thesis": str(form.get("thesis", "") or ""),
+                "market_context": str(form.get("market_context", "") or ""),
+                "requires_moderation": form.get("requires_moderation") is not None,
+                "scheduled_for": str(form.get("scheduled_for", "") or ""),
+                "legs": leg_form_values_from_rows(leg_rows),
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
@@ -178,15 +186,6 @@ async def recommendation_edit_submit(
     request: Request,
     user: User = Depends(require_author),
     session: AsyncSession = Depends(get_db_session),
-    strategy_id: str = Form(...),
-    kind: str = Form(...),
-    status_value: str = Form(..., alias="status"),
-    title: str = Form(""),
-    summary: str = Form(""),
-    thesis: str = Form(""),
-    market_context: str = Form(""),
-    requires_moderation: str | None = Form(default=None),
-    scheduled_for: str = Form(""),
 ) -> Response:
     author = await _get_author_or_403(session, user)
     recommendation = await get_author_recommendation(session, author, recommendation_id)
@@ -194,20 +193,32 @@ async def recommendation_edit_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
 
     strategies = await list_author_strategies(session, author)
+    instruments = await list_active_instruments(session)
+    form = await request.form()
+    leg_rows = build_leg_rows_from_form(form)
     try:
+        uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
         data = build_recommendation_form_data(
-            strategy_id=strategy_id,
-            kind_value=kind,
-            status_value=status_value,
-            title=title,
-            summary=summary,
-            thesis=thesis,
-            market_context=market_context,
-            requires_moderation=requires_moderation,
-            scheduled_for=scheduled_for,
+            strategy_id=str(form.get("strategy_id", "") or ""),
+            kind_value=str(form.get("kind", "") or ""),
+            status_value=str(form.get("status", "") or ""),
+            title=str(form.get("title", "") or ""),
+            summary=str(form.get("summary", "") or ""),
+            thesis=str(form.get("thesis", "") or ""),
+            market_context=str(form.get("market_context", "") or ""),
+            requires_moderation=str(form.get("requires_moderation")) if form.get("requires_moderation") else None,
+            scheduled_for=str(form.get("scheduled_for", "") or ""),
             allowed_strategy_ids={item.id for item in strategies},
+            allowed_instrument_ids={item.id for item in instruments},
+            leg_rows=leg_rows,
+            attachments=uploads,
         )
-        await update_author_recommendation(session, recommendation, data)
+        await update_author_recommendation(
+            session,
+            recommendation,
+            data,
+            uploaded_by_user_id=user.id,
+        )
     except ValueError as exc:
         return await _render_recommendation_form(
             request=request,
@@ -217,15 +228,16 @@ async def recommendation_edit_submit(
             recommendation=recommendation,
             error=str(exc),
             form_values={
-                "strategy_id": strategy_id,
-                "kind": kind,
-                "status": status_value,
-                "title": title,
-                "summary": summary,
-                "thesis": thesis,
-                "market_context": market_context,
-                "requires_moderation": requires_moderation is not None,
-                "scheduled_for": scheduled_for,
+                "strategy_id": str(form.get("strategy_id", "") or ""),
+                "kind": str(form.get("kind", "") or ""),
+                "status": str(form.get("status", "") or ""),
+                "title": str(form.get("title", "") or ""),
+                "summary": str(form.get("summary", "") or ""),
+                "thesis": str(form.get("thesis", "") or ""),
+                "market_context": str(form.get("market_context", "") or ""),
+                "requires_moderation": form.get("requires_moderation") is not None,
+                "scheduled_for": str(form.get("scheduled_for", "") or ""),
+                "legs": leg_form_values_from_rows(leg_rows),
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
@@ -249,6 +261,7 @@ async def _render_recommendation_form(
 ) -> Response:
     strategies = await list_author_strategies(session, author)
     effective_form_values = form_values or recommendation_form_values(recommendation)
+    instruments = await list_active_instruments(session)
     return templates.TemplateResponse(
         request,
         "author/recommendation_form.html",
@@ -258,10 +271,21 @@ async def _render_recommendation_form(
             "author": author,
             "recommendation": recommendation,
             "strategies": strategies,
-            "recommendation_kind_options": [item.value for item in RecommendationKind],
-            "recommendation_status_options": [item.value for item in RecommendationStatus],
+            "instruments": instruments,
+            "recommendation_kind_options": ["new_idea", "update", "close", "cancel"],
+            "recommendation_status_options": [
+                "draft",
+                "review",
+                "approved",
+                "scheduled",
+                "published",
+                "closed",
+                "cancelled",
+                "archived",
+            ],
             "error": error,
             "form_values": effective_form_values,
+            "blank_leg_values": blank_leg_values(),
         },
         status_code=status_code,
     )

@@ -84,6 +84,13 @@
         <div class="muted" style="margin-top:10px;line-height:1.6;">
           {{ recommendation.summary or recommendation.thesis or "Текст рекомендации пока не заполнен" }}
         </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+          <span class="pill">{{ recommendation.legs|length }} legs</span>
+          <span class="pill">{{ recommendation.attachments|length }} attachments</span>
+          {% if recommendation.scheduled_for %}
+          <span class="pill">scheduled {{ recommendation.scheduled_for }}</span>
+          {% endif %}
+        </div>
       </a>
       {% else %}
       <div class="muted">Рекомендаций пока нет. Создайте первую публикацию.</div>

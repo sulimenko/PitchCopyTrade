@@ -123,6 +123,9 @@
 - author-scoped strategy selection
 - author sees only own recommendation set
 - statuses and kinds editable on baseline level
+- structured legs editor
+- attachment upload through MinIO
+- scheduled/published/closed/cancelled state timestamps
 
 ### 5.6 Public storefront baseline
 Есть:
@@ -259,14 +262,16 @@
 Baseline уже есть:
 - author shell;
 - recommendation CRUD;
-- base status/kind editing.
+- base status/kind editing;
+- structured legs;
+- attachment upload.
 
 Нужно доделать:
 - richer prototype-based workspace;
 - drafts UX;
 - preview;
-- validation;
-- multi-leg editor.
+- validation depth;
+- attach/delete UX.
 
 ### 11.4 Moderation
 Нужно сделать:
@@ -275,17 +280,26 @@ Baseline уже есть:
 - approve/reject/rework flow.
 
 ### 11.5 Publish flow
-Нужно сделать:
-- scheduled publish;
-- publish transitions;
-- `new/update/close/cancel` flow;
-- history/timeline.
+Baseline уже есть:
+- publish/schedule transitions;
+- `new/update/close/cancel` types;
+- status timestamps.
+
+Нужно доделать:
+- history/timeline;
+- worker-based scheduled publish execution;
+- moderator-aware transitions.
 
 ### 11.6 Attachments
-Нужно сделать:
+Baseline уже есть:
 - upload screenshot/PDF;
 - attachment validation;
-- subscriber rendering/download path.
+- MinIO persistence from author editor.
+
+Нужно доделать:
+- subscriber rendering/download path;
+- deletion/replacement UX;
+- attachment policy hardening.
 
 ### 11.7 Commerce completion
 Нужно сделать:
@@ -329,9 +343,10 @@ Baseline уже есть:
 - foundation: реализован
 - admin коммерческий baseline: реализован
 - author workspace baseline: реализован
+- publish/legs/attachments baseline: реализован
 - ACL delivery baseline: реализован
 - Telegram-first bot baseline: реализован
 - subscriber password removed from web fallback checkout
 - Telegram-auth-only web fallback baseline: реализован
 - optional docker postgres profile and external DSN mode: зафиксированы
-- главный следующий шаг: recommendation publish flow, legs, attachments и moderation
+- главный следующий шаг: preview, moderation queue и subscriber-facing rendering
