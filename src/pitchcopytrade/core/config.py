@@ -37,6 +37,8 @@ class EnvName:
     PROMO_ENABLED = "PROMO_ENABLED"
     AUTORENEW_ENABLED = "AUTORENEW_ENABLED"
     BASE_TIMEZONE = "BASE_TIMEZONE"
+    AUTH_SESSION_TTL_SECONDS = "AUTH_SESSION_TTL_SECONDS"
+    AUTH_SESSION_COOKIE_NAME = "AUTH_SESSION_COOKIE_NAME"
     LOG_LEVEL = "LOG_LEVEL"
     LOG_JSON = "LOG_JSON"
 
@@ -119,6 +121,13 @@ class LoggingSettings(BaseModel):
     json_logs: bool
 
 
+class AuthSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    session_ttl_seconds: int
+    session_cookie_name: str
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -157,6 +166,8 @@ class Settings(BaseSettings):
     promo_enabled: bool = Field(default=True, alias=EnvName.PROMO_ENABLED)
     autorenew_enabled: bool = Field(default=True, alias=EnvName.AUTORENEW_ENABLED)
     base_timezone: str = Field(default="Europe/Moscow", alias=EnvName.BASE_TIMEZONE)
+    auth_session_ttl_seconds: int = Field(default=60 * 60 * 24, alias=EnvName.AUTH_SESSION_TTL_SECONDS)
+    auth_session_cookie_name: str = Field(default="pitchcopytrade_session", alias=EnvName.AUTH_SESSION_COOKIE_NAME)
 
     log_level: str = Field(default="INFO", alias=EnvName.LOG_LEVEL)
     log_json: bool = Field(default=False, alias=EnvName.LOG_JSON)
@@ -200,6 +211,13 @@ class Settings(BaseSettings):
         if normalized not in allowed:
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return normalized
+
+    @field_validator("auth_session_ttl_seconds")
+    @classmethod
+    def validate_session_ttl(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("AUTH_SESSION_TTL_SECONDS must be positive")
+        return value
 
     @field_validator("telegram_webhook_secret")
     @classmethod
@@ -271,6 +289,13 @@ class Settings(BaseSettings):
     @property
     def logging(self) -> LoggingSettings:
         return LoggingSettings(level=self.log_level, json_logs=self.log_json)
+
+    @property
+    def auth(self) -> AuthSettings:
+        return AuthSettings(
+            session_ttl_seconds=self.auth_session_ttl_seconds,
+            session_cookie_name=self.auth_session_cookie_name,
+        )
 
 
 @lru_cache(maxsize=1)

@@ -39,6 +39,8 @@ def _base_env() -> dict[str, str]:
         "PROMO_ENABLED": "true",
         "AUTORENEW_ENABLED": "true",
         "BASE_TIMEZONE": "Europe/Moscow",
+        "AUTH_SESSION_TTL_SECONDS": "86400",
+        "AUTH_SESSION_COOKIE_NAME": "pitchcopytrade_session",
         "LOG_LEVEL": "INFO",
         "LOG_JSON": "false",
     }
@@ -58,6 +60,8 @@ def test_settings_expose_typed_sections(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.database.url.startswith("postgresql+asyncpg://")
     assert settings.minio.bucket_uploads == "pitchcopytrade-uploads"
     assert settings.payments.provider == "stub_manual"
+    assert settings.auth.session_ttl_seconds == 86400
+    assert settings.auth.session_cookie_name == "pitchcopytrade_session"
     assert settings.logging.level == "INFO"
     assert settings.logging.json_logs is False
 
