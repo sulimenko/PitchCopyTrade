@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import BigInteger, Column, Enum as SqlEnum, ForeignKey, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from pitchcopytrade.db.models.enums import RoleSlug, UserStatus
+
+if TYPE_CHECKING:
+    from pitchcopytrade.db.models.audit import AuditEvent
+    from pitchcopytrade.db.models.catalog import LeadSource, Strategy, SubscriptionProduct
+    from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
+    from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment
 
 user_roles = Table(
     "user_roles",
@@ -30,8 +38,15 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Moscow")
     lead_source_id: Mapped[str | None] = mapped_column(ForeignKey("lead_sources.id", ondelete="SET NULL"), nullable=True)
 
+    lead_source: Mapped["LeadSource | None"] = relationship(back_populates="users")
     roles: Mapped[list["Role"]] = relationship(secondary=user_roles, back_populates="users")
     author_profile: Mapped["AuthorProfile | None"] = relationship(back_populates="user", uselist=False)
+    payments: Mapped[list["Payment"]] = relationship(back_populates="user")
+    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="user")
+    consents: Mapped[list["UserConsent"]] = relationship(back_populates="user")
+    moderated_recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="moderated_by_user")
+    uploaded_attachments: Mapped[list["RecommendationAttachment"]] = relationship(back_populates="uploaded_by_user")
+    audit_events: Mapped[list["AuditEvent"]] = relationship(back_populates="actor_user")
 
 
 class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -58,3 +73,6 @@ class AuthorProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(default=True)
 
     user: Mapped[User] = relationship(back_populates="author_profile")
+    strategies: Mapped[list["Strategy"]] = relationship(back_populates="author")
+    subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="author")
+    recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="author")
