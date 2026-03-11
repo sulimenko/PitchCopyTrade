@@ -272,6 +272,20 @@ Acceptance:
 Acceptance:
 - subscriber flow можно проверить локально end-to-end
 
+### 24.1 File-mode process startup `[done]`
+Сделано:
+- `api` cold-start smoke in `APP_DATA_MODE=file`
+- `bot` cold-start smoke in `APP_DATA_MODE=file`
+- `worker` cold-start smoke in `APP_DATA_MODE=file`
+- public catalog/legal flow works without PostgreSQL
+- bot shop handlers work with file repository path
+- worker scheduled publish runner has file-mode branch
+- seeded author login and author dashboard work in file mode
+
+Acceptance:
+- `api + bot + worker` можно поднимать без PostgreSQL и без MinIO
+- локальный smoke path опирается на committed seed + ignored runtime tree
+
 ## 4. Что уже реализовано и должно сохраниться в refactor
 
 ### 25. Telegram-first subscriber model `[partial]`

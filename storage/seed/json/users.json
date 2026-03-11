@@ -5,7 +5,7 @@
     "full_name": "Admin One",
     "id": "user-admin",
     "lead_source_id": null,
-    "password_hash": "seed-admin-hash",
+    "password_hash": "scrypt$16384$8$1$VgbhlI-o9PvfroKflSgWAw==$va6lKfsPd8g1d1QhXOBOcqBHvCg9qeDAn0yTeEBedduZQRTYw3CQ85P70gF-DxN7qGttNJbdVkYVmhm7Dv9Vrg==",
     "role_ids": [
       "role-admin"
     ],
@@ -21,7 +21,7 @@
     "full_name": "Author One",
     "id": "user-author",
     "lead_source_id": null,
-    "password_hash": "seed-author-hash",
+    "password_hash": "scrypt$16384$8$1$Cy0dBdv2_Fgf6DAZk-ByeA==$BltnBF208JL3HznEAike05fAMmbbOdYntSG7Wlc62nW62I8fH83i8UqztILFOaw8JV1yQGGvZPVB5pkh5I-18w==",
     "role_ids": [
       "role-author"
     ],
@@ -37,7 +37,7 @@
     "full_name": "Moderator One",
     "id": "user-moderator",
     "lead_source_id": null,
-    "password_hash": "seed-moderator-hash",
+    "password_hash": "scrypt$16384$8$1$4C63g8vBziKlhCSyUb1rqw==$2oZ-ifpcgmxuENj6UeE1G8oq0ImcXf0kmtppzSZQvQzqb2VspUOrfgWUCOyhCeecnPJbuaU-yE7clOyo8d4zhQ==",
     "role_ids": [
       "role-moderator"
     ],

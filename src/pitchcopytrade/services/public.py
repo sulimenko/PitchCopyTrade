@@ -4,10 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from secrets import token_hex
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, Subscription
@@ -19,6 +15,7 @@ from pitchcopytrade.db.models.enums import (
     StrategyStatus,
     SubscriptionStatus,
 )
+from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.compliance import bind_consents_to_payment, record_user_consent
 
 
@@ -58,112 +55,32 @@ class CheckoutResult:
     required_documents: list[LegalDocument]
 
 
-async def list_public_strategies(session: AsyncSession) -> list[Strategy]:
-    query = (
-        select(Strategy)
-        .options(
-            selectinload(Strategy.author).selectinload(AuthorProfile.user),
-            selectinload(Strategy.subscription_products),
-        )
-        .where(Strategy.is_public.is_(True), Strategy.status == StrategyStatus.PUBLISHED)
-        .order_by(Strategy.created_at.desc(), Strategy.title.asc())
-    )
-    result = await session.execute(query)
-    strategies = list(result.scalars().all())
-    for strategy in strategies:
-        strategy.subscription_products = [product for product in strategy.subscription_products if product.is_active]
-    return strategies
+async def list_public_strategies(repository: PublicRepository) -> list[Strategy]:
+    return await repository.list_public_strategies()
 
 
-async def get_public_strategy_by_slug(session: AsyncSession, slug: str) -> Strategy | None:
-    query = (
-        select(Strategy)
-        .options(
-            selectinload(Strategy.author).selectinload(AuthorProfile.user),
-            selectinload(Strategy.subscription_products),
-        )
-        .where(
-            Strategy.slug == slug,
-            Strategy.is_public.is_(True),
-            Strategy.status == StrategyStatus.PUBLISHED,
-        )
-    )
-    result = await session.execute(query)
-    strategy = result.scalar_one_or_none()
-    if strategy is not None:
-        strategy.subscription_products = [product for product in strategy.subscription_products if product.is_active]
-    return strategy
+async def get_public_strategy_by_slug(repository: PublicRepository, slug: str) -> Strategy | None:
+    return await repository.get_public_strategy_by_slug(slug)
 
 
-async def get_public_product(session: AsyncSession, product_id: str) -> SubscriptionProduct | None:
-    query = (
-        select(SubscriptionProduct)
-        .options(
-            selectinload(SubscriptionProduct.strategy).selectinload(Strategy.author),
-            selectinload(SubscriptionProduct.author).selectinload(AuthorProfile.user),
-        )
-        .where(SubscriptionProduct.id == product_id, SubscriptionProduct.is_active.is_(True))
-    )
-    result = await session.execute(query)
-    product = result.scalar_one_or_none()
-    if product is None:
-        return None
-    if (
-        product.strategy is not None
-        and (not product.strategy.is_public or product.strategy.status is not StrategyStatus.PUBLISHED)
-    ):
-        return None
-    return product
+async def get_public_product(repository: PublicRepository, product_id: str) -> SubscriptionProduct | None:
+    return await repository.get_public_product(product_id)
 
 
-async def get_public_product_by_slug(session: AsyncSession, slug: str) -> SubscriptionProduct | None:
-    query = (
-        select(SubscriptionProduct)
-        .options(
-            selectinload(SubscriptionProduct.strategy).selectinload(Strategy.author),
-            selectinload(SubscriptionProduct.author).selectinload(AuthorProfile.user),
-        )
-        .where(SubscriptionProduct.slug == slug, SubscriptionProduct.is_active.is_(True))
-    )
-    result = await session.execute(query)
-    product = result.scalar_one_or_none()
-    if product is None:
-        return None
-    if (
-        product.strategy is not None
-        and (not product.strategy.is_public or product.strategy.status is not StrategyStatus.PUBLISHED)
-    ):
-        return None
-    return product
+async def get_public_product_by_slug(repository: PublicRepository, slug: str) -> SubscriptionProduct | None:
+    return await repository.get_public_product_by_slug(slug)
 
 
-async def list_active_checkout_documents(session: AsyncSession) -> list[LegalDocument]:
-    query = (
-        select(LegalDocument)
-        .where(
-            LegalDocument.is_active.is_(True),
-            LegalDocument.document_type.in_(REQUIRED_CHECKOUT_DOCUMENT_TYPES),
-        )
-        .order_by(LegalDocument.document_type.asc(), LegalDocument.version.desc())
-    )
-    result = await session.execute(query)
-    documents = list(result.scalars().all())
-    by_type: dict[LegalDocumentType, LegalDocument] = {}
-    for document in documents:
-        by_type.setdefault(document.document_type, document)
-    return [by_type[item] for item in REQUIRED_CHECKOUT_DOCUMENT_TYPES if item in by_type]
+async def list_active_checkout_documents(repository: PublicRepository) -> list[LegalDocument]:
+    return await repository.list_active_checkout_documents()
 
 
-async def find_user_by_email(session: AsyncSession, email: str) -> User | None:
-    query = select(User).options(selectinload(User.consents)).where(User.email == email)
-    result = await session.execute(query)
-    return result.scalar_one_or_none()
+async def find_user_by_email(repository: PublicRepository, email: str) -> User | None:
+    return await repository.find_user_by_email(email)
 
 
-async def upsert_telegram_subscriber(session: AsyncSession, profile: TelegramSubscriberProfile) -> User:
-    query = select(User).options(selectinload(User.consents)).where(User.telegram_user_id == profile.telegram_user_id)
-    result = await session.execute(query)
-    user = result.scalar_one_or_none()
+async def upsert_telegram_subscriber(repository: PublicRepository, profile: TelegramSubscriberProfile) -> User:
+    user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
     display_name = " ".join(part for part in [profile.first_name, profile.last_name] if part).strip() or None
     if user is None:
         user = User(
@@ -175,7 +92,7 @@ async def upsert_telegram_subscriber(session: AsyncSession, profile: TelegramSub
         user.consents = []
         user.payments = []
         user.subscriptions = []
-        session.add(user)
+        repository.add(user)
         return user
 
     user.username = profile.username
@@ -187,14 +104,14 @@ async def upsert_telegram_subscriber(session: AsyncSession, profile: TelegramSub
 
 
 async def create_stub_checkout(
-    session: AsyncSession,
+    repository: PublicRepository,
     *,
     product: SubscriptionProduct,
     request: CheckoutRequest,
     now: datetime | None = None,
 ) -> CheckoutResult:
     timestamp = now or datetime.now(timezone.utc)
-    required_documents = await list_active_checkout_documents(session)
+    required_documents = await list_active_checkout_documents(repository)
     if len(required_documents) != len(REQUIRED_CHECKOUT_DOCUMENT_TYPES):
         raise ValueError("Checkout недоступен: не опубликован полный комплект обязательных документов")
     required_document_ids = {document.id for document in required_documents}
@@ -205,7 +122,7 @@ async def create_stub_checkout(
     user = None
     normalized_email = (request.email or "").strip().lower() or None
     if normalized_email is not None:
-        user = await find_user_by_email(session, normalized_email)
+        user = await find_user_by_email(repository, normalized_email)
 
     if user is None:
         user = User(
@@ -218,7 +135,7 @@ async def create_stub_checkout(
         user.consents = []
         user.payments = []
         user.subscriptions = []
-        session.add(user)
+        repository.add(user)
     else:
         user.full_name = (request.full_name or "").strip() or user.full_name
         user.timezone = request.timezone_name
@@ -226,7 +143,7 @@ async def create_stub_checkout(
             user.consents = []
 
     return await _create_checkout_records(
-        session,
+        repository,
         user=user,
         product=product,
         lead_source_name=request.lead_source_name,
@@ -238,20 +155,20 @@ async def create_stub_checkout(
 
 
 async def create_telegram_stub_checkout(
-    session: AsyncSession,
+    repository: PublicRepository,
     *,
     product: SubscriptionProduct,
     profile: TelegramSubscriberProfile,
     now: datetime | None = None,
 ) -> CheckoutResult:
     timestamp = now or datetime.now(timezone.utc)
-    required_documents = await list_active_checkout_documents(session)
+    required_documents = await list_active_checkout_documents(repository)
     if len(required_documents) != len(REQUIRED_CHECKOUT_DOCUMENT_TYPES):
         raise ValueError("Checkout недоступен: не опубликован полный комплект обязательных документов")
 
-    user = await upsert_telegram_subscriber(session, profile)
+    user = await upsert_telegram_subscriber(repository, profile)
     return await _create_checkout_records(
-        session,
+        repository,
         user=user,
         product=product,
         lead_source_name=profile.lead_source_name,
@@ -263,7 +180,7 @@ async def create_telegram_stub_checkout(
 
 
 async def _create_checkout_records(
-    session: AsyncSession,
+    repository: PublicRepository,
     *,
     user: User,
     product: SubscriptionProduct,
@@ -290,7 +207,7 @@ async def _create_checkout_records(
         expires_at=timestamp + timedelta(hours=24),
     )
     payment.consents = []
-    session.add(payment)
+    repository.add(payment)
 
     consents = [
         record_user_consent(
@@ -316,11 +233,11 @@ async def _create_checkout_records(
         start_at=timestamp,
         end_at=timestamp + _billing_delta(product.billing_period),
     )
-    session.add(subscription)
+    repository.add(subscription)
 
-    await session.commit()
-    await session.refresh(payment)
-    await session.refresh(subscription)
+    await repository.commit()
+    await repository.refresh(payment)
+    await repository.refresh(subscription)
     return CheckoutResult(
         user=user,
         payment=payment,

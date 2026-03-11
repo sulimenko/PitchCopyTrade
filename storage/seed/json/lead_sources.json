@@ -4,7 +4,7 @@
     "id": "lead-telegram-organic",
     "name": "Telegram Organic",
     "ref_code": "tg-organic",
-    "source_type": "telegram",
+    "source_type": "organic",
     "updated_at": "2026-03-11T00:00:00+00:00",
     "utm_campaign": null,
     "utm_content": null,

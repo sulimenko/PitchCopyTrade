@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.auth.roles import require_any_role
 from pitchcopytrade.auth.session import (
@@ -9,31 +8,35 @@ from pitchcopytrade.auth.session import (
     get_user_from_session_token,
     get_user_from_telegram_fallback_cookie,
 )
+from pitchcopytrade.api.deps.repositories import get_auth_repository
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.enums import RoleSlug
-from pitchcopytrade.db.session import get_db_session
+from pitchcopytrade.repositories.contracts import AuthRepository
 
 
-async def get_current_staff_user(request: Request, session: AsyncSession = Depends(get_db_session)) -> User:
+async def get_current_staff_user(request: Request, repository: AuthRepository = Depends(get_auth_repository)) -> User:
     settings = get_settings()
     token = request.cookies.get(settings.auth.session_cookie_name)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
-    user = await get_user_from_session_token(session, token)
+    user = await get_user_from_session_token(repository, token)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
 
     return user
 
 
-async def get_current_subscriber_user(request: Request, session: AsyncSession = Depends(get_db_session)) -> User:
+async def get_current_subscriber_user(
+    request: Request,
+    repository: AuthRepository = Depends(get_auth_repository),
+) -> User:
     token = request.cookies.get(get_telegram_fallback_cookie_name())
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram authentication required")
 
-    user = await get_user_from_telegram_fallback_cookie(session, token)
+    user = await get_user_from_telegram_fallback_cookie(repository, token)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Telegram access")
 

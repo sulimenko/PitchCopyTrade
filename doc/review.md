@@ -137,6 +137,7 @@
 - docker DB остается optional;
 - local test path без БД реален, если change заявляет file mode как готовый;
 - docs/run instructions не противоречат реальному runtime.
+- `api + bot + worker` реально стартуют в `APP_DATA_MODE=file`, а не только компилируются.
 
 ## 4. Transitional areas
 Это не automatic finding само по себе, но reviewer должен отслеживать drift:

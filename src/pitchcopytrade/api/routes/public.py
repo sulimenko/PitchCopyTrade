@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.core.config import get_settings
-from pitchcopytrade.db.session import get_db_session
+from pitchcopytrade.api.deps.repositories import get_public_repository
+from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.public import (
     CheckoutRequest,
     create_stub_checkout,
@@ -32,8 +32,8 @@ async def miniapp_root() -> Response:
 
 
 @router.get("/catalog", response_class=HTMLResponse)
-async def catalog_page(request: Request, session: AsyncSession = Depends(get_db_session)) -> Response:
-    strategies = await list_public_strategies(session)
+async def catalog_page(request: Request, repository: PublicRepository = Depends(get_public_repository)) -> Response:
+    strategies = await list_public_strategies(repository)
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
@@ -50,9 +50,9 @@ async def catalog_page(request: Request, session: AsyncSession = Depends(get_db_
 async def strategy_detail_page(
     slug: str,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
+    repository: PublicRepository = Depends(get_public_repository),
 ) -> Response:
-    strategy = await get_public_strategy_by_slug(session, slug)
+    strategy = await get_public_strategy_by_slug(repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
     return templates.TemplateResponse(
@@ -69,13 +69,13 @@ async def strategy_detail_page(
 async def checkout_page(
     product_id: str,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
+    repository: PublicRepository = Depends(get_public_repository),
 ) -> Response:
-    product = await get_public_product(session, product_id)
+    product = await get_public_product(repository, product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
-    documents = await list_active_checkout_documents(session)
+    documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
     return templates.TemplateResponse(
         request,
@@ -101,9 +101,9 @@ async def checkout_page(
 async def legal_document_page(
     document_id: str,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
+    repository: PublicRepository = Depends(get_public_repository),
 ) -> Response:
-    documents = await list_active_checkout_documents(session)
+    documents = await list_active_checkout_documents(repository)
     document = next((item for item in documents if item.id == document_id), None)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
@@ -122,22 +122,22 @@ async def legal_document_page(
 async def checkout_submit(
     product_id: str,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
+    repository: PublicRepository = Depends(get_public_repository),
     full_name: str = Form(""),
     email: str = Form(""),
     timezone_name: str = Form("Europe/Moscow"),
     lead_source_name: str = Form(""),
     accepted_document_ids: list[str] = Form(...),
 ) -> Response:
-    product = await get_public_product(session, product_id)
+    product = await get_public_product(repository, product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
-    documents = await list_active_checkout_documents(session)
+    documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
     try:
         result = await create_stub_checkout(
-            session,
+            repository,
             product=product,
             request=CheckoutRequest(
                 full_name=full_name.strip(),

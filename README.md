@@ -33,6 +33,7 @@ Telegram-first платформа для продажи подписок на с
 - scheduled publish baseline
 - delivery notifications baseline
 - local filesystem storage backend baseline with runtime root `storage/runtime/blob`
+- `api + bot + worker` can start in `APP_DATA_MODE=file` without PostgreSQL and without MinIO
 - runtime switch:
   - `APP_DATA_MODE=db|file`
   - `APP_STORAGE_ROOT=storage`
@@ -181,6 +182,19 @@ Attachments и legal docs теперь local-first:
 - recommendation attachments canonical provider = `local_fs`
 - legal documents имеют `source_path` и читаются из `storage/runtime/blob` с bootstrap из `storage/seed/blob`
 - `MinIO` остается transitional fallback
+
+Demo staff credentials for local file-mode:
+- `admin1 / admin-demo-pass`
+- `author1 / author-demo-pass`
+- `moderator1 / moderator-demo-pass`
+
+Если меняется committed seed, локальный `storage/runtime/*` нужно пересоздать, чтобы получить новый cold start baseline.
+
+## File mode smoke
+Проверенный smoke path без PostgreSQL и без MinIO:
+- `api`: каталог, legal page, staff login
+- `bot`: runtime bootstrap и dispatcher assembly
+- `worker`: `run_worker_once()` в `file mode`
 
 ## Документы
 - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)

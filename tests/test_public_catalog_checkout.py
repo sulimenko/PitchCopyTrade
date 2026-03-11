@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
@@ -19,20 +20,19 @@ from pitchcopytrade.db.models.enums import (
     StrategyStatus,
     SubscriptionStatus,
 )
-from pitchcopytrade.db.session import get_db_session
-
-class FakeAsyncSession:
-    async def execute(self, query):
-        raise AssertionError("This test suite expects service-level monkeypatching")
 
 
-def _build_client(session: FakeAsyncSession) -> TestClient:
+class FakePublicRepository:
+    pass
+
+
+def _build_client(repository: FakePublicRepository) -> TestClient:
     app = create_app()
 
-    async def override_db_session():
-        yield session
+    async def override_public_repository():
+        return repository
 
-    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_public_repository] = override_public_repository
     return TestClient(app)
 
 
@@ -100,7 +100,7 @@ def _make_documents() -> list[LegalDocument]:
 
 
 def test_root_redirects_to_catalog() -> None:
-    with _build_client(FakeAsyncSession()) as client:
+    with _build_client(FakePublicRepository()) as client:
         response = client.get("/", follow_redirects=False)
 
         assert response.status_code == 303
@@ -108,7 +108,7 @@ def test_root_redirects_to_catalog() -> None:
 
 
 def test_miniapp_redirects_to_catalog_surface() -> None:
-    with _build_client(FakeAsyncSession()) as client:
+    with _build_client(FakePublicRepository()) as client:
         response = client.get("/miniapp", follow_redirects=False)
 
         assert response.status_code == 303
@@ -122,7 +122,7 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         lambda _session: _async_return([strategy]),
     )
 
-    with _build_client(FakeAsyncSession()) as client:
+    with _build_client(FakePublicRepository()) as client:
         response = client.get("/catalog")
 
         assert response.status_code == 200
@@ -138,7 +138,7 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         lambda _session, _slug: _async_return(strategy),
     )
 
-    with _build_client(FakeAsyncSession()) as client:
+    with _build_client(FakePublicRepository()) as client:
         response = client.get("/catalog/strategies/momentum-ru")
 
         assert response.status_code == 200
@@ -159,7 +159,7 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
         lambda _session: _async_return(documents),
     )
 
-    with _build_client(FakeAsyncSession()) as client:
+    with _build_client(FakePublicRepository()) as client:
         response = client.get("/checkout/product-1")
 
         assert response.status_code == 200
@@ -180,7 +180,7 @@ def test_legal_document_page_reads_local_markdown(monkeypatch) -> None:
         lambda document: f"loaded from {document.source_path}",
     )
 
-    with _build_client(FakeAsyncSession()) as client:
+    with _build_client(FakePublicRepository()) as client:
         response = client.get("/legal/doc-offer")
 
         assert response.status_code == 200
@@ -231,7 +231,7 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
         lambda _session, product, request: _async_return(result),
     )
 
-    with _build_client(FakeAsyncSession()) as client:
+    with _build_client(FakePublicRepository()) as client:
         response = client.post(
             "/checkout/product-1",
             data={

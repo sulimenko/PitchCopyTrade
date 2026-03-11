@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi.testclient import TestClient
 
+from pitchcopytrade.api.deps.repositories import get_auth_repository
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.auth.session import (
@@ -13,36 +12,18 @@ from pitchcopytrade.auth.session import (
 )
 from pitchcopytrade.db.models.accounts import Role, User
 from pitchcopytrade.db.models.enums import RoleSlug
-from pitchcopytrade.db.session import get_db_session
 
 
-class FakeAsyncSession:
+class FakeAuthRepository:
     def __init__(self) -> None:
         self.users_by_identity: dict[str, User] = {}
         self.users_by_id: dict[str, User] = {}
 
-    async def execute(self, query: Any):
-        compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+    async def get_user_by_identity(self, identity: str) -> User | None:
+        return self.users_by_identity.get(identity)
 
-        class Result:
-            def __init__(self, user: User | None) -> None:
-                self._user = user
-
-            def scalar_one_or_none(self) -> User | None:
-                return self._user
-
-        for identity, user in self.users_by_identity.items():
-            if f"'{identity}'" in compiled:
-                return Result(user)
-
-        for user_id, user in self.users_by_id.items():
-            if f"'{user_id}'" in compiled:
-                return Result(user)
-
-        if "users.id" in compiled and len(self.users_by_id) == 1:
-            return Result(next(iter(self.users_by_id.values())))
-
-        return Result(None)
+    async def get_user_by_id(self, user_id: str) -> User | None:
+        return self.users_by_id.get(user_id)
 
 
 def _make_user() -> User:
@@ -70,19 +51,19 @@ def _make_moderator_user() -> User:
     return user
 
 
-def _build_client(session: FakeAsyncSession) -> TestClient:
+def _build_client(repository: FakeAuthRepository) -> TestClient:
     app = create_app()
 
-    async def override_db_session():
-        yield session
+    async def override_auth_repository():
+        return repository
 
-    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_auth_repository] = override_auth_repository
     return TestClient(app)
 
 
 def test_login_page_renders() -> None:
-    session = FakeAsyncSession()
-    with _build_client(session) as client:
+    repository = FakeAuthRepository()
+    with _build_client(repository) as client:
         response = client.get("/login")
 
         assert response.status_code == 200
@@ -90,12 +71,12 @@ def test_login_page_renders() -> None:
 
 
 def test_login_submit_sets_session_cookie() -> None:
-    session = FakeAsyncSession()
+    repository = FakeAuthRepository()
     user = _make_user()
-    session.users_by_identity[user.username] = user
-    session.users_by_identity[user.email] = user
+    repository.users_by_identity[user.username] = user
+    repository.users_by_identity[user.email] = user
 
-    with _build_client(session) as client:
+    with _build_client(repository) as client:
         response = client.post(
             "/login",
             data={"identity": "alex", "password": "test-pass"},
@@ -108,11 +89,11 @@ def test_login_submit_sets_session_cookie() -> None:
 
 
 def test_login_page_redirects_authenticated_admin_to_dashboard() -> None:
-    session = FakeAsyncSession()
+    repository = FakeAuthRepository()
     user = _make_admin_user()
-    session.users_by_id[user.id] = user
+    repository.users_by_id[user.id] = user
 
-    with _build_client(session) as client:
+    with _build_client(repository) as client:
         client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
         response = client.get("/login", follow_redirects=False)
 
@@ -121,11 +102,11 @@ def test_login_page_redirects_authenticated_admin_to_dashboard() -> None:
 
 
 def test_login_submit_rejects_invalid_credentials() -> None:
-    session = FakeAsyncSession()
+    repository = FakeAuthRepository()
     user = _make_user()
-    session.users_by_identity[user.username] = user
+    repository.users_by_identity[user.username] = user
 
-    with _build_client(session) as client:
+    with _build_client(repository) as client:
         response = client.post("/login", data={"identity": "alex", "password": "wrong-pass"})
 
         assert response.status_code == 401
@@ -133,8 +114,8 @@ def test_login_submit_rejects_invalid_credentials() -> None:
 
 
 def test_app_requires_session_cookie() -> None:
-    session = FakeAsyncSession()
-    with _build_client(session) as client:
+    repository = FakeAuthRepository()
+    with _build_client(repository) as client:
         response = client.get("/app", follow_redirects=False)
 
         assert response.status_code == 303
@@ -142,11 +123,11 @@ def test_app_requires_session_cookie() -> None:
 
 
 def test_app_home_renders_for_valid_session() -> None:
-    session = FakeAsyncSession()
+    repository = FakeAuthRepository()
     user = _make_user()
-    session.users_by_id[user.id] = user
+    repository.users_by_id[user.id] = user
 
-    with _build_client(session) as client:
+    with _build_client(repository) as client:
         client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
         response = client.get("/app", follow_redirects=False)
 
@@ -155,11 +136,11 @@ def test_app_home_renders_for_valid_session() -> None:
 
 
 def test_app_redirects_admin_to_dashboard() -> None:
-    session = FakeAsyncSession()
+    repository = FakeAuthRepository()
     user = _make_admin_user()
-    session.users_by_id[user.id] = user
+    repository.users_by_id[user.id] = user
 
-    with _build_client(session) as client:
+    with _build_client(repository) as client:
         client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
         response = client.get("/app", follow_redirects=False)
 
@@ -168,11 +149,11 @@ def test_app_redirects_admin_to_dashboard() -> None:
 
 
 def test_login_page_redirects_moderator_to_queue() -> None:
-    session = FakeAsyncSession()
+    repository = FakeAuthRepository()
     user = _make_moderator_user()
-    session.users_by_id[user.id] = user
+    repository.users_by_id[user.id] = user
 
-    with _build_client(session) as client:
+    with _build_client(repository) as client:
         client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
         response = client.get("/login", follow_redirects=False)
 
@@ -181,11 +162,11 @@ def test_login_page_redirects_moderator_to_queue() -> None:
 
 
 def test_tg_auth_sets_session_cookie_and_redirects_to_feed() -> None:
-    session = FakeAsyncSession()
+    repository = FakeAuthRepository()
     user = _make_user()
-    session.users_by_id[user.id] = user
+    repository.users_by_id[user.id] = user
 
-    with _build_client(session) as client:
+    with _build_client(repository) as client:
         response = client.get(
             "/tg-auth",
             params={"token": build_telegram_login_link_token(user)},
@@ -198,11 +179,11 @@ def test_tg_auth_sets_session_cookie_and_redirects_to_feed() -> None:
 
 
 def test_workspace_session_does_not_open_subscriber_feed() -> None:
-    session = FakeAsyncSession()
+    repository = FakeAuthRepository()
     user = _make_user()
-    session.users_by_id[user.id] = user
+    repository.users_by_id[user.id] = user
 
-    with _build_client(session) as client:
+    with _build_client(repository) as client:
         client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
         response = client.get("/app/feed", follow_redirects=False)
 

@@ -51,6 +51,7 @@ Canonical subscriber model остается:
   - `APP_DATA_MODE=db|file`
   - `APP_STORAGE_ROOT=storage`
 - repository layer baseline for selected contours
+- cold-start file-mode smoke path for `api + bot + worker`
 
 ### 3.2 Domain baseline
 Есть:
@@ -232,6 +233,11 @@ Primary persistence target:
 - режим должен позволить прогнать основной сценарий на одной машине.
 - в репозитории уже должен лежать demo seed pack, чтобы mode был runnable без ручного наполнения;
 - runtime state тестировщика не должен коммититься.
+
+Текущее подтверждение:
+- `api` стартует и отдает `catalog`, `legal`, `staff login`;
+- `bot` стартует на уровне runtime bootstrap и dispatcher assembly;
+- `worker` выполняет `run_worker_once()` без PostgreSQL и без MinIO.
 
 ### 6.3 Demo seed baseline
 Текущий baseline теперь включает:

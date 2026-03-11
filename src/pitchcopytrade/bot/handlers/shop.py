@@ -5,6 +5,7 @@ from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, WebAppIn
 
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import AsyncSessionLocal
+from pitchcopytrade.repositories.public import FilePublicRepository, SqlAlchemyPublicRepository
 from pitchcopytrade.services.public import (
     TelegramSubscriberProfile,
     create_telegram_stub_checkout,
@@ -14,8 +15,11 @@ from pitchcopytrade.services.public import (
 
 
 async def handle_catalog(message: Message) -> None:
-    async with AsyncSessionLocal() as session:
-        strategies = await list_public_strategies(session)
+    if AsyncSessionLocal is None:
+        strategies = await list_public_strategies(FilePublicRepository())
+    else:
+        async with AsyncSessionLocal() as session:
+            strategies = await list_public_strategies(SqlAlchemyPublicRepository(session))
 
     if not strategies:
         await message.answer("Публичных стратегий пока нет.")
@@ -47,8 +51,11 @@ async def handle_buy_preview(message: Message, command: CommandObject) -> None:
         await message.answer("Укажите slug продукта: /buy <product_slug>")
         return
 
-    async with AsyncSessionLocal() as session:
-        product = await get_public_product_by_slug(session, product_slug)
+    if AsyncSessionLocal is None:
+        product = await get_public_product_by_slug(FilePublicRepository(), product_slug)
+    else:
+        async with AsyncSessionLocal() as session:
+            product = await get_public_product_by_slug(SqlAlchemyPublicRepository(session), product_slug)
 
     if product is None:
         await message.answer("Продукт не найден или недоступен.")
@@ -86,15 +93,15 @@ async def handle_buy_confirm(message: Message, command: CommandObject) -> None:
         await message.answer("Укажите slug продукта: /confirm_buy <product_slug>")
         return
 
-    async with AsyncSessionLocal() as session:
-        product = await get_public_product_by_slug(session, product_slug)
+    if AsyncSessionLocal is None:
+        repository = FilePublicRepository()
+        product = await get_public_product_by_slug(repository, product_slug)
         if product is None:
             await message.answer("Продукт не найден или недоступен.")
             return
-
         try:
             result = await create_telegram_stub_checkout(
-                session,
+                repository,
                 product=product,
                 profile=TelegramSubscriberProfile(
                     telegram_user_id=telegram_user.id,
@@ -107,6 +114,29 @@ async def handle_buy_confirm(message: Message, command: CommandObject) -> None:
         except ValueError as exc:
             await message.answer(str(exc))
             return
+    else:
+        async with AsyncSessionLocal() as session:
+            repository = SqlAlchemyPublicRepository(session)
+            product = await get_public_product_by_slug(repository, product_slug)
+            if product is None:
+                await message.answer("Продукт не найден или недоступен.")
+                return
+
+            try:
+                result = await create_telegram_stub_checkout(
+                    repository,
+                    product=product,
+                    profile=TelegramSubscriberProfile(
+                        telegram_user_id=telegram_user.id,
+                        username=telegram_user.username,
+                        first_name=telegram_user.first_name,
+                        last_name=telegram_user.last_name,
+                        lead_source_name="telegram_bot",
+                    ),
+                )
+            except ValueError as exc:
+                await message.answer(str(exc))
+                return
 
     await message.answer(
         "Заявка на оплату создана.\n"
