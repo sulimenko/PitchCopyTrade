@@ -1,0 +1,13 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+dist/
+build/
+htmlcov/
+doc/
+alembic/__pycache__/
+tests/__pycache__/

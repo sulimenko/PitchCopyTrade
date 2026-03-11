@@ -1,0 +1,51 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+System Volume Information/
+*.lnk
+*.stackdump
+.idea/
+.vscode/
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Build and coverage artifacts
+build/
+dist/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Local runtime artifacts
+postgres_data/
+minio_data/
+docker-compose.override.yml
+
+# Documentation source artifacts
+doc/*
+!doc/Pitch_CopyTrade_Bot_blueprint_for_codex.md
+!doc/Pitch_CopyTrade_Bot_codex_task_pack.md
+!doc/codex_reviewer_master_prompt.md
