@@ -21,4 +21,4 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 EXPOSE 8000
 
-CMD ["uvicorn", "pitchcopytrade.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "pitchcopytrade.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

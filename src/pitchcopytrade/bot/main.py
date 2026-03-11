@@ -4,22 +4,13 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.filters import CommandStart
-from aiogram.types import Message
 
+from pitchcopytrade.bot.handlers.start import START_HANDLER
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.core.logging import configure_logging
 
 configure_logging()
 logger = logging.getLogger(__name__)
-
-
-async def _handle_start(message: Message) -> None:
-    await message.answer(
-        "PitchCopyTrade foundation запущен.\n"
-        "Дальше будут витрина стратегий, подписки и публикация рекомендаций."
-    )
-
 
 async def run_bot() -> None:
     settings = get_settings()
@@ -30,7 +21,8 @@ async def run_bot() -> None:
             await asyncio.sleep(3600)
 
     dp = Dispatcher()
-    dp.message.register(_handle_start, CommandStart())
+    handler, command = START_HANDLER
+    dp.message.register(handler, command)
 
     bot = Bot(token=settings.telegram_bot_token)
     logger.info("Starting bot polling")
