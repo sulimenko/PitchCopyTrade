@@ -113,9 +113,9 @@ Process rule:
 
 ### 16. DB-only runtime `[refactor]`
 Текущее состояние:
-- config принимает только `PostgreSQL` DSN
-- runtime создает `SQLAlchemy` engine как обязательный путь
-- file repositories отсутствуют
+- `db` mode по-прежнему поддержан
+- `file` mode уже работает для test contour
+- remaining проблема не в отсутствии file mode, а в неполной parity
 
 Новая цель:
 - `db` mode через `PostgreSQL`
@@ -131,7 +131,7 @@ Process rule:
 
 ## 3. Новый обязательный migration track
 
-### 18. Local filesystem storage foundation `[partial]`
+### 18. Local filesystem storage foundation `[done]`
 Сделано:
 - общий storage contract
 - `LocalFilesystemStorage`
@@ -139,30 +139,19 @@ Process rule:
 - default runtime blob root `storage/runtime/blob`
 - local storage tests
 - attachment download path understands `storage_provider=local_fs`
-
-Сделать:
-- ввести canonical storage root `storage/`
-- описать subfolders:
-  - `blob`
-  - `json`
-  - `parquet`
-  - `runtime`
-- сделать local storage adapter primary backend for author/document flows
+- author/document flows already use local filesystem path in file mode
 
 Acceptance:
 - attachments можно сохранять и читать без `MinIO`
 - local path становится canonical metadata source
 
-### 19. Runtime switch for persistence `[partial]`
+### 19. Runtime switch for persistence `[done]`
 Сделано:
 - введен `APP_DATA_MODE=db|file`
 - введен `APP_STORAGE_ROOT`
 - runtime metadata now exposes data mode and storage root
 - `file` mode не требует `DATABASE_URL`, `ALEMBIC_DATABASE_URL` и `MINIO_ROOT_PASSWORD` на уровне config/runtime
 - DB engine создается только в `db` mode
-
-Сделать:
-- ввести switch для repository/storage wiring
 
 Acceptance:
 - приложение стартует в двух режимах без правки application code
@@ -175,12 +164,13 @@ Acceptance:
 - `FileAuthorRepository`
 - `FileAccessRepository`
 - `FilePublicRepository`
+- `FileAuthRepository`
 - `FileDataStore`
 - `FileDatasetGraph`
 - repository deps for FastAPI
 - author service layer detached from direct `AsyncSession` usage
 - ACL/feed service layer detached from direct `AsyncSession` usage
-- `author` and `ACL/feed` now switch to file repositories in `APP_DATA_MODE=file`
+- `author`, `ACL/feed`, `public`, `auth` and verified admin smoke paths now switch to file repositories in `APP_DATA_MODE=file`
 
 Сделать:
 - вынести critical persistence operations в repositories
@@ -404,6 +394,71 @@ Acceptance:
 - retries
 - observability
 - broader lifecycle jobs
+
+## 8. Следующий этап после test-launch
+
+### 38. Deployment hardening `[partial]`
+Сделано:
+- canonical server deploy path documented
+- dedicated docker server compose committed in repo
+- host `nginx` reverse proxy config committed in repo
+- committed deploy bundle inside repo:
+  - `deploy/docker-compose.server.yml`
+  - `deploy/nginx/pct.test.ptfin.ru.conf`
+  - `deploy/env.server.example`
+  - `deploy/README.md`
+- canonical server root `/var/www/pct`
+- secret runtime file `.env.server`
+- update/restart procedure documented
+
+Сделать:
+- real server validation on target host
+- optional TLS step when test domain is ready
+
+Acceptance:
+- test version можно поднимать на одной выделенной машине без ручного старта процессов
+
+### 39. Compose cleanup `[todo]`
+- убрать `MinIO-first` dependency from `api` and `worker` in `file` mode
+- separate dev-only compose assumptions from real server path
+- keep PostgreSQL and MinIO as optional profiles, not mandatory runtime blocks
+
+Acceptance:
+- file-mode compose path не требует MinIO по умолчанию
+
+### 40. Full file-mode parity `[todo]`
+- moderation decisions
+- notifications persistence edges
+- publishing edge cases
+- remaining auth/session fallback paths
+
+Acceptance:
+- all critical test-version contours behave одинаково в `db` и `file`
+
+### 41. Legal admin UI `[todo]`
+- local markdown editor
+- version activation
+- active document management
+
+Acceptance:
+- legal docs можно править без ручного редактирования файлов на сервере
+
+### 42. Telegram UX phase `[todo]`
+- WebApp auth bridge
+- richer menu/status flow
+- subscriber self-service UX
+
+Acceptance:
+- subscriber flow меньше зависит от command-only interaction
+
+### 43. Release and review discipline `[todo]`
+- clean runtime checklist
+- technical review checklist
+- product smoke checklist
+- docs sync checklist
+
+Acceptance:
+- каждый новый этап проходит одинаковый `clean -> review -> docs -> deploy` контур
 
 ## 7. Правила, которые нельзя ломать
 - subscriber path остается `Telegram-first`

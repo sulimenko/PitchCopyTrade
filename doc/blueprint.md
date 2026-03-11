@@ -130,18 +130,18 @@ Canonical subscriber model остается:
 ## 4. Что показало исследование текущего состояния
 
 ### 4.1 Current DB coupling
-Сейчас приложение жестко завязано на `PostgreSQL`:
-- `file` mode уже допускает runtime без DB DSN;
+Сейчас проект уже не является жестко `PostgreSQL-only`, но parity еще не полная:
+- `file` mode допускает runtime без DB DSN;
 - DB engine создается только при `APP_DATA_MODE=db`;
-- application services и routes опираются на `AsyncSession`;
-- file-mode persistence пока отсутствует.
+- ключевой test contour уже идет без БД;
+- часть контуров все еще имеет `SQLAlchemy-first` ветки и требует дальнейшего выравнивания.
 
 ### 4.2 Current storage coupling
-Сейчас вложения и документы завязаны на `MinIO`:
-- storage adapter реализован как `MinioStorage`;
-- attachment upload/download идут через bucket/object-key;
+Сейчас storage layer уже частично выровнен под local-first, но transitional следы остались:
+- storage adapter `MinioStorage` все еще существует;
 - compose все еще включает `minio` как штатный сервис;
-- локальный filesystem storage как canonical primary backend пока еще не доведен до конца.
+- часть metadata shape и deploy assumptions еще bucket/object-key oriented;
+- при этом file-mode attachments и legal docs уже работают через local filesystem path.
 
 Уточнение по текущему состоянию:
 - local filesystem storage backend уже добавлен в код;
@@ -154,8 +154,8 @@ Canonical subscriber model остается:
 На сегодня проект:
 - можно развивать как продуктовый baseline;
 - можно запускать с внешним PostgreSQL и текущим storage stack;
-- нельзя быстро и честно тестировать без БД;
-- нельзя считать локальную файловую модель уже реализованной.
+- можно быстро и честно тестировать test contour без БД;
+- нельзя считать всю persistence migration завершенной, потому что parity еще не полная.
 
 ## 5. Новая целевая persistence architecture
 
@@ -317,8 +317,8 @@ Primary persistence target:
 - совместимость attachment download route с `local_fs`.
 
 Но это еще не final state:
-- author uploads по умолчанию пока не переведены на local backend;
-- legal docs еще не вынесены в локальный storage flow;
+- author uploads по умолчанию уже переведены на local backend;
+- legal docs уже вынесены в локальный storage flow;
 - compose/runtime пока не очищены от MinIO-first assumptions.
 
 ### 9.3 DB-only repositories
@@ -355,7 +355,7 @@ Service layer не должен знать, где лежат данные:
 
 Текущее состояние:
 - contract уже начал внедряться;
-- author и ACL контуры уже переведены на DB repositories;
+- author, access, public, auth и admin smoke contour уже имеют repository-based file-mode path;
 - file repositories уже реализованы для минимального demo dataset scope:
   - users
   - roles
@@ -367,7 +367,7 @@ Service layer не должен знать, где лежат данные:
   - subscriptions
   - recommendations
   - legs
-  - attachments
+- attachments
 - остальные контуры пока еще требуют миграции.
 
 ### 10.3 Runtime selection
@@ -379,8 +379,8 @@ Storage root уже введен:
 - `APP_STORAGE_ROOT=storage`
 
 Что еще нужно:
-- перевести service/repository wiring на этот switch;
-- довести real file-mode execution beyond config/runtime layer.
+- довести полный service/repository wiring до parity во всех remaining contours;
+- убрать старые deploy assumptions, которые тянут compose к `MinIO` even for file mode.
 
 ## 11. Критерии готовности новой схемы
 
@@ -392,7 +392,7 @@ Storage root уже введен:
 - проект не требует `MinIO` для локального запуска.
 
 ### 11.2 File mode done
-Будет считаться готовым, когда:
+Test-launch baseline уже достигнут, но full parity будет считаться готовой, когда:
 - можно поднять `api + bot + worker` без PostgreSQL;
 - есть seed data для admin/author/catalog/product/demo recommendations;
 - можно пройти Telegram subscriber flow до feed;
@@ -432,8 +432,11 @@ Task list для запуска тестовой версии закрыт. Сл
 
 Приоритеты:
 1. deployment contour
-   - canonical server path = `file mode + nginx + systemd`
-   - domain for test server = `pct.test.pbull.kz`
+   - canonical server path = `file mode + docker compose + host nginx`
+   - domain for current test server = `pct.test.ptfin.ru`
+   - canonical project root on server = `/var/www/pct`
+   - canonical secret file on server = `/var/www/pct/.env.server`
+   - deploy artifacts must be committed in repo under `deploy/`
    - polling bot остается основным способом работы test bot
 2. compose cleanup
    - убрать `MinIO-first` assumptions из runtime compose path
@@ -472,5 +475,7 @@ Task list для запуска тестовой версии закрыт. Сл
 5. only after that move to local/server deploy
 
 Deployment note:
-- текущий production-like deploy path должен опираться не на dev `docker-compose`, а на явные long-running services для `api`, `bot`, `worker`;
+- текущий production-like deploy path должен опираться не на dev `docker-compose`, а на отдельный server compose profile/file;
+- server nginx config должен тоже поставляться из репозитория как готовый template;
+- deploy bundle должен быть доступен сразу после `git clone`, без ручного сочинения compose/nginx/env templates на сервере;
 - один bot token должен обслуживаться только одним polling instance одновременно.

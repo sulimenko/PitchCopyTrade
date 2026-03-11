@@ -89,19 +89,20 @@ Telegram-first платформа для продажи подписок на с
 Текущий код пока еще не соответствует новой целевой схеме полностью.
 
 Жесткие зависимости, которые сейчас есть:
-- file mode уже поддержан на уровне config/runtime, но service/repository layer все еще в основном DB-first;
-- repository layer уже введен частично, но `admin`, `public`, `moderation`, `payments` и `notifications` еще не переведены на него полностью;
+- file mode уже поддержан не только на уровне config/runtime, но и в ключевом test contour;
+- repository layer уже введен частично, но `moderation`, `notifications` и часть publishing paths еще не переведены на него полностью;
 - `author` и `subscriber ACL/feed` уже могут идти через file repositories;
 - `public checkout`, `staff auth` и `admin confirm path` уже проверены в `file` mode;
 - `moderation`, `notifications` и часть publishing/delivery UX еще не имеют полной file-repository parity;
-- local filesystem storage backend уже добавлен, но primary attachment flow все еще по умолчанию ориентирован на `MinIO`;
+- local filesystem storage backend уже является canonical path для file-mode attachments и legal docs;
 - `docker-compose.yml` все еще поднимает `minio` как штатный сервис;
-- attachment flow и metadata пока ориентированы на bucket/object-key path.
+- часть metadata и compose assumptions все еще ориентированы на bucket/object-key path.
 - legal docs уже могут рендериться из локальных markdown source files, но admin editing flow для них еще не реализован.
 
 Это значит:
 - текущая реализация пригодна для продолжения продуктовой разработки;
-- но для быстрого локального тестирования без БД и без удаленного storage нужен отдельный refactor persistence layer.
+- локальный test-launch contour уже можно честно запускать без PostgreSQL и без MinIO;
+- следующий этап нужен не для первого запуска, а для parity/hardening и server operations.
 
 ## User cases
 
@@ -257,9 +258,9 @@ Operational rule:
 ## Следующий этап развития
 Task list для test-launch можно считать закрытым. Следующий этап теперь такой:
 1. deployment hardening:
-   - production-ready `systemd` units
-   - `nginx` reverse proxy
-   - file-mode friendly deploy scripts
+   - dedicated docker server compose for test contour
+   - `nginx` reverse proxy container
+   - file-mode friendly bind-mount deploy scripts
 2. compose cleanup:
    - убрать `MinIO-first` assumptions из runtime compose path
    - оставить `MinIO` только как optional compatibility profile
@@ -342,196 +343,141 @@ PYTHONPATH=src python -m pitchcopytrade.worker.main
 ## Запуск на выделенном сервере
 Текущий рекомендованный серверный путь для test-version:
 - `file mode`
-- `nginx + uvicorn`
-- `systemd` для `api`, `bot`, `worker`
+- `docker compose`
+- системный `nginx` сервера как reverse proxy
 - polling bot, без webhook
 
 Целевой DNS:
-- `pct.test.pbull.kz`
+- `pct.test.ptfin.ru`
 
 ### 1. Подготовка сервера
 Предположение:
-- Ubuntu 24.04 или совместимый Linux
-- DNS `pct.test.pbull.kz` уже указывает на IP сервера
-- открыты порты `80` и `443`
-
-Установить пакеты:
-```bash
-sudo apt update
-sudo apt install -y python3.12 python3.12-venv python3-pip nginx certbot python3-certbot-nginx git
-```
+- CentOS Linux 8
+- Docker Engine и Docker Compose plugin уже установлены
+- DNS `pct.test.ptfin.ru` уже указывает на IP сервера
+- открыт входящий `80/tcp`
+- текущий test bot больше нигде не запущен в polling
 
 ### 2. Разложить проект
 ```bash
-sudo mkdir -p /opt/pitchcopytrade
-sudo chown $USER:$USER /opt/pitchcopytrade
-cd /opt/pitchcopytrade
-git clone <repo_url> app
-cd app
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -e ".[dev]"
-cp .env.example .env
+mkdir -p /var/www
+cd /var/www
+git clone <REPO_URL> pct
+cd /var/www/pct
 ```
 
-### 3. Настроить `.env`
-Минимальный server config:
-```dotenv
-APP_ENV=staging
-APP_SECRET_KEY=change_me_to_long_random_value
-APP_DATA_MODE=file
-APP_STORAGE_ROOT=/opt/pitchcopytrade/app/storage
-BASE_URL=https://pct.test.pbull.kz
-ADMIN_BASE_URL=https://pct.test.pbull.kz/admin
-TELEGRAM_BOT_TOKEN=8620317929:AAGMpa6bsXETfFZ3TQAh-kxel9it5H4T85g
-TELEGRAM_BOT_USERNAME=Avt09_Bot
-TELEGRAM_USE_WEBHOOK=false
-LOG_LEVEL=INFO
-LOG_JSON=false
+### 3. Secret-файл
+На сервере используйте отдельный secret file:
+- `/var/www/pct/.env.server`
+
+Шаблон уже лежит в проекте:
+- [deploy/env.server.example](/Users/alexey/site/PitchCopyTrade/deploy/env.server.example)
+
+Создание:
+```bash
+cd /var/www/pct
+cp deploy/env.server.example .env.server
 ```
+
+Минимум, что нужно заполнить:
+- `APP_SECRET_KEY`
+- `TELEGRAM_BOT_TOKEN`
+- при необходимости `BASE_URL` и `ADMIN_BASE_URL`
 
 Важно:
-- не запускать этот же test bot одновременно локально и на сервере;
-- для server smoke использовать только один polling process на один token.
+- `.env.server` не коммитится;
+- локальный `.env` и серверный `.env.server` не смешивать.
 
-### 4. Подготовить storage
+### 4. Структура проекта на сервере
+После `git clone` все должно жить прямо в `/var/www/pct`:
+- код проекта
+- [deploy/docker-compose.server.yml](/Users/alexey/site/PitchCopyTrade/deploy/docker-compose.server.yml)
+- [deploy/nginx/pct.test.ptfin.ru.conf](/Users/alexey/site/PitchCopyTrade/deploy/nginx/pct.test.ptfin.ru.conf)
+- `.env.server`
+- `storage/seed`
+- `storage/runtime`
+
+### 5. Подготовить storage
 ```bash
-mkdir -p /opt/pitchcopytrade/app/storage/runtime/json
-mkdir -p /opt/pitchcopytrade/app/storage/runtime/blob
+mkdir -p /var/www/pct/storage/runtime/json
+mkdir -p /var/www/pct/storage/runtime/blob
 ```
-`storage/seed/*` уже лежит в репозитории. При первом file-mode доступе runtime будет bootstrap'иться из seed.
+`storage/seed/*` уже приходит из git. Ничего отдельно копировать не нужно.
 
-### 5. Проверить проект вручную
+### 6. Готовые deploy-файлы
+В проект уже добавлены:
+- [deploy/docker-compose.server.yml](/Users/alexey/site/PitchCopyTrade/deploy/docker-compose.server.yml)
+- [deploy/nginx/pct.test.ptfin.ru.conf](/Users/alexey/site/PitchCopyTrade/deploy/nginx/pct.test.ptfin.ru.conf)
+- [deploy/env.server.example](/Users/alexey/site/PitchCopyTrade/deploy/env.server.example)
+- [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md)
+
+Это и есть canonical server bundle для текущей test-version.
+
+### 7. Установить nginx config на сервер
 ```bash
-cd /opt/pitchcopytrade/app
-source .venv/bin/activate
-python3 -m compileall src tests
-./.venv/bin/pytest
+cd /var/www/pct
+cp deploy/nginx/pct.test.ptfin.ru.conf /etc/nginx/conf.d/pct.test.ptfin.ru.conf
+nginx -t
+systemctl reload nginx
 ```
 
-### 6. Создать systemd unit для API
-Файл `/etc/systemd/system/pitchcopytrade-api.service`:
-```ini
-[Unit]
-Description=PitchCopyTrade API
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/pitchcopytrade/app
-Environment=PYTHONPATH=/opt/pitchcopytrade/app/src
-ExecStart=/opt/pitchcopytrade/app/.venv/bin/uvicorn pitchcopytrade.api.main:app --host 127.0.0.1 --port 8000
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### 7. Создать systemd unit для bot
-Файл `/etc/systemd/system/pitchcopytrade-bot.service`:
-```ini
-[Unit]
-Description=PitchCopyTrade Bot
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/pitchcopytrade/app
-Environment=PYTHONPATH=/opt/pitchcopytrade/app/src
-ExecStart=/opt/pitchcopytrade/app/.venv/bin/python -m pitchcopytrade.bot.main
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### 8. Создать systemd unit для worker
-Файл `/etc/systemd/system/pitchcopytrade-worker.service`:
-```ini
-[Unit]
-Description=PitchCopyTrade Worker
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/pitchcopytrade/app
-Environment=PYTHONPATH=/opt/pitchcopytrade/app/src
-ExecStart=/opt/pitchcopytrade/app/.venv/bin/python -m pitchcopytrade.worker.main
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### 9. Включить сервисы
+### 8. Поднять контейнеры
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now pitchcopytrade-api
-sudo systemctl enable --now pitchcopytrade-bot
-sudo systemctl enable --now pitchcopytrade-worker
-sudo systemctl status pitchcopytrade-api
-sudo systemctl status pitchcopytrade-bot
-sudo systemctl status pitchcopytrade-worker
+cd /var/www/pct
+docker compose -f deploy/docker-compose.server.yml build
+docker compose -f deploy/docker-compose.server.yml up -d
 ```
 
-### 10. Настроить nginx для `pct.test.pbull.kz`
-Файл `/etc/nginx/sites-available/pct.test.pbull.kz`:
-```nginx
-server {
-    listen 80;
-    server_name pct.test.pbull.kz;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Включить конфиг:
+### 9. Проверить контейнеры и логи
 ```bash
-sudo ln -s /etc/nginx/sites-available/pct.test.pbull.kz /etc/nginx/sites-enabled/pct.test.pbull.kz
-sudo nginx -t
-sudo systemctl reload nginx
+cd /var/www/pct
+docker compose -f deploy/docker-compose.server.yml ps
+docker compose -f deploy/docker-compose.server.yml logs --tail=100 api
+docker compose -f deploy/docker-compose.server.yml logs --tail=100 bot
+docker compose -f deploy/docker-compose.server.yml logs --tail=100 worker
 ```
 
-### 11. Выпустить TLS сертификат
+### 10. Smoke-check API и сайта
 ```bash
-sudo certbot --nginx -d pct.test.pbull.kz
+curl -I http://127.0.0.1:8000/catalog
+curl -I http://pct.test.ptfin.ru/catalog
+curl -I http://pct.test.ptfin.ru/login
 ```
 
-### 12. Финальная проверка
+Если на CentOS 8 контейнеры не могут писать в `storage`, проверьте SELinux:
+```bash
+getenforce
+ls -laZ /var/www/pct/storage
+```
+В compose уже выставлены bind mounts с `:Z`.
+
+### 11. Финальная ручная проверка
 Проверить:
-- `https://pct.test.pbull.kz/catalog`
-- `https://pct.test.pbull.kz/login`
+- `http://pct.test.ptfin.ru/catalog`
+- `http://pct.test.ptfin.ru/login`
 - login `admin1 / admin-demo-pass`
 - login `author1 / author-demo-pass`
 - в Telegram у `@Avt09_Bot` выполнить:
+  - `/start`
   - `/catalog`
   - `/confirm_buy momentum-ru-month`
-  - `/feed`
 - в admin web подтвердить payment
-- снова выполнить `/feed`
+- снова в Telegram выполнить `/feed`
 
-### 13. Обновление сервера
+### 12. Обновление сервера
 ```bash
-cd /opt/pitchcopytrade/app
+cd /var/www/pct
 git pull
-source .venv/bin/activate
-pip install -e ".[dev]"
-python3 -m compileall src tests
-./.venv/bin/pytest
-sudo systemctl restart pitchcopytrade-api
-sudo systemctl restart pitchcopytrade-bot
-sudo systemctl restart pitchcopytrade-worker
+docker compose -f deploy/docker-compose.server.yml build
+docker compose -f deploy/docker-compose.server.yml up -d
+```
+
+### 13. Полный cold start runtime
+Seed не трогать. Чистится только runtime:
+```bash
+rm -rf /var/www/pct/storage/runtime
+mkdir -p /var/www/pct/storage/runtime/json
+mkdir -p /var/www/pct/storage/runtime/blob
+cd /var/www/pct
+docker compose -f deploy/docker-compose.server.yml restart api bot worker
 ```

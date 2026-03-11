@@ -223,3 +223,27 @@ Reviewer должен помнить, что после текущего refacto
   `Telegram identity -> payment -> subscription -> entitlement -> delivery`.
 - Проверять вторую цепочку:
   `runtime mode -> repository -> storage path -> attachment/legal persistence`.
+
+## 11. Clean -> Review gate для следующих этапов
+Перед любым demo/release reviewer должен ожидать не только код, но и operational hygiene.
+
+Проверять:
+- очищается ли только `storage/runtime/*`, а не committed seed;
+- не предлагает ли change ручное редактирование runtime state вместо нормального flow;
+- есть ли понятный cold-start path для `file` mode;
+- не запускается ли один и тот же bot token одновременно в двух polling instances.
+
+## 12. Release readiness review
+Если change связан с запуском локально или на сервере, reviewer должен отдельно проверить:
+- есть ли актуальная локальная инструкция запуска;
+- есть ли актуальная server инструкция запуска;
+- не опирается ли инструкция на устаревший compose path, если текущий canonical путь уже другой;
+- согласованы ли `.env.example`, `README.md`, `doc/blueprint.md`, `doc/task.md`;
+- есть ли committed deploy bundle в репозитории, если server path заявлен как `git clone -> run`;
+- согласован ли server secret contract, например `.env.server`;
+- учитывает ли инструкция реальный deploy contour:
+  - `api`
+  - `bot`
+  - `worker`
+  - host nginx reverse proxy
+  - storage root
