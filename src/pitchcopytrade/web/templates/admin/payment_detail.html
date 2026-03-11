@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/payments">Платежи</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">payment review</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Проверка платежа</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
+        Подтверждение переводит payment в `paid` и активирует связанную подписку без ручного вмешательства в БД.
+      </p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <span class="pill">{{ payment.status.value }}</span>
+      <span class="pill">{{ payment.provider.value }}</span>
+    </div>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    {% if error %}
+    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);margin-bottom:18px;">
+      {{ error }}
+    </div>
+    {% endif %}
+    <div class="eyebrow">payment data</div>
+    <div style="display:grid;gap:12px;margin-top:16px;">
+      <div><strong>Клиент:</strong> <span class="muted">{{ payment.user.full_name or payment.user.email or payment.user.id }}</span></div>
+      <div><strong>Email:</strong> <span class="muted">{{ payment.user.email or "не задан" }}</span></div>
+      <div><strong>Продукт:</strong> <span class="muted">{{ payment.product.title }}</span></div>
+      <div><strong>Сумма:</strong> <span class="muted">{{ payment.final_amount_rub }} RUB</span></div>
+      <div><strong>Reference:</strong> <span class="muted">{{ payment.stub_reference or "нет" }}</span></div>
+      <div><strong>Expires at:</strong> <span class="muted">{{ payment.expires_at or "не задан" }}</span></div>
+      <div><strong>Confirmed at:</strong> <span class="muted">{{ payment.confirmed_at or "еще не подтвержден" }}</span></div>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
+      {% if payment.status.value == "pending" %}
+      <form method="post" action="/admin/payments/{{ payment.id }}/confirm">
+        <button class="action" type="submit">Подтвердить оплату и активировать подписку</button>
+      </form>
+      {% endif %}
+      <a class="action ghost" href="/admin/payments">Вернуться к очереди</a>
+    </div>
+  </article>
+
+  <aside class="surface" style="padding:24px;">
+    <div class="eyebrow">linked subscriptions</div>
+    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Связанные подписки</h2>
+    <div style="display:grid;gap:12px;">
+      {% for subscription in payment.subscriptions %}
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>{{ subscription.product.title }}</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">status: {{ subscription.status.value }}</div>
+        <div class="muted" style="margin-top:6px;line-height:1.55;">{{ subscription.start_at }} -> {{ subscription.end_at }}</div>
+      </div>
+      {% else %}
+      <div class="muted">У платежа нет подписок.</div>
+      {% endfor %}
+    </div>
+
+    <div class="eyebrow" style="margin-top:22px;">captured consents</div>
+    <div style="display:grid;gap:10px;margin-top:12px;">
+      {% for consent in payment.consents %}
+      <div class="surface" style="padding:14px 16px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">
+        <strong>{{ consent.document.title }}</strong>
+        <div class="muted" style="margin-top:6px;">{{ consent.document.document_type.value }} / {{ consent.document.version }}</div>
+      </div>
+      {% else %}
+      <div class="muted">Consent-записей нет.</div>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

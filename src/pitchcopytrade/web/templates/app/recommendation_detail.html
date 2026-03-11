@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/app/feed">Лента</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">{{ recommendation.author.display_name }}</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
+    <div style="max-width:820px;">
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">{{ recommendation.title or recommendation.strategy.title }}</h1>
+      <p class="muted" style="margin:16px 0 0;line-height:1.7;">{{ recommendation.summary or recommendation.thesis or "Текст рекомендации будет добавлен позже." }}</p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <span class="pill">{{ recommendation.status.value }}</span>
+      <span class="pill">{{ recommendation.kind.value }}</span>
+    </div>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">thesis</div>
+    <h2 style="margin:10px 0 14px;font-size:1.5rem;">Комментарий автора</h2>
+    <div class="muted" style="line-height:1.75;">
+      {{ recommendation.thesis or recommendation.market_context or recommendation.summary or "Пока без расширенного комментария." }}
+    </div>
+
+    {% if recommendation.legs %}
+    <div class="eyebrow" style="margin-top:24px;">trade plan</div>
+    <div style="display:grid;gap:12px;margin-top:12px;">
+      {% for leg in recommendation.legs %}
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>{{ leg.instrument.ticker if leg.instrument else "Инструмент" }}</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">
+          side: {{ leg.side.value if leg.side else "n/a" }},
+          entry: {{ leg.entry_from or "n/a" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %},
+          stop: {{ leg.stop_loss or "n/a" }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </article>
+
+  <aside class="surface" style="padding:24px;">
+    <div class="eyebrow">meta</div>
+    <div style="display:grid;gap:12px;margin-top:12px;">
+      <div><strong>Стратегия:</strong> <span class="muted">{{ recommendation.strategy.title }}</span></div>
+      <div><strong>Автор:</strong> <span class="muted">{{ recommendation.author.display_name }}</span></div>
+      <div><strong>Опубликовано:</strong> <span class="muted">{{ recommendation.published_at or "не опубликовано" }}</span></div>
+      <div><strong>Вложений:</strong> <span class="muted">{{ recommendation.attachments|length }}</span></div>
+    </div>
+  </aside>
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

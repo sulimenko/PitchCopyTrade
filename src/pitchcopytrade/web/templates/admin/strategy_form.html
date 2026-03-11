@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/strategies">Каталог стратегий</a>
+  <a class="action ghost" href="/admin/products">Продукты</a>
+  <a class="action ghost" href="/admin/payments">Платежи</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">strategy editor</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">
+    {% if strategy %}Редактирование стратегии{% else %}Новая стратегия{% endif %}
+  </h1>
+  <p class="muted" style="max-width:760px;line-height:1.65;margin:16px 0 0;">
+    Карточка должна быть понятной для холодного трафика: кто автор, какой риск, какой порог капитала и почему эта стратегия заслуживает подписки.
+  </p>
+</section>
+
+<section style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,0.8fr);gap:18px;margin-top:18px;">
+  <form class="surface" method="post" action="{% if strategy %}/admin/strategies/{{ strategy.id }}{% else %}/admin/strategies{% endif %}" style="padding:24px;display:grid;gap:18px;">
+    {% if error %}
+    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <label style="display:grid;gap:8px;">
+      <strong>Автор</strong>
+      <select name="author_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
+        {% for author in authors %}
+        <option value="{{ author.id }}" {% if form_values.author_id == author.id %}selected{% endif %}>{{ author.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+      <label style="display:grid;gap:8px;">
+        <strong>Slug</strong>
+        <input type="text" name="slug" value="{{ form_values.slug }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+      </label>
+      <label style="display:grid;gap:8px;">
+        <strong>Минимальный капитал, RUB</strong>
+        <input type="number" name="min_capital_rub" min="0" value="{{ form_values.min_capital_rub }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+      </label>
+    </div>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Название</strong>
+      <input type="text" name="title" value="{{ form_values.title }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    </label>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Короткое описание</strong>
+      <textarea name="short_description" rows="4" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.short_description }}</textarea>
+    </label>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Полное описание</strong>
+      <textarea name="full_description" rows="8" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.full_description }}</textarea>
+    </label>
+
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+      <label style="display:grid;gap:8px;">
+        <strong>Риск</strong>
+        <select name="risk_level" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
+          {% for item in risk_levels %}
+          <option value="{{ item.value }}" {% if form_values.risk_level == item.value %}selected{% endif %}>{{ item.value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="display:grid;gap:8px;">
+        <strong>Статус</strong>
+        <select name="status" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
+          {% for item in strategy_statuses %}
+          <option value="{{ item.value }}" {% if form_values.status == item.value %}selected{% endif %}>{{ item.value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <label style="display:flex;gap:10px;align-items:center;">
+      <input type="checkbox" name="is_public" value="1" {% if form_values.is_public %}checked{% endif %} />
+      <span><strong>Показывать на публичной витрине</strong></span>
+    </label>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <button class="action" type="submit">{% if strategy %}Сохранить изменения{% else %}Создать стратегию{% endif %}</button>
+      <a class="action ghost" href="/admin/strategies">Вернуться к каталогу</a>
+    </div>
+  </form>
+
+  <aside class="surface" style="padding:24px;">
+    <div class="eyebrow">editor guidance</div>
+    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Чек-лист карточки</h2>
+    <div style="display:grid;gap:12px;">
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Оффер в 1 абзац</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Короткое описание должно объяснять подход, а не набор общих слов про рынок.</div>
+      </div>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Прозрачный риск</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Уровень риска и минимальный капитал должны совпадать с реальной тактикой автора.</div>
+      </div>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Public only when ready</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Публичность включайте только после проверки текста, статуса и автора.</div>
+      </div>
+    </div>
+  </aside>
+</section>
+
+<style>
+  @media (max-width: 860px) {
+    section[style*="1.2fr"] { grid-template-columns: 1fr !important; }
+    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

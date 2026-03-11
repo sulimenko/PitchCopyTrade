@@ -46,6 +46,6 @@ docker-compose.override.yml
 
 # Documentation source artifacts
 doc/*
-!doc/Pitch_CopyTrade_Bot_blueprint_for_codex.md
-!doc/Pitch_CopyTrade_Bot_codex_task_pack.md
-!doc/codex_reviewer_master_prompt.md
+!doc/blueprint.md
+!doc/task.md
+!doc/review.md

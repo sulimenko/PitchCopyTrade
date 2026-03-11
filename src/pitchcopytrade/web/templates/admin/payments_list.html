@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/strategies">Стратегии</a>
+  <a class="action ghost" href="/admin/products">Продукты</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">payment review queue</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Платежи и активации</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
+        Очередь ручного подтверждения `stub/manual`: после подтверждения payment подписка активируется без правки БД руками.
+      </p>
+    </div>
+    <div class="pill">{{ payments|length }} payment</div>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px;">
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">pending payments</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ review_stats.pending_payments }}</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">paid payments</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ review_stats.paid_payments }}</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">pending subs</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ review_stats.pending_subscriptions }}</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">active or trial</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ review_stats.active_subscriptions }}</div>
+  </article>
+</section>
+
+<section style="display:grid;gap:14px;margin-top:18px;">
+  {% for payment in payments %}
+  <a class="surface" href="/admin/payments/{{ payment.id }}" style="padding:22px;display:block;">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="max-width:820px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <strong style="font-size:1.15rem;">{{ payment.user.full_name or payment.user.email or payment.user.id }}</strong>
+          <span class="pill">{{ payment.status.value }}</span>
+          <span class="pill">{{ payment.provider.value }}</span>
+        </div>
+        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ payment.product.title }}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <span class="pill">{{ payment.final_amount_rub }} RUB</span>
+          {% if payment.stub_reference %}
+          <span class="pill">{{ payment.stub_reference }}</span>
+          {% endif %}
+          <span class="pill">{{ payment.subscriptions|length }} subscription</span>
+        </div>
+      </div>
+      <div class="muted">Открыть</div>
+    </div>
+  </a>
+  {% else %}
+  <article class="surface" style="padding:24px;">
+    <strong>Платежей пока нет</strong>
+    <p class="muted" style="line-height:1.6;margin:10px 0 0;">После checkout заявки появятся здесь автоматически.</p>
+  </article>
+  {% endfor %}
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  }
+  @media (max-width: 640px) {
+    section[style*="repeat(4"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

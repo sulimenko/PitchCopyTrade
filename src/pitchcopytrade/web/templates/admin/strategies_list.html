@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/products">Продукты</a>
+  <a class="action ghost" href="/admin/payments">Платежи</a>
+  <a class="action" href="/admin/strategies/new">Новая стратегия</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">strategy catalog</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Каталог стратегий</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:720px;line-height:1.65;">
+        Управление описанием, риском, публикацией и базовой коммерческой пригодностью карточек.
+      </p>
+    </div>
+    <div class="pill">{{ strategies|length }} strategy</div>
+  </div>
+</section>
+
+<section style="display:grid;gap:14px;margin-top:18px;">
+  {% for strategy in strategies %}
+  <a class="surface" href="/admin/strategies/{{ strategy.id }}/edit" style="padding:22px;display:block;">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="max-width:780px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <strong style="font-size:1.15rem;">{{ strategy.title }}</strong>
+          <span class="pill">{{ strategy.status.value }}</span>
+          <span class="pill">{{ strategy.risk_level.value }}</span>
+          {% if strategy.is_public %}
+          <span class="pill">public</span>
+          {% endif %}
+        </div>
+        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ strategy.short_description }}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <span class="pill">{{ strategy.slug }}</span>
+          <span class="pill">{{ strategy.author.display_name }}</span>
+          {% if strategy.min_capital_rub %}
+          <span class="pill">от {{ strategy.min_capital_rub }} RUB</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="muted">Открыть</div>
+    </div>
+  </a>
+  {% else %}
+  <article class="surface" style="padding:24px;">
+    <strong>Стратегий пока нет</strong>
+    <p class="muted" style="line-height:1.6;margin:10px 0 0;">Создайте первую карточку и подготовьте ее к публикации на витрине.</p>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

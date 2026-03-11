@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/strategies">Стратегии</a>
+  <a class="action ghost" href="/admin/payments">Платежи</a>
+  <a class="action" href="/admin/products/new">Новый продукт</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">subscription products</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Продукты подписки</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
+        Коммерческий слой над стратегиями, авторами и бандлами: цена, период, trial и разрешение на автопродление.
+      </p>
+    </div>
+    <div class="pill">{{ products|length }} product</div>
+  </div>
+</section>
+
+<section style="display:grid;gap:14px;margin-top:18px;">
+  {% for product in products %}
+  <a class="surface" href="/admin/products/{{ product.id }}/edit" style="padding:22px;display:block;">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="max-width:820px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <strong style="font-size:1.15rem;">{{ product.title }}</strong>
+          <span class="pill">{{ product.product_type.value }}</span>
+          <span class="pill">{{ product.billing_period.value }}</span>
+          {% if product.is_active %}
+          <span class="pill">active</span>
+          {% endif %}
+          {% if product.autorenew_allowed %}
+          <span class="pill">autorenew</span>
+          {% endif %}
+        </div>
+        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ product.description or "Описание пока не заполнено" }}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <span class="pill">{{ product.slug }}</span>
+          <span class="pill">{{ product.price_rub }} RUB</span>
+          <span class="pill">{{ product.trial_days }} trial days</span>
+          {% if product.strategy %}
+          <span class="pill">{{ product.strategy.title }}</span>
+          {% elif product.author %}
+          <span class="pill">{{ product.author.display_name }}</span>
+          {% elif product.bundle %}
+          <span class="pill">{{ product.bundle.title }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="muted">Открыть</div>
+    </div>
+  </a>
+  {% else %}
+  <article class="surface" style="padding:24px;">
+    <strong>Продуктов пока нет</strong>
+    <p class="muted" style="line-height:1.6;margin:10px 0 0;">Создайте первый план подписки для стратегии, автора или bundle.</p>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}
