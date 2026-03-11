@@ -39,6 +39,7 @@ class EnvName:
     BASE_TIMEZONE = "BASE_TIMEZONE"
     AUTH_SESSION_TTL_SECONDS = "AUTH_SESSION_TTL_SECONDS"
     AUTH_SESSION_COOKIE_NAME = "AUTH_SESSION_COOKIE_NAME"
+    APP_STORAGE_ROOT = "APP_STORAGE_ROOT"
     LOG_LEVEL = "LOG_LEVEL"
     LOG_JSON = "LOG_JSON"
 
@@ -128,6 +129,13 @@ class AuthSettings(BaseModel):
     session_cookie_name: str
 
 
+class StorageSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    root: str
+    blob_root: str
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -168,6 +176,7 @@ class Settings(BaseSettings):
     base_timezone: str = Field(default="Europe/Moscow", alias=EnvName.BASE_TIMEZONE)
     auth_session_ttl_seconds: int = Field(default=60 * 60 * 24, alias=EnvName.AUTH_SESSION_TTL_SECONDS)
     auth_session_cookie_name: str = Field(default="pitchcopytrade_session", alias=EnvName.AUTH_SESSION_COOKIE_NAME)
+    app_storage_root: str = Field(default="storage", alias=EnvName.APP_STORAGE_ROOT)
 
     log_level: str = Field(default="INFO", alias=EnvName.LOG_LEVEL)
     log_json: bool = Field(default=False, alias=EnvName.LOG_JSON)
@@ -218,6 +227,14 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError("AUTH_SESSION_TTL_SECONDS must be positive")
         return value
+
+    @field_validator("app_storage_root")
+    @classmethod
+    def validate_storage_root(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            raise ValueError("APP_STORAGE_ROOT must not be empty")
+        return normalized
 
     @field_validator("telegram_webhook_secret")
     @classmethod
@@ -295,6 +312,14 @@ class Settings(BaseSettings):
         return AuthSettings(
             session_ttl_seconds=self.auth_session_ttl_seconds,
             session_cookie_name=self.auth_session_cookie_name,
+        )
+
+    @property
+    def storage(self) -> StorageSettings:
+        root = self.app_storage_root
+        return StorageSettings(
+            root=root,
+            blob_root=f"{root}/blob",
         )
 
 

@@ -30,6 +30,7 @@
 - worker scheduled publish baseline
 - delivery notifications baseline
 - Telegram-first subscriber baseline
+- local filesystem storage backend baseline
 
 Но текущее архитектурное решение изменилось:
 - subscriber должен оставаться `Telegram-first`;
@@ -147,6 +148,7 @@
 ## 5. Что считается правильным направлением
 Reviewer должен считать хорошим признаком:
 - появление local filesystem storage backend;
+- перевод attachment routes на provider-aware branch;
 - появление repository abstraction;
 - появление file-mode seed/bootstrap path;
 - уменьшение прямой зависимости routes/services от `AsyncSession`;

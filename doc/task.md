@@ -131,7 +131,15 @@ Process rule:
 
 ## 3. Новый обязательный migration track
 
-### 18. Local filesystem storage foundation `[todo]`
+### 18. Local filesystem storage foundation `[partial]`
+Сделано:
+- общий storage contract
+- `LocalFilesystemStorage`
+- `APP_STORAGE_ROOT`
+- default local blob root `storage/blob`
+- local storage tests
+- attachment download path understands `storage_provider=local_fs`
+
 Сделать:
 - ввести canonical storage root `storage/`
 - описать subfolders:
@@ -139,7 +147,7 @@ Process rule:
   - `json`
   - `parquet`
   - `runtime`
-- реализовать local storage adapter как primary backend
+- сделать local storage adapter primary backend for author/document flows
 
 Acceptance:
 - attachments можно сохранять и читать без `MinIO`
@@ -182,9 +190,13 @@ Acceptance:
 Acceptance:
 - можно пройти demo flow без PostgreSQL
 
-### 22. Local attachment and legal files `[todo]`
+### 22. Local attachment and legal files `[partial]`
+Сделано:
+- local attachment backend exists
+- local attachment download branch exists
+
 Сделать:
-- author uploads в `storage/blob`
+- author uploads по умолчанию в `storage/blob`
 - subscriber downloads из `storage/blob`
 - legal document source files локально
 

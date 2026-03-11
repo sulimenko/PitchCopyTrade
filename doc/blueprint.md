@@ -92,6 +92,7 @@ Canonical subscriber model остается:
 - publish / schedule baseline
 - worker-based scheduled publish baseline
 - delivery notifications baseline
+- local filesystem storage backend baseline with `APP_STORAGE_ROOT=storage`
 
 ## 4. Что показало исследование текущего состояния
 
@@ -107,7 +108,13 @@ Canonical subscriber model остается:
 - storage adapter реализован как `MinioStorage`;
 - attachment upload/download идут через bucket/object-key;
 - compose все еще включает `minio` как штатный сервис;
-- локальный filesystem storage как canonical backend пока отсутствует.
+- локальный filesystem storage как canonical primary backend пока еще не доведен до конца.
+
+Уточнение по текущему состоянию:
+- local filesystem storage backend уже добавлен в код;
+- его root идет из `APP_STORAGE_ROOT` и по умолчанию использует `storage/blob`;
+- route download уже поддерживает `storage_provider=local_fs`;
+- но primary upload path все еще не переключен на local filesystem по умолчанию.
 
 ### 4.3 Что это означает practically
 На сегодня проект:
@@ -230,7 +237,19 @@ Primary persistence target:
 - углублять проект в `MinIO-only` path;
 - считать `MinIO` canonical storage model.
 
-### 9.2 DB-only repositories
+### 9.2 Local filesystem backend
+На текущем этапе уже существует baseline:
+- общий storage contract;
+- `LocalFilesystemStorage`;
+- конфиг `APP_STORAGE_ROOT`;
+- совместимость attachment download route с `local_fs`.
+
+Но это еще не final state:
+- author uploads по умолчанию пока не переведены на local backend;
+- legal docs еще не вынесены в локальный storage flow;
+- compose/runtime пока не очищены от MinIO-first assumptions.
+
+### 9.3 DB-only repositories
 С этого момента `DB-only` runtime считается transitional.
 
 Допустимо:
@@ -274,7 +293,7 @@ Service layer не должен знать, где лежат данные:
 
 ### 11.1 Local storage done
 Будет считаться готовым, когда:
-- author uploads идут в локальную файловую систему;
+- author uploads по умолчанию идут в локальную файловую систему;
 - subscriber downloads идут из локальной файловой системы;
 - legal docs хранятся локально;
 - проект не требует `MinIO` для локального запуска.

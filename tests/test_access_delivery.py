@@ -262,6 +262,34 @@ def test_recommendation_attachment_download(monkeypatch) -> None:
         assert response.content == b"%PDF-1.4"
 
 
+def test_recommendation_attachment_download_from_local_storage(monkeypatch) -> None:
+    user = _make_user()
+    recommendation = _make_recommendation()
+    recommendation.attachments[0].storage_provider = "local_fs"
+    recommendation.attachments[0].bucket_name = "blob"
+
+    class DummyLocalStorage:
+        def __init__(self, bucket_name=None):
+            self.bucket_name = bucket_name
+
+        def download_bytes(self, object_key: str) -> bytes:
+            assert object_key == "recommendations/rec-1/file.pdf"
+            return b"%PDF-local"
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_user_visible_recommendation",
+        lambda _session, user_id, recommendation_id: _async_return(recommendation),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.app.LocalFilesystemStorage", DummyLocalStorage)
+
+    with _build_client(user) as client:
+        response = client.get("/app/recommendations/rec-1/attachments/att-1")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/pdf")
+        assert response.content == b"%PDF-local"
+
+
 @pytest.mark.asyncio
 async def test_feed_handler_denies_unknown_telegram_user(monkeypatch) -> None:
     message = AsyncMock()

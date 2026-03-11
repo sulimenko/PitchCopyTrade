@@ -32,6 +32,7 @@ Telegram-first платформа для продажи подписок на с
 - Telegram-first subscriber baseline
 - scheduled publish baseline
 - delivery notifications baseline
+- local filesystem storage backend baseline with root `storage/blob`
 
 ## Архитектурный сдвиг
 Новая целевая схема:
@@ -62,7 +63,7 @@ Telegram-first платформа для продажи подписок на с
 Жесткие зависимости, которые сейчас есть:
 - config валидирует только `PostgreSQL` DSN;
 - DB session создается сразу через `SQLAlchemy async engine`;
-- attachment storage реализован через `MinIO`;
+- local filesystem storage backend уже добавлен, но primary attachment flow все еще по умолчанию ориентирован на `MinIO`;
 - `docker-compose.yml` все еще поднимает `minio` как штатный сервис;
 - attachment flow и metadata пока ориентированы на bucket/object-key path.
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from io import BytesIO
 from typing import BinaryIO
 
@@ -9,19 +8,12 @@ from minio.deleteobjects import DeleteObject
 from minio.helpers import ObjectWriteResult
 
 from pitchcopytrade.core.config import get_settings
-
-
-@dataclass(frozen=True)
-class StorageObject:
-    bucket_name: str
-    object_key: str
-    content_type: str
-    size_bytes: int
-    etag: str | None = None
-    version_id: str | None = None
+from pitchcopytrade.storage.base import StorageObject
 
 
 class MinioStorage:
+    provider_name = "minio"
+
     def __init__(self, client: Minio | None = None, bucket_name: str | None = None) -> None:
         settings = get_settings()
         self.bucket_name = bucket_name or settings.minio.bucket_uploads

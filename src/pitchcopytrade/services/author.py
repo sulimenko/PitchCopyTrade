@@ -16,6 +16,7 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, TradeSide
+from pitchcopytrade.storage.base import StorageBackend
 from pitchcopytrade.storage.minio import MinioStorage
 
 MAX_EDITOR_LEGS = 3
@@ -160,7 +161,7 @@ async def create_author_recommendation(
     data: RecommendationFormData,
     *,
     uploaded_by_user_id: str | None = None,
-    storage: MinioStorage | None = None,
+    storage: StorageBackend | None = None,
 ) -> Recommendation:
     recommendation = Recommendation(
         author_id=author.id,
@@ -197,7 +198,7 @@ async def update_author_recommendation(
     data: RecommendationFormData,
     *,
     uploaded_by_user_id: str | None = None,
-    storage: MinioStorage | None = None,
+    storage: StorageBackend | None = None,
 ) -> Recommendation:
     recommendation.strategy_id = data.strategy_id
     recommendation.kind = data.kind
@@ -503,7 +504,7 @@ async def _store_attachments(
     *,
     attachments: list[IncomingAttachment],
     uploaded_by_user_id: str | None,
-    storage: MinioStorage,
+    storage: StorageBackend,
 ) -> None:
     storage.bootstrap()
     for item in attachments:
@@ -513,7 +514,7 @@ async def _store_attachments(
             RecommendationAttachment(
                 recommendation_id=recommendation.id,
                 uploaded_by_user_id=uploaded_by_user_id,
-                storage_provider="minio",
+                storage_provider=storage.provider_name,
                 bucket_name=stored.bucket_name,
                 object_key=stored.object_key,
                 original_filename=item.filename,
