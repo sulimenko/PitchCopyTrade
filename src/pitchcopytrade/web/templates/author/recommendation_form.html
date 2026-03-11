@@ -4,6 +4,9 @@
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a class="action ghost" href="/author/recommendations">Назад к списку</a>
   <a class="action ghost" href="/author/dashboard">Dashboard</a>
+  {% if recommendation %}
+  <a class="action ghost" href="/author/recommendations/{{ recommendation.id }}/preview">Preview</a>
+  {% endif %}
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
 {% endblock %}

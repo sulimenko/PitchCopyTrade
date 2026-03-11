@@ -257,6 +257,21 @@ def test_author_recommendation_edit_page_renders(monkeypatch) -> None:
         assert "Покупка SBER" in response.text
 
 
+def test_author_recommendation_preview_renders_subscriber_view(monkeypatch) -> None:
+    author_user = _make_author_user()
+    recommendation = _make_recommendation()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", lambda _session, _author, _id: _async_return(recommendation))
+
+    with _build_client(author_user) as client:
+        response = client.get("/author/recommendations/rec-1/preview")
+
+        assert response.status_code == 200
+        assert "author preview" in response.text
+        assert "Покупка SBER" in response.text
+
+
 def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
     author_user = _make_author_user()
     strategy = _make_strategy()

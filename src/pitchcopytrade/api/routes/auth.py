@@ -172,7 +172,7 @@ def _resolve_role_redirect(user) -> str:
     if RoleSlug.AUTHOR.value in role_labels:
         return "/author/dashboard"
     if RoleSlug.MODERATOR.value in role_labels:
-        return "/workspace"
+        return "/moderation/queue"
     return "/login"
 
 

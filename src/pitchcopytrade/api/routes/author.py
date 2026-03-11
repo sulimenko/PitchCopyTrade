@@ -180,6 +180,30 @@ async def recommendation_edit_page(
     )
 
 
+@router.get("/recommendations/{recommendation_id}/preview", response_class=HTMLResponse)
+async def recommendation_preview_page(
+    recommendation_id: str,
+    request: Request,
+    user: User = Depends(require_author),
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    author = await _get_author_or_403(session, user)
+    recommendation = await get_author_recommendation(session, author, recommendation_id)
+    if recommendation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+    return templates.TemplateResponse(
+        request,
+        "app/recommendation_detail.html",
+        {
+            "title": recommendation.title or recommendation.strategy.title,
+            "user": user,
+            "recommendation": recommendation,
+            "preview_mode": True,
+            "attachment_download_enabled": False,
+        },
+    )
+
+
 @router.post("/recommendations/{recommendation_id}", response_class=HTMLResponse)
 async def recommendation_edit_submit(
     recommendation_id: str,

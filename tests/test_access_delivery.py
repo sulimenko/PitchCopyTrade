@@ -15,9 +15,9 @@ from pitchcopytrade.bot.dispatcher import build_dispatcher
 from pitchcopytrade.bot.handlers.feed import handle_feed, handle_web
 from pitchcopytrade.bot.handlers.shop import handle_buy_confirm, handle_buy_preview, handle_catalog
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
-from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
+from pitchcopytrade.db.models.catalog import Instrument, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.content import Recommendation
+from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     PaymentProvider,
@@ -29,6 +29,8 @@ from pitchcopytrade.db.models.enums import (
     RoleSlug,
     StrategyStatus,
     SubscriptionStatus,
+    TradeSide,
+    InstrumentType,
 )
 from pitchcopytrade.db.session import get_db_session
 
@@ -85,8 +87,39 @@ def _make_recommendation() -> Recommendation:
     )
     recommendation.strategy = strategy
     recommendation.author = author
-    recommendation.legs = []
-    recommendation.attachments = []
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    leg = RecommendationLeg(
+        id="leg-1",
+        recommendation_id="rec-1",
+        instrument_id="instrument-1",
+        side=TradeSide.BUY,
+        entry_from=101.5,
+        stop_loss=99.9,
+        take_profit_1=106.2,
+        time_horizon="1-3 дня",
+        note="Основной сценарий",
+    )
+    leg.instrument = instrument
+    attachment = RecommendationAttachment(
+        id="att-1",
+        recommendation_id="rec-1",
+        bucket_name="uploads",
+        object_key="recommendations/rec-1/file.pdf",
+        original_filename="idea.pdf",
+        content_type="application/pdf",
+        size_bytes=1234,
+    )
+    recommendation.legs = [leg]
+    recommendation.attachments = [attachment]
     return recommendation
 
 
@@ -198,6 +231,35 @@ def test_recommendation_detail_requires_visible_acl(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Покупка SBER" in response.text
         assert "Momentum RU" in response.text
+        assert "idea.pdf" in response.text
+        assert "tp1 106.2" in response.text
+
+
+def test_recommendation_attachment_download(monkeypatch) -> None:
+    user = _make_user()
+    recommendation = _make_recommendation()
+
+    class DummyStorage:
+        def __init__(self, bucket_name=None):
+            self.bucket_name = bucket_name
+
+        def download_bytes(self, object_key: str) -> bytes:
+            assert object_key == "recommendations/rec-1/file.pdf"
+            return b"%PDF-1.4"
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_user_visible_recommendation",
+        lambda _session, user_id, recommendation_id: _async_return(recommendation),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.app.MinioStorage", DummyStorage)
+
+    with _build_client(user) as client:
+        response = client.get("/app/recommendations/rec-1/attachments/att-1")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/pdf")
+        assert "idea.pdf" in response.headers["content-disposition"]
+        assert response.content == b"%PDF-1.4"
 
 
 @pytest.mark.asyncio
@@ -249,6 +311,8 @@ async def test_feed_handler_returns_visible_items(monkeypatch) -> None:
     sent_text = message.answer.await_args.args[0]
     assert "Ваши доступные рекомендации" in sent_text
     assert "Покупка SBER" in sent_text
+    assert "SBER buy 101.5" in sent_text
+    assert "1 files" in sent_text
 
 
 def test_build_dispatcher_registers_feed_handler() -> None:

@@ -35,6 +35,9 @@ Telegram-first платформа для продажи подписок на с
 - structured legs editor
 - MinIO attachments in author editor
 - publish/schedule baseline
+- author preview
+- moderation queue
+- subscriber-facing detail rendering with attachment download
 - public catalog
 - checkout `stub/manual`
 - payment review -> confirm -> subscription activation
@@ -74,16 +77,17 @@ Telegram-first платформа для продажи подписок на с
 - собирает structured legs по сделке
 - прикладывает PDF и изображения
 - может вести идею через `draft / review / approved / scheduled / published / closed / cancelled`
+- открывает preview до публикации
 
 Что получит после следующих шагов:
-- preview и subscriber-facing rendering
 - удаление и управление вложениями
-- moderation flow по правилам автора
+- полную moderation history / timeline
 
 Польза:
 - уже есть рабочий контур создания публикаций
 - уже есть базовый publish pipeline и структура сделки
-- дальше добавится moderation и delivery richness
+- уже есть preview и модерационный контур
+- дальше добавится delivery richness и lifecycle polish
 
 ### Обычный user / subscriber
 Что делает сейчас:
@@ -104,15 +108,15 @@ Telegram-first платформа для продажи подписок на с
 ### Moderator
 Что делает сейчас:
 - входит в staff web через `login/password`
-- имеет staff workspace placeholder
+- работает в `/moderation/queue`
+- открывает публикацию и видит subscriber-facing content
+- может `approve / rework / reject`
 
 Что получит после следующих шагов:
-- moderation queue
-- approve / reject / rework flow
-- контроль качества публикаций по авторам
+- историю решений
+- дополнительные фильтры и SLA-контроль
 
 ## Что осталось сделать
-- moderation queue
 - Telegram-first consent UX
 - richer bot UX с кнопками и Mini App / WebApp
 - attachments management UX

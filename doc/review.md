@@ -13,6 +13,7 @@
 - admin web contour
 - author workspace baseline
 - author publish/legs/attachments baseline
+- preview/moderation/rendering baseline
 - strategy/product CRUD
 - public storefront
 - checkout stub/manual
@@ -122,6 +123,14 @@
 - leg shape не расползается по template и service разными правилами;
 - attachment upload идет в MinIO metadata path, а не в локальные файлы;
 - upload validation не пропускает пустые или неподдерживаемые файлы.
+
+### J. Preview / moderation / rendering
+Проверь:
+- author preview не обходит author scope;
+- moderator видит только queue/detail/actions, без лишних staff powers;
+- approve/rework/reject не ломают publish timestamps;
+- subscriber detail и attachment download остаются под ACL;
+- rendering не теряет structured legs и attachment metadata.
 
 ## 4. Partial / transitional areas
 Это не automatic finding само по себе, но reviewer должен проверять drift:

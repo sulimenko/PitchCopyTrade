@@ -126,14 +126,23 @@
 - structured legs editor
 - attachment upload through MinIO
 - scheduled/published/closed/cancelled state timestamps
+- preview route with subscriber-facing template
 
-### 5.6 Public storefront baseline
+### 5.6 Moderation baseline
+Есть:
+- `/moderation/queue`
+- moderation detail page
+- approve / rework / reject actions
+- moderation audit event write
+- moderator login redirect
+
+### 5.7 Public storefront baseline
 Есть:
 - `/catalog`
 - `/catalog/strategies/{slug}`
 - web fallback checkout flow
 
-### 5.7 Telegram-first subscriber baseline
+### 5.8 Telegram-first subscriber baseline
 Есть:
 - `/start` creates or updates minimal Telegram subscriber profile
 - bot `/catalog`
@@ -142,13 +151,15 @@
 - bot `/web` for Telegram-authenticated web fallback link
 - dedicated Telegram fallback cookie issued by `/tg-auth`
 
-### 5.8 Access delivery baseline
+### 5.9 Access delivery baseline
 Есть:
 - ACL service
 - `/app/feed`
 - recommendation detail with ACL gate
 - bot `/feed` with active/trial gate
 - `/app/*` fallback now depends on Telegram-issued access, not on staff web session
+- attachment download path under ACL
+- richer recommendation rendering for legs and attachments
 
 ## 6. Что в текущем коде считается transitional и подлежит переделке
 
@@ -269,15 +280,19 @@ Baseline уже есть:
 Нужно доделать:
 - richer prototype-based workspace;
 - drafts UX;
-- preview;
+- preview polish;
 - validation depth;
 - attach/delete UX.
 
 ### 11.4 Moderation
-Нужно сделать:
+Baseline уже есть:
 - moderation queue;
-- optional moderation per author;
 - approve/reject/rework flow.
+
+Нужно доделать:
+- optional moderation per author;
+- filters, SLA and history UX;
+- moderation analytics.
 
 ### 11.5 Publish flow
 Baseline уже есть:
@@ -297,7 +312,7 @@ Baseline уже есть:
 - MinIO persistence from author editor.
 
 Нужно доделать:
-- subscriber rendering/download path;
+- subscriber rendering/download path polish;
 - deletion/replacement UX;
 - attachment policy hardening.
 
@@ -344,9 +359,10 @@ Baseline уже есть:
 - admin коммерческий baseline: реализован
 - author workspace baseline: реализован
 - publish/legs/attachments baseline: реализован
+- preview/moderation/rendering baseline: реализован
 - ACL delivery baseline: реализован
 - Telegram-first bot baseline: реализован
 - subscriber password removed from web fallback checkout
 - Telegram-auth-only web fallback baseline: реализован
 - optional docker postgres profile and external DSN mode: зафиксированы
-- главный следующий шаг: preview, moderation queue и subscriber-facing rendering
+- главный следующий шаг: lifecycle polish, worker-based scheduling и Telegram UX depth

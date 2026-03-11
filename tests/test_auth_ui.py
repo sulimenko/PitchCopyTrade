@@ -64,6 +64,12 @@ def _make_admin_user() -> User:
     return user
 
 
+def _make_moderator_user() -> User:
+    user = _make_user()
+    user.roles = [Role(slug=RoleSlug.MODERATOR, title="Moderator")]
+    return user
+
+
 def _build_client(session: FakeAsyncSession) -> TestClient:
     app = create_app()
 
@@ -159,6 +165,19 @@ def test_app_redirects_admin_to_dashboard() -> None:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/admin/dashboard"
+
+
+def test_login_page_redirects_moderator_to_queue() -> None:
+    session = FakeAsyncSession()
+    user = _make_moderator_user()
+    session.users_by_id[user.id] = user
+
+    with _build_client(session) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/login", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/moderation/queue"
 
 
 def test_tg_auth_sets_session_cookie_and_redirects_to_feed() -> None:

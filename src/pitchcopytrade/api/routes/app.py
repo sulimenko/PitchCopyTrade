@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import get_current_subscriber_user
@@ -12,6 +12,7 @@ from pitchcopytrade.services.acl import (
     list_user_visible_recommendations,
     user_has_active_access,
 )
+from pitchcopytrade.storage.minio import MinioStorage
 from pitchcopytrade.web.templates import templates
 
 
@@ -59,5 +60,31 @@ async def recommendation_detail_page(
             "title": recommendation.title or "Рекомендация",
             "user": user,
             "recommendation": recommendation,
+            "preview_mode": False,
+            "attachment_download_enabled": True,
         },
     )
+
+
+@router.get("/recommendations/{recommendation_id}/attachments/{attachment_id}")
+async def recommendation_attachment_download(
+    recommendation_id: str,
+    attachment_id: str,
+    user: User = Depends(get_current_subscriber_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    recommendation = await get_user_visible_recommendation(
+        session,
+        user_id=user.id,
+        recommendation_id=recommendation_id,
+    )
+    if recommendation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+
+    attachment = next((item for item in recommendation.attachments if item.id == attachment_id), None)
+    if attachment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+
+    payload = MinioStorage(bucket_name=attachment.bucket_name).download_bytes(attachment.object_key)
+    headers = {"Content-Disposition": f'attachment; filename="{attachment.original_filename}"'}
+    return StreamingResponse(iter([payload]), media_type=attachment.content_type, headers=headers)

@@ -34,7 +34,17 @@ async def handle_feed(message: Message) -> None:
         lines = ["Ваши доступные рекомендации:"]
         for item in recommendations:
             title = item.title or item.strategy.title
-            lines.append(f"- {title} | {item.strategy.title} | {item.status.value}")
+            parts = [f"- {title}", item.strategy.title, item.status.value]
+            if item.legs:
+                first_leg = item.legs[0]
+                instrument = first_leg.instrument.ticker if first_leg.instrument else "инструмент"
+                parts.append(
+                    f"{instrument} {first_leg.side.value if first_leg.side else 'n/a'} "
+                    f"{first_leg.entry_from or 'n/a'}"
+                )
+            if item.attachments:
+                parts.append(f"{len(item.attachments)} files")
+            lines.append(" | ".join(parts))
         await message.answer("\n".join(lines))
 
 

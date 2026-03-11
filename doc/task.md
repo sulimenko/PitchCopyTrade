@@ -206,10 +206,10 @@ Acceptance:
 - base status/kind editing
 - structured legs editor
 - attachment upload
+- preview route
 
 Не сделано:
 - richer workspace UX from prototype
-- preview
 - validation depth
 - attachment delete/replace UX
 
@@ -224,20 +224,26 @@ Acceptance:
 - worker-based scheduled publish
 - moderation-aware transitions
 
-### 26. Moderation queue `[todo]`
-Сделать:
+### 26. Moderation queue `[partial]`
+Сделано:
 - moderator queue
-- optional moderation rules
 - approve/reject/rework
+- moderation detail page
+- moderation audit write baseline
+
+Не сделано:
+- optional moderation rules
+- filters/history/SLA UX
 
 ### 27. Attachments through MinIO `[partial]`
 Сделано:
 - author upload
 - validation
 - MinIO persistence baseline
+- subscriber download baseline
 
 Не сделано:
-- subscriber access path
+- richer subscriber rendering path polish
 - attach/delete UX
 
 ### 28. Instruments and leg UX `[partial]`
