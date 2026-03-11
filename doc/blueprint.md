@@ -89,6 +89,7 @@ Canonical subscriber model остается:
   - `/web`
 - Telegram-auth fallback cookie for `/app/*`
 - ACL-gated web feed and bot feed
+- validated test bot token smoke via Telegram API `getMe`
 
 ### 3.5 Recommendation lifecycle baseline
 Есть:
@@ -237,6 +238,7 @@ Primary persistence target:
 Текущее подтверждение:
 - `api` стартует и отдает `catalog`, `legal`, `staff login`;
 - `bot` стартует на уровне runtime bootstrap и dispatcher assembly;
+- test bot token resolves against Telegram API and returns expected bot identity;
 - `worker` выполняет `run_worker_once()` без PostgreSQL и без MinIO.
 
 ### 6.3 Demo seed baseline

@@ -276,6 +276,7 @@ Acceptance:
 Сделано:
 - `api` cold-start smoke in `APP_DATA_MODE=file`
 - `bot` cold-start smoke in `APP_DATA_MODE=file`
+- real Telegram API smoke for test bot `Avt09_Bot`
 - `worker` cold-start smoke in `APP_DATA_MODE=file`
 - public catalog/legal flow works without PostgreSQL
 - bot shop handlers work with file repository path
@@ -285,6 +286,7 @@ Acceptance:
 Acceptance:
 - `api + bot + worker` можно поднимать без PostgreSQL и без MinIO
 - локальный smoke path опирается на committed seed + ignored runtime tree
+- test bot token from `.env` подтвержден реальным `getMe` check
 
 ## 4. Что уже реализовано и должно сохраниться в refactor
 

@@ -155,6 +155,12 @@ Telegram-first платформа для продажи подписок на с
   - username: `Avt09Bot`
   - token хранится в [`.env`](/Users/alexey/site/PitchCopyTrade/.env) закомментированным
 
+Telegram smoke baseline:
+- `getMe` для test bot подтвержден
+- Telegram username resolved as `avt09_bot`
+- webhook state is empty
+- pending updates at check time: `0`
+
 ## Ближайшая цель
 Быстрый путь к тестированию сейчас такой:
 1. внедрить local filesystem storage backend;
