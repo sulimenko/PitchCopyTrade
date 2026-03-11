@@ -1,0 +1,349 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+
+import pytest
+
+from pitchcopytrade.db.models.accounts import User
+from pitchcopytrade.db.models.enums import (
+    LegalDocumentType,
+    RecommendationKind,
+    RecommendationStatus,
+    SubscriptionStatus,
+    TradeSide,
+)
+from pitchcopytrade.repositories.access import FileAccessRepository
+from pitchcopytrade.repositories.author import FileAuthorRepository
+from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.repositories.public import FilePublicRepository
+from pitchcopytrade.services.author import IncomingAttachment, RecommendationFormData, StructuredLegFormData, create_author_recommendation
+from pitchcopytrade.storage.local import LocalFilesystemStorage
+
+
+def _seed_demo_json(store: FileDataStore) -> None:
+    now = datetime(2026, 3, 11, tzinfo=timezone.utc).isoformat()
+    store.save_many(
+        {
+            "roles": [
+                {"id": "role-admin", "slug": "admin", "title": "Admin", "created_at": now, "updated_at": now},
+                {"id": "role-author", "slug": "author", "title": "Author", "created_at": now, "updated_at": now},
+            ],
+            "users": [
+                {
+                    "id": "user-author",
+                    "email": "author@example.com",
+                    "telegram_user_id": 111,
+                    "username": "author1",
+                    "full_name": "Author One",
+                    "password_hash": "hash",
+                    "status": "active",
+                    "timezone": "Europe/Moscow",
+                    "lead_source_id": None,
+                    "role_ids": ["role-author"],
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                {
+                    "id": "user-sub",
+                    "email": "sub@example.com",
+                    "telegram_user_id": 222,
+                    "username": "sub1",
+                    "full_name": "Subscriber One",
+                    "password_hash": None,
+                    "status": "active",
+                    "timezone": "Europe/Moscow",
+                    "lead_source_id": None,
+                    "role_ids": [],
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            ],
+            "authors": [
+                {
+                    "id": "author-1",
+                    "user_id": "user-author",
+                    "display_name": "Author One",
+                    "slug": "author-one",
+                    "bio": None,
+                    "requires_moderation": False,
+                    "is_active": True,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "lead_sources": [],
+            "instruments": [
+                {
+                    "id": "instrument-1",
+                    "ticker": "SBER",
+                    "name": "Sberbank",
+                    "board": "TQBR",
+                    "lot_size": 10,
+                    "currency": "RUB",
+                    "instrument_type": "equity",
+                    "is_active": True,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "strategies": [
+                {
+                    "id": "strategy-1",
+                    "author_id": "author-1",
+                    "slug": "momentum-ru",
+                    "title": "Momentum RU",
+                    "short_description": "desc",
+                    "full_description": "full",
+                    "risk_level": "medium",
+                    "status": "published",
+                    "min_capital_rub": 150000,
+                    "is_public": True,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "bundles": [],
+            "bundle_members": [],
+            "products": [
+                {
+                    "id": "product-1",
+                    "product_type": "strategy",
+                    "slug": "momentum-ru-month",
+                    "title": "Momentum RU Monthly",
+                    "description": None,
+                    "strategy_id": "strategy-1",
+                    "author_id": None,
+                    "bundle_id": None,
+                    "billing_period": "month",
+                    "price_rub": 4900,
+                    "trial_days": 7,
+                    "is_active": True,
+                    "autorenew_allowed": True,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "legal_documents": [
+                {
+                    "id": f"doc-{doc_type.value}",
+                    "document_type": doc_type.value,
+                    "version": "v1",
+                    "title": f"{doc_type.value} v1",
+                    "content_md": "text",
+                    "is_active": True,
+                    "published_at": now,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                for doc_type in (
+                    LegalDocumentType.DISCLAIMER,
+                    LegalDocumentType.OFFER,
+                    LegalDocumentType.PRIVACY_POLICY,
+                    LegalDocumentType.PAYMENT_CONSENT,
+                )
+            ],
+            "payments": [
+                {
+                    "id": "payment-1",
+                    "user_id": "user-sub",
+                    "product_id": "product-1",
+                    "promo_code_id": None,
+                    "provider": "stub_manual",
+                    "status": "paid",
+                    "amount_rub": 4900,
+                    "discount_rub": 0,
+                    "final_amount_rub": 4900,
+                    "currency": "RUB",
+                    "external_id": None,
+                    "stub_reference": "MANUAL-1",
+                    "provider_payload": None,
+                    "expires_at": (datetime(2026, 3, 12, tzinfo=timezone.utc)).isoformat(),
+                    "confirmed_at": now,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "subscriptions": [
+                {
+                    "id": "sub-1",
+                    "user_id": "user-sub",
+                    "product_id": "product-1",
+                    "payment_id": "payment-1",
+                    "lead_source_id": None,
+                    "applied_promo_code_id": None,
+                    "status": "active",
+                    "autorenew_enabled": True,
+                    "is_trial": False,
+                    "manual_discount_rub": 0,
+                    "start_at": now,
+                    "end_at": (datetime(2026, 4, 10, tzinfo=timezone.utc)).isoformat(),
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "user_consents": [],
+            "recommendations": [
+                {
+                    "id": "rec-1",
+                    "strategy_id": "strategy-1",
+                    "author_id": "author-1",
+                    "moderated_by_user_id": None,
+                    "kind": "new_idea",
+                    "status": "published",
+                    "title": "Покупка SBER",
+                    "summary": "Сильный спрос",
+                    "thesis": "Тезис",
+                    "market_context": "Контекст",
+                    "requires_moderation": False,
+                    "scheduled_for": None,
+                    "published_at": now,
+                    "closed_at": None,
+                    "cancelled_at": None,
+                    "moderation_comment": None,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "recommendation_legs": [
+                {
+                    "id": "leg-1",
+                    "recommendation_id": "rec-1",
+                    "instrument_id": "instrument-1",
+                    "side": "buy",
+                    "entry_from": "101.5",
+                    "entry_to": "102.0",
+                    "stop_loss": "99.9",
+                    "take_profit_1": "106.2",
+                    "take_profit_2": None,
+                    "take_profit_3": None,
+                    "time_horizon": "1-3 дня",
+                    "note": "Основной сценарий",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "recommendation_attachments": [
+                {
+                    "id": "att-1",
+                    "recommendation_id": "rec-1",
+                    "uploaded_by_user_id": "user-author",
+                    "storage_provider": "local_fs",
+                    "bucket_name": "blob",
+                    "object_key": "recommendations/rec-1/file.pdf",
+                    "original_filename": "idea.pdf",
+                    "content_type": "application/pdf",
+                    "size_bytes": 1234,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_file_author_repository_reads_seeded_entities(tmp_path) -> None:
+    store = FileDataStore(root_dir=tmp_path / "storage" / "json")
+    _seed_demo_json(store)
+    repo = FileAuthorRepository(store)
+
+    author = await repo.get_author_by_user_id("user-author")
+    assert author is not None
+
+    strategies = await repo.list_author_strategies(author.id)
+    recommendations = await repo.list_author_recommendations(author.id)
+
+    assert len(strategies) == 1
+    assert strategies[0].title == "Momentum RU"
+    assert len(recommendations) == 1
+    assert recommendations[0].attachments[0].storage_provider == "local_fs"
+
+
+@pytest.mark.asyncio
+async def test_file_author_repository_persists_new_recommendation_and_attachments(tmp_path) -> None:
+    store = FileDataStore(root_dir=tmp_path / "storage" / "json")
+    _seed_demo_json(store)
+    repo = FileAuthorRepository(store)
+    author = await repo.get_author_by_user_id("user-author")
+    assert author is not None
+
+    recommendation = await create_author_recommendation(
+        repo,
+        author,
+        RecommendationFormData(
+            strategy_id="strategy-1",
+            kind=RecommendationKind.NEW_IDEA,
+            status=RecommendationStatus.DRAFT,
+            title="Новая идея",
+            summary="summary",
+            thesis="thesis",
+            market_context="context",
+            requires_moderation=False,
+            scheduled_for=None,
+            legs=[
+                StructuredLegFormData(
+                    instrument_id="instrument-1",
+                    side=TradeSide.BUY,
+                    entry_from=Decimal("100.1"),
+                    entry_to=Decimal("101.2"),
+                    stop_loss=Decimal("98.7"),
+                    take_profit_1=Decimal("106.0"),
+                    take_profit_2=None,
+                    take_profit_3=None,
+                    time_horizon="1-2 дня",
+                    note="test leg",
+                )
+            ],
+            attachments=[
+                IncomingAttachment(
+                    filename="new-idea.pdf",
+                    content_type="application/pdf",
+                    data=b"pdf-data",
+                )
+            ],
+        ),
+        uploaded_by_user_id="user-author",
+        storage=LocalFilesystemStorage(root_dir=tmp_path / "storage" / "blob"),
+    )
+
+    persisted_repo = FileAuthorRepository(store)
+    persisted = await persisted_repo.get_author_recommendation(author.id, recommendation.id)
+
+    assert persisted is not None
+    assert persisted.title == "Новая идея"
+    assert len(persisted.legs) == 1
+    assert len(persisted.attachments) == 1
+    assert persisted.attachments[0].storage_provider == "local_fs"
+    assert (tmp_path / "storage" / "blob" / persisted.attachments[0].object_key).exists()
+
+
+@pytest.mark.asyncio
+async def test_file_access_repository_resolves_active_access_and_visible_feed(tmp_path) -> None:
+    store = FileDataStore(root_dir=tmp_path / "storage" / "json")
+    _seed_demo_json(store)
+    repo = FileAccessRepository(store)
+
+    user = await repo.get_user_by_telegram_id(222)
+    assert user is not None
+    assert await repo.user_has_active_access(user.id) is True
+
+    recommendations = await repo.list_user_visible_recommendations(user_id=user.id)
+    assert len(recommendations) == 1
+    assert recommendations[0].title == "Покупка SBER"
+
+
+@pytest.mark.asyncio
+async def test_file_public_repository_reads_products_documents_and_payments_scope(tmp_path) -> None:
+    store = FileDataStore(root_dir=tmp_path / "storage" / "json")
+    _seed_demo_json(store)
+    repo = FilePublicRepository(store)
+
+    strategies = await repo.list_public_strategies()
+    product = await repo.get_public_product("product-1")
+    documents = await repo.list_active_checkout_documents()
+
+    assert len(strategies) == 1
+    assert product is not None
+    assert product.price_rub == 4900
+    assert len(documents) == 4

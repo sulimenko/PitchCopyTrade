@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.content import Recommendation
-from pitchcopytrade.repositories.access import SqlAlchemyAccessRepository
+from pitchcopytrade.repositories.contracts import AccessRepository
 
 
-async def user_has_active_access(repository: SqlAlchemyAccessRepository, user_id: str) -> bool:
+async def user_has_active_access(repository: AccessRepository, user_id: str) -> bool:
     return await repository.user_has_active_access(user_id)
 
 
 async def list_user_visible_recommendations(
-    repository: SqlAlchemyAccessRepository,
+    repository: AccessRepository,
     *,
     user_id: str,
     limit: int = 20,
@@ -19,7 +19,7 @@ async def list_user_visible_recommendations(
 
 
 async def get_user_visible_recommendation(
-    repository: SqlAlchemyAccessRepository,
+    repository: AccessRepository,
     *,
     user_id: str,
     recommendation_id: str,
@@ -27,5 +27,5 @@ async def get_user_visible_recommendation(
     return await repository.get_user_visible_recommendation(user_id=user_id, recommendation_id=recommendation_id)
 
 
-async def get_user_by_telegram_id(repository: SqlAlchemyAccessRepository, telegram_user_id: int) -> User | None:
+async def get_user_by_telegram_id(repository: AccessRepository, telegram_user_id: int) -> User | None:
     return await repository.get_user_by_telegram_id(telegram_user_id)

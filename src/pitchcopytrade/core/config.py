@@ -136,6 +136,7 @@ class StorageSettings(BaseModel):
 
     root: str
     blob_root: str
+    json_root: str
 
 
 class Settings(BaseSettings):
@@ -336,6 +337,7 @@ class Settings(BaseSettings):
         return StorageSettings(
             root=root,
             blob_root=f"{root}/blob",
+            json_root=f"{root}/json",
         )
 
 

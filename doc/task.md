@@ -172,9 +172,15 @@ Acceptance:
 - repository package introduced
 - `SqlAlchemyAuthorRepository`
 - `SqlAlchemyAccessRepository`
+- `FileAuthorRepository`
+- `FileAccessRepository`
+- `FilePublicRepository`
+- `FileDataStore`
+- `FileDatasetGraph`
 - repository deps for FastAPI
 - author service layer detached from direct `AsyncSession` usage
 - ACL/feed service layer detached from direct `AsyncSession` usage
+- `author` and `ACL/feed` now switch to file repositories in `APP_DATA_MODE=file`
 
 Сделать:
 - вынести critical persistence operations в repositories
@@ -194,11 +200,29 @@ Acceptance:
 Acceptance:
 - service layer не зависит напрямую от `AsyncSession`
 
-### 21. File repositories for demo path `[todo]`
+### 21. File repositories for demo path `[partial]`
+Сделано:
+- JSON-backed file datasets under `storage/json`
+- file repositories for minimal demo scope:
+  - users
+  - roles
+  - authors
+  - strategies
+  - products
+  - legal docs
+  - payments
+  - subscriptions
+  - recommendations
+  - recommendation legs
+  - recommendation attachments
+- hydration graph into ORM-like domain objects
+- author create/edit persistence can now save recommendations, legs and attachments without DB
+- ACL/feed can now read user entitlements and recommendations without DB
+
 Сделать:
-- JSON-backed repositories для минимального operational scope
-- safe write strategy
-- basic indexes/lookups where needed
+- safe write hardening and concurrent-write strategy
+- expand file repo coverage to public checkout/auth/admin/moderation flows
+- add seed/bootstrap generator and real file-mode execution path for complete local demo
 
 Acceptance:
 - можно пройти demo flow без PostgreSQL

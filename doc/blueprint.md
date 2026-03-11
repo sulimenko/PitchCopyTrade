@@ -102,9 +102,15 @@ Canonical subscriber model остается:
 Есть:
 - `SqlAlchemyAuthorRepository`
 - `SqlAlchemyAccessRepository`
+- `FileAuthorRepository`
+- `FileAccessRepository`
+- `FilePublicRepository`
+- `FileDataStore`
+- `FileDatasetGraph`
 - FastAPI deps for repository wiring
 - author services no longer talk to `AsyncSession` directly
 - ACL/feed services no longer talk to `AsyncSession` directly
+- `author` and `ACL/feed` deps can switch to file repositories in `APP_DATA_MODE=file`
 
 Пока еще не переведены:
 - admin
@@ -305,6 +311,18 @@ Service layer не должен знать, где лежат данные:
 Текущее состояние:
 - contract уже начал внедряться;
 - author и ACL контуры уже переведены на DB repositories;
+- file repositories уже реализованы для минимального demo dataset scope:
+  - users
+  - roles
+  - authors
+  - strategies
+  - products
+  - legal docs
+  - payments
+  - subscriptions
+  - recommendations
+  - legs
+  - attachments
 - остальные контуры пока еще требуют миграции.
 
 ### 10.3 Runtime selection

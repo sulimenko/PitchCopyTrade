@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pitchcopytrade.api.deps.auth import require_author
 from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
-from pitchcopytrade.repositories.author import SqlAlchemyAuthorRepository
+from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.services.author import (
     blank_leg_values,
     build_leg_rows_from_form,
@@ -38,7 +38,7 @@ async def author_root() -> Response:
 async def author_dashboard(
     request: Request,
     user: User = Depends(require_author),
-    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
+    repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     stats = await get_author_workspace_stats(repository, author)
@@ -62,7 +62,7 @@ async def author_dashboard(
 async def recommendation_list_page(
     request: Request,
     user: User = Depends(require_author),
-    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
+    repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     recommendations = await list_author_recommendations(repository, author)
@@ -82,7 +82,7 @@ async def recommendation_list_page(
 async def recommendation_create_page(
     request: Request,
     user: User = Depends(require_author),
-    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
+    repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     return await _render_recommendation_form(
@@ -100,7 +100,7 @@ async def recommendation_create_page(
 async def recommendation_create_submit(
     request: Request,
     user: User = Depends(require_author),
-    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
+    repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     strategies = await list_author_strategies(repository, author)
@@ -163,7 +163,7 @@ async def recommendation_edit_page(
     recommendation_id: str,
     request: Request,
     user: User = Depends(require_author),
-    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
+    repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     recommendation = await get_author_recommendation(repository, author, recommendation_id)
@@ -185,7 +185,7 @@ async def recommendation_preview_page(
     recommendation_id: str,
     request: Request,
     user: User = Depends(require_author),
-    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
+    repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     recommendation = await get_author_recommendation(repository, author, recommendation_id)
@@ -209,7 +209,7 @@ async def recommendation_edit_submit(
     recommendation_id: str,
     request: Request,
     user: User = Depends(require_author),
-    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
+    repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     recommendation = await get_author_recommendation(repository, author, recommendation_id)
@@ -277,7 +277,7 @@ async def _render_recommendation_form(
     request: Request,
     user: User,
     author: AuthorProfile,
-    repository: SqlAlchemyAuthorRepository,
+    repository: AuthorRepository,
     recommendation,
     error: str | None,
     form_values: dict[str, object] | None,
@@ -315,7 +315,7 @@ async def _render_recommendation_form(
     )
 
 
-async def _get_author_or_403(repository: SqlAlchemyAuthorRepository, user: User) -> AuthorProfile:
+async def _get_author_or_403(repository: AuthorRepository, user: User) -> AuthorProfile:
     author = user.author_profile or await get_author_by_user(repository, user)
     if author is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Author profile is not configured")

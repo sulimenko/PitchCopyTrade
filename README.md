@@ -39,6 +39,18 @@ Telegram-first платформа для продажи подписок на с
 - repository layer baseline for:
   - author workspace persistence
   - subscriber ACL/feed persistence
+- file repositories baseline for demo datasets:
+  - users
+  - roles
+  - authors
+  - strategies
+  - products
+  - legal docs
+  - payments
+  - subscriptions
+  - recommendations
+  - legs
+  - attachments
 
 ## Архитектурный сдвиг
 Новая целевая схема:
@@ -69,7 +81,8 @@ Telegram-first платформа для продажи подписок на с
 Жесткие зависимости, которые сейчас есть:
 - file mode уже поддержан на уровне config/runtime, но service/repository layer все еще в основном DB-first;
 - repository layer уже введен частично, но `admin`, `public`, `moderation`, `payments` и `notifications` еще не переведены на него полностью;
-- DB session для `APP_DATA_MODE=file` уже не создается, но routes/services пока не имеют полноценной file-repository parity;
+- `author` и `subscriber ACL/feed` уже могут идти через file repositories;
+- `public checkout`, `staff auth`, `admin`, `moderation`, `notifications` и `publishing` еще не имеют полной file-repository parity;
 - local filesystem storage backend уже добавлен, но primary attachment flow все еще по умолчанию ориентирован на `MinIO`;
 - `docker-compose.yml` все еще поднимает `minio` как штатный сервис;
 - attachment flow и metadata пока ориентированы на bucket/object-key path.

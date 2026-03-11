@@ -9,6 +9,9 @@ from pitchcopytrade.db.models.catalog import BundleMember, Strategy, Subscriptio
 from pitchcopytrade.db.models.commerce import Subscription
 from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
 from pitchcopytrade.db.models.enums import RecommendationStatus, SubscriptionStatus
+from pitchcopytrade.repositories.contracts import AccessRepository
+from pitchcopytrade.repositories.file_graph import FileDatasetGraph
+from pitchcopytrade.repositories.file_store import FileDataStore
 
 
 ACTIVE_SUBSCRIPTION_STATUSES = (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
@@ -19,7 +22,7 @@ VISIBLE_RECOMMENDATION_STATUSES = (
 )
 
 
-class SqlAlchemyAccessRepository:
+class SqlAlchemyAccessRepository(AccessRepository):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
@@ -123,3 +126,80 @@ class SqlAlchemyAccessRepository:
             Recommendation.author_id.in_(author_ids),
             Recommendation.strategy_id.in_(bundle_strategy_ids),
         )
+
+
+class FileAccessRepository(AccessRepository):
+    def __init__(self, store: FileDataStore | None = None) -> None:
+        self.store = store or FileDataStore()
+        self.graph = FileDatasetGraph.load(self.store)
+
+    async def user_has_active_access(self, user_id: str) -> bool:
+        return any(
+            item.user_id == user_id and item.status in ACTIVE_SUBSCRIPTION_STATUSES
+            for item in self.graph.subscriptions.values()
+        )
+
+    async def list_user_visible_recommendations(
+        self,
+        *,
+        user_id: str,
+        limit: int = 20,
+    ) -> list[Recommendation]:
+        allowed_strategy_ids = self._allowed_strategy_ids(user_id)
+        allowed_author_ids = self._allowed_author_ids(user_id)
+        items = [
+            item
+            for item in self.graph.recommendations.values()
+            if item.published_at is not None
+            and item.status in VISIBLE_RECOMMENDATION_STATUSES
+            and (item.strategy_id in allowed_strategy_ids or item.author_id in allowed_author_ids)
+        ]
+        items.sort(key=lambda item: (item.published_at or item.created_at, item.created_at), reverse=True)
+        return items[:limit]
+
+    async def get_user_visible_recommendation(
+        self,
+        *,
+        user_id: str,
+        recommendation_id: str,
+    ) -> Recommendation | None:
+        recommendation = self.graph.recommendations.get(recommendation_id)
+        if recommendation is None:
+            return None
+        allowed_strategy_ids = self._allowed_strategy_ids(user_id)
+        allowed_author_ids = self._allowed_author_ids(user_id)
+        if recommendation.published_at is None or recommendation.status not in VISIBLE_RECOMMENDATION_STATUSES:
+            return None
+        if recommendation.strategy_id not in allowed_strategy_ids and recommendation.author_id not in allowed_author_ids:
+            return None
+        return recommendation
+
+    async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
+        return next((item for item in self.graph.users.values() if item.telegram_user_id == telegram_user_id), None)
+
+    def _active_products_for_user(self, user_id: str) -> list[SubscriptionProduct]:
+        products: list[SubscriptionProduct] = []
+        for subscription in self.graph.subscriptions.values():
+            if subscription.user_id == user_id and subscription.status in ACTIVE_SUBSCRIPTION_STATUSES:
+                product = self.graph.products.get(subscription.product_id)
+                if product is not None:
+                    products.append(product)
+        return products
+
+    def _allowed_strategy_ids(self, user_id: str) -> set[str]:
+        strategy_ids: set[str] = set()
+        for product in self._active_products_for_user(user_id):
+            if product.strategy_id:
+                strategy_ids.add(product.strategy_id)
+            if product.bundle_id:
+                for member in self.graph.bundle_members:
+                    if member.bundle_id == product.bundle_id:
+                        strategy_ids.add(member.strategy_id)
+        return strategy_ids
+
+    def _allowed_author_ids(self, user_id: str) -> set[str]:
+        return {
+            product.author_id
+            for product in self._active_products_for_user(user_id)
+            if product.author_id is not None
+        }

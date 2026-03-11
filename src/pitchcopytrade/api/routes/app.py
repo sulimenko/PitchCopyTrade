@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pitchcopytrade.api.deps.auth import get_current_subscriber_user
 from pitchcopytrade.api.deps.repositories import get_access_repository
 from pitchcopytrade.db.models.accounts import User
-from pitchcopytrade.repositories.access import SqlAlchemyAccessRepository
+from pitchcopytrade.repositories.contracts import AccessRepository
 from pitchcopytrade.services.acl import (
     get_user_visible_recommendation,
     list_user_visible_recommendations,
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/app", tags=["app"])
 async def app_feed(
     request: Request,
     user: User = Depends(get_current_subscriber_user),
-    repository: SqlAlchemyAccessRepository = Depends(get_access_repository),
+    repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
     recommendations = await list_user_visible_recommendations(repository, user_id=user.id)
     has_access = await user_has_active_access(repository, user_id=user.id)
@@ -45,7 +45,7 @@ async def recommendation_detail_page(
     recommendation_id: str,
     request: Request,
     user: User = Depends(get_current_subscriber_user),
-    repository: SqlAlchemyAccessRepository = Depends(get_access_repository),
+    repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
     recommendation = await get_user_visible_recommendation(
         repository,
@@ -72,7 +72,7 @@ async def recommendation_attachment_download(
     recommendation_id: str,
     attachment_id: str,
     user: User = Depends(get_current_subscriber_user),
-    repository: SqlAlchemyAccessRepository = Depends(get_access_repository),
+    repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
     recommendation = await get_user_visible_recommendation(
         repository,

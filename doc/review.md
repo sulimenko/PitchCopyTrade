@@ -152,6 +152,7 @@ Reviewer должен считать хорошим признаком:
 - появление явного runtime switch `APP_DATA_MODE=db|file`;
 - появление repository abstraction;
 - уменьшение зависимости service layer от `AsyncSession` хотя бы в частично мигрированных контурах;
+- появление JSON-backed file repositories для реальных доменных сущностей, а не только для toy examples;
 - появление file-mode seed/bootstrap path;
 - уменьшение прямой зависимости routes/services от `AsyncSession`;
 - выравнивание attachment metadata под локальные пути;

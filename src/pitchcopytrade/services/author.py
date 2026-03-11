@@ -13,7 +13,7 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, TradeSide
-from pitchcopytrade.repositories.author import SqlAlchemyAuthorRepository
+from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.storage.base import StorageBackend
 from pitchcopytrade.storage.minio import MinioStorage
 
@@ -71,7 +71,7 @@ class RecommendationFormData:
     attachments: list[IncomingAttachment]
 
 
-async def get_author_workspace_stats(repository: SqlAlchemyAuthorRepository, author: AuthorProfile) -> AuthorWorkspaceStats:
+async def get_author_workspace_stats(repository: AuthorRepository, author: AuthorProfile) -> AuthorWorkspaceStats:
     strategies_total = await repository.count_author_strategies(author.id)
     recommendations_total = await repository.count_author_recommendations(author.id)
     draft_recommendations = await repository.count_author_recommendations(
@@ -94,20 +94,20 @@ async def get_author_workspace_stats(repository: SqlAlchemyAuthorRepository, aut
     )
 
 
-async def list_author_strategies(repository: SqlAlchemyAuthorRepository, author: AuthorProfile) -> list[Strategy]:
+async def list_author_strategies(repository: AuthorRepository, author: AuthorProfile) -> list[Strategy]:
     return await repository.list_author_strategies(author.id)
 
 
-async def list_active_instruments(repository: SqlAlchemyAuthorRepository) -> list[Instrument]:
+async def list_active_instruments(repository: AuthorRepository) -> list[Instrument]:
     return await repository.list_active_instruments()
 
 
-async def list_author_recommendations(repository: SqlAlchemyAuthorRepository, author: AuthorProfile) -> list[Recommendation]:
+async def list_author_recommendations(repository: AuthorRepository, author: AuthorProfile) -> list[Recommendation]:
     return await repository.list_author_recommendations(author.id)
 
 
 async def get_author_recommendation(
-    repository: SqlAlchemyAuthorRepository,
+    repository: AuthorRepository,
     author: AuthorProfile,
     recommendation_id: str,
 ) -> Recommendation | None:
@@ -115,7 +115,7 @@ async def get_author_recommendation(
 
 
 async def create_author_recommendation(
-    repository: SqlAlchemyAuthorRepository,
+    repository: AuthorRepository,
     author: AuthorProfile,
     data: RecommendationFormData,
     *,
@@ -152,7 +152,7 @@ async def create_author_recommendation(
 
 
 async def update_author_recommendation(
-    repository: SqlAlchemyAuthorRepository,
+    repository: AuthorRepository,
     recommendation: Recommendation,
     data: RecommendationFormData,
     *,
@@ -183,7 +183,7 @@ async def update_author_recommendation(
     return recommendation
 
 
-async def get_author_by_user(repository: SqlAlchemyAuthorRepository, user: User) -> AuthorProfile | None:
+async def get_author_by_user(repository: AuthorRepository, user: User) -> AuthorProfile | None:
     return await repository.get_author_by_user_id(user.id)
 
 
@@ -421,7 +421,7 @@ def _build_leg_rows(rows: Iterable[dict[str, str]], allowed_instrument_ids: set[
 
 
 async def _replace_legs(
-    repository: SqlAlchemyAuthorRepository,
+    repository: AuthorRepository,
     recommendation: Recommendation,
     legs: list[StructuredLegFormData],
 ) -> None:
@@ -452,7 +452,7 @@ def _attach_legs(recommendation: Recommendation, legs: list[StructuredLegFormDat
 
 
 async def _store_attachments(
-    repository: SqlAlchemyAuthorRepository,
+    repository: AuthorRepository,
     recommendation: Recommendation,
     *,
     attachments: list[IncomingAttachment],

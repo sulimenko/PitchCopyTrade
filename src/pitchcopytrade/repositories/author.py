@@ -10,9 +10,12 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
 from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
 from pitchcopytrade.db.models.enums import RecommendationStatus
+from pitchcopytrade.repositories.contracts import AuthorRepository
+from pitchcopytrade.repositories.file_graph import FileDatasetGraph
+from pitchcopytrade.repositories.file_store import FileDataStore
 
 
-class SqlAlchemyAuthorRepository:
+class SqlAlchemyAuthorRepository(AuthorRepository):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
@@ -94,3 +97,67 @@ class SqlAlchemyAuthorRepository:
     async def _count(self, query: Select[tuple[int]]) -> int:
         result = await self.session.execute(query)
         return int(result.scalar_one())
+
+
+class FileAuthorRepository(AuthorRepository):
+    def __init__(self, store: FileDataStore | None = None) -> None:
+        self.store = store or FileDataStore()
+        self.graph = FileDatasetGraph.load(self.store)
+
+    async def count_author_strategies(self, author_id: str) -> int:
+        return len([item for item in self.graph.strategies.values() if item.author_id == author_id])
+
+    async def count_author_recommendations(
+        self,
+        author_id: str,
+        *,
+        statuses: Sequence[RecommendationStatus] | None = None,
+    ) -> int:
+        items = [item for item in self.graph.recommendations.values() if item.author_id == author_id]
+        if statuses:
+            allowed = set(statuses)
+            items = [item for item in items if item.status in allowed]
+        return len(items)
+
+    async def list_author_strategies(self, author_id: str) -> list[Strategy]:
+        return sorted(
+            [item for item in self.graph.strategies.values() if item.author_id == author_id],
+            key=lambda item: item.title.lower(),
+        )
+
+    async def list_active_instruments(self) -> list[Instrument]:
+        return sorted(
+            [item for item in self.graph.instruments.values() if item.is_active],
+            key=lambda item: item.ticker.lower(),
+        )
+
+    async def list_author_recommendations(self, author_id: str) -> list[Recommendation]:
+        return sorted(
+            [item for item in self.graph.recommendations.values() if item.author_id == author_id],
+            key=lambda item: (item.updated_at, item.created_at),
+            reverse=True,
+        )
+
+    async def get_author_recommendation(self, author_id: str, recommendation_id: str) -> Recommendation | None:
+        recommendation = self.graph.recommendations.get(recommendation_id)
+        if recommendation is None or recommendation.author_id != author_id:
+            return None
+        return recommendation
+
+    async def get_author_by_user_id(self, user_id: str) -> AuthorProfile | None:
+        return next((item for item in self.graph.authors.values() if item.user_id == user_id), None)
+
+    def add(self, entity: object) -> None:
+        self.graph.add(entity)
+
+    async def delete(self, entity: object) -> None:
+        self.graph.delete(entity)
+
+    async def flush(self) -> None:
+        return None
+
+    async def commit(self) -> None:
+        self.graph.save(self.store)
+
+    async def refresh(self, entity: object) -> None:
+        return None

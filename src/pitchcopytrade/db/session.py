@@ -14,5 +14,27 @@ AsyncSessionLocal = (
 async def get_db_session():
     if AsyncSessionLocal is None:
         raise RuntimeError("Database session is unavailable in APP_DATA_MODE=file")
-    async with AsyncSessionLocal() as session:
+    session = AsyncSessionLocal()
+    try:
         yield session
+    finally:
+        try:
+            await session.close()
+        except ValueError as exc:
+            if "greenlet" not in str(exc):
+                raise
+
+
+async def get_optional_db_session():
+    if AsyncSessionLocal is None:
+        yield None
+        return
+    session = AsyncSessionLocal()
+    try:
+        yield session
+    finally:
+        try:
+            await session.close()
+        except ValueError as exc:
+            if "greenlet" not in str(exc):
+                raise
