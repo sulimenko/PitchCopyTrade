@@ -1,7 +1,7 @@
 # PitchCopyTrade Task Pack
 
 Дата: 2026-03-11  
-Режим: actual status + refactor roadmap after Telegram-first decision
+Режим: current implementation status + migration roadmap to local storage and file mode
 
 Process rule:
 - after each completed implementation step, run review first;
@@ -17,12 +17,12 @@ Process rule:
 - `[refactor]`
 - `[todo]`
 
-## 1. Уже сделано
+## 1. Что уже сделано
 
 ### 1. Foundation infrastructure `[done]`
 - project skeleton
-- Docker baseline
 - `api`, `bot`, `worker`
+- Docker baseline
 - `.env.example`
 
 ### 2. Config and runtime `[done]`
@@ -38,7 +38,7 @@ Process rule:
 - ORM relationships
 
 ### 4. Alembic foundation `[done]`
-- env
+- Alembic env
 - initial migration
 - migration smoke path
 
@@ -50,16 +50,16 @@ Process rule:
 
 ### 6. Bot baseline `[done]`
 - aiogram app
-- `/start`
 - dispatcher
+- `/start`
 
 ### 7. Worker baseline `[done]`
 - worker loop
-- placeholder jobs
+- job registry
 
-### 8. MinIO adapter `[done]`
-- storage wrapper
-- upload/download/delete/stat
+### 8. Storage baseline `[done]`
+- attachment storage wrapper exists
+- upload/download/delete/stat contract exists
 
 ### 9. Auth foundation `[done]`
 - password hashing
@@ -68,268 +68,259 @@ Process rule:
 
 ### 10. Compliance foundation `[done]`
 - legal docs model
-- consents
 - consent-before-payment logic
 
-### 11. Admin baseline `[done]`
+### 11. Staff web baseline `[done]`
 - auth UI for staff
 - admin dashboard
 - strategy CRUD
 - subscription product CRUD
 - payment review / confirm / activation
 
-### 11.1 Author workspace baseline `[done]`
+### 12. Author workspace baseline `[done]`
 - author dashboard
-- author recommendation CRUD
-- author-scoped strategy selection
-- create/edit recommendation flow
-
-### 12. Public commerce baseline `[done]`
-- public catalog
-- strategy detail
-- product selection
-- checkout stub/manual
-- web fallback checkout without subscriber password
-
-### 13. Access delivery baseline `[done]`
-- ACL service
-- web feed
-- bot `/feed`
-- bot `/catalog`
-- bot `/buy`
-- bot `/confirm_buy`
-- bot `/web`
-- Telegram-auth-only fallback cookie for `/app/*`
-
-## 2. Сделано, но теперь требует refactor
-
-### 14. Subscriber auth model `[partial]`
-Что уже сделано:
-- password capture removed from web fallback checkout
-- Telegram subscriber profile creation on `/start`
-- bot-generated Telegram-auth web link
-- `/app/*` fallback no longer uses ordinary staff session auth
-
-Что еще нужно:
-- заменить link-based fallback на Telegram WebApp / Mini App contour
-- удержать единый UX between bot and fallback web
-
-### 15. Subscriber checkout channel `[partial]`
-Что уже сделано:
-- Telegram checkout baseline via bot commands
-- web checkout moved to fallback role
-
-Что еще нужно:
-- richer Telegram UX
-- explicit status/subscription flows in bot
-- consent UX in Telegram
-
-### 16. PostgreSQL runtime assumptions `[refactor]`
-Что нужно:
-- основной режим: внешний PostgreSQL через `.env`
-- optional режим: docker-based PostgreSQL
-- ни один из режимов не должен считаться единственно допустимым
-
-Что уже сделано:
-- `docker compose` больше не делает postgres hard dependency для app services
-- docker postgres вынесен в optional profile `local-db`
-
-## 3. Частично сделано
-
-### 17. Legal admin surface `[partial]`
-Сделано:
-- models
-- logic
-- checkout gate
-
-Не сделано:
-- legal docs UI
-- version publish UI
-
-### 18. Lead source attribution `[partial]`
-Сделано:
-- field captured
-- payload stored
-
-Не сделано:
-- normalized persistence
-- reporting
-
-### 19. Telegram subscriber path `[partial]`
-Сделано:
-- `/feed`
-- ACL gate
-
-Не сделано:
-- onboarding
-- account linking
-- subscriptions/status commands
-- Telegram-first checkout
-- deeper Mini App/WebApp contour
-
-## 4. Следующие обязательные шаги
-
-### 20. Завершить subscriber contour под Telegram-first `[todo]`
-Сделать:
-- canonical subscriber identity = `telegram_user_id`
-- минимальный профиль по умолчанию
-- optional collection of extra fields only by need or consent
-
-Acceptance:
-- subscriber не обязан заводить local password account
-- password-based subscriber auth больше не считается основным сценарием
-
-### 21. Довести основной checkout в Telegram `[todo]`
-Сделать:
-- product selection inside Telegram
-- consent collection inside Telegram
-- payment creation flow inside Telegram
-- status feedback in Telegram
-
-Acceptance:
-- subscriber может пройти основной путь без перехода в обязательный web checkout
-
-### 22. Довести Telegram-auth web fallback `[todo]`
-Сделать:
-- Telegram WebApp / Mini App или более нативный equivalent Telegram-auth layer
-- улучшить subscriber web fallback UX
-- не сломать текущий Telegram-only auth contract
-
-Acceptance:
-- subscriber web access, если он остается, не требует отдельного local password login
-
-### 23. Поддержать оба режима PostgreSQL `[todo]`
-Сделать:
-- основной DSN mode через `.env`
-- optional docker DB profile
-- docs/run instructions для обоих режимов
-
-Acceptance:
-- проект запускается с внешней БД без обязательного локального postgres-контейнера
-
-### 24. Author recommendation workspace `[partial]`
-Сделано:
-- author shell
 - recommendation CRUD
 - own-strategy scoping
-- base status/kind editing
-- structured legs editor
-- attachment upload
-- preview route
+- preview
+- structured legs
+- attachments
 
-Не сделано:
-- richer workspace UX from prototype
-- validation depth
-- attachment delete/replace UX
+### 13. Subscriber commerce baseline `[done]`
+- public catalog
+- strategy detail
+- checkout `stub/manual`
+- Telegram subscriber baseline
+- Telegram-auth fallback for `/app/*`
+- ACL delivery in web and bot
 
-### 25. Recommendation publish flow `[partial]`
+### 14. Recommendation lifecycle baseline `[done]`
+- moderation queue
+- moderation history baseline
+- scheduled publish baseline
+- delivery notifications baseline
+
+## 2. Что исследование признало transitional
+
+### 15. Remote storage as primary model `[refactor]`
+Текущее состояние:
+- attachment flow ориентирован на `MinIO`
+- `docker-compose.yml` поднимает `minio`
+- metadata по-прежнему bucket/object oriented
+
+Новая цель:
+- primary storage = локальная файловая система
+- `MinIO` максимум optional compatibility backend
+
+### 16. DB-only runtime `[refactor]`
+Текущее состояние:
+- config принимает только `PostgreSQL` DSN
+- runtime создает `SQLAlchemy` engine как обязательный путь
+- file repositories отсутствуют
+
+Новая цель:
+- `db` mode через `PostgreSQL`
+- `file` mode без БД для тестирования
+
+### 17. Current web fallback surfaces `[partial]`
 Сделано:
-- publish/schedule baseline
-- `new/update/close/cancel`
-- status timestamps in author editor
-- moderation-aware transitions baseline
+- subscriber web fallback уже зависит от Telegram-auth path
 
-Не сделано:
-- history/timeline
-- worker-based scheduled publish hardening
+Нужно:
+- не углублять fallback как primary path
+- перевести его на storage/file-mode parity
 
-### 26. Moderation queue `[partial]`
-Сделано:
-- moderator queue
-- approve/reject/rework
-- moderation detail page
-- moderation audit write baseline
-- moderation history/timeline baseline
+## 3. Новый обязательный migration track
 
-Не сделано:
-- optional moderation rules
-- filters/history/SLA UX
-
-### 27. Attachments through MinIO `[partial]`
-Сделано:
-- author upload
-- validation
-- MinIO persistence baseline
-- subscriber download baseline
-
-Не сделано:
-- richer subscriber rendering path polish
-- attach/delete UX
-
-### 28. Instruments and leg UX `[partial]`
-Сделано:
-- structured leg editor
-- validation logic baseline
-
-Не сделано:
-- instruments management
-- richer multi-leg UX
-
-### 29. Commerce completion `[todo]`
+### 18. Local filesystem storage foundation `[todo]`
 Сделать:
-- promo codes
-- manual discount UI
-- expiry and cancel flows
-- real worker jobs
+- ввести canonical storage root `storage/`
+- описать subfolders:
+  - `blob`
+  - `json`
+  - `parquet`
+  - `runtime`
+- реализовать local storage adapter как primary backend
 
-### 30. Account and linkage lifecycle `[todo]`
+Acceptance:
+- attachments можно сохранять и читать без `MinIO`
+- local path становится canonical metadata source
+
+### 19. Runtime switch for persistence `[todo]`
 Сделать:
-- Telegram account linking
-- subscriber status/profile
-- optional extra-contact capture only when needed
+- ввести `APP_DATA_MODE=db|file`
+- ввести `APP_STORAGE_ROOT`
+- ввести switch для repository/storage wiring
 
-### 31. Audit and analytics `[todo]`
+Acceptance:
+- приложение стартует в двух режимах без правки application code
+
+### 20. Repository abstraction `[todo]`
 Сделать:
-- legal and payment admin surface
-- lead source analytics
-- audit views
+- вынести critical persistence operations в repositories
+- подготовить dual implementation:
+  - DB repositories
+  - file repositories
 
-### 32. Worker scheduled publish `[partial]`
+Минимальный scope:
+- users / roles
+- authors
+- strategies
+- products
+- legal docs / consents
+- payments / subscriptions
+- recommendations / legs / attachments
+
+Acceptance:
+- service layer не зависит напрямую от `AsyncSession`
+
+### 21. File repositories for demo path `[todo]`
+Сделать:
+- JSON-backed repositories для минимального operational scope
+- safe write strategy
+- basic indexes/lookups where needed
+
+Acceptance:
+- можно пройти demo flow без PostgreSQL
+
+### 22. Local attachment and legal files `[todo]`
+Сделать:
+- author uploads в `storage/blob`
+- subscriber downloads из `storage/blob`
+- legal document source files локально
+
+Acceptance:
+- `MinIO` не нужен для локального smoke-test
+
+### 23. File-mode seed data `[todo]`
+Сделать:
+- seeded staff accounts
+- seeded strategies
+- seeded products
+- seeded legal docs
+- seeded recommendations for feed demo
+
+Acceptance:
+- локальный запуск не требует ручного наполнения через БД
+
+### 24. File-mode payment/subscription demo `[todo]`
+Сделать:
+- file-backed checkout artifacts
+- manual payment confirm path
+- activation path
+
+Acceptance:
+- subscriber flow можно проверить локально end-to-end
+
+## 4. Что уже реализовано и должно сохраниться в refactor
+
+### 25. Telegram-first subscriber model `[partial]`
 Сделано:
-- worker scheduled publish baseline
-- transition `scheduled -> published`
-- audit write on worker publish
-- delivery notifications trigger
+- subscriber path moved to Telegram-first baseline
+- no subscriber password-first requirement
+- Telegram-auth fallback exists
+
+Нужно сохранить:
+- primary identity = `telegram_user_id`
+- minimum necessary data policy
+
+### 26. Staff auth and workspaces `[partial]`
+Сделано:
+- admin/author/moderator web auth
+- admin dashboard
+- author workspace
+- moderation queue
+
+Нужно сохранить:
+- staff flows должны работать и в `db`, и в `file` mode
+
+### 27. ACL and payment lifecycle `[partial]`
+Сделано:
+- checkout -> payment pending -> confirm -> subscription activation
+- ACL gating in web and bot
+
+Нужно сохранить:
+- одинаковое поведение в `db` и `file` mode
+
+### 28. Recommendation lifecycle `[partial]`
+Сделано:
+- recommendation CRUD
+- moderation
+- publish/schedule
+- notifications baseline
+
+Нужно сохранить:
+- scheduled publish
+- attachment rendering
+- scope and ACL guarantees
+
+## 5. Самый быстрый путь к локальному тестированию
+
+### 29. Fast-track order `[todo]`
+Делать строго так:
+1. local storage adapter
+2. runtime switch `APP_DATA_MODE`
+3. file repositories for minimal scope
+4. seed data for file mode
+5. local attachment serving
+6. run `api + bot + worker` in file mode
+7. connect test bot and run Telegram smoke-test
+8. open local staff web and author cabinet
+
+### 30. Fast-track acceptance `[todo]`
+Считать быстрый путь завершенным, когда:
+- сайт открывается локально;
+- admin login работает локально;
+- author login работает локально;
+- test bot отвечает и показывает каталог;
+- можно оформить `stub/manual` checkout;
+- можно подтвердить платеж и увидеть доступ к feed;
+- все это проходит без PostgreSQL и без `MinIO`.
+
+## 6. После этого остаются продуктовые задачи
+
+### 31. Telegram UX depth `[partial]`
+Сделано:
+- command baseline
+- reply keyboard baseline
+- Mini App entry baseline
 
 Не сделано:
-- retry / observability hardening
+- full WebApp auth bridge
+- richer interactive checkout/status UX
+
+### 32. Legal admin UI `[todo]`
+- document CRUD
+- version publish UI
+- active version management
+
+### 33. Promo/discount lifecycle `[todo]`
+- promo UI
+- manual discounts
+- expiry/cancel flows
+
+### 34. Delivery admin UX `[todo]`
+- notification queue
+- retry/dedup
+- metrics
+
+### 35. Moderation analytics/SLA `[todo]`
+- filters
+- timelines
+- resolution metrics
+
+### 36. Lead source analytics `[todo]`
+- normalized attribution
+- reporting
+
+### 37. Worker hardening `[todo]`
+- retries
+- observability
 - broader lifecycle jobs
 
-### 33. Delivery notifications `[partial]`
-Сделано:
-- recommendation notification text baseline
-- worker-triggered publish notifications
-- moderation-triggered publish notifications
-
-Не сделано:
-- dedup / retry / metrics
-- delivery admin UI
-- bot-side notification preferences
-
-### 34. Telegram UX depth `[partial]`
-Сделано:
-- reply-keyboard baseline
-- Mini App entry route `/miniapp`
-- web_app button baseline
-
-Не сделано:
-- full WebApp auth/deep contour
-- richer interactive flows beyond commands
-- Mini App subscriber-auth bridge
-
-## 5. Правила, которые нельзя ломать
-- не возвращаться к file-first persistence
-- не считать subscriber password-login canonical path
-- не собирать лишние пользовательские данные без необходимости
-- не выдавать access по `pending` subscription
-- не разводить web ACL и bot ACL по разным правилам
-- не делать postgres container обязательным для всех режимов запуска
-
-## 6. Definition of done
-Проект завершен, когда:
-- subscriber контур стал Telegram-first;
-- web fallback использует только Telegram auth;
-- admin/author контур complete;
-- recommendation workspace и publish flow работают;
-- legal/payment/subscription/access/delivery связаны end-to-end;
-- внешний PostgreSQL через `.env` поддерживается как основной режим.
+## 7. Правила, которые нельзя ломать
+- subscriber path остается `Telegram-first`
+- `admin`, `author`, `moderator` остаются отдельным staff contour
+- pending payment не дает доступ
+- entitlement rules одинаковы в web и bot
+- новые шаги не должны усиливать remote storage dependency
+- новые шаги не должны делать БД обязательной для базового локального тестирования

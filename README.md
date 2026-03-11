@@ -2,136 +2,139 @@
 
 Telegram-first платформа для продажи подписок на стратегии и доставки инвестиционных рекомендаций.
 
-## Стек
-- FastAPI
-- aiogram 3
-- PostgreSQL
-- SQLAlchemy 2
-- Alembic
-- MinIO
-- Jinja2
-- HTMX
-- Docker Compose
+## Текущее состояние
+Сейчас кодовая база уже имеет рабочий baseline на:
+- `FastAPI`
+- `aiogram 3`
+- `PostgreSQL`
+- `SQLAlchemy 2`
+- `Alembic`
+- `MinIO`
+- `Jinja2`
+- `HTMX`
+- `Docker Compose`
 
-## Runtime modes
-- Основной режим: внешний PostgreSQL через `.env`
-- Допустимый dev/demo режим: `docker compose --profile local-db up`
-- MinIO остается объектным хранилищем вложений
-
-## Telegram bots
-- Активный test bot:
-  - username: `Avt09_Bot`
-  - token хранится в [`.env`](/Users/alexey/site/PitchCopyTrade/.env)
-- Main bot уже добавлен в [`.env`](/Users/alexey/site/PitchCopyTrade/.env), но закомментирован до переключения
-
-## Что уже работает
-- foundation infrastructure, config, ORM, Alembic, MinIO
+Реализовано:
 - staff auth для `admin / author / moderator`
 - admin dashboard
 - strategy CRUD
 - subscription product CRUD
+- payment review -> confirm -> subscription activation
 - author workspace
-- author recommendation CRUD
+- recommendation CRUD
 - structured legs editor
-- MinIO attachments in author editor
-- publish/schedule baseline
-- author preview
+- preview
 - moderation queue
-- moderation history/timeline baseline
-- subscriber-facing detail rendering with attachment download
-- worker-based scheduled publish baseline
-- delivery notifications baseline
-- Telegram reply-keyboard UX baseline
-- Telegram Mini App entry baseline
+- moderation history baseline
 - public catalog
 - checkout `stub/manual`
-- payment review -> confirm -> subscription activation
 - ACL delivery
-- Telegram-first subscriber baseline:
-  - `/start`
-  - `/catalog`
-  - `/buy <product_slug>`
-  - `/confirm_buy <product_slug>`
-  - `/feed`
-  - `/web`
-- Telegram-auth-only web fallback для subscriber feed
+- Telegram-first subscriber baseline
+- scheduled publish baseline
+- delivery notifications baseline
+
+## Архитектурный сдвиг
+Новая целевая схема:
+- отказаться от удаленного object storage как основной модели;
+- хранить документы и вложения на локальной файловой системе;
+- использовать единый корень `storage/`;
+- поддержать запуск без БД для локального тестирования.
+
+Целевые runtime modes:
+- `db`:
+  - `PostgreSQL` хранит операционные данные;
+  - локальная файловая система хранит документы и вложения;
+- `file`:
+  - если нет доступа к локальной БД, проект работает на файловых репозиториях;
+  - структурированные данные хранятся в `JSON`;
+  - бинарные файлы хранятся в `blob`;
+  - append-heavy и аналитические наборы можно складывать в `Parquet`.
+
+Рекомендованная структура:
+- `storage/blob/`
+- `storage/json/`
+- `storage/parquet/`
+- `storage/runtime/`
+
+## Что показывает исследование
+Текущий код пока еще не соответствует новой целевой схеме полностью.
+
+Жесткие зависимости, которые сейчас есть:
+- config валидирует только `PostgreSQL` DSN;
+- DB session создается сразу через `SQLAlchemy async engine`;
+- attachment storage реализован через `MinIO`;
+- `docker-compose.yml` все еще поднимает `minio` как штатный сервис;
+- attachment flow и metadata пока ориентированы на bucket/object-key path.
+
+Это значит:
+- текущая реализация пригодна для продолжения продуктовой разработки;
+- но для быстрого локального тестирования без БД и без удаленного storage нужен отдельный refactor persistence layer.
 
 ## User cases
 
 ### Admin
-Что делает:
+Что делает сейчас:
 - входит в staff web через `login/password`
 - управляет стратегиями
-- заводит subscription products типа `strategy / author / bundle`
-- просматривает платежи
-- подтверждает manual payment
-- активирует подписки без работы напрямую в БД
+- управляет продуктами подписки
+- проверяет manual payments
+- подтверждает оплату и активирует подписки
 
-Что получает:
-- единый операционный контур
-- контроль над каталогом и коммерцией
-- прозрачный payment/subscription lifecycle
+Что получит после storage/file-mode refactor:
+- локальный запуск админки без обязательной БД
+- простую тестовую среду для проверки каталогов, платежных сценариев и legal flow
 
-### Автор стратегии
+### Author
 Что делает сейчас:
 - входит в staff web через `login/password`
-- попадает в `/author/dashboard`
-- видит свои стратегии и последние публикации
-- создает и редактирует рекомендации только по своим стратегиям
-- управляет типом публикации и статусом идеи
-- собирает structured legs по сделке
-- прикладывает PDF и изображения
-- может вести идею через `draft / review / approved / scheduled / published / closed / cancelled`
-- открывает preview до публикации
+- работает в author workspace
+- создает и редактирует рекомендации по своим стратегиям
+- управляет статусами идей
+- задает structured legs
+- загружает вложения
+- отправляет публикации в moderation/publish flow
 
-Что получит после следующих шагов:
-- удаление и управление вложениями
-- полную moderation history / timeline
+Что получит после storage/file-mode refactor:
+- локальное хранение вложений без `MinIO`
+- локальный author demo flow без обязательного PostgreSQL
 
-Польза:
-- уже есть рабочий контур создания публикаций
-- уже есть базовый publish pipeline и структура сделки
-- уже есть preview и модерационный контур
-- дальше добавится delivery richness и lifecycle polish
-
-### Обычный user / subscriber
+### Subscriber / user
 Что делает сейчас:
-- приходит из рекламы или рекомендации
-- может открыть публичный каталог на сайте
 - основной путь проходит через Telegram bot
-- может выбрать продукт в Telegram
-- может создать manual checkout request
-- после активации получает доступ к рекомендациям в Telegram
-- при необходимости открывает web fallback только через Telegram-issued link
+- видит каталог
+- оформляет `stub/manual` checkout
+- после активации получает feed по ACL
+- при необходимости использует web fallback через Telegram-auth path
 
-Что получает:
-- максимально простой вход без отдельного пароля
-- минимум обязательных данных
-- один основной канал взаимодействия: Telegram
-- единые права доступа в bot и web fallback
-- Mini App entry из Telegram
+Что получит после storage/file-mode refactor:
+- локальный end-to-end demo без БД
+- более быстрый smoke-test Telegram сценариев на одной машине
 
 ### Moderator
 Что делает сейчас:
 - входит в staff web через `login/password`
-- работает в `/moderation/queue`
-- открывает публикацию и видит subscriber-facing content
-- может `approve / rework / reject`
+- работает в moderation queue
+- видит preview и timeline baseline
+- принимает решение `approve / rework / reject`
 
-Что получит после следующих шагов:
-- историю решений
-- дополнительные фильтры и SLA-контроль
+Что получит после storage/file-mode refactor:
+- локальную очередь moderation без обязательной инфраструктуры БД и object storage
 
-## Что осталось сделать
-- review-first delivery process уже зафиксирован в docs и применяется после каждого шага
-- Telegram-first consent UX
-- richer WebApp depth beyond current Mini App entry
-- attachments management UX
-- subscriber rendering для legs и attachments
-- promo/discount and lifecycle UI
-- legal docs admin UI
-- lead source normalization and analytics
-- real worker jobs
+## Telegram bots
+- test bot:
+  - username: `Avt09_Bot`
+  - token хранится в [`.env`](/Users/alexey/site/PitchCopyTrade/.env)
+- main bot:
+  - username: `Avt09Bot`
+  - token хранится в [`.env`](/Users/alexey/site/PitchCopyTrade/.env) закомментированным
+
+## Ближайшая цель
+Быстрый путь к тестированию сейчас такой:
+1. внедрить local filesystem storage backend;
+2. ввести `db|file` runtime mode;
+3. сделать file repositories для минимального demo-контура;
+4. добавить local seed data;
+5. поднять `api + bot + worker` локально с test bot.
 
 ## Документы
 - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
