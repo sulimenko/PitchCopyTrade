@@ -1,4 +1,3 @@
-__all__ = ["compliance"]
-from pitchcopytrade.services import acl, admin, compliance, public
+from pitchcopytrade.services import acl, admin, author, compliance, public
 
-__all__ = ["acl", "admin", "compliance", "public"]
+__all__ = ["acl", "admin", "author", "compliance", "public"]

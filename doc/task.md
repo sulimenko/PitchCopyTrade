@@ -70,6 +70,12 @@
 - subscription product CRUD
 - payment review / confirm / activation
 
+### 11.1 Author workspace baseline `[done]`
+- author dashboard
+- author recommendation CRUD
+- author-scoped strategy selection
+- create/edit recommendation flow
+
 ### 12. Public commerce baseline `[done]`
 - public catalog
 - strategy detail
@@ -192,13 +198,17 @@ Acceptance:
 Acceptance:
 - проект запускается с внешней БД без обязательного локального postgres-контейнера
 
-### 24. Author recommendation workspace `[todo]`
-Сделать:
+### 24. Author recommendation workspace `[partial]`
+Сделано:
 - author shell
 - recommendation CRUD
-- drafts
+- own-strategy scoping
+- base status/kind editing
+
+Не сделано:
+- richer workspace UX from prototype
 - preview
-- validation
+- validation depth
 - multi-leg editor
 
 ### 25. Recommendation publish flow `[todo]`

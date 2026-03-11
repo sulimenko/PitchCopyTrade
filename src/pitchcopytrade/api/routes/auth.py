@@ -169,7 +169,9 @@ def _resolve_role_redirect(user) -> str:
     role_labels = {role.value for role in get_user_role_slugs(user)}
     if RoleSlug.ADMIN.value in role_labels:
         return "/admin/dashboard"
-    if role_labels.intersection({RoleSlug.AUTHOR.value, RoleSlug.MODERATOR.value}):
+    if RoleSlug.AUTHOR.value in role_labels:
+        return "/author/dashboard"
+    if RoleSlug.MODERATOR.value in role_labels:
         return "/workspace"
     return "/login"
 

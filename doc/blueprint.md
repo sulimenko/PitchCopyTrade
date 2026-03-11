@@ -104,6 +104,7 @@
 - password hashing
 - session cookie auth
 - admin guard
+- author guard
 
 ### 5.4 Admin commercial contour
 Есть:
@@ -114,13 +115,22 @@
 - payment review
 - confirm payment -> activate subscription
 
-### 5.5 Public storefront baseline
+### 5.5 Author workspace baseline
+Есть:
+- `/author/dashboard`
+- `/author/recommendations`
+- create/edit recommendation flow
+- author-scoped strategy selection
+- author sees only own recommendation set
+- statuses and kinds editable on baseline level
+
+### 5.6 Public storefront baseline
 Есть:
 - `/catalog`
 - `/catalog/strategies/{slug}`
 - web fallback checkout flow
 
-### 5.6 Telegram-first subscriber baseline
+### 5.7 Telegram-first subscriber baseline
 Есть:
 - `/start` creates or updates minimal Telegram subscriber profile
 - bot `/catalog`
@@ -129,7 +139,7 @@
 - bot `/web` for Telegram-authenticated web fallback link
 - dedicated Telegram fallback cookie issued by `/tg-auth`
 
-### 5.7 Access delivery baseline
+### 5.8 Access delivery baseline
 Есть:
 - ACL service
 - `/app/feed`
@@ -246,10 +256,14 @@
 - удержать единый ACL contract между bot и fallback web.
 
 ### 11.3 Author recommendation workspace
-Нужно сделать:
-- author shell по prototype;
+Baseline уже есть:
+- author shell;
 - recommendation CRUD;
-- drafts;
+- base status/kind editing.
+
+Нужно доделать:
+- richer prototype-based workspace;
+- drafts UX;
 - preview;
 - validation;
 - multi-leg editor.
@@ -314,9 +328,10 @@
 ## 13. Текущий status summary
 - foundation: реализован
 - admin коммерческий baseline: реализован
+- author workspace baseline: реализован
 - ACL delivery baseline: реализован
 - Telegram-first bot baseline: реализован
 - subscriber password removed from web fallback checkout
 - Telegram-auth-only web fallback baseline: реализован
 - optional docker postgres profile and external DSN mode: зафиксированы
-- главный следующий шаг: author recommendation workspace и publish flow
+- главный следующий шаг: recommendation publish flow, legs, attachments и moderation

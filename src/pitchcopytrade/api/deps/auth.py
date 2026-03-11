@@ -46,3 +46,13 @@ async def require_admin(user: User = Depends(get_current_staff_user)) -> User:
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     return user
+
+
+async def require_author(user: User = Depends(get_current_staff_user)) -> User:
+    try:
+        require_any_role(user, {RoleSlug.AUTHOR})
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    if user.author_profile is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Author profile is not configured")
+    return user

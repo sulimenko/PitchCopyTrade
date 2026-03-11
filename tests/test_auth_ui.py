@@ -97,7 +97,7 @@ def test_login_submit_sets_session_cookie() -> None:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/workspace"
+        assert response.headers["location"] == "/author/dashboard"
         assert "pitchcopytrade_session=" in response.headers["set-cookie"]
 
 
@@ -145,7 +145,7 @@ def test_app_home_renders_for_valid_session() -> None:
         response = client.get("/app", follow_redirects=False)
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/workspace"
+        assert response.headers["location"] == "/author/dashboard"
 
 
 def test_app_redirects_admin_to_dashboard() -> None:

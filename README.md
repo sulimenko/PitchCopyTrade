@@ -30,6 +30,8 @@ Telegram-first платформа для продажи подписок на с
 - admin dashboard
 - strategy CRUD
 - subscription product CRUD
+- author workspace
+- author recommendation CRUD
 - public catalog
 - checkout `stub/manual`
 - payment review -> confirm -> subscription activation
@@ -62,18 +64,20 @@ Telegram-first платформа для продажи подписок на с
 ### Автор стратегии
 Что делает сейчас:
 - входит в staff web через `login/password`
-- имеет staff workspace placeholder
+- попадает в `/author/dashboard`
+- видит свои стратегии и последние публикации
+- создает и редактирует рекомендации только по своим стратегиям
+- управляет типом публикации и статусом идеи
 
 Что получит после следующих шагов:
-- полноценный author workspace
-- создание и редактирование рекомендаций
-- draft / preview / publish flow
+- draft / preview / publish flow depth
 - structured multi-leg editor
 - загрузку вложений через MinIO
+- moderation flow по правилам автора
 
 Польза:
-- быстрый выпуск рекомендаций без ручной работы
-- единая модель публикации и истории изменений
+- уже есть рабочий контур создания публикаций
+- дальше добавится полный publish pipeline и delivery richness
 
 ### Обычный user / subscriber
 Что делает сейчас:
