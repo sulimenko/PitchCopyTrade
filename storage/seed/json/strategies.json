@@ -1,0 +1,16 @@
+[
+  {
+    "author_id": "author-1",
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "full_description": "Демонстрационная стратегия для локального file-mode сценария.",
+    "id": "strategy-1",
+    "is_public": true,
+    "min_capital_rub": 150000,
+    "risk_level": "medium",
+    "short_description": "Краткосрочные идеи по ликвидным российским акциям.",
+    "slug": "momentum-ru",
+    "status": "published",
+    "title": "Momentum RU",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  }
+]

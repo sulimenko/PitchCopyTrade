@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from logging.config import fileConfig
+from typing import Any
 
 from alembic import context
 from sqlalchemy import pool
@@ -16,17 +17,24 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.alembic_database_url)
+config.set_main_option("sqlalchemy.url", settings.database.alembic_url)
+
+
+def get_context_options() -> dict[str, Any]:
+    return {
+        "target_metadata": target_metadata,
+        "compare_type": True,
+        "compare_server_default": True,
+    }
 
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
-        target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        compare_type=True,
+        **get_context_options(),
     )
 
     with context.begin_transaction():
@@ -34,7 +42,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(connection=connection, **get_context_options())
 
     with context.begin_transaction():
         context.run_migrations()

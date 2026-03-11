@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/catalog">Каталог</a>
+  <a class="action ghost" href="/login">Вход</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:30px;">
+  <div class="eyebrow">checkout created</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.95;letter-spacing:-0.06em;">Заявка создана</h1>
+  <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
+    Мы создали payment и pending subscription. На следующем этапе этот flow можно связать с реальным СБП-провайдером.
+  </p>
+  <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">
+    После подтверждения оплаты основное взаимодействие планируется через Telegram; web checkout больше не требует отдельного subscriber-пароля.
+  </p>
+</section>
+
+<section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">payment</div>
+    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.payment.final_amount_rub }} RUB</strong>
+    <div class="muted" style="margin-top:10px;">status: {{ result.payment.status.value }}</div>
+    <div class="muted" style="margin-top:6px;">reference: {{ result.payment.stub_reference }}</div>
+  </article>
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">subscription</div>
+    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.subscription.status.value }}</strong>
+    <div class="muted" style="margin-top:10px;">product: {{ product.title }}</div>
+    <div class="muted" style="margin-top:6px;">autorenew: {{ "on" if result.subscription.autorenew_enabled else "off" }}</div>
+  </article>
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">client</div>
+    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.user.full_name }}</strong>
+    <div class="muted" style="margin-top:10px;">{{ result.user.email }}</div>
+    <div class="muted" style="margin-top:6px;">{{ result.user.timezone }}</div>
+  </article>
+</section>
+
+<style>
+  @media (max-width: 840px) {
+    section[style*="repeat(3"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

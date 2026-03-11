@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/catalog">Каталог</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">subscriber feed</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">Лента рекомендаций</h1>
+      <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+        Здесь отображаются только рекомендации по активным или trial-подпискам. Этот fallback открывается только из Telegram по команде `/web`.
+      </p>
+    </div>
+    <div class="pill">{{ recommendations|length }} item</div>
+  </div>
+</section>
+
+{% if not has_access %}
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <strong>Активного доступа пока нет</strong>
+  <p class="muted" style="margin:10px 0 0;line-height:1.65;">
+    После подтверждения оплаты администратором здесь появятся рекомендации по вашим подпискам.
+  </p>
+</section>
+{% else %}
+<section style="display:grid;gap:14px;margin-top:18px;">
+  {% for recommendation in recommendations %}
+  <a class="surface" href="/app/recommendations/{{ recommendation.id }}" style="padding:22px;display:block;">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="max-width:820px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <strong style="font-size:1.15rem;">{{ recommendation.title or recommendation.strategy.title }}</strong>
+          <span class="pill">{{ recommendation.status.value }}</span>
+          <span class="pill">{{ recommendation.kind.value }}</span>
+        </div>
+        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ recommendation.summary or recommendation.thesis or "Описание пока не заполнено" }}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <span class="pill">{{ recommendation.strategy.title }}</span>
+          <span class="pill">{{ recommendation.author.display_name }}</span>
+          {% if recommendation.published_at %}
+          <span class="pill">{{ recommendation.published_at }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="muted">Открыть</div>
+    </div>
+  </a>
+  {% else %}
+  <article class="surface" style="padding:24px;">
+    <strong>Доступ есть, но новых публикаций пока нет</strong>
+    <p class="muted" style="margin:10px 0 0;line-height:1.65;">
+      Как только автор опубликует рекомендацию, она появится в этой ленте.
+    </p>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action" href="/author/recommendations/new">Новая рекомендация</a>
+  <a class="action ghost" href="/author/dashboard">Dashboard</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">author recommendations</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">Рекомендации автора</h1>
+      <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+        Автор видит только свои публикации и управляет жизненным циклом идеи в рамках своих стратегий.
+      </p>
+    </div>
+    <div class="pill">{{ recommendations|length }} total</div>
+  </div>
+</section>
+
+<section style="display:grid;gap:14px;margin-top:18px;">
+  {% for recommendation in recommendations %}
+  <a class="surface" href="/author/recommendations/{{ recommendation.id }}/edit" style="padding:22px;display:block;">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="max-width:860px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <strong style="font-size:1.15rem;">{{ recommendation.title or recommendation.strategy.title }}</strong>
+          <span class="pill">{{ recommendation.kind.value }}</span>
+          <span class="pill">{{ recommendation.status.value }}</span>
+          {% if recommendation.requires_moderation %}
+          <span class="pill">moderation</span>
+          {% endif %}
+        </div>
+        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ recommendation.summary or recommendation.thesis or "Описание пока не заполнено" }}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <span class="pill">{{ recommendation.strategy.title }}</span>
+          <span class="pill">{{ recommendation.legs|length }} legs</span>
+          <span class="pill">{{ recommendation.attachments|length }} attachments</span>
+          {% if recommendation.scheduled_for %}
+          <span class="pill">scheduled {{ recommendation.scheduled_for }}</span>
+          {% endif %}
+          {% if recommendation.published_at %}
+          <span class="pill">published {{ recommendation.published_at }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="muted">Редактировать</div>
+    </div>
+  </a>
+  {% else %}
+  <article class="surface" style="padding:24px;">
+    <strong>Публикаций пока нет</strong>
+    <p class="muted" style="margin:10px 0 0;line-height:1.65;">
+      Создайте первую рекомендацию из dashboard или кнопкой выше.
+    </p>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

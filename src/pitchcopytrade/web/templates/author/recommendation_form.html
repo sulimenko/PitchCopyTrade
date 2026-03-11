@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/author/recommendations">Назад к списку</a>
+  <a class="action ghost" href="/author/dashboard">Dashboard</a>
+  {% if recommendation %}
+  <a class="action ghost" href="/author/recommendations/{{ recommendation.id }}/preview">Preview</a>
+  {% endif %}
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">recommendation editor</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">
+        {% if recommendation %}Редактирование рекомендации{% else %}Новая рекомендация{% endif %}
+      </h1>
+      <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+        Полный author-editor baseline: статус публикации, structured legs, scheduled publish и вложения через MinIO.
+      </p>
+    </div>
+    {% if recommendation %}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <span class="pill">{{ recommendation.kind.value }}</span>
+      <span class="pill">{{ recommendation.status.value }}</span>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
+  <form class="surface" method="post" enctype="multipart/form-data" style="padding:24px;display:grid;gap:18px;">
+    {% if error %}
+    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;">
+      <label style="display:grid;gap:8px;">
+        <strong>Стратегия</strong>
+        <select name="strategy_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;">
+          <option value="">Выберите стратегию</option>
+          {% for strategy in strategies %}
+          <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="display:grid;gap:8px;">
+        <strong>Тип публикации</strong>
+        <select name="kind" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;">
+          {% for item in recommendation_kind_options %}
+          <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="display:grid;gap:8px;">
+        <strong>Статус</strong>
+        <select name="status" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;">
+          {% for item in recommendation_status_options %}
+          <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Заголовок</strong>
+      <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER от уровня" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    </label>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Краткое summary</strong>
+      <textarea name="summary" rows="4" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.summary }}</textarea>
+    </label>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Тезис идеи</strong>
+      <textarea name="thesis" rows="6" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.thesis }}</textarea>
+    </label>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Контекст рынка</strong>
+      <textarea name="market_context" rows="5" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.market_context }}</textarea>
+    </label>
+
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+      <label style="display:grid;gap:8px;">
+        <strong>Scheduled for</strong>
+        <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+      </label>
+      <label style="display:flex;gap:12px;align-items:center;padding-top:30px;">
+        <input type="checkbox" name="requires_moderation" {% if form_values.requires_moderation %}checked{% endif %} />
+        <span><strong>Требует модерации</strong></span>
+      </label>
+    </div>
+
+    <section class="surface" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;">
+      <div class="eyebrow">structured legs</div>
+      <h2 style="margin:10px 0 14px;font-size:1.35rem;">Trade setup</h2>
+      <div style="display:grid;gap:14px;">
+        {% for leg in form_values.legs %}
+        {% set index = loop.index0 %}
+        <article style="padding:16px;border:1px solid var(--line);border-radius:20px;background:rgba(20,56,166,0.03);display:grid;gap:14px;">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+            <strong>Leg {{ loop.index }}</strong>
+            <span class="muted">Заполняйте только если эта сделка нужна в публикации</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
+            <label style="display:grid;gap:8px;">
+              <span>Инструмент</span>
+              <select name="leg_{{ index }}_instrument_id" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;">
+                <option value="">Выберите инструмент</option>
+                {% for instrument in instruments %}
+                <option value="{{ instrument.id }}" {% if leg.instrument_id == instrument.id %}selected{% endif %}>{{ instrument.ticker }} · {{ instrument.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label style="display:grid;gap:8px;">
+              <span>Side</span>
+              <select name="leg_{{ index }}_side" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;">
+                <option value="">Выберите side</option>
+                <option value="buy" {% if leg.side == "buy" %}selected{% endif %}>buy</option>
+                <option value="sell" {% if leg.side == "sell" %}selected{% endif %}>sell</option>
+              </select>
+            </label>
+            <label style="display:grid;gap:8px;">
+              <span>Time horizon</span>
+              <input type="text" name="leg_{{ index }}_time_horizon" value="{{ leg.time_horizon }}" placeholder="1-3 дня / swing / intraday" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;">
+            <label style="display:grid;gap:8px;">
+              <span>Entry from</span>
+              <input type="text" name="leg_{{ index }}_entry_from" value="{{ leg.entry_from }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            </label>
+            <label style="display:grid;gap:8px;">
+              <span>Entry to</span>
+              <input type="text" name="leg_{{ index }}_entry_to" value="{{ leg.entry_to }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            </label>
+            <label style="display:grid;gap:8px;">
+              <span>Stop loss</span>
+              <input type="text" name="leg_{{ index }}_stop_loss" value="{{ leg.stop_loss }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            </label>
+            <label style="display:grid;gap:8px;">
+              <span>TP1</span>
+              <input type="text" name="leg_{{ index }}_take_profit_1" value="{{ leg.take_profit_1 }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
+            <label style="display:grid;gap:8px;">
+              <span>TP2</span>
+              <input type="text" name="leg_{{ index }}_take_profit_2" value="{{ leg.take_profit_2 }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            </label>
+            <label style="display:grid;gap:8px;">
+              <span>TP3</span>
+              <input type="text" name="leg_{{ index }}_take_profit_3" value="{{ leg.take_profit_3 }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            </label>
+            <label style="display:grid;gap:8px;">
+              <span>Комментарий leg</span>
+              <input type="text" name="leg_{{ index }}_note" value="{{ leg.note }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            </label>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="surface" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;">
+      <div class="eyebrow">attachments</div>
+      <h2 style="margin:10px 0 14px;font-size:1.35rem;">Вложения</h2>
+      <label style="display:grid;gap:8px;">
+        <strong>Добавить PDF или изображение</strong>
+        <input type="file" name="attachment_files" accept=".pdf,image/png,image/jpeg,image/webp" multiple style="padding:12px 0;font:inherit;" />
+      </label>
+      <div class="muted" style="margin-top:10px;line-height:1.6;">Поддерживаются PDF, JPG, PNG, WEBP. Лимит файла 10 MB.</div>
+      {% if recommendation and recommendation.attachments %}
+      <div style="display:grid;gap:10px;margin-top:14px;">
+        {% for attachment in recommendation.attachments %}
+        <div class="surface" style="padding:14px;border-radius:18px;background:rgba(20,56,166,0.03);box-shadow:none;">
+          <strong>{{ attachment.original_filename }}</strong>
+          <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} bytes</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <button class="action" type="submit">{% if recommendation %}Сохранить изменения{% else %}Создать рекомендацию{% endif %}</button>
+      <a class="action ghost" href="/author/recommendations">Отмена</a>
+    </div>
+  </form>
+
+  <aside class="surface" style="padding:24px;">
+    <div class="eyebrow">editor notes</div>
+    <h2 style="margin:10px 0 14px;font-size:1.5rem;">Что уже поддержано</h2>
+    <div style="display:grid;gap:12px;">
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Статусы идеи</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">`draft`, `review`, `approved`, `scheduled`, `published`, `closed`, `cancelled`, `archived`.</div>
+      </div>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Типы публикации</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">`new_idea`, `update`, `close`, `cancel`.</div>
+      </div>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Следующий этап</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Следом идут preview, subscriber-facing rendering, moderation queue и attach/delete UX.</div>
+      </div>
+    </div>
+  </aside>
+</section>
+
+<style>
+  @media (max-width: 920px) {
+    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
+    div[style*="repeat(3"] { grid-template-columns: 1fr !important; }
+    div[style*="repeat(4"] { grid-template-columns: 1fr !important; }
+    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

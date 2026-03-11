@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  {% if preview_mode %}
+  <a class="action ghost" href="/author/recommendations/{{ recommendation.id }}/edit">К редактору</a>
+  {% else %}
+  <a class="action ghost" href="/app/feed">Лента</a>
+  {% endif %}
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">{% if preview_mode %}author preview{% else %}{{ recommendation.author.display_name }}{% endif %}</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
+    <div style="max-width:820px;">
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">{{ recommendation.title or recommendation.strategy.title }}</h1>
+      <p class="muted" style="margin:16px 0 0;line-height:1.7;">{{ recommendation.summary or recommendation.thesis or "Текст рекомендации будет добавлен позже." }}</p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <span class="pill">{{ recommendation.status.value }}</span>
+      <span class="pill">{{ recommendation.kind.value }}</span>
+    </div>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">thesis</div>
+    <h2 style="margin:10px 0 14px;font-size:1.5rem;">Комментарий автора</h2>
+    <div class="muted" style="line-height:1.75;">
+      {{ recommendation.thesis or recommendation.market_context or recommendation.summary or "Пока без расширенного комментария." }}
+    </div>
+
+    {% if recommendation.market_context %}
+    <div class="eyebrow" style="margin-top:24px;">market context</div>
+    <div class="muted" style="margin-top:10px;line-height:1.75;">
+      {{ recommendation.market_context }}
+    </div>
+    {% endif %}
+
+    {% if recommendation.legs %}
+    <div class="eyebrow" style="margin-top:24px;">trade plan</div>
+    <div style="display:grid;gap:12px;margin-top:12px;">
+      {% for leg in recommendation.legs %}
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+          <strong>{{ leg.instrument.ticker if leg.instrument else "Инструмент" }}</strong>
+          <span class="pill">{{ leg.side.value if leg.side else "n/a" }}</span>
+        </div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">
+          entry: {{ leg.entry_from or "n/a" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %},
+          stop: {{ leg.stop_loss or "n/a" }}
+          {% if leg.time_horizon %} · horizon: {{ leg.time_horizon }}{% endif %}
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+          {% if leg.take_profit_1 %}<span class="pill">tp1 {{ leg.take_profit_1 }}</span>{% endif %}
+          {% if leg.take_profit_2 %}<span class="pill">tp2 {{ leg.take_profit_2 }}</span>{% endif %}
+          {% if leg.take_profit_3 %}<span class="pill">tp3 {{ leg.take_profit_3 }}</span>{% endif %}
+        </div>
+        {% if leg.note %}
+        <div class="muted" style="margin-top:12px;line-height:1.6;">{{ leg.note }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </article>
+
+  <aside class="surface" style="padding:24px;">
+    <div class="eyebrow">meta</div>
+    <div style="display:grid;gap:12px;margin-top:12px;">
+      <div><strong>Стратегия:</strong> <span class="muted">{{ recommendation.strategy.title }}</span></div>
+      <div><strong>Автор:</strong> <span class="muted">{{ recommendation.author.display_name }}</span></div>
+      <div><strong>Опубликовано:</strong> <span class="muted">{{ recommendation.published_at or "не опубликовано" }}</span></div>
+      <div><strong>Вложений:</strong> <span class="muted">{{ recommendation.attachments|length }}</span></div>
+      {% if recommendation.scheduled_for %}
+      <div><strong>Scheduled:</strong> <span class="muted">{{ recommendation.scheduled_for }}</span></div>
+      {% endif %}
+      {% if recommendation.closed_at %}
+      <div><strong>Closed:</strong> <span class="muted">{{ recommendation.closed_at }}</span></div>
+      {% endif %}
+      {% if recommendation.cancelled_at %}
+      <div><strong>Cancelled:</strong> <span class="muted">{{ recommendation.cancelled_at }}</span></div>
+      {% endif %}
+    </div>
+
+    {% if recommendation.attachments %}
+    <div class="eyebrow" style="margin-top:22px;">attachments</div>
+    <div style="display:grid;gap:10px;margin-top:12px;">
+      {% for attachment in recommendation.attachments %}
+      <div class="surface" style="padding:14px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">
+        <strong>{{ attachment.original_filename }}</strong>
+        <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} bytes</div>
+        {% if attachment_download_enabled %}
+        <a class="action ghost" style="margin-top:10px;" href="/app/recommendations/{{ recommendation.id }}/attachments/{{ attachment.id }}">Скачать</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </aside>
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

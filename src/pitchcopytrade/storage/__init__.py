@@ -1,1 +1,1 @@
-__all__ = ["minio"]
+__all__ = ["base", "local", "minio"]

@@ -1,0 +1,50 @@
+[
+  {
+    "content_md": "Черновик дисклеймера для локального тестового контура.",
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "document_type": "disclaimer",
+    "id": "doc-disclaimer",
+    "is_active": true,
+    "published_at": "2026-03-11T00:00:00+00:00",
+    "source_path": "legal/disclaimer/v1.md",
+    "title": "disclaimer v1",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "version": "v1"
+  },
+  {
+    "content_md": "Черновик оферты для локального тестового контура.",
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "document_type": "offer",
+    "id": "doc-offer",
+    "is_active": true,
+    "published_at": "2026-03-11T00:00:00+00:00",
+    "source_path": "legal/offer/v1.md",
+    "title": "offer v1",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "version": "v1"
+  },
+  {
+    "content_md": "Черновик privacy policy для локального тестового контура.",
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "document_type": "privacy_policy",
+    "id": "doc-privacy_policy",
+    "is_active": true,
+    "published_at": "2026-03-11T00:00:00+00:00",
+    "source_path": "legal/privacy_policy/v1.md",
+    "title": "privacy_policy v1",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "version": "v1"
+  },
+  {
+    "content_md": "Черновик согласия на оплату для локального тестового контура.",
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "document_type": "payment_consent",
+    "id": "doc-payment_consent",
+    "is_active": true,
+    "published_at": "2026-03-11T00:00:00+00:00",
+    "source_path": "legal/payment_consent/v1.md",
+    "title": "payment_consent v1",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "version": "v1"
+  }
+]

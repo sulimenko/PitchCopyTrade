@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, Enum as SqlEnum, ForeignKey, Numeric, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, Enum as SqlEnum, ForeignKey, Numeric, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, TradeSide
+
+if TYPE_CHECKING:
+    from pitchcopytrade.db.models.accounts import AuthorProfile, User
+    from pitchcopytrade.db.models.catalog import Instrument, Strategy
 
 
 class Recommendation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -36,9 +41,18 @@ class Recommendation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     moderation_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    strategy: Mapped["Strategy"] = relationship(back_populates="recommendations")
+    author: Mapped["AuthorProfile"] = relationship(back_populates="recommendations")
+    moderated_by_user: Mapped["User | None"] = relationship(back_populates="moderated_recommendations")
+    legs: Mapped[list["RecommendationLeg"]] = relationship(back_populates="recommendation")
+    attachments: Mapped[list["RecommendationAttachment"]] = relationship(back_populates="recommendation")
+
 
 class RecommendationLeg(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "recommendation_legs"
+    __table_args__ = (
+        CheckConstraint("entry_to IS NULL OR entry_from IS NULL OR entry_to >= entry_from", name="entry_range_valid"),
+    )
 
     recommendation_id: Mapped[str] = mapped_column(ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False)
     instrument_id: Mapped[str | None] = mapped_column(ForeignKey("instruments.id", ondelete="SET NULL"), nullable=True)
@@ -52,9 +66,15 @@ class RecommendationLeg(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     time_horizon: Mapped[str | None] = mapped_column(String(120), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    recommendation: Mapped["Recommendation"] = relationship(back_populates="legs")
+    instrument: Mapped["Instrument | None"] = relationship(back_populates="recommendation_legs")
+
 
 class RecommendationAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "recommendation_attachments"
+    __table_args__ = (
+        CheckConstraint("size_bytes >= 0", name="size_bytes_non_negative"),
+    )
 
     recommendation_id: Mapped[str] = mapped_column(ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False)
     uploaded_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -64,3 +84,6 @@ class RecommendationAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    recommendation: Mapped["Recommendation"] = relationship(back_populates="attachments")
+    uploaded_by_user: Mapped["User | None"] = relationship(back_populates="uploaded_attachments")

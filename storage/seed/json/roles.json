@@ -1,0 +1,23 @@
+[
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "id": "role-admin",
+    "slug": "admin",
+    "title": "Admin",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  },
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "id": "role-author",
+    "slug": "author",
+    "title": "Author",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  },
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "id": "role-moderator",
+    "slug": "moderator",
+    "title": "Moderator",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  }
+]

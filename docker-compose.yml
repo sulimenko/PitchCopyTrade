@@ -3,13 +3,12 @@ services:
     build: .
     env_file:
       - .env
-    command: uvicorn pitchcopytrade.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn pitchcopytrade.api.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     volumes:
       - .:/app
     depends_on:
-      - postgres
       - minio
       - minio-init
 
@@ -20,8 +19,6 @@ services:
     command: python -m pitchcopytrade.bot.main
     volumes:
       - .:/app
-    depends_on:
-      - postgres
 
   worker:
     build: .
@@ -31,11 +28,12 @@ services:
     volumes:
       - .:/app
     depends_on:
-      - postgres
       - minio
 
   postgres:
     image: postgres:16-alpine
+    profiles:
+      - local-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}

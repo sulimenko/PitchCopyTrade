@@ -1,0 +1,12 @@
+[
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "description": "Демо пакет стратегий.",
+    "id": "bundle-1",
+    "is_active": true,
+    "is_public": true,
+    "slug": "starter-pack",
+    "title": "Starter Pack",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  }
+]

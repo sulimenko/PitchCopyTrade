@@ -3,16 +3,17 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from pitchcopytrade.core.logging import configure_logging
+from pitchcopytrade.core.runtime import bootstrap_runtime
+from pitchcopytrade.worker.runner import get_worker_jobs, run_worker_loop
 
-configure_logging()
 logger = logging.getLogger(__name__)
 
 
 async def run_worker() -> None:
-    logger.info("Worker foundation process started")
-    while True:
-        await asyncio.sleep(3600)
+    bootstrap_runtime("worker")
+    jobs = get_worker_jobs()
+    logger.info("Worker foundation process started with jobs: %s", ", ".join(job.name for job in jobs))
+    await run_worker_loop()
 
 
 if __name__ == "__main__":

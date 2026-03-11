@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from sqlalchemy import Enum as SqlEnum, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, Enum as SqlEnum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from pitchcopytrade.db.models.enums import BillingPeriod, InstrumentType, LeadSourceType, ProductType, RiskLevel, StrategyStatus
+
+if TYPE_CHECKING:
+    from pitchcopytrade.db.models.accounts import AuthorProfile, User
+    from pitchcopytrade.db.models.commerce import Payment, Subscription
+    from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
 
 
 class LeadSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -17,6 +24,9 @@ class LeadSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     utm_medium: Mapped[str | None] = mapped_column(String(120), nullable=True)
     utm_campaign: Mapped[str | None] = mapped_column(String(120), nullable=True)
     utm_content: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    users: Mapped[list["User"]] = relationship(back_populates="lead_source")
+    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="lead_source")
 
 
 class Instrument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -34,6 +44,8 @@ class Instrument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(default=True)
+
+    recommendation_legs: Mapped[list["RecommendationLeg"]] = relationship(back_populates="instrument")
 
 
 class Strategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -54,6 +66,11 @@ class Strategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     min_capital_rub: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_public: Mapped[bool] = mapped_column(default=False)
 
+    author: Mapped["AuthorProfile"] = relationship(back_populates="strategies")
+    bundle_memberships: Mapped[list["BundleMember"]] = relationship(back_populates="strategy")
+    subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="strategy")
+    recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="strategy")
+
 
 class Bundle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "bundles"
@@ -65,6 +82,9 @@ class Bundle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_public: Mapped[bool] = mapped_column(default=False)
     is_active: Mapped[bool] = mapped_column(default=True)
 
+    members: Mapped[list["BundleMember"]] = relationship(back_populates="bundle")
+    subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="bundle")
+
 
 class BundleMember(Base):
     __tablename__ = "bundle_members"
@@ -72,10 +92,27 @@ class BundleMember(Base):
     bundle_id: Mapped[str] = mapped_column(ForeignKey("bundles.id", ondelete="CASCADE"), primary_key=True)
     strategy_id: Mapped[str] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"), primary_key=True)
 
+    bundle: Mapped[Bundle] = relationship(back_populates="members")
+    strategy: Mapped[Strategy] = relationship(back_populates="bundle_memberships")
+
 
 class SubscriptionProduct(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "subscription_products"
-    __table_args__ = (UniqueConstraint("slug", name="uq_subscription_products_slug"),)
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_subscription_products_slug"),
+        CheckConstraint("price_rub >= 0", name="price_rub_non_negative"),
+        CheckConstraint("trial_days >= 0", name="trial_days_non_negative"),
+        CheckConstraint(
+            """
+            (product_type = 'strategy' AND strategy_id IS NOT NULL AND author_id IS NULL AND bundle_id IS NULL)
+            OR
+            (product_type = 'author' AND author_id IS NOT NULL AND strategy_id IS NULL AND bundle_id IS NULL)
+            OR
+            (product_type = 'bundle' AND bundle_id IS NOT NULL AND strategy_id IS NULL AND author_id IS NULL)
+            """,
+            name="target_matches_product_type",
+        ),
+    )
 
     product_type: Mapped[ProductType] = mapped_column(SqlEnum(ProductType, name="product_type"), nullable=False)
     slug: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -89,3 +126,9 @@ class SubscriptionProduct(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     trial_days: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(default=True)
     autorenew_allowed: Mapped[bool] = mapped_column(default=True)
+
+    strategy: Mapped["Strategy | None"] = relationship(back_populates="subscription_products")
+    author: Mapped["AuthorProfile | None"] = relationship(back_populates="subscription_products")
+    bundle: Mapped["Bundle | None"] = relationship(back_populates="subscription_products")
+    payments: Mapped[list["Payment"]] = relationship(back_populates="product")
+    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="product")

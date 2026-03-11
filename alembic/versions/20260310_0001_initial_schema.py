@@ -210,6 +210,18 @@ def upgrade() -> None:
         sa.Column("autorenew_allowed", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("price_rub >= 0", name="ck_subscription_products_price_rub_non_negative"),
+        sa.CheckConstraint("trial_days >= 0", name="ck_subscription_products_trial_days_non_negative"),
+        sa.CheckConstraint(
+            """
+            (product_type = 'strategy' AND strategy_id IS NOT NULL AND author_id IS NULL AND bundle_id IS NULL)
+            OR
+            (product_type = 'author' AND author_id IS NOT NULL AND strategy_id IS NULL AND bundle_id IS NULL)
+            OR
+            (product_type = 'bundle' AND bundle_id IS NOT NULL AND strategy_id IS NULL AND author_id IS NULL)
+            """,
+            name="ck_subscription_products_target_matches_product_type",
+        ),
         sa.ForeignKeyConstraint(["author_id"], ["author_profiles.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["bundle_id"], ["bundles.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["strategy_id"], ["strategies.id"], ondelete="SET NULL"),
@@ -229,6 +241,7 @@ def upgrade() -> None:
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("current_redemptions >= 0", name="ck_promo_codes_current_redemptions_non_negative"),
         sa.UniqueConstraint("code", name="uq_promo_codes_code"),
     )
 
@@ -251,6 +264,9 @@ def upgrade() -> None:
         sa.Column("confirmed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("amount_rub >= 0", name="ck_payments_amount_rub_non_negative"),
+        sa.CheckConstraint("discount_rub >= 0", name="ck_payments_discount_rub_non_negative"),
+        sa.CheckConstraint("final_amount_rub >= 0", name="ck_payments_final_amount_rub_non_negative"),
         sa.ForeignKeyConstraint(["product_id"], ["subscription_products.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["promo_code_id"], ["promo_codes.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
@@ -272,6 +288,8 @@ def upgrade() -> None:
         sa.Column("end_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("manual_discount_rub >= 0", name="ck_subscriptions_manual_discount_rub_non_negative"),
+        sa.CheckConstraint("end_at > start_at", name="ck_subscriptions_end_after_start"),
         sa.ForeignKeyConstraint(["applied_promo_code_id"], ["promo_codes.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["lead_source_id"], ["lead_sources.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["payment_id"], ["payments.id"], ondelete="SET NULL"),
@@ -286,10 +304,12 @@ def upgrade() -> None:
         sa.Column("version", sa.String(length=50), nullable=False),
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("content_md", sa.Text(), nullable=False),
+        sa.Column("source_path", sa.String(length=500), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("document_type", "version", name="uq_legal_documents_document_type_version"),
     )
 
     op.create_table(
@@ -306,6 +326,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["document_id"], ["legal_documents.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["payment_id"], ["payments.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.UniqueConstraint("user_id", "document_id", "payment_id", name="uq_user_consents_user_document_payment"),
     )
 
     op.create_table(
@@ -349,6 +370,10 @@ def upgrade() -> None:
         sa.Column("note", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "entry_to IS NULL OR entry_from IS NULL OR entry_to >= entry_from",
+            name="ck_recommendation_legs_entry_range_valid",
+        ),
         sa.ForeignKeyConstraint(["instrument_id"], ["instruments.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["recommendation_id"], ["recommendations.id"], ondelete="CASCADE"),
     )
@@ -366,6 +391,7 @@ def upgrade() -> None:
         sa.Column("size_bytes", sa.BigInteger(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("size_bytes >= 0", name="ck_recommendation_attachments_size_bytes_non_negative"),
         sa.ForeignKeyConstraint(["recommendation_id"], ["recommendations.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["uploaded_by_user_id"], ["users.id"], ondelete="SET NULL"),
     )

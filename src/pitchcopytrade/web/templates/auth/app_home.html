@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<a class="action ghost" href="/logout">Выйти</a>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">staff workspace</div>
+  <h1 style="margin:10px 0 16px;font-size:clamp(2rem,4vw,3.6rem);line-height:0.95;letter-spacing:-0.05em;">
+    {{ role_home }}
+  </h1>
+  <p class="muted" style="max-width:620px;line-height:1.65;">
+    Это staff-контур для ролей `admin`, `author`, `moderator`. Subscriber fallback сюда не входит и открывается только через Telegram-issued access.
+  </p>
+
+  <div style="display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:18px;margin-top:22px;">
+    <article class="surface" style="padding:20px;border-radius:24px;background:var(--surface-strong);box-shadow:none;">
+      <div class="eyebrow">profile</div>
+      <h2 style="margin:10px 0 14px;font-size:1.5rem;">{{ user.full_name or user.username or user.email or user.id }}</h2>
+      <div style="display:grid;gap:10px;">
+        <div><strong>Username:</strong> <span class="muted">{{ user.username or "не задан" }}</span></div>
+        <div><strong>Email:</strong> <span class="muted">{{ user.email or "не задан" }}</span></div>
+        <div><strong>Timezone:</strong> <span class="muted">{{ user.timezone }}</span></div>
+      </div>
+    </article>
+    <article class="surface" style="padding:20px;border-radius:24px;background:var(--surface-strong);box-shadow:none;">
+      <div class="eyebrow">roles</div>
+      <h2 style="margin:10px 0 14px;font-size:1.5rem;">Разрешения</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        {% for role in role_labels %}
+        <span class="pill">{{ role }}</span>
+        {% endfor %}
+      </div>
+      <p class="muted" style="margin:16px 0 0;line-height:1.6;">
+        Это временный staff-shell. Следующие шаги заменят его на полноценный `author workspace` и `moderation workspace`.
+      </p>
+    </article>
+  </div>
+</section>
+{% endblock %}

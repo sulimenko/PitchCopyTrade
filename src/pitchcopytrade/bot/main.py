@@ -4,35 +4,22 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.filters import CommandStart
-from aiogram.types import Message
 
-from pitchcopytrade.core.config import get_settings
-from pitchcopytrade.core.logging import configure_logging
+from pitchcopytrade.bot.dispatcher import build_dispatcher
+from pitchcopytrade.core.runtime import bootstrap_runtime
 
-configure_logging()
 logger = logging.getLogger(__name__)
 
 
-async def _handle_start(message: Message) -> None:
-    await message.answer(
-        "PitchCopyTrade foundation запущен.\n"
-        "Дальше будут витрина стратегий, подписки и публикация рекомендаций."
-    )
-
+def create_bot(token: str) -> Bot:
+    return Bot(token=token)
 
 async def run_bot() -> None:
-    settings = get_settings()
+    settings = bootstrap_runtime("bot")
 
-    if settings.telegram_bot_token.startswith("__FILL_ME__"):
-        logger.warning("Telegram token is a placeholder. Bot process is idling.")
-        while True:
-            await asyncio.sleep(3600)
+    dp: Dispatcher = build_dispatcher()
 
-    dp = Dispatcher()
-    dp.message.register(_handle_start, CommandStart())
-
-    bot = Bot(token=settings.telegram_bot_token)
+    bot = create_bot(settings.telegram.bot_token.get_secret_value())
     logger.info("Starting bot polling")
     await dp.start_polling(bot)
 

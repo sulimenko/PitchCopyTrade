@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/catalog">Каталог</a>
+  <a class="action ghost" href="javascript:history.back()">Назад</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:30px;">
+  <div class="eyebrow">legal document</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.95;letter-spacing:-0.05em;">{{ document.title }}</h1>
+  <p class="muted" style="margin:14px 0 0;">{{ document.document_type.value }} / {{ document.version }}</p>
+  <div style="margin-top:22px;padding:24px;border-radius:24px;background:var(--surface-strong);white-space:pre-wrap;line-height:1.7;">{{ content_md }}</div>
+</section>
+{% endblock %}
