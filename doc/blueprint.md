@@ -10,6 +10,17 @@
 - что из текущей реализации стало transitional и должно быть переделано;
 - что нужно довести до полного завершения проекта.
 
+## 1.1 Обязательный delivery process
+Для каждого завершенного implementation step действует обязательное правило:
+- сначала выполнить code review текущего результата;
+- затем обновить все актуальные description files проекта.
+
+Под description files в текущем проекте понимаются:
+- [README.md](/Users/alexey/site/PitchCopyTrade/README.md)
+- [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
+- [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+- [review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
+
 ## 2. Главный продуктовый сдвиг
 Клиентский контур больше не считается `web-first`.
 
@@ -135,6 +146,7 @@
 - approve / rework / reject actions
 - moderation audit event write
 - moderator login redirect
+- moderation history/timeline baseline
 
 ### 5.7 Public storefront baseline
 Есть:
@@ -150,6 +162,7 @@
 - bot `/confirm_buy <product_slug>`
 - bot `/web` for Telegram-authenticated web fallback link
 - dedicated Telegram fallback cookie issued by `/tg-auth`
+- reply-keyboard UX for primary Telegram paths
 
 ### 5.9 Access delivery baseline
 Есть:
@@ -160,6 +173,7 @@
 - `/app/*` fallback now depends on Telegram-issued access, not on staff web session
 - attachment download path under ACL
 - richer recommendation rendering for legs and attachments
+- worker-based scheduled publish baseline
 
 ## 6. Что в текущем коде считается transitional и подлежит переделке
 
@@ -302,7 +316,7 @@ Baseline уже есть:
 
 Нужно доделать:
 - history/timeline;
-- worker-based scheduled publish execution;
+- worker-based scheduled publish hardening;
 - moderator-aware transitions.
 
 ### 11.6 Attachments
@@ -360,9 +374,11 @@ Baseline уже есть:
 - author workspace baseline: реализован
 - publish/legs/attachments baseline: реализован
 - preview/moderation/rendering baseline: реализован
+- worker-based scheduled publish baseline: реализован
+- Telegram reply-keyboard UX baseline: реализован
 - ACL delivery baseline: реализован
 - Telegram-first bot baseline: реализован
 - subscriber password removed from web fallback checkout
 - Telegram-auth-only web fallback baseline: реализован
 - optional docker postgres profile and external DSN mode: зафиксированы
-- главный следующий шаг: lifecycle polish, worker-based scheduling и Telegram UX depth
+- главный следующий шаг: lifecycle polish, moderation analytics и Telegram WebApp depth

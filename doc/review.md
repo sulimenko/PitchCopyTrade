@@ -6,6 +6,12 @@
 - `/Users/alexey/site/PitchCopyTrade/doc/blueprint.md`
 - `/Users/alexey/site/PitchCopyTrade/doc/task.md`
 
+После каждого завершенного шага reviewer должен ожидать, что затем будут обновлены все description files:
+- `/Users/alexey/site/PitchCopyTrade/README.md`
+- `/Users/alexey/site/PitchCopyTrade/doc/blueprint.md`
+- `/Users/alexey/site/PitchCopyTrade/doc/task.md`
+- `/Users/alexey/site/PitchCopyTrade/doc/review.md`
+
 ## 1. Важный контекст
 Проект уже имеет substantial baseline:
 - foundation infrastructure
@@ -14,6 +20,8 @@
 - author workspace baseline
 - author publish/legs/attachments baseline
 - preview/moderation/rendering baseline
+- worker scheduled publish baseline
+- Telegram reply-keyboard UX baseline
 - strategy/product CRUD
 - public storefront
 - checkout stub/manual
@@ -131,6 +139,14 @@
 - approve/rework/reject не ломают publish timestamps;
 - subscriber detail и attachment download остаются под ACL;
 - rendering не теряет structured legs и attachment metadata.
+
+### K. Worker scheduling and Telegram UX
+Проверь:
+- worker публикует только due `scheduled` recommendations;
+- worker не публикует draft/review/approved items;
+- worker пишет audit baseline при scheduled publish;
+- Telegram UX improvements не ломают command-based fallback;
+- reply keyboard не подменяет ACL и не скрывает обязательные команды.
 
 ## 4. Partial / transitional areas
 Это не automatic finding само по себе, но reviewer должен проверять drift:

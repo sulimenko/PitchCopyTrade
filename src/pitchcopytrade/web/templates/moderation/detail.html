@@ -68,6 +68,24 @@
       <div><strong>Вложений:</strong> <span class="muted">{{ recommendation.attachments|length }}</span></div>
       <div><strong>Комментарий модерации:</strong> <span class="muted">{{ recommendation.moderation_comment or "пока нет" }}</span></div>
     </div>
+
+    <div class="eyebrow" style="margin-top:22px;">history</div>
+    <div style="display:grid;gap:10px;margin-top:12px;">
+      {% for event in history %}
+      <div class="surface" style="padding:14px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">
+        <strong>{{ event.action }}</strong>
+        <div class="muted" style="margin-top:6px;">{{ event.created_at }}</div>
+        {% if event.actor_user %}
+        <div class="muted" style="margin-top:6px;">{{ event.actor_user.full_name or event.actor_user.username or event.actor_user.id }}</div>
+        {% endif %}
+        {% if event.payload %}
+        <div class="muted" style="margin-top:8px;line-height:1.6;">{{ event.payload }}</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="muted">История решений пока пустая.</div>
+      {% endfor %}
+    </div>
   </aside>
 </section>
 

@@ -37,7 +37,10 @@ Telegram-first платформа для продажи подписок на с
 - publish/schedule baseline
 - author preview
 - moderation queue
+- moderation history/timeline baseline
 - subscriber-facing detail rendering with attachment download
+- worker-based scheduled publish baseline
+- Telegram reply-keyboard UX baseline
 - public catalog
 - checkout `stub/manual`
 - payment review -> confirm -> subscription activation
@@ -117,6 +120,7 @@ Telegram-first платформа для продажи подписок на с
 - дополнительные фильтры и SLA-контроль
 
 ## Что осталось сделать
+- review-first delivery process уже зафиксирован в docs и применяется после каждого шага
 - Telegram-first consent UX
 - richer bot UX с кнопками и Mini App / WebApp
 - attachments management UX

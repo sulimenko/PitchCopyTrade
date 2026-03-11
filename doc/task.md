@@ -3,6 +3,14 @@
 Дата: 2026-03-11  
 Режим: actual status + refactor roadmap after Telegram-first decision
 
+Process rule:
+- after each completed implementation step, run review first;
+- only after review update all current description files:
+  - [README.md](/Users/alexey/site/PitchCopyTrade/README.md)
+  - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
+  - [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+  - [review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
+
 Статусы:
 - `[done]`
 - `[partial]`
@@ -230,6 +238,7 @@ Acceptance:
 - approve/reject/rework
 - moderation detail page
 - moderation audit write baseline
+- moderation history/timeline baseline
 
 Не сделано:
 - optional moderation rules
@@ -273,6 +282,17 @@ Acceptance:
 - legal and payment admin surface
 - lead source analytics
 - audit views
+
+### 32. Worker scheduled publish `[partial]`
+Сделано:
+- worker scheduled publish baseline
+- transition `scheduled -> published`
+- audit write on worker publish
+
+Не сделано:
+- delivery notifications
+- retry / observability hardening
+- broader lifecycle jobs
 
 ## 5. Правила, которые нельзя ломать
 - не возвращаться к file-first persistence

@@ -11,6 +11,7 @@ from pitchcopytrade.services.moderation import (
     approve_recommendation,
     get_moderation_queue_stats,
     get_moderation_recommendation,
+    list_recommendation_audit_events,
     list_moderation_recommendations,
     reject_recommendation,
     send_recommendation_to_rework,
@@ -56,6 +57,7 @@ async def moderation_detail_page(
     recommendation = await get_moderation_recommendation(session, recommendation_id)
     if recommendation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+    history = await list_recommendation_audit_events(session, recommendation_id)
     return templates.TemplateResponse(
         request,
         "moderation/detail.html",
@@ -63,6 +65,7 @@ async def moderation_detail_page(
             "title": recommendation.title or "Recommendation moderation",
             "user": user,
             "recommendation": recommendation,
+            "history": history,
         },
     )
 

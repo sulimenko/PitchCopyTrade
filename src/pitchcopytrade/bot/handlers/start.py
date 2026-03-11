@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
 from pitchcopytrade.db.session import AsyncSessionLocal
 from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
@@ -29,7 +29,14 @@ async def handle_start(message: Message) -> None:
         "/catalog - витрина стратегий и продуктов\n"
         "/buy <product_slug> - показать условия покупки\n"
         "/confirm_buy <product_slug> - создать заявку на оплату\n"
-        "/feed - доступные рекомендации"
+        "/feed - доступные рекомендации",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
+                [KeyboardButton(text="/web")],
+            ],
+            resize_keyboard=True,
+        ),
     )
 
 

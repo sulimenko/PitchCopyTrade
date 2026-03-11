@@ -62,6 +62,20 @@ async def get_moderation_recommendation(session: AsyncSession, recommendation_id
     return result.scalar_one_or_none()
 
 
+async def list_recommendation_audit_events(session: AsyncSession, recommendation_id: str) -> list[AuditEvent]:
+    query = (
+        select(AuditEvent)
+        .options(selectinload(AuditEvent.actor_user))
+        .where(
+            AuditEvent.entity_type == "recommendation",
+            AuditEvent.entity_id == recommendation_id,
+        )
+        .order_by(AuditEvent.created_at.desc())
+    )
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
 async def get_moderation_queue_stats(session: AsyncSession) -> ModerationQueueStats:
     review_count = await _count_query(
         session,

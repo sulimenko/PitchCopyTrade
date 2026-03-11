@@ -4,6 +4,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import logging
 
+from pitchcopytrade.db.session import AsyncSessionLocal
+from pitchcopytrade.services.publishing import publish_due_recommendations
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,9 @@ class WorkerJob:
 
 
 async def run_scheduled_publish() -> None:
-    logger.debug("scheduled_publish tick")
+    async with AsyncSessionLocal() as session:
+        published = await publish_due_recommendations(session)
+    logger.info("scheduled_publish tick: %s published", len(published))
 
 
 async def run_payment_expiry_sync() -> None:

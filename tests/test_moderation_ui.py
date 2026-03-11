@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from pitchcopytrade.api.deps.auth import require_moderator
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
+from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import Strategy
 from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, RiskLevel, RoleSlug, StrategyStatus
@@ -109,9 +110,22 @@ def test_moderation_queue_renders(monkeypatch) -> None:
 def test_moderation_detail_renders(monkeypatch) -> None:
     user = _make_moderator_user()
     recommendation = _make_recommendation()
+    history = [
+        AuditEvent(
+            id="audit-1",
+            entity_type="recommendation",
+            entity_id="rec-1",
+            action="moderation.approve",
+            payload={"status": "published"},
+        )
+    ]
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.moderation.get_moderation_recommendation",
         lambda _session, _id: _async_return(recommendation),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.moderation.list_recommendation_audit_events",
+        lambda _session, _id: _async_return(history),
     )
 
     with _build_client(user) as client:
@@ -120,6 +134,7 @@ def test_moderation_detail_renders(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Approve" in response.text
         assert "Momentum RU" in response.text
+        assert "moderation.approve" in response.text
 
 
 def test_moderation_approve_redirects(monkeypatch) -> None:

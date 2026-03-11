@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
 from pitchcopytrade.db.session import AsyncSessionLocal
 from pitchcopytrade.services.public import (
@@ -27,7 +27,16 @@ async def handle_catalog(message: Message) -> None:
             lines.append(f"  - {product.slug}: {product.title} | {product.price_rub} RUB")
     lines.append("")
     lines.append("Для оформления используйте: /buy <product_slug>")
-    await message.answer("\n".join(lines))
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
+                [KeyboardButton(text="/web")],
+            ],
+            resize_keyboard=True,
+        ),
+    )
 
 
 async def handle_buy_preview(message: Message, command: CommandObject) -> None:
@@ -51,7 +60,16 @@ async def handle_buy_preview(message: Message, command: CommandObject) -> None:
         "Отправляя confirm-команду, вы подтверждаете юридические документы, активные в системе.",
         f"Для продолжения отправьте: /confirm_buy {product.slug}",
     ]
-    await message.answer("\n".join(lines))
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text=f"/confirm_buy {product.slug}")],
+                [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
+            ],
+            resize_keyboard=True,
+        ),
+    )
 
 
 async def handle_buy_confirm(message: Message, command: CommandObject) -> None:
@@ -91,7 +109,14 @@ async def handle_buy_confirm(message: Message, command: CommandObject) -> None:
         f"Продукт: {product.title}\n"
         f"Сумма: {result.payment.final_amount_rub} RUB\n"
         f"Reference: {result.payment.stub_reference}\n"
-        "После подтверждения администратором доступ будет активирован."
+        "После подтверждения администратором доступ будет активирован.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
+                [KeyboardButton(text="/catalog")],
+            ],
+            resize_keyboard=True,
+        ),
     )
 
 
