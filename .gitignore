@@ -43,6 +43,7 @@ htmlcov/
 postgres_data/
 minio_data/
 docker-compose.override.yml
+storage/runtime/
 
 # Documentation source artifacts
 doc/*

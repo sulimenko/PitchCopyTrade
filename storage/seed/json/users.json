@@ -1,0 +1,64 @@
+[
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "email": "admin@example.com",
+    "full_name": "Admin One",
+    "id": "user-admin",
+    "lead_source_id": null,
+    "password_hash": "seed-admin-hash",
+    "role_ids": [
+      "role-admin"
+    ],
+    "status": "active",
+    "telegram_user_id": null,
+    "timezone": "Europe/Moscow",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "username": "admin1"
+  },
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "email": "author@example.com",
+    "full_name": "Author One",
+    "id": "user-author",
+    "lead_source_id": null,
+    "password_hash": "seed-author-hash",
+    "role_ids": [
+      "role-author"
+    ],
+    "status": "active",
+    "telegram_user_id": 111,
+    "timezone": "Europe/Moscow",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "username": "author1"
+  },
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "email": "moderator@example.com",
+    "full_name": "Moderator One",
+    "id": "user-moderator",
+    "lead_source_id": null,
+    "password_hash": "seed-moderator-hash",
+    "role_ids": [
+      "role-moderator"
+    ],
+    "status": "active",
+    "telegram_user_id": null,
+    "timezone": "Europe/Moscow",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "username": "moderator1"
+  },
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "email": "sub@example.com",
+    "full_name": "Subscriber One",
+    "id": "user-sub",
+    "lead_source_id": null,
+    "password_hash": null,
+    "role_ids": [],
+    "status": "active",
+    "telegram_user_id": 222,
+    "timezone": "Europe/Moscow",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "username": "sub1"
+  }
+]

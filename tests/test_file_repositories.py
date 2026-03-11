@@ -242,6 +242,21 @@ def _seed_demo_json(store: FileDataStore) -> None:
     )
 
 
+def test_file_data_store_bootstraps_runtime_from_seed(tmp_path) -> None:
+    seed_store = FileDataStore(root_dir=tmp_path / "storage" / "seed" / "json", seed_dir=tmp_path / "storage" / "seed" / "json")
+    _seed_demo_json(seed_store)
+
+    runtime_store = FileDataStore(
+        root_dir=tmp_path / "storage" / "runtime" / "json",
+        seed_dir=tmp_path / "storage" / "seed" / "json",
+    )
+
+    users = runtime_store.load_dataset("users")
+
+    assert len(users) == 2
+    assert (tmp_path / "storage" / "runtime" / "json" / "users.json").exists()
+
+
 @pytest.mark.asyncio
 async def test_file_author_repository_reads_seeded_entities(tmp_path) -> None:
     store = FileDataStore(root_dir=tmp_path / "storage" / "json")

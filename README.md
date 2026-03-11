@@ -32,7 +32,7 @@ Telegram-first платформа для продажи подписок на с
 - Telegram-first subscriber baseline
 - scheduled publish baseline
 - delivery notifications baseline
-- local filesystem storage backend baseline with root `storage/blob`
+- local filesystem storage backend baseline with runtime root `storage/runtime/blob`
 - runtime switch:
   - `APP_DATA_MODE=db|file`
   - `APP_STORAGE_ROOT=storage`
@@ -51,6 +51,8 @@ Telegram-first платформа для продажи подписок на с
   - recommendations
   - legs
   - attachments
+- real demo seed pack under [storage/seed/json](/Users/alexey/site/PitchCopyTrade/storage/seed/json)
+- demo attachment blob under [storage/seed/blob/recommendations/rec-1/file.pdf](/Users/alexey/site/PitchCopyTrade/storage/seed/blob/recommendations/rec-1/file.pdf)
 
 ## Архитектурный сдвиг
 Новая целевая схема:
@@ -70,10 +72,11 @@ Telegram-first платформа для продажи подписок на с
   - append-heavy и аналитические наборы можно складывать в `Parquet`.
 
 Рекомендованная структура:
-- `storage/blob/`
-- `storage/json/`
+- `storage/seed/blob/`
+- `storage/seed/json/`
+- `storage/runtime/blob/`
+- `storage/runtime/json/`
 - `storage/parquet/`
-- `storage/runtime/`
 
 ## Что показывает исследование
 Текущий код пока еще не соответствует новой целевой схеме полностью.
@@ -156,6 +159,22 @@ Telegram-first платформа для продажи подписок на с
 3. сделать file repositories для минимального demo-контура;
 4. добавить local seed data;
 5. поднять `api + bot + worker` локально с test bot.
+
+## Demo seed data
+В проект уже добавлен локальный demo pack для `file` mode:
+- [storage/seed/json/roles.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/roles.json)
+- [storage/seed/json/users.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/users.json)
+- [storage/seed/json/authors.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/authors.json)
+- [storage/seed/json/strategies.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/strategies.json)
+- [storage/seed/json/products.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/products.json)
+- [storage/seed/json/legal_documents.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/legal_documents.json)
+- [storage/seed/json/payments.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/payments.json)
+- [storage/seed/json/subscriptions.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/subscriptions.json)
+- [storage/seed/json/recommendations.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/recommendations.json)
+- [storage/seed/json/recommendation_legs.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/recommendation_legs.json)
+- [storage/seed/json/recommendation_attachments.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/recommendation_attachments.json)
+
+При первом file-mode запуске runtime копируется из `storage/seed/*` в локальный `storage/runtime/*`. `storage/runtime/` не должен коммититься.
 
 ## Документы
 - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)

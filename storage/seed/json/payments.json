@@ -1,0 +1,21 @@
+[
+  {
+    "amount_rub": 4900,
+    "confirmed_at": "2026-03-11T00:00:00+00:00",
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "currency": "RUB",
+    "discount_rub": 0,
+    "expires_at": "2026-03-12T00:00:00+00:00",
+    "external_id": null,
+    "final_amount_rub": 4900,
+    "id": "payment-1",
+    "product_id": "product-1",
+    "promo_code_id": null,
+    "provider": "stub_manual",
+    "provider_payload": null,
+    "status": "paid",
+    "stub_reference": "MANUAL-1",
+    "updated_at": "2026-03-11T00:00:00+00:00",
+    "user_id": "user-sub"
+  }
+]

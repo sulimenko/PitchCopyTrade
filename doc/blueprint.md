@@ -97,6 +97,8 @@ Canonical subscriber model остается:
 - worker-based scheduled publish baseline
 - delivery notifications baseline
 - local filesystem storage backend baseline with `APP_STORAGE_ROOT=storage`
+- runtime writes target `storage/runtime/*`
+- committed seed target `storage/seed/*`
 
 ### 3.6 Repository layer baseline
 Есть:
@@ -111,6 +113,8 @@ Canonical subscriber model остается:
 - author services no longer talk to `AsyncSession` directly
 - ACL/feed services no longer talk to `AsyncSession` directly
 - `author` and `ACL/feed` deps can switch to file repositories in `APP_DATA_MODE=file`
+- real demo seed pack under `storage/seed/json`
+- real demo blob attachment under `storage/seed/blob`
 
 Пока еще не переведены:
 - admin
@@ -138,7 +142,7 @@ Canonical subscriber model остается:
 
 Уточнение по текущему состоянию:
 - local filesystem storage backend уже добавлен в код;
-- его root идет из `APP_STORAGE_ROOT` и по умолчанию использует `storage/blob`;
+- его runtime root идет из `APP_STORAGE_ROOT` и по умолчанию использует `storage/runtime/blob`;
 - route download уже поддерживает `storage_provider=local_fs`;
 - но primary upload path все еще не переключен на local filesystem по умолчанию.
 
@@ -164,16 +168,20 @@ Primary persistence target:
 - `storage/`
 
 Целевое разбиение:
-- `storage/blob/`
+- `storage/seed/blob/`
+  - committed demo attachments
+  - committed demo legal source files
+- `storage/seed/json/`
+  - committed demo datasets
+  - baseline file-mode bootstrap data
+- `storage/runtime/blob/`
   - вложения рекомендаций
   - изображения
   - PDF
-  - legal document source files
-- `storage/json/`
+  - локальные runtime binary payload
+- `storage/runtime/json/`
   - file repositories для сущностей
-  - snapshots
-  - lookup dictionaries
-  - seed data
+  - локальный mutable state тестировщика
 - `storage/parquet/`
   - audit exports
   - analytics datasets
@@ -201,7 +209,7 @@ Primary persistence target:
 
 Правила:
 - `PostgreSQL` хранит операционные сущности;
-- вложения и документы все равно хранятся локально в `storage/blob`;
+- вложения и документы все равно хранятся локально в `storage/runtime/blob`;
 - `MinIO` не должен быть обязательным;
 - DSN приходит через `.env`.
 
@@ -215,6 +223,22 @@ Primary persistence target:
 - attachments и legal files хранятся локально;
 - поведение app/bot/worker остается максимально близким к `db` mode;
 - режим должен позволить прогнать основной сценарий на одной машине.
+- в репозитории уже должен лежать demo seed pack, чтобы mode был runnable без ручного наполнения;
+- runtime state тестировщика не должен коммититься.
+
+### 6.3 Demo seed baseline
+Текущий baseline теперь включает:
+- seeded `roles`, `users`, `authors`
+- seeded `lead_sources`, `instruments`
+- seeded `strategies`, `bundles`, `products`
+- seeded `legal_documents`
+- seeded `payments`, `subscriptions`, `user_consents`
+- seeded `recommendations`, `recommendation_legs`, `recommendation_attachments`
+- seeded local blob file for attachment download smoke-test
+
+Это означает:
+- file-mode уже имеет входной demo dataset;
+- локальный smoke path может опираться не только на тестовые фабрики, но и на реальные файлы в `storage/seed/*`, которые bootstrapятся в `storage/runtime/*`.
 
 ## 7. Canonical file-mode scope
 Минимальный file-mode scope, без которого режим бесполезен:

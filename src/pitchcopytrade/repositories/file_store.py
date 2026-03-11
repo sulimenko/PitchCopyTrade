@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from shutil import copy2
 from tempfile import NamedTemporaryFile
 
 from pitchcopytrade.core.config import get_settings
@@ -27,12 +28,26 @@ class FileDataStore:
         "recommendation_attachments",
     )
 
-    def __init__(self, root_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        root_dir: str | Path | None = None,
+        seed_dir: str | Path | None = None,
+    ) -> None:
         settings = get_settings()
         self.root_dir = Path(root_dir or settings.storage.json_root)
+        self.seed_dir = Path(seed_dir or settings.storage.seed_json_root)
 
     def bootstrap(self) -> None:
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        if self.seed_dir == self.root_dir or not self.seed_dir.exists():
+            return
+        for dataset_name in self.DATASETS:
+            runtime_path = self._path_for(dataset_name)
+            seed_path = self._seed_path_for(dataset_name)
+            if runtime_path.exists() or not seed_path.exists():
+                continue
+            runtime_path.parent.mkdir(parents=True, exist_ok=True)
+            copy2(seed_path, runtime_path)
 
     def load_dataset(self, dataset_name: str) -> list[dict]:
         self.bootstrap()
@@ -62,3 +77,6 @@ class FileDataStore:
 
     def _path_for(self, dataset_name: str) -> Path:
         return self.root_dir / f"{dataset_name}.json"
+
+    def _seed_path_for(self, dataset_name: str) -> Path:
+        return self.seed_dir / f"{dataset_name}.json"

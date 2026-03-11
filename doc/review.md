@@ -99,6 +99,8 @@
 - нет path traversal;
 - checksum/size/content-type metadata согласованы;
 - blob storage не смешан со structured data хаотично.
+- committed demo seed pack в `storage/seed/json` остается согласован с file repositories.
+- runtime writes не уходят в tracked seed files.
 
 ### F. File repositories
 Проверь:
@@ -154,6 +156,7 @@ Reviewer должен считать хорошим признаком:
 - уменьшение зависимости service layer от `AsyncSession` хотя бы в частично мигрированных контурах;
 - появление JSON-backed file repositories для реальных доменных сущностей, а не только для toy examples;
 - появление file-mode seed/bootstrap path;
+- появление committed demo seed data и demo blob file для локального smoke-test;
 - уменьшение прямой зависимости routes/services от `AsyncSession`;
 - выравнивание attachment metadata под локальные пути;
 - сохранение Telegram-first UX при persistence refactor.

@@ -136,7 +136,7 @@ Process rule:
 - общий storage contract
 - `LocalFilesystemStorage`
 - `APP_STORAGE_ROOT`
-- default local blob root `storage/blob`
+- default runtime blob root `storage/runtime/blob`
 - local storage tests
 - attachment download path understands `storage_provider=local_fs`
 
@@ -202,7 +202,7 @@ Acceptance:
 
 ### 21. File repositories for demo path `[partial]`
 Сделано:
-- JSON-backed file datasets under `storage/json`
+- JSON-backed file datasets under `storage/runtime/json` with bootstrap from `storage/seed/json`
 - file repositories for minimal demo scope:
   - users
   - roles
@@ -218,6 +218,8 @@ Acceptance:
 - hydration graph into ORM-like domain objects
 - author create/edit persistence can now save recommendations, legs and attachments without DB
 - ACL/feed can now read user entitlements and recommendations without DB
+- committed demo seed datasets in `storage/seed/json`
+- committed demo blob attachment in `storage/seed/blob`
 
 Сделать:
 - safe write hardening and concurrent-write strategy
@@ -233,23 +235,29 @@ Acceptance:
 - local attachment download branch exists
 
 Сделать:
-- author uploads по умолчанию в `storage/blob`
-- subscriber downloads из `storage/blob`
+- author uploads по умолчанию в `storage/runtime/blob`
+- subscriber downloads из `storage/runtime/blob`
 - legal document source files локально
 
 Acceptance:
 - `MinIO` не нужен для локального smoke-test
 
-### 23. File-mode seed data `[todo]`
-Сделать:
+### 23. File-mode seed data `[done]`
+Сделано:
 - seeded staff accounts
+- seeded subscriber account
 - seeded strategies
-- seeded products
+- seeded products for `strategy / author / bundle`
 - seeded legal docs
+- seeded payment/subscription demo records
 - seeded recommendations for feed demo
+- seeded local attachment blob
+- runtime bootstrap copies seed into local ignored runtime tree
 
 Acceptance:
-- локальный запуск не требует ручного наполнения через БД
+- локальный запуск больше не требует ручного наполнения через БД для demo read-path
+- file repositories имеют committed demo dataset в репозитории
+- локальные изменения тестировщика уходят в ignored runtime tree, а не в tracked seed
 
 ### 24. File-mode payment/subscription demo `[todo]`
 Сделать:

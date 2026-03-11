@@ -135,8 +135,12 @@ class StorageSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     root: str
+    seed_root: str
+    runtime_root: str
     blob_root: str
     json_root: str
+    seed_blob_root: str
+    seed_json_root: str
 
 
 class Settings(BaseSettings):
@@ -334,10 +338,16 @@ class Settings(BaseSettings):
     @property
     def storage(self) -> StorageSettings:
         root = self.app_storage_root
+        seed_root = f"{root}/seed"
+        runtime_root = f"{root}/runtime"
         return StorageSettings(
             root=root,
-            blob_root=f"{root}/blob",
-            json_root=f"{root}/json",
+            seed_root=seed_root,
+            runtime_root=runtime_root,
+            blob_root=f"{runtime_root}/blob",
+            json_root=f"{runtime_root}/json",
+            seed_blob_root=f"{seed_root}/blob",
+            seed_json_root=f"{seed_root}/json",
         )
 
 

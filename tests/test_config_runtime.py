@@ -66,7 +66,12 @@ def test_settings_expose_typed_sections(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.auth.session_cookie_name == "pitchcopytrade_session"
     assert settings.app.data_mode == "db"
     assert settings.storage.root == "storage"
-    assert settings.storage.blob_root == "storage/blob"
+    assert settings.storage.seed_root == "storage/seed"
+    assert settings.storage.runtime_root == "storage/runtime"
+    assert settings.storage.blob_root == "storage/runtime/blob"
+    assert settings.storage.json_root == "storage/runtime/json"
+    assert settings.storage.seed_blob_root == "storage/seed/blob"
+    assert settings.storage.seed_json_root == "storage/seed/json"
     assert settings.logging.level == "INFO"
     assert settings.logging.json_logs is False
 

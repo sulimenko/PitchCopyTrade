@@ -1,0 +1,26 @@
+[
+  {
+    "board": "TQBR",
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "currency": "RUB",
+    "id": "instrument-1",
+    "instrument_type": "equity",
+    "is_active": true,
+    "lot_size": 10,
+    "name": "Sberbank",
+    "ticker": "SBER",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  },
+  {
+    "board": "TQBR",
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "currency": "RUB",
+    "id": "instrument-2",
+    "instrument_type": "equity",
+    "is_active": true,
+    "lot_size": 10,
+    "name": "Gazprom",
+    "ticker": "GAZP",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  }
+]

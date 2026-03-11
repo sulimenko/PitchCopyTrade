@@ -61,3 +61,18 @@ def test_rejects_invalid_object_keys(tmp_path: Path, object_key: str) -> None:
 
     with pytest.raises(ValueError):
         storage.upload_bytes(object_key, b"payload", "application/pdf")
+
+
+def test_bootstrap_copies_seed_blob_tree(tmp_path: Path) -> None:
+    seed_root = tmp_path / "storage" / "seed" / "blob"
+    runtime_root = tmp_path / "storage" / "runtime" / "blob"
+    seed_file = seed_root / "recommendations" / "rec-1" / "file.pdf"
+    seed_file.parent.mkdir(parents=True, exist_ok=True)
+    seed_file.write_bytes(b"seed-pdf")
+
+    storage = LocalFilesystemStorage(root_dir=runtime_root, seed_root_dir=seed_root)
+
+    downloaded = storage.download_bytes("recommendations/rec-1/file.pdf")
+
+    assert downloaded == b"seed-pdf"
+    assert (runtime_root / "recommendations" / "rec-1" / "file.pdf").exists()

@@ -1,0 +1,18 @@
+[
+  {
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "entry_from": "101.5",
+    "entry_to": "102.0",
+    "id": "leg-1",
+    "instrument_id": "instrument-1",
+    "note": "Основной сценарий",
+    "recommendation_id": "rec-1",
+    "side": "buy",
+    "stop_loss": "99.9",
+    "take_profit_1": "106.2",
+    "take_profit_2": null,
+    "take_profit_3": null,
+    "time_horizon": "1-3 дня",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  }
+]

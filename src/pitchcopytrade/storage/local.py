@@ -4,6 +4,7 @@ import mimetypes
 from hashlib import md5
 from io import BytesIO
 from pathlib import Path, PurePosixPath
+from shutil import copytree
 from typing import BinaryIO
 
 from pitchcopytrade.core.config import get_settings
@@ -16,13 +17,18 @@ class LocalFilesystemStorage:
     def __init__(
         self,
         root_dir: str | Path | None = None,
+        seed_root_dir: str | Path | None = None,
         bucket_name: str = "blob",
     ) -> None:
         settings = get_settings()
         self.root_dir = Path(root_dir or settings.storage.blob_root)
+        self.seed_root_dir = Path(seed_root_dir or settings.storage.seed_blob_root)
         self.bucket_name = bucket_name
 
     def bootstrap(self) -> None:
+        if not self.root_dir.exists() and self.seed_root_dir.exists() and self.seed_root_dir != self.root_dir:
+            copytree(self.seed_root_dir, self.root_dir, dirs_exist_ok=True)
+            return
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def upload_bytes(
@@ -60,6 +66,7 @@ class LocalFilesystemStorage:
         )
 
     def download_bytes(self, object_key: str) -> bytes:
+        self.bootstrap()
         target = self._resolve_path(object_key)
         return target.read_bytes()
 
@@ -79,6 +86,7 @@ class LocalFilesystemStorage:
         return errors
 
     def stat_object(self, object_key: str) -> StorageObject:
+        self.bootstrap()
         target = self._resolve_path(object_key)
         stat = target.stat()
         content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
