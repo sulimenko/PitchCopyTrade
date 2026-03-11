@@ -437,6 +437,7 @@ Task list для запуска тестовой версии закрыт. Сл
    - canonical project root on server = `/var/www/pct`
    - canonical secret file on server = `/var/www/pct/.env.server`
    - deploy artifacts must be committed in repo under `deploy/`
+   - operator/tester guides may also be shipped in `deploy/` as ready-to-use PDF assets
    - polling bot остается основным способом работы test bot
 2. compose cleanup
    - убрать `MinIO-first` assumptions из runtime compose path

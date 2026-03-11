@@ -242,6 +242,7 @@ Reviewer должен помнить, что после текущего refacto
 - согласованы ли `.env.example`, `README.md`, `doc/blueprint.md`, `doc/task.md`;
 - есть ли committed deploy bundle в репозитории, если server path заявлен как `git clone -> run`;
 - согласован ли server secret contract, например `.env.server`;
+- если change добавляет operator/tester asset, например PDF guide, он должен соответствовать текущему domain/runtime contour;
 - учитывает ли инструкция реальный deploy contour:
   - `api`
   - `bot`

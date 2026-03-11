@@ -407,6 +407,7 @@ Acceptance:
   - `deploy/nginx/pct.test.ptfin.ru.conf`
   - `deploy/env.server.example`
   - `deploy/README.md`
+  - `deploy/https_login_guide.pdf`
 - canonical server root `/var/www/pct`
 - secret runtime file `.env.server`
 - update/restart procedure documented

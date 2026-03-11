@@ -411,6 +411,7 @@ mkdir -p /var/www/pct/storage/runtime/blob
 - [deploy/nginx/pct.test.ptfin.ru.conf](/Users/alexey/site/PitchCopyTrade/deploy/nginx/pct.test.ptfin.ru.conf)
 - [deploy/env.server.example](/Users/alexey/site/PitchCopyTrade/deploy/env.server.example)
 - [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md)
+- [deploy/https_login_guide.pdf](/Users/alexey/site/PitchCopyTrade/deploy/https_login_guide.pdf)
 
 Это и есть canonical server bundle для текущей test-version.
 
