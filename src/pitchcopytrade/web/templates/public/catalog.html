@@ -15,6 +15,11 @@
       <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
         Выберите подход автора, изучите риск и подключите подписку через простой checkout на `stub/manual`.
       </p>
+      {% if surface == "miniapp" %}
+      <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">
+        Вы открыли Mini App surface из Telegram. Для авторизованного subscriber fallback используйте команду `/web` в боте.
+      </p>
+      {% endif %}
     </div>
     <div class="pill">{{ strategies|length }} strategy</div>
   </div>

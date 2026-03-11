@@ -4,7 +4,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import logging
 
+from pitchcopytrade.bot.main import create_bot
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import AsyncSessionLocal
+from pitchcopytrade.services.notifications import deliver_recommendation_notifications
 from pitchcopytrade.services.publishing import publish_due_recommendations
 
 logger = logging.getLogger(__name__)
@@ -21,6 +24,13 @@ class WorkerJob:
 async def run_scheduled_publish() -> None:
     async with AsyncSessionLocal() as session:
         published = await publish_due_recommendations(session)
+        if published:
+            bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
+            try:
+                for item in published:
+                    await deliver_recommendation_notifications(session, item, bot)
+            finally:
+                await bot.session.close()
     logger.info("scheduled_publish tick: %s published", len(published))
 
 

@@ -107,6 +107,14 @@ def test_root_redirects_to_catalog() -> None:
         assert response.headers["location"] == "/catalog"
 
 
+def test_miniapp_redirects_to_catalog_surface() -> None:
+    with _build_client(FakeAsyncSession()) as client:
+        response = client.get("/miniapp", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/catalog?surface=miniapp"
+
+
 def test_catalog_renders_strategies(monkeypatch) -> None:
     strategy, _product = _make_strategy_and_product()
     monkeypatch.setattr(

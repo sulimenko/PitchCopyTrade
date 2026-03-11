@@ -165,6 +165,7 @@ Process rule:
 - account linking
 - subscriptions/status commands
 - Telegram-first checkout
+- deeper Mini App/WebApp contour
 
 ## 4. Следующие обязательные шаги
 
@@ -226,11 +227,11 @@ Acceptance:
 - publish/schedule baseline
 - `new/update/close/cancel`
 - status timestamps in author editor
+- moderation-aware transitions baseline
 
 Не сделано:
 - history/timeline
-- worker-based scheduled publish
-- moderation-aware transitions
+- worker-based scheduled publish hardening
 
 ### 26. Moderation queue `[partial]`
 Сделано:
@@ -288,11 +289,33 @@ Acceptance:
 - worker scheduled publish baseline
 - transition `scheduled -> published`
 - audit write on worker publish
+- delivery notifications trigger
 
 Не сделано:
-- delivery notifications
 - retry / observability hardening
 - broader lifecycle jobs
+
+### 33. Delivery notifications `[partial]`
+Сделано:
+- recommendation notification text baseline
+- worker-triggered publish notifications
+- moderation-triggered publish notifications
+
+Не сделано:
+- dedup / retry / metrics
+- delivery admin UI
+- bot-side notification preferences
+
+### 34. Telegram UX depth `[partial]`
+Сделано:
+- reply-keyboard baseline
+- Mini App entry route `/miniapp`
+- web_app button baseline
+
+Не сделано:
+- full WebApp auth/deep contour
+- richer interactive flows beyond commands
+- Mini App subscriber-auth bridge
 
 ## 5. Правила, которые нельзя ломать
 - не возвращаться к file-first persistence

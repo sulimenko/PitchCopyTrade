@@ -5,6 +5,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import require_moderator
+from pitchcopytrade.bot.main import create_bot
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.session import get_db_session
 from pitchcopytrade.services.moderation import (
@@ -16,6 +18,7 @@ from pitchcopytrade.services.moderation import (
     reject_recommendation,
     send_recommendation_to_rework,
 )
+from pitchcopytrade.services.notifications import deliver_recommendation_notifications
 from pitchcopytrade.web.templates import templates
 
 
@@ -80,7 +83,13 @@ async def moderation_approve_submit(
     recommendation = await get_moderation_recommendation(session, recommendation_id)
     if recommendation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
-    await approve_recommendation(session, recommendation, user, comment)
+    updated = await approve_recommendation(session, recommendation, user, comment)
+    if updated.status.value == "published":
+        bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
+        try:
+            await deliver_recommendation_notifications(session, updated, bot)
+        finally:
+            await bot.session.close()
     return RedirectResponse(url=f"/moderation/recommendations/{recommendation_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 

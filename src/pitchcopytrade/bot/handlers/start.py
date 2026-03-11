@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from aiogram.filters import CommandStart
-from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo
 
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import AsyncSessionLocal
 from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
 
@@ -22,6 +23,7 @@ async def handle_start(message: Message) -> None:
             )
             await session.commit()
 
+    miniapp_url = f"{get_settings().app.base_url}/miniapp"
     await message.answer(
         "PitchCopyTrade запущен.\n"
         "Основной subscriber-flow переводится в Telegram.\n"
@@ -33,7 +35,7 @@ async def handle_start(message: Message) -> None:
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
-                [KeyboardButton(text="/web")],
+                [KeyboardButton(text="/web"), KeyboardButton(text="Mini App", web_app=WebAppInfo(url=miniapp_url))],
             ],
             resize_keyboard=True,
         ),

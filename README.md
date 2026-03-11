@@ -40,7 +40,9 @@ Telegram-first платформа для продажи подписок на с
 - moderation history/timeline baseline
 - subscriber-facing detail rendering with attachment download
 - worker-based scheduled publish baseline
+- delivery notifications baseline
 - Telegram reply-keyboard UX baseline
+- Telegram Mini App entry baseline
 - public catalog
 - checkout `stub/manual`
 - payment review -> confirm -> subscription activation
@@ -107,6 +109,7 @@ Telegram-first платформа для продажи подписок на с
 - минимум обязательных данных
 - один основной канал взаимодействия: Telegram
 - единые права доступа в bot и web fallback
+- Mini App entry из Telegram
 
 ### Moderator
 Что делает сейчас:
@@ -122,7 +125,7 @@ Telegram-first платформа для продажи подписок на с
 ## Что осталось сделать
 - review-first delivery process уже зафиксирован в docs и применяется после каждого шага
 - Telegram-first consent UX
-- richer bot UX с кнопками и Mini App / WebApp
+- richer WebApp depth beyond current Mini App entry
 - attachments management UX
 - subscriber rendering для legs и attachments
 - promo/discount and lifecycle UI

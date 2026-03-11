@@ -163,6 +163,7 @@
 - bot `/web` for Telegram-authenticated web fallback link
 - dedicated Telegram fallback cookie issued by `/tg-auth`
 - reply-keyboard UX for primary Telegram paths
+- `/miniapp` entry baseline and Telegram web_app button
 
 ### 5.9 Access delivery baseline
 Есть:
@@ -174,6 +175,7 @@
 - attachment download path under ACL
 - richer recommendation rendering for legs and attachments
 - worker-based scheduled publish baseline
+- delivery notifications baseline for published recommendations
 
 ## 6. Что в текущем коде считается transitional и подлежит переделке
 
@@ -319,6 +321,17 @@ Baseline уже есть:
 - worker-based scheduled publish hardening;
 - moderator-aware transitions.
 
+### 11.5.1 Delivery notifications
+Baseline уже есть:
+- notification text build;
+- worker-triggered delivery for scheduled publish;
+- moderation-triggered delivery on immediate publish.
+
+Нужно доделать:
+- retry / observability;
+- duplicate prevention hardening;
+- richer delivery status UI.
+
 ### 11.6 Attachments
 Baseline уже есть:
 - upload screenshot/PDF;
@@ -375,7 +388,9 @@ Baseline уже есть:
 - publish/legs/attachments baseline: реализован
 - preview/moderation/rendering baseline: реализован
 - worker-based scheduled publish baseline: реализован
+- delivery notifications baseline: реализован
 - Telegram reply-keyboard UX baseline: реализован
+- Telegram Mini App entry baseline: реализован
 - ACL delivery baseline: реализован
 - Telegram-first bot baseline: реализован
 - subscriber password removed from web fallback checkout

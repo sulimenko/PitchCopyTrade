@@ -22,6 +22,8 @@
 - preview/moderation/rendering baseline
 - worker scheduled publish baseline
 - Telegram reply-keyboard UX baseline
+- delivery notifications baseline
+- Telegram Mini App entry baseline
 - strategy/product CRUD
 - public storefront
 - checkout stub/manual
@@ -147,6 +149,13 @@
 - worker пишет audit baseline при scheduled publish;
 - Telegram UX improvements не ломают command-based fallback;
 - reply keyboard не подменяет ACL и не скрывает обязательные команды.
+
+### L. Notifications and Mini App contour
+Проверь:
+- notification recipients строятся по entitlements, а не по широкому user dump;
+- notification delivery не утекает к пользователям без активного доступа;
+- Mini App entry не становится заменой subscriber auth contract;
+- public Mini App surface не маскируется под авторизованный fallback without Telegram-auth.
 
 ## 4. Partial / transitional areas
 Это не automatic finding само по себе, но reviewer должен проверять drift:

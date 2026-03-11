@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from aiogram.filters import Command, CommandObject
-from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo
 
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import AsyncSessionLocal
 from pitchcopytrade.services.public import (
     TelegramSubscriberProfile,
@@ -20,6 +21,7 @@ async def handle_catalog(message: Message) -> None:
         await message.answer("Публичных стратегий пока нет.")
         return
 
+    miniapp_url = f"{get_settings().app.base_url}/miniapp"
     lines = ["Витрина стратегий и продуктов:"]
     for strategy in strategies[:8]:
         lines.append(f"{strategy.title} | {strategy.author.display_name}")
@@ -32,7 +34,7 @@ async def handle_catalog(message: Message) -> None:
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
-                [KeyboardButton(text="/web")],
+                [KeyboardButton(text="/web"), KeyboardButton(text="Mini App", web_app=WebAppInfo(url=miniapp_url))],
             ],
             resize_keyboard=True,
         ),
@@ -52,6 +54,7 @@ async def handle_buy_preview(message: Message, command: CommandObject) -> None:
         await message.answer("Продукт не найден или недоступен.")
         return
 
+    miniapp_url = f"{get_settings().app.base_url}/miniapp"
     lines = [
         f"Продукт: {product.title}",
         f"Цена: {product.price_rub} RUB",
@@ -66,6 +69,7 @@ async def handle_buy_preview(message: Message, command: CommandObject) -> None:
             keyboard=[
                 [KeyboardButton(text=f"/confirm_buy {product.slug}")],
                 [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
+                [KeyboardButton(text="Mini App", web_app=WebAppInfo(url=miniapp_url))],
             ],
             resize_keyboard=True,
         ),
@@ -113,7 +117,7 @@ async def handle_buy_confirm(message: Message, command: CommandObject) -> None:
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
-                [KeyboardButton(text="/catalog")],
+                [KeyboardButton(text="/catalog"), KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))],
             ],
             resize_keyboard=True,
         ),

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from pitchcopytrade.worker.jobs.placeholders import WORKER_JOBS, WorkerJob
+from pitchcopytrade.worker.jobs.placeholders import WORKER_JOBS, WorkerJob, run_scheduled_publish
 from pitchcopytrade.worker.runner import DEFAULT_WORKER_SLEEP_SECONDS, get_worker_jobs, run_worker_loop, run_worker_once
 
 
@@ -50,3 +50,37 @@ async def test_run_worker_loop_sleeps_between_ticks(monkeypatch: pytest.MonkeyPa
 
     once.assert_awaited_once()
     sleep.assert_awaited_once_with(DEFAULT_WORKER_SLEEP_SECONDS)
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_publish_delivers_notifications(monkeypatch: pytest.MonkeyPatch) -> None:
+    recommendation = object()
+    fake_bot = AsyncMock()
+
+    class DummySessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.AsyncSessionLocal", lambda: DummySessionContext())
+    monkeypatch.setattr(
+        "pitchcopytrade.worker.jobs.placeholders.publish_due_recommendations",
+        lambda _session: _async_return([recommendation]),
+    )
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.create_bot", lambda _token: fake_bot)
+    notifier = AsyncMock()
+    monkeypatch.setattr(
+        "pitchcopytrade.worker.jobs.placeholders.deliver_recommendation_notifications",
+        notifier,
+    )
+
+    await run_scheduled_publish()
+
+    notifier.assert_awaited_once()
+    fake_bot.session.close.assert_awaited_once()
+
+
+async def _async_return(value):
+    return value

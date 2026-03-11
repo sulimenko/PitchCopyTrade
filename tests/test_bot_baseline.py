@@ -32,6 +32,7 @@ async def test_start_handler_replies_with_telegram_first_placeholder(monkeypatch
     assert "PitchCopyTrade запущен." in sent_text
     assert "/catalog" in sent_text
     assert "/confirm_buy" in sent_text
+    assert message.answer.await_args.kwargs["reply_markup"] is not None
 
 
 def test_build_dispatcher_registers_start_handler() -> None:

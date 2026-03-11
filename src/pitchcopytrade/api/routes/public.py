@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import get_db_session
 from pitchcopytrade.services.public import (
     CheckoutRequest,
@@ -24,6 +25,11 @@ async def root() -> Response:
     return RedirectResponse(url="/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.get("/miniapp", include_in_schema=False)
+async def miniapp_root() -> Response:
+    return RedirectResponse(url="/catalog?surface=miniapp", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/catalog", response_class=HTMLResponse)
 async def catalog_page(request: Request, session: AsyncSession = Depends(get_db_session)) -> Response:
     strategies = await list_public_strategies(session)
@@ -33,6 +39,8 @@ async def catalog_page(request: Request, session: AsyncSession = Depends(get_db_
         {
             "title": "PitchCopyTrade Catalog",
             "strategies": strategies,
+            "surface": request.query_params.get("surface", "web"),
+            "telegram_bot_username": get_settings().telegram.bot_username,
         },
     )
 
