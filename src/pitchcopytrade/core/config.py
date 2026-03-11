@@ -14,6 +14,7 @@ class EnvName:
     APP_SECRET_KEY = "APP_SECRET_KEY"
     BASE_URL = "BASE_URL"
     ADMIN_BASE_URL = "ADMIN_BASE_URL"
+    APP_DATA_MODE = "APP_DATA_MODE"
     TELEGRAM_BOT_TOKEN = "TELEGRAM_BOT_TOKEN"
     TELEGRAM_BOT_USERNAME = "TELEGRAM_BOT_USERNAME"
     TELEGRAM_USE_WEBHOOK = "TELEGRAM_USE_WEBHOOK"
@@ -66,6 +67,7 @@ class AppSettings(BaseModel):
     base_url: str
     admin_base_url: str
     base_timezone: str
+    data_mode: str
 
 
 class TelegramSettings(BaseModel):
@@ -146,23 +148,24 @@ class Settings(BaseSettings):
     app_secret_key: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.APP_SECRET_KEY)
     base_url: str = Field(default="http://localhost:8000", alias=EnvName.BASE_URL)
     admin_base_url: str = Field(default="http://localhost:8000/admin", alias=EnvName.ADMIN_BASE_URL)
+    app_data_mode: str = Field(default="db", alias=EnvName.APP_DATA_MODE)
 
     telegram_bot_token: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.TELEGRAM_BOT_TOKEN)
     telegram_bot_username: str = Field(default="__FILL_ME__", alias=EnvName.TELEGRAM_BOT_USERNAME)
     telegram_use_webhook: bool = Field(default=False, alias=EnvName.TELEGRAM_USE_WEBHOOK)
     telegram_webhook_secret: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.TELEGRAM_WEBHOOK_SECRET)
 
-    database_url: str = Field(alias=EnvName.DATABASE_URL)
-    alembic_database_url: str = Field(alias=EnvName.ALEMBIC_DATABASE_URL)
+    database_url: str = Field(default="", alias=EnvName.DATABASE_URL)
+    alembic_database_url: str = Field(default="", alias=EnvName.ALEMBIC_DATABASE_URL)
     postgres_db: str = Field(default="pitchcopytrade", alias=EnvName.POSTGRES_DB)
     postgres_user: str = Field(default="pitchcopytrade", alias=EnvName.POSTGRES_USER)
     postgres_password: SecretStr = Field(default=SecretStr("pitchcopytrade"), alias=EnvName.POSTGRES_PASSWORD)
 
-    minio_endpoint: str = Field(alias=EnvName.MINIO_ENDPOINT)
-    minio_public_url: str = Field(alias=EnvName.MINIO_PUBLIC_URL)
-    minio_root_user: str = Field(alias=EnvName.MINIO_ROOT_USER)
-    minio_root_password: SecretStr = Field(alias=EnvName.MINIO_ROOT_PASSWORD)
-    minio_bucket_uploads: str = Field(alias=EnvName.MINIO_BUCKET_UPLOADS)
+    minio_endpoint: str = Field(default="minio:9000", alias=EnvName.MINIO_ENDPOINT)
+    minio_public_url: str = Field(default="http://localhost:9000", alias=EnvName.MINIO_PUBLIC_URL)
+    minio_root_user: str = Field(default="minioadmin", alias=EnvName.MINIO_ROOT_USER)
+    minio_root_password: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.MINIO_ROOT_PASSWORD)
+    minio_bucket_uploads: str = Field(default="pitchcopytrade-uploads", alias=EnvName.MINIO_BUCKET_UPLOADS)
     minio_secure: bool = Field(default=False, alias=EnvName.MINIO_SECURE)
 
     sbp_provider: str = Field(default="stub_manual", alias=EnvName.SBP_PROVIDER)
@@ -190,6 +193,15 @@ class Settings(BaseSettings):
             raise ValueError(f"APP_ENV must be one of {sorted(allowed)}")
         return normalized
 
+    @field_validator("app_data_mode")
+    @classmethod
+    def validate_data_mode(cls, value: str) -> str:
+        allowed = {"db", "file"}
+        normalized = value.strip().lower()
+        if normalized not in allowed:
+            raise ValueError(f"APP_DATA_MODE must be one of {sorted(allowed)}")
+        return normalized
+
     @field_validator("base_url", "admin_base_url", "minio_public_url")
     @classmethod
     def validate_http_url(cls, value: str) -> str:
@@ -199,10 +211,13 @@ class Settings(BaseSettings):
 
     @field_validator("database_url", "alembic_database_url")
     @classmethod
-    def validate_database_url(cls, value: str) -> str:
-        if not value.startswith("postgresql+asyncpg://"):
+    def validate_database_url(cls, value: str, info: ValidationInfo) -> str:
+        normalized = value.strip()
+        if info.data.get("app_data_mode") == "file" and not normalized:
+            return normalized
+        if not normalized.startswith("postgresql+asyncpg://"):
             raise ValueError("Database URL must use postgresql+asyncpg://")
-        return value
+        return normalized
 
     @field_validator("minio_bucket_uploads")
     @classmethod
@@ -254,6 +269,7 @@ class Settings(BaseSettings):
             base_url=self.base_url,
             admin_base_url=self.admin_base_url,
             base_timezone=self.base_timezone,
+            data_mode=self.app_data_mode,
         )
 
     @property

@@ -16,6 +16,7 @@ def _base_env() -> dict[str, str]:
         "APP_SECRET_KEY": "test-secret",
         "BASE_URL": "http://localhost:8000",
         "ADMIN_BASE_URL": "http://localhost:8000/admin",
+        "APP_DATA_MODE": "db",
         "TELEGRAM_BOT_TOKEN": "123456:valid-token",
         "TELEGRAM_BOT_USERNAME": "pitchcopytrade_bot",
         "TELEGRAM_USE_WEBHOOK": "false",
@@ -41,6 +42,7 @@ def _base_env() -> dict[str, str]:
         "BASE_TIMEZONE": "Europe/Moscow",
         "AUTH_SESSION_TTL_SECONDS": "86400",
         "AUTH_SESSION_COOKIE_NAME": "pitchcopytrade_session",
+        "APP_STORAGE_ROOT": "storage",
         "LOG_LEVEL": "INFO",
         "LOG_JSON": "false",
     }
@@ -62,6 +64,9 @@ def test_settings_expose_typed_sections(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.payments.provider == "stub_manual"
     assert settings.auth.session_ttl_seconds == 86400
     assert settings.auth.session_cookie_name == "pitchcopytrade_session"
+    assert settings.app.data_mode == "db"
+    assert settings.storage.root == "storage"
+    assert settings.storage.blob_root == "storage/blob"
     assert settings.logging.level == "INFO"
     assert settings.logging.json_logs is False
 
@@ -83,3 +88,22 @@ def test_validate_runtime_settings_requires_tbank_keys(monkeypatch: pytest.Monke
 def test_settings_validate_database_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValidationError, match="postgresql\\+asyncpg://"):
         _make_settings(monkeypatch, DATABASE_URL="postgresql://localhost/db")
+
+
+def test_file_mode_allows_missing_database_and_minio_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _make_settings(
+        monkeypatch,
+        APP_DATA_MODE="file",
+        DATABASE_URL="",
+        ALEMBIC_DATABASE_URL="",
+        MINIO_ROOT_PASSWORD="__FILL_ME__",
+    )
+
+    validate_runtime_settings(settings, "api")
+
+    assert settings.app.data_mode == "file"
+
+
+def test_settings_validate_data_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValidationError, match="APP_DATA_MODE"):
+        _make_settings(monkeypatch, APP_DATA_MODE="redis")

@@ -153,10 +153,15 @@ Acceptance:
 - attachments можно сохранять и читать без `MinIO`
 - local path становится canonical metadata source
 
-### 19. Runtime switch for persistence `[todo]`
+### 19. Runtime switch for persistence `[partial]`
+Сделано:
+- введен `APP_DATA_MODE=db|file`
+- введен `APP_STORAGE_ROOT`
+- runtime metadata now exposes data mode and storage root
+- `file` mode не требует `DATABASE_URL`, `ALEMBIC_DATABASE_URL` и `MINIO_ROOT_PASSWORD` на уровне config/runtime
+- DB engine создается только в `db` mode
+
 Сделать:
-- ввести `APP_DATA_MODE=db|file`
-- ввести `APP_STORAGE_ROOT`
 - ввести switch для repository/storage wiring
 
 Acceptance:

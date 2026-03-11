@@ -149,6 +149,7 @@
 Reviewer должен считать хорошим признаком:
 - появление local filesystem storage backend;
 - перевод attachment routes на provider-aware branch;
+- появление явного runtime switch `APP_DATA_MODE=db|file`;
 - появление repository abstraction;
 - появление file-mode seed/bootstrap path;
 - уменьшение прямой зависимости routes/services от `AsyncSession`;

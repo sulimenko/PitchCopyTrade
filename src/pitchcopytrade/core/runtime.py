@@ -7,16 +7,13 @@ from pitchcopytrade.core.logging import configure_logging
 SERVICE_REQUIRED_SECRETS: dict[str, tuple[tuple[str, str | None], ...]] = {
     "api": (
         ("APP_SECRET_KEY", "app_secret_key"),
-        ("MINIO_ROOT_PASSWORD", "minio_root_password"),
     ),
     "bot": (
         ("APP_SECRET_KEY", "app_secret_key"),
-        ("MINIO_ROOT_PASSWORD", "minio_root_password"),
         ("TELEGRAM_BOT_TOKEN", "telegram_bot_token"),
     ),
     "worker": (
         ("APP_SECRET_KEY", "app_secret_key"),
-        ("MINIO_ROOT_PASSWORD", "minio_root_password"),
     ),
 }
 
@@ -33,6 +30,14 @@ def validate_runtime_settings(settings: Settings, service_name: str) -> None:
             missing.append("TINKOFF_TERMINAL_KEY")
         if _is_placeholder(settings.tinkoff_secret_key):
             missing.append("TINKOFF_SECRET_KEY")
+
+    if settings.app_data_mode == "db":
+        if not settings.database_url:
+            missing.append("DATABASE_URL")
+        if not settings.alembic_database_url:
+            missing.append("ALEMBIC_DATABASE_URL")
+        if _is_placeholder(settings.minio_root_password):
+            missing.append("MINIO_ROOT_PASSWORD")
 
     if missing:
         vars_joined = ", ".join(sorted(set(missing)))

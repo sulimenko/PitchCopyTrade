@@ -33,6 +33,9 @@ Telegram-first платформа для продажи подписок на с
 - scheduled publish baseline
 - delivery notifications baseline
 - local filesystem storage backend baseline with root `storage/blob`
+- runtime switch:
+  - `APP_DATA_MODE=db|file`
+  - `APP_STORAGE_ROOT=storage`
 
 ## Архитектурный сдвиг
 Новая целевая схема:
@@ -61,8 +64,8 @@ Telegram-first платформа для продажи подписок на с
 Текущий код пока еще не соответствует новой целевой схеме полностью.
 
 Жесткие зависимости, которые сейчас есть:
-- config валидирует только `PostgreSQL` DSN;
-- DB session создается сразу через `SQLAlchemy async engine`;
+- file mode уже поддержан на уровне config/runtime, но service/repository layer все еще в основном DB-first;
+- DB session для `APP_DATA_MODE=file` уже не создается, но routes/services пока не имеют полноценной file-repository parity;
 - local filesystem storage backend уже добавлен, но primary attachment flow все еще по умолчанию ориентирован на `MinIO`;
 - `docker-compose.yml` все еще поднимает `minio` как штатный сервис;
 - attachment flow и metadata пока ориентированы на bucket/object-key path.

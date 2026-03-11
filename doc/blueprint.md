@@ -47,6 +47,9 @@ Canonical subscriber model остается:
 - health/ready/meta endpoints
 - Docker baseline
 - `.env.example`
+- runtime switch baseline:
+  - `APP_DATA_MODE=db|file`
+  - `APP_STORAGE_ROOT=storage`
 
 ### 3.2 Domain baseline
 Есть:
@@ -98,8 +101,8 @@ Canonical subscriber model остается:
 
 ### 4.1 Current DB coupling
 Сейчас приложение жестко завязано на `PostgreSQL`:
-- config принимает только `postgresql+asyncpg://`;
-- DB engine создается на уровне runtime bootstrap;
+- `file` mode уже допускает runtime без DB DSN;
+- DB engine создается только при `APP_DATA_MODE=db`;
 - application services и routes опираются на `AsyncSession`;
 - file-mode persistence пока отсутствует.
 
@@ -184,6 +187,7 @@ Primary persistence target:
 
 Правила:
 - БД не требуется;
+- config/runtime не требуют `DATABASE_URL` и `ALEMBIC_DATABASE_URL`;
 - сущности читаются и пишутся через файловые repositories;
 - attachments и legal files хранятся локально;
 - поведение app/bot/worker остается максимально близким к `db` mode;
@@ -282,12 +286,16 @@ Service layer не должен знать, где лежат данные:
 - в JSON files.
 
 ### 10.3 Runtime selection
-Нужен явный runtime switch, например:
+Runtime switch уже введен:
 - `APP_DATA_MODE=db`
 - `APP_DATA_MODE=file`
 
-И явный storage root, например:
+Storage root уже введен:
 - `APP_STORAGE_ROOT=storage`
+
+Что еще нужно:
+- перевести service/repository wiring на этот switch;
+- довести real file-mode execution beyond config/runtime layer.
 
 ## 11. Критерии готовности новой схемы
 

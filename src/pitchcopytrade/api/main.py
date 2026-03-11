@@ -21,7 +21,9 @@ def create_app() -> FastAPI:
     app.state.service_name = settings.app.name
     app.state.environment = settings.app.env
     app.state.base_timezone = settings.app.base_timezone
-    app.state.storage_backend = "postgres+minio"
+    app.state.data_mode = settings.app.data_mode
+    app.state.storage_root = settings.storage.root
+    app.state.storage_backend = "file+localfs" if settings.app.data_mode == "file" else "db+minio+localfs"
     app.state.payment_provider = settings.payments.provider
     app.state.ready = False
     app.include_router(api_router)
