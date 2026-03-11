@@ -4,10 +4,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from pitchcopytrade.core.config import reset_settings_cache
 from pitchcopytrade.bot.dispatcher import build_dispatcher
 from pitchcopytrade.bot.handlers.feed import FEED_HANDLER, WEB_HANDLER
-from pitchcopytrade.bot.handlers.shop import BUY_CONFIRM_HANDLER, BUY_PREVIEW_HANDLER, CATALOG_HANDLER
-from pitchcopytrade.bot.handlers.start import START_HANDLER, handle_start
+from pitchcopytrade.bot.handlers.shop import BUY_CONFIRM_HANDLER, BUY_PREVIEW_HANDLER, CATALOG_HANDLER, _catalog_keyboard
+from pitchcopytrade.bot.handlers.start import START_HANDLER, _start_keyboard, handle_start
 from pitchcopytrade.bot.main import create_bot
 
 
@@ -33,6 +34,26 @@ async def test_start_handler_replies_with_telegram_first_placeholder(monkeypatch
     assert "/catalog" in sent_text
     assert "/confirm_buy" in sent_text
     assert message.answer.await_args.kwargs["reply_markup"] is not None
+
+
+def test_start_keyboard_hides_webapp_button_for_http_base_url(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("BASE_URL", "http://pct.test.ptfin.ru")
+
+    markup = _start_keyboard()
+
+    labels = [button.text for row in markup.keyboard for button in row]
+    assert "Mini App" not in labels
+
+
+def test_catalog_keyboard_hides_webapp_button_for_http_base_url(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("BASE_URL", "http://pct.test.ptfin.ru")
+
+    markup = _catalog_keyboard()
+
+    labels = [button.text for row in markup.keyboard for button in row]
+    assert "Mini App" not in labels
 
 
 def test_build_dispatcher_registers_start_handler() -> None:

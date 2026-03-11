@@ -14,6 +14,44 @@ from pitchcopytrade.services.public import (
 )
 
 
+def _supports_webapp() -> bool:
+    return get_settings().app.base_url.startswith("https://")
+
+
+def _catalog_keyboard() -> ReplyKeyboardMarkup:
+    keyboard = [
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
+        [KeyboardButton(text="/web")],
+    ]
+    if _supports_webapp():
+        keyboard[1].append(
+            KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))
+        )
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def _buy_preview_keyboard(product_slug: str) -> ReplyKeyboardMarkup:
+    keyboard = [
+        [KeyboardButton(text=f"/confirm_buy {product_slug}")],
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
+    ]
+    if _supports_webapp():
+        keyboard.append([KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))])
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def _buy_confirm_keyboard() -> ReplyKeyboardMarkup:
+    keyboard = [
+        [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
+        [KeyboardButton(text="/catalog")],
+    ]
+    if _supports_webapp():
+        keyboard[1].append(
+            KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))
+        )
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
 async def handle_catalog(message: Message) -> None:
     if AsyncSessionLocal is None:
         strategies = await list_public_strategies(FilePublicRepository())
@@ -25,7 +63,6 @@ async def handle_catalog(message: Message) -> None:
         await message.answer("Публичных стратегий пока нет.")
         return
 
-    miniapp_url = f"{get_settings().app.base_url}/miniapp"
     lines = ["Витрина стратегий и продуктов:"]
     for strategy in strategies[:8]:
         lines.append(f"{strategy.title} | {strategy.author.display_name}")
@@ -35,13 +72,7 @@ async def handle_catalog(message: Message) -> None:
     lines.append("Для оформления используйте: /buy <product_slug>")
     await message.answer(
         "\n".join(lines),
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
-                [KeyboardButton(text="/web"), KeyboardButton(text="Mini App", web_app=WebAppInfo(url=miniapp_url))],
-            ],
-            resize_keyboard=True,
-        ),
+        reply_markup=_catalog_keyboard(),
     )
 
 
@@ -61,7 +92,6 @@ async def handle_buy_preview(message: Message, command: CommandObject) -> None:
         await message.answer("Продукт не найден или недоступен.")
         return
 
-    miniapp_url = f"{get_settings().app.base_url}/miniapp"
     lines = [
         f"Продукт: {product.title}",
         f"Цена: {product.price_rub} RUB",
@@ -72,14 +102,7 @@ async def handle_buy_preview(message: Message, command: CommandObject) -> None:
     ]
     await message.answer(
         "\n".join(lines),
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text=f"/confirm_buy {product.slug}")],
-                [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
-                [KeyboardButton(text="Mini App", web_app=WebAppInfo(url=miniapp_url))],
-            ],
-            resize_keyboard=True,
-        ),
+        reply_markup=_buy_preview_keyboard(product.slug),
     )
 
 
@@ -144,13 +167,7 @@ async def handle_buy_confirm(message: Message, command: CommandObject) -> None:
         f"Сумма: {result.payment.final_amount_rub} RUB\n"
         f"Reference: {result.payment.stub_reference}\n"
         "После подтверждения администратором доступ будет активирован.",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
-                [KeyboardButton(text="/catalog"), KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))],
-            ],
-            resize_keyboard=True,
-        ),
+        reply_markup=_buy_confirm_keyboard(),
     )
 
 

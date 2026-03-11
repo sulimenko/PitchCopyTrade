@@ -254,6 +254,7 @@ Operational rule:
 - не редактировать `storage/seed/*` вручную во время обычного smoke-test;
 - все runtime-изменения должны жить только в `storage/runtime/*`;
 - один и тот же bot token нельзя одновременно держать в polling на двух машинах.
+- если `BASE_URL` работает по `http`, bot скрывает `Mini App` кнопку; Telegram WebApp доступен только на `https`.
 
 ## Следующий этап развития
 Task list для test-launch можно считать закрытым. Следующий этап теперь такой:
