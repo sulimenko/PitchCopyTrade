@@ -151,6 +151,7 @@ Reviewer должен считать хорошим признаком:
 - перевод attachment routes на provider-aware branch;
 - появление явного runtime switch `APP_DATA_MODE=db|file`;
 - появление repository abstraction;
+- уменьшение зависимости service layer от `AsyncSession` хотя бы в частично мигрированных контурах;
 - появление file-mode seed/bootstrap path;
 - уменьшение прямой зависимости routes/services от `AsyncSession`;
 - выравнивание attachment metadata под локальные пути;

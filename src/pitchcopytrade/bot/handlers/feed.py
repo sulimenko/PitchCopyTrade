@@ -6,6 +6,7 @@ from aiogram.types import Message
 from pitchcopytrade.auth.session import build_telegram_login_link_token
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import AsyncSessionLocal
+from pitchcopytrade.repositories.access import SqlAlchemyAccessRepository
 from pitchcopytrade.services.acl import get_user_by_telegram_id, list_user_visible_recommendations, user_has_active_access
 
 
@@ -15,18 +16,23 @@ async def handle_feed(message: Message) -> None:
         await message.answer("Не удалось определить Telegram-пользователя.")
         return
 
+    if AsyncSessionLocal is None:
+        await message.answer("Режим file persistence еще не подключен к Telegram feed.")
+        return
+
     async with AsyncSessionLocal() as session:
-        user = await get_user_by_telegram_id(session, telegram_user.id)
+        repository = SqlAlchemyAccessRepository(session)
+        user = await get_user_by_telegram_id(repository, telegram_user.id)
         if user is None:
             await message.answer("Доступ не найден. Сначала свяжите Telegram с аккаунтом подписчика.")
             return
 
-        has_access = await user_has_active_access(session, user_id=user.id)
+        has_access = await user_has_active_access(repository, user_id=user.id)
         if not has_access:
             await message.answer("Активных подписок нет. После подтверждения оплаты рекомендации появятся автоматически.")
             return
 
-        recommendations = await list_user_visible_recommendations(session, user_id=user.id, limit=5)
+        recommendations = await list_user_visible_recommendations(repository, user_id=user.id, limit=5)
         if not recommendations:
             await message.answer("Активный доступ есть, но новых публикаций пока нет.")
             return
@@ -54,8 +60,13 @@ async def handle_web(message: Message) -> None:
         await message.answer("Не удалось определить Telegram-пользователя.")
         return
 
+    if AsyncSessionLocal is None:
+        await message.answer("Режим file persistence еще не подключен к Telegram web fallback.")
+        return
+
     async with AsyncSessionLocal() as session:
-        user = await get_user_by_telegram_id(session, telegram_user.id)
+        repository = SqlAlchemyAccessRepository(session)
+        user = await get_user_by_telegram_id(repository, telegram_user.id)
         if user is None:
             await message.answer("Профиль подписчика не найден. Начните с /start.")
             return

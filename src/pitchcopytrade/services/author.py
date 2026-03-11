@@ -8,14 +8,12 @@ from typing import Iterable
 from uuid import uuid4
 
 from starlette.datastructures import UploadFile
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, TradeSide
+from pitchcopytrade.repositories.author import SqlAlchemyAuthorRepository
 from pitchcopytrade.storage.base import StorageBackend
 from pitchcopytrade.storage.minio import MinioStorage
 
@@ -73,34 +71,20 @@ class RecommendationFormData:
     attachments: list[IncomingAttachment]
 
 
-async def get_author_workspace_stats(session: AsyncSession, author: AuthorProfile) -> AuthorWorkspaceStats:
-    strategies_total = await _count_query(
-        session,
-        select(func.count(Strategy.id)).where(Strategy.author_id == author.id),
+async def get_author_workspace_stats(repository: SqlAlchemyAuthorRepository, author: AuthorProfile) -> AuthorWorkspaceStats:
+    strategies_total = await repository.count_author_strategies(author.id)
+    recommendations_total = await repository.count_author_recommendations(author.id)
+    draft_recommendations = await repository.count_author_recommendations(
+        author.id,
+        statuses=[RecommendationStatus.DRAFT],
     )
-    recommendations_total = await _count_query(
-        session,
-        select(func.count(Recommendation.id)).where(Recommendation.author_id == author.id),
-    )
-    draft_recommendations = await _count_query(
-        session,
-        select(func.count(Recommendation.id)).where(
-            Recommendation.author_id == author.id,
-            Recommendation.status == RecommendationStatus.DRAFT,
-        ),
-    )
-    live_recommendations = await _count_query(
-        session,
-        select(func.count(Recommendation.id)).where(
-            Recommendation.author_id == author.id,
-            Recommendation.status.in_(
-                [
-                    RecommendationStatus.PUBLISHED,
-                    RecommendationStatus.SCHEDULED,
-                    RecommendationStatus.APPROVED,
-                ]
-            ),
-        ),
+    live_recommendations = await repository.count_author_recommendations(
+        author.id,
+        statuses=[
+            RecommendationStatus.PUBLISHED,
+            RecommendationStatus.SCHEDULED,
+            RecommendationStatus.APPROVED,
+        ],
     )
     return AuthorWorkspaceStats(
         strategies_total=strategies_total,
@@ -110,53 +94,28 @@ async def get_author_workspace_stats(session: AsyncSession, author: AuthorProfil
     )
 
 
-async def list_author_strategies(session: AsyncSession, author: AuthorProfile) -> list[Strategy]:
-    query = select(Strategy).where(Strategy.author_id == author.id).order_by(Strategy.title.asc())
-    result = await session.execute(query)
-    return list(result.scalars().all())
+async def list_author_strategies(repository: SqlAlchemyAuthorRepository, author: AuthorProfile) -> list[Strategy]:
+    return await repository.list_author_strategies(author.id)
 
 
-async def list_active_instruments(session: AsyncSession) -> list[Instrument]:
-    query = select(Instrument).where(Instrument.is_active.is_(True)).order_by(Instrument.ticker.asc())
-    result = await session.execute(query)
-    return list(result.scalars().all())
+async def list_active_instruments(repository: SqlAlchemyAuthorRepository) -> list[Instrument]:
+    return await repository.list_active_instruments()
 
 
-async def list_author_recommendations(session: AsyncSession, author: AuthorProfile) -> list[Recommendation]:
-    query = (
-        select(Recommendation)
-        .options(
-            selectinload(Recommendation.strategy),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
-        )
-        .where(Recommendation.author_id == author.id)
-        .order_by(Recommendation.updated_at.desc(), Recommendation.created_at.desc())
-    )
-    result = await session.execute(query)
-    return list(result.scalars().all())
+async def list_author_recommendations(repository: SqlAlchemyAuthorRepository, author: AuthorProfile) -> list[Recommendation]:
+    return await repository.list_author_recommendations(author.id)
 
 
 async def get_author_recommendation(
-    session: AsyncSession,
+    repository: SqlAlchemyAuthorRepository,
     author: AuthorProfile,
     recommendation_id: str,
 ) -> Recommendation | None:
-    query = (
-        select(Recommendation)
-        .options(
-            selectinload(Recommendation.strategy),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
-        )
-        .where(Recommendation.id == recommendation_id, Recommendation.author_id == author.id)
-    )
-    result = await session.execute(query)
-    return result.scalar_one_or_none()
+    return await repository.get_author_recommendation(author.id, recommendation_id)
 
 
 async def create_author_recommendation(
-    session: AsyncSession,
+    repository: SqlAlchemyAuthorRepository,
     author: AuthorProfile,
     data: RecommendationFormData,
     *,
@@ -176,24 +135,24 @@ async def create_author_recommendation(
         scheduled_for=data.scheduled_for,
     )
     _apply_publish_state(recommendation)
-    session.add(recommendation)
-    await session.flush()
+    repository.add(recommendation)
+    await repository.flush()
     _attach_legs(recommendation, data.legs)
     if data.attachments:
         await _store_attachments(
-            session,
+            repository,
             recommendation,
             attachments=data.attachments,
             uploaded_by_user_id=uploaded_by_user_id,
             storage=storage or MinioStorage(),
         )
-    await session.commit()
-    await session.refresh(recommendation)
+    await repository.commit()
+    await repository.refresh(recommendation)
     return recommendation
 
 
 async def update_author_recommendation(
-    session: AsyncSession,
+    repository: SqlAlchemyAuthorRepository,
     recommendation: Recommendation,
     data: RecommendationFormData,
     *,
@@ -210,28 +169,22 @@ async def update_author_recommendation(
     recommendation.requires_moderation = data.requires_moderation
     recommendation.scheduled_for = data.scheduled_for
     _apply_publish_state(recommendation)
-    await _replace_legs(session, recommendation, data.legs)
+    await _replace_legs(repository, recommendation, data.legs)
     if data.attachments:
         await _store_attachments(
-            session,
+            repository,
             recommendation,
             attachments=data.attachments,
             uploaded_by_user_id=uploaded_by_user_id,
             storage=storage or MinioStorage(),
         )
-    await session.commit()
-    await session.refresh(recommendation)
+    await repository.commit()
+    await repository.refresh(recommendation)
     return recommendation
 
 
-async def get_author_by_user(session: AsyncSession, user: User) -> AuthorProfile | None:
-    query = (
-        select(AuthorProfile)
-        .options(selectinload(AuthorProfile.user))
-        .where(AuthorProfile.user_id == user.id)
-    )
-    result = await session.execute(query)
-    return result.scalar_one_or_none()
+async def get_author_by_user(repository: SqlAlchemyAuthorRepository, user: User) -> AuthorProfile | None:
+    return await repository.get_author_by_user_id(user.id)
 
 
 def build_recommendation_form_data(
@@ -468,15 +421,15 @@ def _build_leg_rows(rows: Iterable[dict[str, str]], allowed_instrument_ids: set[
 
 
 async def _replace_legs(
-    session: AsyncSession,
+    repository: SqlAlchemyAuthorRepository,
     recommendation: Recommendation,
     legs: list[StructuredLegFormData],
 ) -> None:
     existing_legs = list(recommendation.legs)
     for item in existing_legs:
-        await session.delete(item)
+        await repository.delete(item)
     recommendation.legs = []
-    await session.flush()
+    await repository.flush()
     _attach_legs(recommendation, legs)
 
 
@@ -499,7 +452,7 @@ def _attach_legs(recommendation: Recommendation, legs: list[StructuredLegFormDat
 
 
 async def _store_attachments(
-    session: AsyncSession,
+    repository: SqlAlchemyAuthorRepository,
     recommendation: Recommendation,
     *,
     attachments: list[IncomingAttachment],
@@ -510,7 +463,7 @@ async def _store_attachments(
     for item in attachments:
         object_key = build_attachment_object_key(recommendation.id, item.filename)
         stored = storage.upload_bytes(object_key, item.data, item.content_type)
-        session.add(
+        repository.add(
             RecommendationAttachment(
                 recommendation_id=recommendation.id,
                 uploaded_by_user_id=uploaded_by_user_id,
@@ -522,7 +475,7 @@ async def _store_attachments(
                 size_bytes=stored.size_bytes,
             )
         )
-    await session.flush()
+    await repository.flush()
 
 
 def _parse_datetime_local(value: str) -> datetime:
@@ -564,8 +517,3 @@ def _blank_leg_values() -> list[dict[str, str]]:
         }
         for _ in range(MAX_EDITOR_LEGS)
     ]
-
-
-async def _count_query(session: AsyncSession, query) -> int:
-    result = await session.execute(query)
-    return int(result.scalar_one())

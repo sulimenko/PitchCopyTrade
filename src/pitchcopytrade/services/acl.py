@@ -1,125 +1,31 @@
 from __future__ import annotations
 
-from sqlalchemy import Select, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
-from pitchcopytrade.db.models.accounts import AuthorProfile, User
-from pitchcopytrade.db.models.catalog import BundleMember, Strategy, SubscriptionProduct
-from pitchcopytrade.db.models.commerce import Subscription
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
-from pitchcopytrade.db.models.enums import RecommendationStatus, SubscriptionStatus
+from pitchcopytrade.db.models.accounts import User
+from pitchcopytrade.db.models.content import Recommendation
+from pitchcopytrade.repositories.access import SqlAlchemyAccessRepository
 
 
-ACTIVE_SUBSCRIPTION_STATUSES = (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
-VISIBLE_RECOMMENDATION_STATUSES = (
-    RecommendationStatus.PUBLISHED,
-    RecommendationStatus.CLOSED,
-    RecommendationStatus.CANCELLED,
-)
-
-
-def build_user_access_filter(user_id: str):
-    strategy_ids = (
-        select(SubscriptionProduct.strategy_id)
-        .join(Subscription, Subscription.product_id == SubscriptionProduct.id)
-        .where(
-            Subscription.user_id == user_id,
-            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-            SubscriptionProduct.strategy_id.is_not(None),
-        )
-    )
-    author_ids = (
-        select(SubscriptionProduct.author_id)
-        .join(Subscription, Subscription.product_id == SubscriptionProduct.id)
-        .where(
-            Subscription.user_id == user_id,
-            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-            SubscriptionProduct.author_id.is_not(None),
-        )
-    )
-    bundle_strategy_ids = (
-        select(BundleMember.strategy_id)
-        .join(SubscriptionProduct, SubscriptionProduct.bundle_id == BundleMember.bundle_id)
-        .join(Subscription, Subscription.product_id == SubscriptionProduct.id)
-        .where(
-            Subscription.user_id == user_id,
-            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-            SubscriptionProduct.bundle_id.is_not(None),
-        )
-    )
-    return or_(
-        Recommendation.strategy_id.in_(strategy_ids),
-        Recommendation.author_id.in_(author_ids),
-        Recommendation.strategy_id.in_(bundle_strategy_ids),
-    )
-
-
-async def user_has_active_access(session: AsyncSession, user_id: str) -> bool:
-    query = (
-        select(Subscription.id)
-        .where(
-            Subscription.user_id == user_id,
-            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-        )
-        .limit(1)
-    )
-    result = await session.execute(query)
-    return result.scalar_one_or_none() is not None
+async def user_has_active_access(repository: SqlAlchemyAccessRepository, user_id: str) -> bool:
+    return await repository.user_has_active_access(user_id)
 
 
 async def list_user_visible_recommendations(
-    session: AsyncSession,
+    repository: SqlAlchemyAccessRepository,
     *,
     user_id: str,
     limit: int = 20,
 ) -> list[Recommendation]:
-    query: Select[tuple[Recommendation]] = (
-        select(Recommendation)
-        .options(
-            selectinload(Recommendation.strategy).selectinload(Strategy.author),
-            selectinload(Recommendation.author).selectinload(AuthorProfile.user),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
-        )
-        .where(
-            build_user_access_filter(user_id),
-            Recommendation.published_at.is_not(None),
-            Recommendation.status.in_(VISIBLE_RECOMMENDATION_STATUSES),
-        )
-        .order_by(Recommendation.published_at.desc(), Recommendation.created_at.desc())
-        .limit(limit)
-    )
-    result = await session.execute(query)
-    return list(result.scalars().all())
+    return await repository.list_user_visible_recommendations(user_id=user_id, limit=limit)
 
 
 async def get_user_visible_recommendation(
-    session: AsyncSession,
+    repository: SqlAlchemyAccessRepository,
     *,
     user_id: str,
     recommendation_id: str,
 ) -> Recommendation | None:
-    query = (
-        select(Recommendation)
-        .options(
-            selectinload(Recommendation.strategy).selectinload(Strategy.author),
-            selectinload(Recommendation.author).selectinload(AuthorProfile.user),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
-        )
-        .where(
-            Recommendation.id == recommendation_id,
-            build_user_access_filter(user_id),
-            Recommendation.published_at.is_not(None),
-            Recommendation.status.in_(VISIBLE_RECOMMENDATION_STATUSES),
-        )
-    )
-    result = await session.execute(query)
-    return result.scalar_one_or_none()
+    return await repository.get_user_visible_recommendation(user_id=user_id, recommendation_id=recommendation_id)
 
 
-async def get_user_by_telegram_id(session: AsyncSession, telegram_user_id: int) -> User | None:
-    query = select(User).options(selectinload(User.roles)).where(User.telegram_user_id == telegram_user_id)
-    result = await session.execute(query)
-    return result.scalar_one_or_none()
+async def get_user_by_telegram_id(repository: SqlAlchemyAccessRepository, telegram_user_id: int) -> User | None:
+    return await repository.get_user_by_telegram_id(telegram_user_id)

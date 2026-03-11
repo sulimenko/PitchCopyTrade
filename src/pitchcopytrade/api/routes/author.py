@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import require_author
+from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
-from pitchcopytrade.db.session import get_db_session
+from pitchcopytrade.repositories.author import SqlAlchemyAuthorRepository
 from pitchcopytrade.services.author import (
     blank_leg_values,
     build_leg_rows_from_form,
@@ -38,12 +38,12 @@ async def author_root() -> Response:
 async def author_dashboard(
     request: Request,
     user: User = Depends(require_author),
-    session: AsyncSession = Depends(get_db_session),
+    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
 ) -> Response:
-    author = await _get_author_or_403(session, user)
-    stats = await get_author_workspace_stats(session, author)
-    strategies = await list_author_strategies(session, author)
-    recommendations = await list_author_recommendations(session, author)
+    author = await _get_author_or_403(repository, user)
+    stats = await get_author_workspace_stats(repository, author)
+    strategies = await list_author_strategies(repository, author)
+    recommendations = await list_author_recommendations(repository, author)
     return templates.TemplateResponse(
         request,
         "author/dashboard.html",
@@ -62,10 +62,10 @@ async def author_dashboard(
 async def recommendation_list_page(
     request: Request,
     user: User = Depends(require_author),
-    session: AsyncSession = Depends(get_db_session),
+    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
 ) -> Response:
-    author = await _get_author_or_403(session, user)
-    recommendations = await list_author_recommendations(session, author)
+    author = await _get_author_or_403(repository, user)
+    recommendations = await list_author_recommendations(repository, author)
     return templates.TemplateResponse(
         request,
         "author/recommendations_list.html",
@@ -82,14 +82,14 @@ async def recommendation_list_page(
 async def recommendation_create_page(
     request: Request,
     user: User = Depends(require_author),
-    session: AsyncSession = Depends(get_db_session),
+    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
 ) -> Response:
-    author = await _get_author_or_403(session, user)
+    author = await _get_author_or_403(repository, user)
     return await _render_recommendation_form(
         request=request,
         user=user,
         author=author,
-        session=session,
+        repository=repository,
         recommendation=None,
         error=None,
         form_values=None,
@@ -100,11 +100,11 @@ async def recommendation_create_page(
 async def recommendation_create_submit(
     request: Request,
     user: User = Depends(require_author),
-    session: AsyncSession = Depends(get_db_session),
+    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
 ) -> Response:
-    author = await _get_author_or_403(session, user)
-    strategies = await list_author_strategies(session, author)
-    instruments = await list_active_instruments(session)
+    author = await _get_author_or_403(repository, user)
+    strategies = await list_author_strategies(repository, author)
+    instruments = await list_active_instruments(repository)
     form = await request.form()
     leg_rows = build_leg_rows_from_form(form)
     try:
@@ -125,7 +125,7 @@ async def recommendation_create_submit(
             attachments=uploads,
         )
         recommendation = await create_author_recommendation(
-            session,
+            repository,
             author,
             data,
             uploaded_by_user_id=user.id,
@@ -135,7 +135,7 @@ async def recommendation_create_submit(
             request=request,
             user=user,
             author=author,
-            session=session,
+            repository=repository,
             recommendation=None,
             error=str(exc),
             form_values={
@@ -163,17 +163,17 @@ async def recommendation_edit_page(
     recommendation_id: str,
     request: Request,
     user: User = Depends(require_author),
-    session: AsyncSession = Depends(get_db_session),
+    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
 ) -> Response:
-    author = await _get_author_or_403(session, user)
-    recommendation = await get_author_recommendation(session, author, recommendation_id)
+    author = await _get_author_or_403(repository, user)
+    recommendation = await get_author_recommendation(repository, author, recommendation_id)
     if recommendation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
     return await _render_recommendation_form(
         request=request,
         user=user,
         author=author,
-        session=session,
+        repository=repository,
         recommendation=recommendation,
         error=None,
         form_values=None,
@@ -185,10 +185,10 @@ async def recommendation_preview_page(
     recommendation_id: str,
     request: Request,
     user: User = Depends(require_author),
-    session: AsyncSession = Depends(get_db_session),
+    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
 ) -> Response:
-    author = await _get_author_or_403(session, user)
-    recommendation = await get_author_recommendation(session, author, recommendation_id)
+    author = await _get_author_or_403(repository, user)
+    recommendation = await get_author_recommendation(repository, author, recommendation_id)
     if recommendation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
     return templates.TemplateResponse(
@@ -209,15 +209,15 @@ async def recommendation_edit_submit(
     recommendation_id: str,
     request: Request,
     user: User = Depends(require_author),
-    session: AsyncSession = Depends(get_db_session),
+    repository: SqlAlchemyAuthorRepository = Depends(get_author_repository),
 ) -> Response:
-    author = await _get_author_or_403(session, user)
-    recommendation = await get_author_recommendation(session, author, recommendation_id)
+    author = await _get_author_or_403(repository, user)
+    recommendation = await get_author_recommendation(repository, author, recommendation_id)
     if recommendation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
 
-    strategies = await list_author_strategies(session, author)
-    instruments = await list_active_instruments(session)
+    strategies = await list_author_strategies(repository, author)
+    instruments = await list_active_instruments(repository)
     form = await request.form()
     leg_rows = build_leg_rows_from_form(form)
     try:
@@ -238,7 +238,7 @@ async def recommendation_edit_submit(
             attachments=uploads,
         )
         await update_author_recommendation(
-            session,
+            repository,
             recommendation,
             data,
             uploaded_by_user_id=user.id,
@@ -248,7 +248,7 @@ async def recommendation_edit_submit(
             request=request,
             user=user,
             author=author,
-            session=session,
+            repository=repository,
             recommendation=recommendation,
             error=str(exc),
             form_values={
@@ -277,15 +277,15 @@ async def _render_recommendation_form(
     request: Request,
     user: User,
     author: AuthorProfile,
-    session: AsyncSession,
+    repository: SqlAlchemyAuthorRepository,
     recommendation,
     error: str | None,
     form_values: dict[str, object] | None,
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
-    strategies = await list_author_strategies(session, author)
+    strategies = await list_author_strategies(repository, author)
     effective_form_values = form_values or recommendation_form_values(recommendation)
-    instruments = await list_active_instruments(session)
+    instruments = await list_active_instruments(repository)
     return templates.TemplateResponse(
         request,
         "author/recommendation_form.html",
@@ -315,8 +315,8 @@ async def _render_recommendation_form(
     )
 
 
-async def _get_author_or_403(session: AsyncSession, user: User) -> AuthorProfile:
-    author = user.author_profile or await get_author_by_user(session, user)
+async def _get_author_or_403(repository: SqlAlchemyAuthorRepository, user: User) -> AuthorProfile:
+    author = user.author_profile or await get_author_by_user(repository, user)
     if author is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Author profile is not configured")
     return author

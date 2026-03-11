@@ -167,7 +167,15 @@ Acceptance:
 Acceptance:
 - приложение стартует в двух режимах без правки application code
 
-### 20. Repository abstraction `[todo]`
+### 20. Repository abstraction `[partial]`
+Сделано:
+- repository package introduced
+- `SqlAlchemyAuthorRepository`
+- `SqlAlchemyAccessRepository`
+- repository deps for FastAPI
+- author service layer detached from direct `AsyncSession` usage
+- ACL/feed service layer detached from direct `AsyncSession` usage
+
 Сделать:
 - вынести critical persistence operations в repositories
 - подготовить dual implementation:
