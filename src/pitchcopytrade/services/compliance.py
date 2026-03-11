@@ -28,12 +28,14 @@ def create_legal_document_draft(
     version: str,
     title: str,
     content_md: str,
+    source_path: str | None = None,
 ) -> LegalDocument:
     return LegalDocument(
         document_type=document_type,
         version=version,
         title=title,
         content_md=content_md,
+        source_path=source_path,
         is_active=False,
         published_at=None,
     )

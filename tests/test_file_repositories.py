@@ -131,6 +131,7 @@ def _seed_demo_json(store: FileDataStore) -> None:
                     "version": "v1",
                     "title": f"{doc_type.value} v1",
                     "content_md": "text",
+                    "source_path": f"legal/{doc_type.value}/v1.md",
                     "is_active": True,
                     "published_at": now,
                     "created_at": now,

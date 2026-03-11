@@ -53,6 +53,7 @@ Telegram-first платформа для продажи подписок на с
   - attachments
 - real demo seed pack under [storage/seed/json](/Users/alexey/site/PitchCopyTrade/storage/seed/json)
 - demo attachment blob under [storage/seed/blob/recommendations/rec-1/file.pdf](/Users/alexey/site/PitchCopyTrade/storage/seed/blob/recommendations/rec-1/file.pdf)
+- legal markdown source files under [storage/seed/blob/legal](/Users/alexey/site/PitchCopyTrade/storage/seed/blob/legal)
 
 ## Архитектурный сдвиг
 Новая целевая схема:
@@ -89,6 +90,7 @@ Telegram-first платформа для продажи подписок на с
 - local filesystem storage backend уже добавлен, но primary attachment flow все еще по умолчанию ориентирован на `MinIO`;
 - `docker-compose.yml` все еще поднимает `minio` как штатный сервис;
 - attachment flow и metadata пока ориентированы на bucket/object-key path.
+- legal docs уже могут рендериться из локальных markdown source files, но admin editing flow для них еще не реализован.
 
 Это значит:
 - текущая реализация пригодна для продолжения продуктовой разработки;
@@ -175,6 +177,10 @@ Telegram-first платформа для продажи подписок на с
 - [storage/seed/json/recommendation_attachments.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/recommendation_attachments.json)
 
 При первом file-mode запуске runtime копируется из `storage/seed/*` в локальный `storage/runtime/*`. `storage/runtime/` не должен коммититься.
+Attachments и legal docs теперь local-first:
+- recommendation attachments canonical provider = `local_fs`
+- legal documents имеют `source_path` и читаются из `storage/runtime/blob` с bootstrap из `storage/seed/blob`
+- `MinIO` остается transitional fallback
 
 ## Документы
 - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)

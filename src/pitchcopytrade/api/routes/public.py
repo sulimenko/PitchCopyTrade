@@ -14,6 +14,7 @@ from pitchcopytrade.services.public import (
     list_active_checkout_documents,
     list_public_strategies,
 )
+from pitchcopytrade.services.legal_documents import read_legal_document_markdown
 from pitchcopytrade.web.templates import templates
 
 
@@ -92,6 +93,27 @@ async def checkout_page(
                 "lead_source_name": "",
                 "accepted_document_ids": [],
             },
+        },
+    )
+
+
+@router.get("/legal/{document_id}", response_class=HTMLResponse)
+async def legal_document_page(
+    document_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    documents = await list_active_checkout_documents(session)
+    document = next((item for item in documents if item.id == document_id), None)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
+    return templates.TemplateResponse(
+        request,
+        "public/legal_document.html",
+        {
+            "title": document.title,
+            "document": document,
+            "content_md": read_legal_document_markdown(document),
         },
     )
 

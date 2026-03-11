@@ -304,6 +304,7 @@ def upgrade() -> None:
         sa.Column("version", sa.String(length=50), nullable=False),
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("content_md", sa.Text(), nullable=False),
+        sa.Column("source_path", sa.String(length=500), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),

@@ -99,6 +99,8 @@ Canonical subscriber model остается:
 - local filesystem storage backend baseline with `APP_STORAGE_ROOT=storage`
 - runtime writes target `storage/runtime/*`
 - committed seed target `storage/seed/*`
+- attachments local-first by canonical `local_fs`
+- legal documents local-first via `source_path` under `storage/*/blob/legal`
 
 ### 3.6 Repository layer baseline
 Есть:
@@ -144,7 +146,8 @@ Canonical subscriber model остается:
 - local filesystem storage backend уже добавлен в код;
 - его runtime root идет из `APP_STORAGE_ROOT` и по умолчанию использует `storage/runtime/blob`;
 - route download уже поддерживает `storage_provider=local_fs`;
-- но primary upload path все еще не переключен на local filesystem по умолчанию.
+- author upload path уже переключен на local filesystem по умолчанию;
+- legal rendering уже умеет читать local markdown source files по `source_path`.
 
 ### 4.3 Что это означает practically
 На сегодня проект:
@@ -201,6 +204,10 @@ Primary persistence target:
 Для быстрого локального тестирования сначала достаточно:
 - `blob`
 - `json`
+
+Дополнение:
+- recommendation attachments должны читаться и писаться в local filesystem path;
+- legal markdown source files должны жить в local filesystem path и быть доступны для public/legal rendering.
 
 ## 6. Canonical runtime modes
 

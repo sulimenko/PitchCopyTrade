@@ -15,7 +15,7 @@ from pitchcopytrade.db.models.content import Recommendation, RecommendationAttac
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, TradeSide
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.storage.base import StorageBackend
-from pitchcopytrade.storage.minio import MinioStorage
+from pitchcopytrade.storage.local import LocalFilesystemStorage
 
 MAX_EDITOR_LEGS = 3
 MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024
@@ -144,7 +144,7 @@ async def create_author_recommendation(
             recommendation,
             attachments=data.attachments,
             uploaded_by_user_id=uploaded_by_user_id,
-            storage=storage or MinioStorage(),
+            storage=storage or LocalFilesystemStorage(),
         )
     await repository.commit()
     await repository.refresh(recommendation)
@@ -176,7 +176,7 @@ async def update_author_recommendation(
             recommendation,
             attachments=data.attachments,
             uploaded_by_user_id=uploaded_by_user_id,
-            storage=storage or MinioStorage(),
+            storage=storage or LocalFilesystemStorage(),
         )
     await repository.commit()
     await repository.refresh(recommendation)

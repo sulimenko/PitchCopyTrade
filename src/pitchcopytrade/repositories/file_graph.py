@@ -280,6 +280,7 @@ class FileDatasetGraph:
                 version=item["version"],
                 title=item["title"],
                 content_md=item["content_md"],
+                source_path=item.get("source_path"),
                 is_active=item.get("is_active", False),
                 published_at=_parse_datetime(item.get("published_at")),
                 created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
@@ -720,6 +721,7 @@ class FileDatasetGraph:
             "version": entity.version,
             "title": entity.title,
             "content_md": entity.content_md,
+            "source_path": entity.source_path,
             "is_active": entity.is_active,
             "published_at": _serialize_datetime(entity.published_at),
         }

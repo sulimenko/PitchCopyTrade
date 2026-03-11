@@ -233,11 +233,15 @@ Acceptance:
 Сделано:
 - local attachment backend exists
 - local attachment download branch exists
-
-Сделать:
 - author uploads по умолчанию в `storage/runtime/blob`
 - subscriber downloads из `storage/runtime/blob`
-- legal document source files локально
+- legal documents now support `source_path`
+- public legal page renders markdown from local storage path
+- seed legal markdown files committed under `storage/seed/blob/legal`
+
+Сделать:
+- admin/legal editing flow for writing local markdown sources
+- убрать transitional dependency from remaining MinIO-only paths
 
 Acceptance:
 - `MinIO` не нужен для локального smoke-test

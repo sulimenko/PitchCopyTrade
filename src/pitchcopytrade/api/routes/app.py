@@ -86,7 +86,7 @@ async def recommendation_attachment_download(
     if attachment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
 
-    storage_provider = attachment.storage_provider or "minio"
+    storage_provider = attachment.storage_provider or "local_fs"
 
     if storage_provider == "local_fs":
         payload = LocalFilesystemStorage(bucket_name=attachment.bucket_name).download_bytes(attachment.object_key)

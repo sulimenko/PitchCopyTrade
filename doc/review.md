@@ -95,6 +95,7 @@
 ### E. Local storage contract
 Проверь:
 - attachments и legal files сохраняются в локальный `storage/`;
+- legal docs имеют local `source_path` contract и public rendering читает local source;
 - download path читает локальные файлы безопасно;
 - нет path traversal;
 - checksum/size/content-type metadata согласованы;

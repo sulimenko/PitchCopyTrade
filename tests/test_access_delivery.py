@@ -112,6 +112,7 @@ def _make_recommendation() -> Recommendation:
     attachment = RecommendationAttachment(
         id="att-1",
         recommendation_id="rec-1",
+        storage_provider="minio",
         bucket_name="uploads",
         object_key="recommendations/rec-1/file.pdf",
         original_filename="idea.pdf",

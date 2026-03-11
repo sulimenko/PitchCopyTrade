@@ -21,7 +21,6 @@ from pitchcopytrade.db.models.enums import (
 )
 from pitchcopytrade.db.session import get_db_session
 
-
 class FakeAsyncSession:
     async def execute(self, query):
         raise AssertionError("This test suite expects service-level monkeypatching")
@@ -88,6 +87,7 @@ def _make_documents() -> list[LegalDocument]:
             version="v1",
             title=f"{item.value} v1",
             content_md="text",
+            source_path=f"legal/{item.value}/v1.md",
             is_active=True,
         )
         for item in (
@@ -166,6 +166,26 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
         assert "stub/manual checkout" in response.text
         assert "Momentum RU Monthly" in response.text
         assert "payment_consent" in response.text
+        assert '/legal/doc-payment_consent' in response.text
+
+
+def test_legal_document_page_reads_local_markdown(monkeypatch) -> None:
+    documents = _make_documents()
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _session: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.read_legal_document_markdown",
+        lambda document: f"loaded from {document.source_path}",
+    )
+
+    with _build_client(FakeAsyncSession()) as client:
+        response = client.get("/legal/doc-offer")
+
+        assert response.status_code == 200
+        assert "offer v1" in response.text
+        assert "loaded from legal/offer/v1.md" in response.text
 
 
 def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
