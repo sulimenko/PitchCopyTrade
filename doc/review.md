@@ -31,6 +31,10 @@
 - delivery notifications baseline
 - Telegram-first subscriber baseline
 - local filesystem storage backend baseline
+- verified file-mode e2e baseline for:
+  - `admin dashboard`
+  - `author dashboard`
+  - `Telegram checkout -> admin confirm -> feed`
 
 Но текущее архитектурное решение изменилось:
 - subscriber должен оставаться `Telegram-first`;
@@ -139,6 +143,11 @@
 - docs/run instructions не противоречат реальному runtime.
 - `api + bot + worker` реально стартуют в `APP_DATA_MODE=file`, а не только компилируются.
 - если change заявляет Telegram bot smoke, он должен быть подтвержден либо локальным handler smoke, либо реальным `getMe` / webhook check.
+- если change заявляет local e2e, минимум должен быть подтвержден:
+  - `staff login`
+  - `admin dashboard`
+  - `author dashboard`
+  - `checkout -> confirm -> feed`
 
 ## 4. Transitional areas
 Это не automatic finding само по себе, но reviewer должен отслеживать drift:

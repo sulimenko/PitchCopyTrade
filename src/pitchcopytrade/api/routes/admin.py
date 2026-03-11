@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pitchcopytrade.api.deps.auth import require_admin
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.enums import BillingPeriod, ProductType, RiskLevel, StrategyStatus
-from pitchcopytrade.db.session import get_db_session
+from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.services.admin import (
     ProductFormData,
     confirm_payment_and_activate_subscription,
@@ -42,7 +42,7 @@ async def admin_root() -> Response:
 async def admin_dashboard(
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     stats = await get_admin_dashboard_stats(session)
     strategies = await list_admin_strategies(session)
@@ -66,7 +66,7 @@ async def admin_dashboard(
 async def strategy_list_page(
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     strategies = await list_admin_strategies(session)
     return templates.TemplateResponse(
@@ -84,7 +84,7 @@ async def strategy_list_page(
 async def strategy_create_page(
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     return await _render_strategy_form(
         request=request,
@@ -100,7 +100,7 @@ async def strategy_create_page(
 async def strategy_create_submit(
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
     author_id: str = Form(...),
     slug: str = Form(...),
     title: str = Form(...),
@@ -155,7 +155,7 @@ async def strategy_edit_page(
     strategy_id: str,
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     strategy = await get_admin_strategy(session, strategy_id)
     if strategy is None:
@@ -175,7 +175,7 @@ async def strategy_edit_submit(
     strategy_id: str,
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
     author_id: str = Form(...),
     slug: str = Form(...),
     title: str = Form(...),
@@ -234,7 +234,7 @@ async def strategy_edit_submit(
 async def product_list_page(
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     products = await list_admin_products(session)
     return templates.TemplateResponse(
@@ -252,7 +252,7 @@ async def product_list_page(
 async def product_create_page(
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     return await _render_product_form(
         request=request,
@@ -268,7 +268,7 @@ async def product_create_page(
 async def product_create_submit(
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
     product_type: str = Form(...),
     slug: str = Form(...),
     title: str = Form(...),
@@ -329,7 +329,7 @@ async def product_edit_page(
     product_id: str,
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     product = await get_admin_product(session, product_id)
     if product is None:
@@ -349,7 +349,7 @@ async def product_edit_submit(
     product_id: str,
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
     product_type: str = Form(...),
     slug: str = Form(...),
     title: str = Form(...),
@@ -413,7 +413,7 @@ async def product_edit_submit(
 async def payment_list_page(
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     payments = await list_admin_payments(session)
     review_stats = await get_payment_review_stats(session)
@@ -434,7 +434,7 @@ async def payment_detail_page(
     payment_id: str,
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     payment = await get_admin_payment(session, payment_id)
     if payment is None:
@@ -456,7 +456,7 @@ async def payment_confirm_submit(
     payment_id: str,
     request: Request,
     user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     payment = await get_admin_payment(session, payment_id)
     if payment is None:
@@ -481,7 +481,7 @@ async def payment_confirm_submit(
 async def _render_strategy_form(
     request: Request,
     user: User,
-    session: AsyncSession,
+    session: AsyncSession | None,
     strategy,
     error: str | None,
     form_values: dict[str, object],
@@ -508,7 +508,7 @@ async def _render_strategy_form(
 async def _render_product_form(
     request: Request,
     user: User,
-    session: AsyncSession,
+    session: AsyncSession | None,
     product,
     error: str | None,
     form_values: dict[str, object],

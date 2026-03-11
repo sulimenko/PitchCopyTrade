@@ -111,6 +111,7 @@ Canonical subscriber model остается:
 - `FileAuthorRepository`
 - `FileAccessRepository`
 - `FilePublicRepository`
+- `FileAuthRepository`
 - `FileDataStore`
 - `FileDatasetGraph`
 - FastAPI deps for repository wiring
@@ -121,12 +122,10 @@ Canonical subscriber model остается:
 - real demo blob attachment under `storage/seed/blob`
 
 Пока еще не переведены:
-- admin
-- public commerce
 - moderation
 - notifications
 - publishing
-- auth/session lookup paths
+- часть auth/session fallback paths outside verified smoke contour
 
 ## 4. Что показало исследование текущего состояния
 
@@ -171,6 +170,7 @@ Primary persistence target:
 ### 5.2 Canonical storage root
 Единый корень:
 - `storage/`
+- `APP_STORAGE_ROOT` должен указывать именно на этот корень, где вместе живут `seed/` и `runtime/`
 
 Целевое разбиение:
 - `storage/seed/blob/`
@@ -240,6 +240,12 @@ Primary persistence target:
 - `bot` стартует на уровне runtime bootstrap и dispatcher assembly;
 - test bot token resolves against Telegram API and returns expected bot identity;
 - `worker` выполняет `run_worker_once()` без PostgreSQL и без MinIO.
+- на свежем temp storage-root с copied seed подтвержден e2e:
+  - `admin` login -> dashboard;
+  - `author` login -> dashboard;
+  - `Telegram checkout -> payment pending`;
+  - `admin confirm -> subscription activation`;
+  - `Telegram feed -> visible recommendation`.
 
 ### 6.3 Demo seed baseline
 Текущий baseline теперь включает:
@@ -420,3 +426,51 @@ Storage root уже введен:
 - сохраняют ли Telegram-first subscriber model;
 - не создают ли новый hard dependency на remote storage;
 - не делают ли DB обязательной для базового локального тестирования.
+
+## 15. Следующий этап после test-launch
+Task list для запуска тестовой версии закрыт. Следующий этап уже не про foundation, а про operational hardening.
+
+Приоритеты:
+1. deployment contour
+   - canonical server path = `file mode + nginx + systemd`
+   - domain for test server = `pct.test.pbull.kz`
+   - polling bot остается основным способом работы test bot
+2. compose cleanup
+   - убрать `MinIO-first` assumptions из runtime compose path
+   - не делать `MinIO` обязательным для `api` и `worker` в `file` mode
+3. full file-mode parity
+   - moderation
+   - notifications
+   - publishing edge cases
+4. local legal editing
+   - admin UI for markdown source files
+5. Telegram UX phase
+   - WebApp auth bridge
+   - richer subscriber status and checkout UX
+6. operations
+   - storage backup strategy
+   - log rotation
+   - release/update procedure
+
+## 16. Canonical clean -> review -> deploy flow
+Каждый следующий этап нужно вести по одной схеме:
+1. clean runtime state
+   - очищать только `storage/runtime/*`
+   - не трогать committed `storage/seed/*`
+2. run technical review
+   - `compileall`
+   - `pytest`
+3. run product smoke
+   - `admin login`
+   - `author login`
+   - `Telegram checkout -> confirm -> feed`
+4. update description files
+   - `README.md`
+   - `doc/blueprint.md`
+   - `doc/task.md`
+   - `doc/review.md`
+5. only after that move to local/server deploy
+
+Deployment note:
+- текущий production-like deploy path должен опираться не на dev `docker-compose`, а на явные long-running services для `api`, `bot`, `worker`;
+- один bot token должен обслуживаться только одним polling instance одновременно.

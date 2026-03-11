@@ -20,6 +20,8 @@ from pitchcopytrade.db.models.enums import (
     StrategyStatus,
     SubscriptionStatus,
 )
+from pitchcopytrade.repositories.file_graph import FileDatasetGraph
+from pitchcopytrade.repositories.file_store import FileDataStore
 
 
 @dataclass(slots=True)
@@ -68,7 +70,24 @@ class PaymentReviewStats:
     active_subscriptions: int
 
 
-async def get_admin_dashboard_stats(session: AsyncSession) -> AdminDashboardStats:
+def _file_admin_graph() -> tuple[FileDatasetGraph, FileDataStore]:
+    store = FileDataStore()
+    graph = FileDatasetGraph.load(store)
+    return graph, store
+
+
+async def get_admin_dashboard_stats(session: AsyncSession | None) -> AdminDashboardStats:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        return AdminDashboardStats(
+            authors_total=sum(1 for item in graph.authors.values() if item.is_active),
+            strategies_total=len(graph.strategies),
+            strategies_public=sum(1 for item in graph.strategies.values() if item.is_public),
+            active_subscriptions=sum(
+                1 for item in graph.subscriptions.values() if item.status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+            ),
+            recommendations_live=sum(1 for item in graph.recommendations.values() if item.published_at is not None),
+        )
     authors_total = await _count_query(session, select(func.count(AuthorProfile.id)))
     strategies_total = await _count_query(session, select(func.count(Strategy.id)))
     strategies_public = await _count_query(session, select(func.count(Strategy.id)).where(Strategy.is_public.is_(True)))
@@ -91,7 +110,12 @@ async def get_admin_dashboard_stats(session: AsyncSession) -> AdminDashboardStat
     )
 
 
-async def list_admin_strategies(session: AsyncSession) -> list[Strategy]:
+async def list_admin_strategies(session: AsyncSession | None) -> list[Strategy]:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        items = list(graph.strategies.values())
+        items.sort(key=lambda item: (item.created_at, item.title.lower()), reverse=True)
+        return items
     query = (
         select(Strategy)
         .options(selectinload(Strategy.author).selectinload(AuthorProfile.user))
@@ -101,7 +125,12 @@ async def list_admin_strategies(session: AsyncSession) -> list[Strategy]:
     return list(result.scalars().all())
 
 
-async def list_admin_authors(session: AsyncSession) -> list[AuthorProfile]:
+async def list_admin_authors(session: AsyncSession | None) -> list[AuthorProfile]:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        items = [item for item in graph.authors.values() if item.is_active]
+        items.sort(key=lambda item: item.display_name.lower())
+        return items
     query = (
         select(AuthorProfile)
         .options(selectinload(AuthorProfile.user))
@@ -112,7 +141,10 @@ async def list_admin_authors(session: AsyncSession) -> list[AuthorProfile]:
     return list(result.scalars().all())
 
 
-async def get_admin_strategy(session: AsyncSession, strategy_id: str) -> Strategy | None:
+async def get_admin_strategy(session: AsyncSession | None, strategy_id: str) -> Strategy | None:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        return graph.strategies.get(strategy_id)
     query = (
         select(Strategy)
         .options(selectinload(Strategy.author).selectinload(AuthorProfile.user))
@@ -122,7 +154,12 @@ async def get_admin_strategy(session: AsyncSession, strategy_id: str) -> Strateg
     return result.scalar_one_or_none()
 
 
-async def list_admin_products(session: AsyncSession) -> list[SubscriptionProduct]:
+async def list_admin_products(session: AsyncSession | None) -> list[SubscriptionProduct]:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        items = list(graph.products.values())
+        items.sort(key=lambda item: (item.created_at, item.title.lower()), reverse=True)
+        return items
     query = (
         select(SubscriptionProduct)
         .options(
@@ -136,7 +173,10 @@ async def list_admin_products(session: AsyncSession) -> list[SubscriptionProduct
     return list(result.scalars().all())
 
 
-async def get_admin_product(session: AsyncSession, product_id: str) -> SubscriptionProduct | None:
+async def get_admin_product(session: AsyncSession | None, product_id: str) -> SubscriptionProduct | None:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        return graph.products.get(product_id)
     query = (
         select(SubscriptionProduct)
         .options(
@@ -150,13 +190,23 @@ async def get_admin_product(session: AsyncSession, product_id: str) -> Subscript
     return result.scalar_one_or_none()
 
 
-async def list_admin_bundles(session: AsyncSession) -> list[Bundle]:
+async def list_admin_bundles(session: AsyncSession | None) -> list[Bundle]:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        items = [item for item in graph.bundles.values() if item.is_active]
+        items.sort(key=lambda item: item.title.lower())
+        return items
     query = select(Bundle).where(Bundle.is_active.is_(True)).order_by(Bundle.title.asc())
     result = await session.execute(query)
     return list(result.scalars().all())
 
 
-async def list_admin_payments(session: AsyncSession) -> list[Payment]:
+async def list_admin_payments(session: AsyncSession | None) -> list[Payment]:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        items = list(graph.payments.values())
+        items.sort(key=lambda item: item.created_at, reverse=True)
+        return items
     query = (
         select(Payment)
         .options(
@@ -171,7 +221,10 @@ async def list_admin_payments(session: AsyncSession) -> list[Payment]:
     return list(result.scalars().all())
 
 
-async def get_admin_payment(session: AsyncSession, payment_id: str) -> Payment | None:
+async def get_admin_payment(session: AsyncSession | None, payment_id: str) -> Payment | None:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        return graph.payments.get(payment_id)
     query = (
         select(Payment)
         .options(
@@ -187,7 +240,17 @@ async def get_admin_payment(session: AsyncSession, payment_id: str) -> Payment |
     return result.scalar_one_or_none()
 
 
-async def get_payment_review_stats(session: AsyncSession) -> PaymentReviewStats:
+async def get_payment_review_stats(session: AsyncSession | None) -> PaymentReviewStats:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        return PaymentReviewStats(
+            pending_payments=sum(1 for item in graph.payments.values() if item.status == PaymentStatus.PENDING),
+            paid_payments=sum(1 for item in graph.payments.values() if item.status == PaymentStatus.PAID),
+            pending_subscriptions=sum(1 for item in graph.subscriptions.values() if item.status == SubscriptionStatus.PENDING),
+            active_subscriptions=sum(
+                1 for item in graph.subscriptions.values() if item.status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+            ),
+        )
     pending_payments = await _count_query(
         session,
         select(func.count(Payment.id)).where(Payment.status == PaymentStatus.PENDING),
@@ -214,7 +277,23 @@ async def get_payment_review_stats(session: AsyncSession) -> PaymentReviewStats:
     )
 
 
-async def create_strategy(session: AsyncSession, data: StrategyFormData) -> Strategy:
+async def create_strategy(session: AsyncSession | None, data: StrategyFormData) -> Strategy:
+    if session is None:
+        graph, store = _file_admin_graph()
+        strategy = Strategy(
+            author_id=data.author_id,
+            slug=data.slug,
+            title=data.title,
+            short_description=data.short_description,
+            full_description=data.full_description,
+            risk_level=data.risk_level,
+            status=data.status,
+            min_capital_rub=data.min_capital_rub,
+            is_public=data.is_public,
+        )
+        graph.add(strategy)
+        graph.save(store)
+        return strategy
     strategy = Strategy(
         author_id=data.author_id,
         slug=data.slug,
@@ -232,7 +311,26 @@ async def create_strategy(session: AsyncSession, data: StrategyFormData) -> Stra
     return strategy
 
 
-async def create_product(session: AsyncSession, data: ProductFormData) -> SubscriptionProduct:
+async def create_product(session: AsyncSession | None, data: ProductFormData) -> SubscriptionProduct:
+    if session is None:
+        graph, store = _file_admin_graph()
+        product = SubscriptionProduct(
+            product_type=data.product_type,
+            slug=data.slug,
+            title=data.title,
+            description=data.description,
+            strategy_id=data.strategy_id,
+            author_id=data.author_id,
+            bundle_id=data.bundle_id,
+            billing_period=data.billing_period,
+            price_rub=data.price_rub,
+            trial_days=data.trial_days,
+            is_active=data.is_active,
+            autorenew_allowed=data.autorenew_allowed,
+        )
+        graph.add(product)
+        graph.save(store)
+        return product
     product = SubscriptionProduct(
         product_type=data.product_type,
         slug=data.slug,
@@ -253,7 +351,7 @@ async def create_product(session: AsyncSession, data: ProductFormData) -> Subscr
     return product
 
 
-async def update_strategy(session: AsyncSession, strategy: Strategy, data: StrategyFormData) -> Strategy:
+async def update_strategy(session: AsyncSession | None, strategy: Strategy, data: StrategyFormData) -> Strategy:
     strategy.author_id = data.author_id
     strategy.slug = data.slug
     strategy.title = data.title
@@ -263,13 +361,29 @@ async def update_strategy(session: AsyncSession, strategy: Strategy, data: Strat
     strategy.status = data.status
     strategy.min_capital_rub = data.min_capital_rub
     strategy.is_public = data.is_public
+    if session is None:
+        graph, store = _file_admin_graph()
+        persisted = graph.strategies.get(strategy.id)
+        if persisted is None:
+            raise ValueError("Strategy not found")
+        persisted.author_id = strategy.author_id
+        persisted.slug = strategy.slug
+        persisted.title = strategy.title
+        persisted.short_description = strategy.short_description
+        persisted.full_description = strategy.full_description
+        persisted.risk_level = strategy.risk_level
+        persisted.status = strategy.status
+        persisted.min_capital_rub = strategy.min_capital_rub
+        persisted.is_public = strategy.is_public
+        graph.save(store)
+        return persisted
     await session.commit()
     await session.refresh(strategy)
     return strategy
 
 
 async def update_product(
-    session: AsyncSession, product: SubscriptionProduct, data: ProductFormData
+    session: AsyncSession | None, product: SubscriptionProduct, data: ProductFormData
 ) -> SubscriptionProduct:
     product.product_type = data.product_type
     product.slug = data.slug
@@ -283,17 +397,55 @@ async def update_product(
     product.trial_days = data.trial_days
     product.is_active = data.is_active
     product.autorenew_allowed = data.autorenew_allowed
+    if session is None:
+        graph, store = _file_admin_graph()
+        persisted = graph.products.get(product.id)
+        if persisted is None:
+            raise ValueError("Product not found")
+        persisted.product_type = product.product_type
+        persisted.slug = product.slug
+        persisted.title = product.title
+        persisted.description = product.description
+        persisted.strategy_id = product.strategy_id
+        persisted.author_id = product.author_id
+        persisted.bundle_id = product.bundle_id
+        persisted.billing_period = product.billing_period
+        persisted.price_rub = product.price_rub
+        persisted.trial_days = product.trial_days
+        persisted.is_active = product.is_active
+        persisted.autorenew_allowed = product.autorenew_allowed
+        graph.save(store)
+        return persisted
     await session.commit()
     await session.refresh(product)
     return product
 
 
 async def confirm_payment_and_activate_subscription(
-    session: AsyncSession,
+    session: AsyncSession | None,
     payment: Payment,
     *,
     confirmed_at: datetime | None = None,
 ) -> tuple[Payment, list[Subscription]]:
+    if session is None:
+        graph, store = _file_admin_graph()
+        payment = graph.payments.get(payment.id)
+        if payment is None:
+            raise ValueError("Payment not found")
+        if payment.status is PaymentStatus.PAID:
+            return payment, payment.subscriptions
+        if payment.status is not PaymentStatus.PENDING:
+            raise ValueError("Подтверждать можно только payment в статусе pending")
+        if not payment.subscriptions:
+            raise ValueError("У платежа нет связанной подписки")
+        timestamp = confirmed_at or datetime.now(timezone.utc)
+        payment.status = PaymentStatus.PAID
+        payment.confirmed_at = timestamp
+        for subscription in payment.subscriptions:
+            subscription.status = SubscriptionStatus.TRIAL if subscription.is_trial else SubscriptionStatus.ACTIVE
+        graph.save(store)
+        return payment, payment.subscriptions
+
     if payment.status is PaymentStatus.PAID:
         return payment, payment.subscriptions
     if payment.status is not PaymentStatus.PENDING:

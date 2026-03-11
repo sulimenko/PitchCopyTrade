@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.api.deps.auth import require_admin
+from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Bundle, Strategy, SubscriptionProduct
@@ -24,7 +25,6 @@ from pitchcopytrade.db.models.enums import (
     StrategyStatus,
     SubscriptionStatus,
 )
-from pitchcopytrade.db.session import get_db_session
 
 
 class FakeAsyncSession:
@@ -188,7 +188,7 @@ def _build_client(session: FakeAsyncSession, admin_user: User) -> TestClient:
     async def override_admin_user():
         return admin_user
 
-    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_optional_db_session] = override_db_session
     app.dependency_overrides[require_admin] = override_admin_user
     return TestClient(app)
 

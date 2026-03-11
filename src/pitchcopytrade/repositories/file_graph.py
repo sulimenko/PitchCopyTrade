@@ -644,7 +644,7 @@ class FileDatasetGraph:
 
     def _author_record(self, entity: AuthorProfile) -> dict[str, Any]:
         return self._base_record(entity) | {
-            "user_id": entity.user_id,
+            "user_id": entity.user_id or (entity.user.id if getattr(entity, "user", None) is not None else None),
             "display_name": entity.display_name,
             "slug": entity.slug,
             "bio": entity.bio,
@@ -676,7 +676,7 @@ class FileDatasetGraph:
 
     def _strategy_record(self, entity: Strategy) -> dict[str, Any]:
         return self._base_record(entity) | {
-            "author_id": entity.author_id,
+            "author_id": entity.author_id or (entity.author.id if getattr(entity, "author", None) is not None else None),
             "slug": entity.slug,
             "title": entity.title,
             "short_description": entity.short_description,
@@ -705,9 +705,9 @@ class FileDatasetGraph:
             "slug": entity.slug,
             "title": entity.title,
             "description": entity.description,
-            "strategy_id": entity.strategy_id,
-            "author_id": entity.author_id,
-            "bundle_id": entity.bundle_id,
+            "strategy_id": entity.strategy_id or (entity.strategy.id if getattr(entity, "strategy", None) is not None else None),
+            "author_id": entity.author_id or (entity.author.id if getattr(entity, "author", None) is not None else None),
+            "bundle_id": entity.bundle_id or (entity.bundle.id if getattr(entity, "bundle", None) is not None else None),
             "billing_period": entity.billing_period.value,
             "price_rub": entity.price_rub,
             "trial_days": entity.trial_days,
@@ -728,8 +728,8 @@ class FileDatasetGraph:
 
     def _payment_record(self, entity: Payment) -> dict[str, Any]:
         return self._base_record(entity) | {
-            "user_id": entity.user_id,
-            "product_id": entity.product_id,
+            "user_id": entity.user_id or (entity.user.id if getattr(entity, "user", None) is not None else None),
+            "product_id": entity.product_id or (entity.product.id if getattr(entity, "product", None) is not None else None),
             "promo_code_id": entity.promo_code_id,
             "provider": entity.provider.value,
             "status": entity.status.value,
@@ -746,10 +746,12 @@ class FileDatasetGraph:
 
     def _subscription_record(self, entity: Subscription) -> dict[str, Any]:
         return self._base_record(entity) | {
-            "user_id": entity.user_id,
-            "product_id": entity.product_id,
-            "payment_id": entity.payment_id,
-            "lead_source_id": entity.lead_source_id,
+            "user_id": entity.user_id or (entity.user.id if getattr(entity, "user", None) is not None else None),
+            "product_id": entity.product_id or (entity.product.id if getattr(entity, "product", None) is not None else None),
+            "payment_id": entity.payment_id or (entity.payment.id if getattr(entity, "payment", None) is not None else None),
+            "lead_source_id": entity.lead_source_id or (
+                entity.lead_source.id if getattr(entity, "lead_source", None) is not None else None
+            ),
             "applied_promo_code_id": entity.applied_promo_code_id,
             "status": entity.status.value,
             "autorenew_enabled": entity.autorenew_enabled,
@@ -761,9 +763,11 @@ class FileDatasetGraph:
 
     def _user_consent_record(self, entity: UserConsent) -> dict[str, Any]:
         return self._base_record(entity) | {
-            "user_id": entity.user_id,
-            "document_id": entity.document_id,
-            "payment_id": entity.payment_id,
+            "user_id": entity.user_id or (entity.user.id if getattr(entity, "user", None) is not None else None),
+            "document_id": entity.document_id or (
+                entity.document.id if getattr(entity, "document", None) is not None else None
+            ),
+            "payment_id": entity.payment_id or (entity.payment.id if getattr(entity, "payment", None) is not None else None),
             "accepted_at": _serialize_datetime(entity.accepted_at),
             "source": entity.source,
             "ip_address": entity.ip_address,

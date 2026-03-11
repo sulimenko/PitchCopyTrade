@@ -220,10 +220,12 @@ Acceptance:
 - ACL/feed can now read user entitlements and recommendations without DB
 - committed demo seed datasets in `storage/seed/json`
 - committed demo blob attachment in `storage/seed/blob`
+- `staff auth`, `admin dashboard` and `author dashboard` verified in `file` mode
+- `Telegram checkout -> admin confirm -> Telegram feed` verified in `file` mode on fresh temp storage root
 
 Сделать:
 - safe write hardening and concurrent-write strategy
-- expand file repo coverage to public checkout/auth/admin/moderation flows
+- expand file repo coverage to moderation flows
 - add seed/bootstrap generator and real file-mode execution path for complete local demo
 
 Acceptance:
@@ -263,11 +265,16 @@ Acceptance:
 - file repositories имеют committed demo dataset в репозитории
 - локальные изменения тестировщика уходят в ignored runtime tree, а не в tracked seed
 
-### 24. File-mode payment/subscription demo `[todo]`
-Сделать:
+### 24. File-mode payment/subscription demo `[done]`
+Сделано:
 - file-backed checkout artifacts
 - manual payment confirm path
 - activation path
+- verified path:
+  - `Telegram /confirm_buy`
+  - `payment pending`
+  - `admin confirm`
+  - `subscriber /feed` sees recommendation after activation
 
 Acceptance:
 - subscriber flow можно проверить локально end-to-end
@@ -282,6 +289,10 @@ Acceptance:
 - bot shop handlers work with file repository path
 - worker scheduled publish runner has file-mode branch
 - seeded author login and author dashboard work in file mode
+- verified e2e on fresh temp storage root:
+  - `admin` login -> dashboard
+  - `author` login -> dashboard
+  - `Telegram checkout -> confirm -> feed`
 
 Acceptance:
 - `api + bot + worker` можно поднимать без PostgreSQL и без MinIO

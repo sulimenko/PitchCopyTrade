@@ -14,6 +14,7 @@ from pitchcopytrade.db.models.enums import (
     PaymentStatus,
     StrategyStatus,
     SubscriptionStatus,
+    UserStatus,
 )
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.compliance import bind_consents_to_payment, record_user_consent
@@ -87,6 +88,7 @@ async def upsert_telegram_subscriber(repository: PublicRepository, profile: Tele
             telegram_user_id=profile.telegram_user_id,
             username=profile.username,
             full_name=display_name,
+            status=UserStatus.ACTIVE,
             timezone=profile.timezone_name,
         )
         user.consents = []
@@ -130,6 +132,7 @@ async def create_stub_checkout(
             full_name=(request.full_name or "").strip() or None,
             username=None,
             password_hash=None,
+            status=UserStatus.ACTIVE,
             timezone=request.timezone_name,
         )
         user.consents = []
