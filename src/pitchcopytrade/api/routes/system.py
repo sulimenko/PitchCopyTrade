@@ -11,7 +11,7 @@ router = APIRouter(tags=["system"])
 @router.get("/health")
 async def health() -> dict[str, str]:
     settings = get_settings()
-    return {"status": "ok", "service": settings.app_name, "env": settings.app_env}
+    return {"status": "ok", "service": settings.app.name, "env": settings.app.env}
 
 
 @router.get("/ready")
@@ -23,9 +23,9 @@ async def ready() -> dict[str, str]:
 async def meta() -> dict[str, str]:
     settings = get_settings()
     return {
-        "service": settings.app_name,
+        "service": settings.app.name,
         "version": __version__,
-        "timezone": settings.base_timezone,
+        "timezone": settings.app.base_timezone,
         "storage": "postgres+minio",
-        "payments": settings.sbp_provider,
+        "payments": settings.payments.provider,
     }

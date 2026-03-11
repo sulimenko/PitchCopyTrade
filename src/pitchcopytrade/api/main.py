@@ -4,16 +4,14 @@ from fastapi import FastAPI
 
 from pitchcopytrade import __version__
 from pitchcopytrade.api.router import api_router
-from pitchcopytrade.core.config import get_settings
-from pitchcopytrade.core.logging import configure_logging
+from pitchcopytrade.core.runtime import bootstrap_runtime
 
 
 def create_app() -> FastAPI:
-    configure_logging()
-    settings = get_settings()
+    settings = bootstrap_runtime("api")
 
     app = FastAPI(
-        title=settings.app_name,
+        title=settings.app.name,
         version=__version__,
         docs_url="/docs",
         redoc_url="/redoc",
