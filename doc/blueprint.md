@@ -479,3 +479,4 @@ Deployment note:
 - server nginx config должен тоже поставляться из репозитория как готовый template;
 - deploy bundle должен быть доступен сразу после `git clone`, без ручного сочинения compose/nginx/env templates на сервере;
 - один bot token должен обслуживаться только одним polling instance одновременно.
+- Telegram `Mini App` / `WebApp` кнопки допустимы только при `https` base URL; на `http`-стенде bot должен работать без них.

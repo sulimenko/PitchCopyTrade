@@ -78,6 +78,7 @@
 - не делает ли web mandatory там, где target is Telegram-first;
 - если web subscriber path остается, идет ли он через Telegram-auth model;
 - не собирает ли code лишние персональные данные без необходимости.
+- не отправляет ли bot `WebApp` кнопку на `http` base URL, где Telegram ее все равно отвергнет.
 
 ### C. Roles and ACL
 Проверь:

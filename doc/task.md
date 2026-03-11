@@ -447,6 +447,7 @@ Acceptance:
 - WebApp auth bridge
 - richer menu/status flow
 - subscriber self-service UX
+- conditional WebApp button behavior for `http` vs `https` environments
 
 Acceptance:
 - subscriber flow меньше зависит от command-only interaction

@@ -9,6 +9,17 @@ from pitchcopytrade.repositories.public import FilePublicRepository, SqlAlchemyP
 from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
 
 
+def _start_keyboard() -> ReplyKeyboardMarkup:
+    base_url = get_settings().app.base_url
+    keyboard = [
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
+        [KeyboardButton(text="/web")],
+    ]
+    if base_url.startswith("https://"):
+        keyboard[1].append(KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{base_url}/miniapp")))
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
 async def handle_start(message: Message) -> None:
     telegram_user = message.from_user
     if telegram_user is not None:
@@ -28,7 +39,6 @@ async def handle_start(message: Message) -> None:
                 await upsert_telegram_subscriber(repository, profile)
                 await repository.commit()
 
-    miniapp_url = f"{get_settings().app.base_url}/miniapp"
     await message.answer(
         "PitchCopyTrade запущен.\n"
         "Основной subscriber-flow переводится в Telegram.\n"
@@ -37,13 +47,7 @@ async def handle_start(message: Message) -> None:
         "/buy <product_slug> - показать условия покупки\n"
         "/confirm_buy <product_slug> - создать заявку на оплату\n"
         "/feed - доступные рекомендации",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
-                [KeyboardButton(text="/web"), KeyboardButton(text="Mini App", web_app=WebAppInfo(url=miniapp_url))],
-            ],
-            resize_keyboard=True,
-        ),
+        reply_markup=_start_keyboard(),
     )
 
 
