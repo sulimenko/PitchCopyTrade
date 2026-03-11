@@ -40,9 +40,9 @@ def test_subscription_product_has_target_integrity_check() -> None:
     table = SubscriptionProduct.__table__
     check_names = {constraint.name for constraint in table.constraints if isinstance(constraint, CheckConstraint)}
 
-    assert "ck_subscription_products_target_matches_product_type" in check_names
-    assert "ck_subscription_products_price_rub_non_negative" in check_names
-    assert "ck_subscription_products_trial_days_non_negative" in check_names
+    assert "target_matches_product_type" in check_names
+    assert "price_rub_non_negative" in check_names
+    assert "trial_days_non_negative" in check_names
 
 
 def test_commerce_and_content_constraints_exist() -> None:
@@ -56,9 +56,9 @@ def test_commerce_and_content_constraints_exist() -> None:
         if isinstance(constraint, CheckConstraint)
     }
 
-    assert "ck_payments_amount_rub_non_negative" in payment_checks
-    assert "ck_subscriptions_end_after_start" in subscription_checks
-    assert "ck_recommendation_attachments_size_bytes_non_negative" in attachment_checks
+    assert "amount_rub_non_negative" in payment_checks
+    assert "end_after_start" in subscription_checks
+    assert "size_bytes_non_negative" in attachment_checks
 
 
 def test_unique_constraints_cover_roles_legal_and_consents() -> None:
