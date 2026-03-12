@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from urllib.parse import urlparse
 
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
 from pitchcopytrade.core.config import get_settings
-from pitchcopytrade.api.deps.repositories import get_public_repository
+from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
+from pitchcopytrade.repositories.contracts import AccessRepository, AuthRepository
 from pitchcopytrade.repositories.contracts import PublicRepository
+from pitchcopytrade.services.subscriber import get_subscriber_status_snapshot
 from pitchcopytrade.services.public import (
     CheckoutRequest,
     create_stub_checkout,
@@ -15,10 +21,22 @@ from pitchcopytrade.services.public import (
     list_public_strategies,
 )
 from pitchcopytrade.services.legal_documents import read_legal_document_markdown
+from pitchcopytrade.services.payment_sync import process_tbank_callback
+from pitchcopytrade.db.session import get_optional_db_session
+from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.web.templates import templates
 
 
 router = APIRouter(tags=["public"])
+
+
+async def _read_request_payload(request: Request) -> dict[str, object]:
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        payload = await request.json()
+        return payload if isinstance(payload, dict) else {}
+    form = await request.form()
+    return {key: value for key, value in form.items()}
 
 
 @router.get("/", include_in_schema=False)
@@ -31,17 +49,51 @@ async def miniapp_root() -> Response:
     return RedirectResponse(url="/catalog?surface=miniapp", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.get("/verify/telegram", response_class=HTMLResponse)
+async def telegram_verify_page(request: Request) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "public/telegram_verify.html",
+        {
+            "title": "Подтверждение через Telegram",
+            "telegram_bot_username": get_settings().telegram.bot_username,
+            "surface_next": request.query_params.get("next", "/app/feed"),
+            "base_url": get_settings().app.base_url,
+            "webapp_enabled": get_settings().app.base_url.startswith("https://"),
+        },
+    )
+
+
 @router.get("/catalog", response_class=HTMLResponse)
-async def catalog_page(request: Request, repository: PublicRepository = Depends(get_public_repository)) -> Response:
+async def catalog_page(
+    request: Request,
+    repository: PublicRepository = Depends(get_public_repository),
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
     strategies = await list_public_strategies(repository)
+    surface = request.query_params.get("surface", "web")
+    miniapp_user = None
+    miniapp_snapshot = None
+    if surface == "miniapp":
+        token = request.cookies.get(get_telegram_fallback_cookie_name())
+        if token:
+            miniapp_user = await get_user_from_telegram_fallback_cookie(auth_repository, token)
+            if miniapp_user is not None and miniapp_user.telegram_user_id is not None:
+                miniapp_snapshot = await get_subscriber_status_snapshot(
+                    access_repository,
+                    telegram_user_id=miniapp_user.telegram_user_id,
+                )
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
         {
-            "title": "PitchCopyTrade Catalog",
+            "title": "Каталог PitchCopyTrade",
             "strategies": strategies,
-            "surface": request.query_params.get("surface", "web"),
+            "surface": surface,
             "telegram_bot_username": get_settings().telegram.bot_username,
+            "miniapp_user": miniapp_user,
+            "miniapp_snapshot": miniapp_snapshot,
         },
     )
 
@@ -55,12 +107,14 @@ async def strategy_detail_page(
     strategy = await get_public_strategy_by_slug(repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    surface = request.query_params.get("surface", "web")
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
         {
             "title": strategy.title,
             "strategy": strategy,
+            "surface": surface,
         },
     )
 
@@ -77,20 +131,24 @@ async def checkout_page(
 
     documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
+    surface = request.query_params.get("surface", "web")
     return templates.TemplateResponse(
         request,
         "public/checkout.html",
         {
-            "title": f"Checkout {product.title}",
+            "title": f"Подписка {product.title}",
             "product": product,
             "documents": documents,
             "checkout_ready": checkout_ready,
+            "payment_provider": get_settings().payments.provider,
+            "surface": surface,
             "error": None,
             "form_values": {
                 "full_name": "",
                 "email": "",
                 "timezone_name": "Europe/Moscow",
-                "lead_source_name": "",
+                "lead_source_name": _detect_lead_source_name(request),
+                "promo_code_value": "",
                 "accepted_document_ids": [],
             },
         },
@@ -128,6 +186,7 @@ async def checkout_submit(
     timezone_name: str = Form("Europe/Moscow"),
     lead_source_name: str = Form(""),
     accepted_document_ids: list[str] = Form(...),
+    promo_code_value: str = Form(""),
 ) -> Response:
     product = await get_public_product(repository, product_id)
     if product is None:
@@ -135,6 +194,7 @@ async def checkout_submit(
 
     documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
+    detected_lead_source = lead_source_name.strip() or _detect_lead_source_name(request)
     try:
         result = await create_stub_checkout(
             repository,
@@ -144,7 +204,8 @@ async def checkout_submit(
                 email=email.strip().lower() or None,
                 timezone_name=timezone_name.strip() or "Europe/Moscow",
                 accepted_document_ids=accepted_document_ids,
-                lead_source_name=lead_source_name.strip() or None,
+                lead_source_name=detected_lead_source,
+                promo_code_value=promo_code_value.strip().upper() or None,
                 ip_address=request.client.host if request.client else None,
             ),
         )
@@ -153,16 +214,19 @@ async def checkout_submit(
             request,
             "public/checkout.html",
             {
-                "title": f"Checkout {product.title}",
+                "title": f"Подписка {product.title}",
                 "product": product,
                 "documents": documents,
                 "checkout_ready": checkout_ready,
+                "payment_provider": get_settings().payments.provider,
+                "surface": request.query_params.get("surface", "web"),
                 "error": str(exc),
                 "form_values": {
                     "full_name": full_name,
                     "email": email,
                     "timezone_name": timezone_name,
-                    "lead_source_name": lead_source_name,
+                    "lead_source_name": detected_lead_source,
+                    "promo_code_value": promo_code_value,
                     "accepted_document_ids": accepted_document_ids,
                 },
             },
@@ -173,9 +237,47 @@ async def checkout_submit(
         request,
         "public/checkout_success.html",
         {
-            "title": "Checkout Created",
+            "title": "Заявка создана",
             "product": product,
             "result": result,
+            "payment_provider": get_settings().payments.provider,
         },
         status_code=status.HTTP_201_CREATED,
     )
+
+
+@router.post("/payments/tbank/notify", include_in_schema=False)
+async def tbank_payment_notify(
+    request: Request,
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    payload = await _read_request_payload(request)
+    settings = get_settings()
+    client = TBankAcquiringClient(
+        terminal_key=settings.payments.tinkoff_terminal_key.get_secret_value(),
+        password=settings.payments.tinkoff_secret_key.get_secret_value(),
+    )
+    if not client.validate_callback_token(payload):
+        return PlainTextResponse("ERROR", status_code=status.HTTP_400_BAD_REQUEST)
+
+    await process_tbank_callback(session, payload=payload)
+    return PlainTextResponse("OK")
+
+
+def _detect_lead_source_name(request: Request) -> str:
+    for key in ("utm_source", "source", "lead_source"):
+        value = request.query_params.get(key)
+        if value:
+            return value.strip().lower()
+
+    surface = request.query_params.get("surface")
+    if surface == "miniapp":
+        return "telegram_miniapp"
+
+    referer = request.headers.get("referer")
+    if referer:
+        host = urlparse(referer).hostname or ""
+        if "t.me" in host or "telegram" in host:
+            return "telegram"
+
+    return "website"

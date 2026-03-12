@@ -2,22 +2,22 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/app/status">Статус</a>
   <a class="action ghost" href="/catalog">Каталог</a>
-  <a class="action ghost" href="/logout">Выйти</a>
 </div>
 {% endblock %}
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">subscriber feed</div>
+  <div class="eyebrow">моя лента</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">Лента рекомендаций</h1>
       <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Здесь отображаются только рекомендации по активным или trial-подпискам. Этот fallback открывается только из Telegram по команде `/web`.
+        Здесь отображаются только рекомендации по активным и пробным подпискам, доступным для вашего Telegram-профиля.
       </p>
     </div>
-    <div class="pill">{{ recommendations|length }} item</div>
+    <div class="pill">{{ recommendations|length }} материалов</div>
   </div>
 </section>
 

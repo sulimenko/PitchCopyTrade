@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Сводка</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/admin/delivery">Доставка</a>
+  <a class="action ghost" href="/admin/payments">Платежи</a>
+  <a class="action" href="/admin/legal/new">Новый документ</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">legal operations</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Юридические документы</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
+        Управление markdown-источниками, версиями и активными редакциями без ручного редактирования файлов на сервере.
+      </p>
+    </div>
+    <div class="pill">{{ documents|length }} document</div>
+  </div>
+</section>
+
+<section style="display:grid;gap:14px;margin-top:18px;">
+  {% for document in documents %}
+  <a class="surface" href="/admin/legal/{{ document.id }}/edit" style="padding:22px;display:block;">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="max-width:820px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <strong style="font-size:1.15rem;">{{ document.title }}</strong>
+          <span class="pill">{{ document.document_type.value }}</span>
+          <span class="pill">{{ document.version }}</span>
+          {% if document.is_active %}
+          <span class="pill">active</span>
+          {% endif %}
+        </div>
+        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ document.source_path or "source_path будет создан автоматически" }}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <span class="pill">{{ document.consents|length if document.consents is not none else 0 }} consent</span>
+          <span class="pill">{{ document.published_at or "draft" }}</span>
+        </div>
+      </div>
+      <div class="muted">Открыть</div>
+    </div>
+  </a>
+  {% else %}
+  <article class="surface" style="padding:24px;">
+    <strong>Юридических документов пока нет</strong>
+    <p class="muted" style="line-height:1.6;margin:10px 0 0;">Создайте первые draft-версии оферты, дисклеймера и политики данных.</p>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

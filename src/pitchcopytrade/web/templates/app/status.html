@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/app/feed">Лента</a>
+  <a class="action ghost" href="/catalog">Каталог</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">мой статус</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">Статус подписки</h1>
+      <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+        Этот экран показывает текущее состояние подписок, оплат и доступных рекомендаций по вашему Telegram-профилю.
+      </p>
+    </div>
+    <span class="pill">{{ "Активен" if snapshot.has_access else "Ожидает активации" }}</span>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <strong>Профиль</strong>
+    <div class="muted" style="margin-top:14px;line-height:1.8;">
+      <div>Telegram: {{ user.username or "не указан" }}</div>
+      <div>Доступ: {{ "активен" if snapshot.has_access else "ожидает активации" }}</div>
+      <div>Рекомендаций сейчас: {{ snapshot.visible_recommendation_titles|length }}</div>
+    </div>
+  </article>
+
+  <article class="surface" style="padding:24px;">
+    <strong>Быстрые действия</strong>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+      <a class="action" href="/app/feed">Открыть ленту</a>
+      <a class="action ghost" href="/catalog">Открыть каталог</a>
+    </div>
+  </article>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <strong>Активные подписки</strong>
+  <div style="display:grid;gap:12px;margin-top:16px;">
+    {% for subscription in snapshot.active_subscriptions %}
+    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong>{{ subscription.product.title if subscription.product else "Продукт" }}</strong>
+          <div class="muted" style="margin-top:8px;">Статус: {{ subscription.status.value }}</div>
+        </div>
+        <span class="pill">{{ subscription.end_at or "не указано" }}</span>
+      </div>
+    </article>
+    {% else %}
+    <p class="muted" style="margin:0;line-height:1.65;">Активных подписок пока нет.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <strong>Ожидают подтверждения</strong>
+  <div style="display:grid;gap:12px;margin-top:16px;">
+    {% for payment in snapshot.pending_payments %}
+    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong>{{ payment.product.title if payment.product else "Продукт" }}</strong>
+          <div class="muted" style="margin-top:8px;">{{ payment.final_amount_rub }} RUB</div>
+        </div>
+        <span class="pill">{{ payment.stub_reference or payment.id }}</span>
+      </div>
+    </article>
+    {% else %}
+    <p class="muted" style="margin:0;line-height:1.65;">Ожидающих заявок сейчас нет.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <strong>Доступные рекомендации сейчас</strong>
+  <div style="display:grid;gap:12px;margin-top:16px;">
+    {% for title in snapshot.visible_recommendation_titles %}
+    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
+      <strong>{{ title }}</strong>
+    </article>
+    {% else %}
+    <p class="muted" style="margin:0;line-height:1.65;">Новых рекомендаций пока нет.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<style>
+  @media (max-width: 840px) {
+    section[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

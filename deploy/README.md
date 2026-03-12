@@ -5,6 +5,7 @@ Canonical server deploy path for the current test version:
 - use root secret file `.env.server`
 - use [docker-compose.server.yml](/Users/alexey/site/PitchCopyTrade/deploy/docker-compose.server.yml)
 - use host nginx config [nginx/pct.test.ptfin.ru.conf](/Users/alexey/site/PitchCopyTrade/deploy/nginx/pct.test.ptfin.ru.conf)
+- use HTTPS-only tester guide [guide.pdf](/Users/alexey/site/PitchCopyTrade/doc/guide.pdf)
 - run in `APP_DATA_MODE=file`
 
 ## Layout

@@ -4,8 +4,15 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
 from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse
 
+from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.deps.repositories import get_auth_repository
+from pitchcopytrade.auth.telegram_webapp import (
+    TelegramWebAppAuthError,
+    extract_telegram_webapp_profile,
+    validate_telegram_webapp_init_data,
+)
 from pitchcopytrade.auth.roles import get_user_role_slugs
 from pitchcopytrade.auth.service import authenticate_user
 from pitchcopytrade.auth.session import (
@@ -19,6 +26,8 @@ from pitchcopytrade.auth.session import (
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.enums import RoleSlug
 from pitchcopytrade.repositories.contracts import AuthRepository
+from pitchcopytrade.repositories.contracts import PublicRepository
+from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
 from pitchcopytrade.web.templates import templates
 
 
@@ -34,7 +43,7 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
     tg_user = await get_user_from_telegram_fallback_cookie(repository, tg_token) if tg_token else None
     if tg_user is not None:
-        return RedirectResponse(url="/app/feed", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/app/status", status_code=status.HTTP_303_SEE_OTHER)
 
     return templates.TemplateResponse(
         request,
@@ -75,7 +84,7 @@ async def login_submit(
         httponly=True,
         max_age=settings.auth.session_ttl_seconds,
         samesite="lax",
-        secure=False,
+        secure=settings.app.base_url.startswith("https://"),
         path="/",
     )
     return response
@@ -93,6 +102,7 @@ async def logout() -> Response:
 @router.get("/tg-auth", include_in_schema=False)
 async def telegram_auth_login(
     token: str,
+    next: str | None = None,
     repository: AuthRepository = Depends(get_auth_repository),
 ) -> Response:
     user = await get_user_from_telegram_login_token(repository, token)
@@ -100,14 +110,55 @@ async def telegram_auth_login(
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
     settings = get_settings()
-    response = RedirectResponse(url="/app/feed", status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(url=_sanitize_subscriber_next_path(next), status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         key=get_telegram_fallback_cookie_name(),
         value=build_telegram_fallback_cookie_value(user),
         httponly=True,
         max_age=settings.auth.session_ttl_seconds,
         samesite="lax",
-        secure=False,
+        secure=settings.app.base_url.startswith("https://"),
+        path="/",
+    )
+    return response
+
+
+@router.post("/tg-webapp/auth", include_in_schema=False)
+async def telegram_webapp_auth(
+    init_data: str = Form(...),
+    next: str = Form("/app/status"),
+    repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    settings = get_settings()
+    try:
+        validated = validate_telegram_webapp_init_data(
+            init_data,
+            bot_token=settings.telegram.bot_token.get_secret_value(),
+            max_age_seconds=min(settings.auth.session_ttl_seconds, 3600),
+        )
+        profile = extract_telegram_webapp_profile(validated)
+    except TelegramWebAppAuthError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_401_UNAUTHORIZED)
+
+    user = await upsert_telegram_subscriber(
+        repository,
+        TelegramSubscriberProfile(
+            telegram_user_id=profile.telegram_user_id,
+            username=profile.username,
+            first_name=profile.first_name,
+            last_name=profile.last_name,
+        ),
+    )
+    await repository.commit()
+
+    response = JSONResponse({"redirect_url": _sanitize_subscriber_next_path(next)})
+    response.set_cookie(
+        key=get_telegram_fallback_cookie_name(),
+        value=build_telegram_fallback_cookie_value(user),
+        httponly=True,
+        max_age=settings.auth.session_ttl_seconds,
+        samesite="lax",
+        secure=settings.app.base_url.startswith("https://"),
         path="/",
     )
     return response
@@ -120,7 +171,7 @@ async def app_home(request: Request, repository: AuthRepository = Depends(get_au
     if tg_token:
         subscriber = await get_user_from_telegram_fallback_cookie(repository, tg_token)
         if subscriber is not None:
-            return RedirectResponse(url="/app/feed", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(url="/app/status", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
         user = await _require_authenticated_user(request, repository)
@@ -174,6 +225,14 @@ def _resolve_role_redirect(user) -> str:
     if RoleSlug.MODERATOR.value in role_labels:
         return "/moderation/queue"
     return "/login"
+
+
+def _sanitize_subscriber_next_path(next_path: str | None) -> str:
+    if not next_path:
+        return "/app/status"
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        return "/app/status"
+    return next_path
 
 
 async def _require_authenticated_user(request: Request, repository: AuthRepository):

@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from aiogram.filters import Command, CommandObject
-from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    WebAppInfo,
+)
 
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import AsyncSessionLocal
@@ -20,20 +28,41 @@ def _supports_webapp() -> bool:
 
 def _catalog_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
-        [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
-        [KeyboardButton(text="/web")],
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/status")],
+        [KeyboardButton(text="/subscriptions"), KeyboardButton(text="/payments")],
+        [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
     ]
     if _supports_webapp():
-        keyboard[1].append(
+        keyboard[2].append(
             KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))
         )
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
+def _catalog_inline_keyboard(strategies) -> InlineKeyboardMarkup | None:
+    rows: list[list[InlineKeyboardButton]] = []
+    for strategy in strategies[:6]:
+        for product in strategy.subscription_products[:1]:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"{strategy.title}: {product.price_rub} RUB",
+                        callback_data=f"buy_preview:{product.slug}",
+                    )
+                ]
+            )
+    if not rows:
+        return None
+    rows.append([InlineKeyboardButton(text="Обновить каталог", callback_data="shop_catalog")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _buy_preview_keyboard(product_slug: str) -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(text=f"/confirm_buy {product_slug}")],
-        [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/status")],
+        [KeyboardButton(text="/subscriptions"), KeyboardButton(text="/payments")],
+        [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
     ]
     if _supports_webapp():
         keyboard.append([KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))])
@@ -42,14 +71,51 @@ def _buy_preview_keyboard(product_slug: str) -> ReplyKeyboardMarkup:
 
 def _buy_confirm_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
-        [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
-        [KeyboardButton(text="/catalog")],
+        [KeyboardButton(text="/feed"), KeyboardButton(text="/status")],
+        [KeyboardButton(text="/subscriptions"), KeyboardButton(text="/payments")],
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
     ]
     if _supports_webapp():
-        keyboard[1].append(
+        keyboard[2].append(
             KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))
         )
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def _buy_preview_inline_keyboard(product_slug: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Создать заявку", callback_data=f"buy_confirm:{product_slug}")],
+            [InlineKeyboardButton(text="Назад к каталогу", callback_data="shop_catalog")],
+        ]
+    )
+
+
+def _catalog_text(strategies) -> str:
+    lines = ["Витрина стратегий и продуктов:"]
+    for strategy in strategies[:8]:
+        lines.append(f"{strategy.title} | {strategy.author.display_name}")
+        for product in strategy.subscription_products[:3]:
+            lines.append(f"  - {product.slug}: {product.title} | {product.price_rub} RUB")
+    lines.append("")
+    lines.append("Для оформления используйте: /buy <product_slug>")
+    lines.append("Для проверки доступа и оплат используйте: /status")
+    lines.append("Для списка подписок: /subscriptions")
+    return "\n".join(lines)
+
+
+def _buy_preview_text(product) -> str:
+    return "\n".join(
+        [
+            f"Продукт: {product.title}",
+            f"Цена: {product.price_rub} RUB",
+            f"Период: {product.billing_period.value}",
+            "Оплата сейчас работает как stub/manual.",
+            "Отправляя confirm-команду, вы подтверждаете юридические документы, активные в системе.",
+            f"Для продолжения отправьте: /confirm_buy {product.slug}",
+            "Или нажмите inline-кнопку ниже.",
+        ]
+    )
 
 
 async def handle_catalog(message: Message) -> None:
@@ -63,17 +129,10 @@ async def handle_catalog(message: Message) -> None:
         await message.answer("Публичных стратегий пока нет.")
         return
 
-    lines = ["Витрина стратегий и продуктов:"]
-    for strategy in strategies[:8]:
-        lines.append(f"{strategy.title} | {strategy.author.display_name}")
-        for product in strategy.subscription_products[:3]:
-            lines.append(f"  - {product.slug}: {product.title} | {product.price_rub} RUB")
-    lines.append("")
-    lines.append("Для оформления используйте: /buy <product_slug>")
-    await message.answer(
-        "\n".join(lines),
-        reply_markup=_catalog_keyboard(),
-    )
+    await message.answer(_catalog_text(strategies), reply_markup=_catalog_keyboard())
+    inline_keyboard = _catalog_inline_keyboard(strategies)
+    if inline_keyboard is not None:
+        await message.answer("Быстрый выбор продукта:", reply_markup=inline_keyboard)
 
 
 async def handle_buy_preview(message: Message, command: CommandObject) -> None:
@@ -92,17 +151,9 @@ async def handle_buy_preview(message: Message, command: CommandObject) -> None:
         await message.answer("Продукт не найден или недоступен.")
         return
 
-    lines = [
-        f"Продукт: {product.title}",
-        f"Цена: {product.price_rub} RUB",
-        f"Период: {product.billing_period.value}",
-        "Оплата сейчас работает как stub/manual.",
-        "Отправляя confirm-команду, вы подтверждаете юридические документы, активные в системе.",
-        f"Для продолжения отправьте: /confirm_buy {product.slug}",
-    ]
     await message.answer(
-        "\n".join(lines),
-        reply_markup=_buy_preview_keyboard(product.slug),
+        _buy_preview_text(product),
+        reply_markup=_buy_preview_inline_keyboard(product.slug),
     )
 
 
@@ -166,11 +217,44 @@ async def handle_buy_confirm(message: Message, command: CommandObject) -> None:
         f"Продукт: {product.title}\n"
         f"Сумма: {result.payment.final_amount_rub} RUB\n"
         f"Reference: {result.payment.stub_reference}\n"
-        "После подтверждения администратором доступ будет активирован.",
+        + (
+            f"Оплата по СБП: {result.payment_url}\n"
+            "После успешной оплаты статус обновится в системе."
+            if getattr(result, "payment_url", None)
+            else "После подтверждения администратором доступ будет активирован."
+        ),
         reply_markup=_buy_confirm_keyboard(),
     )
+
+
+async def handle_shop_callback(callback: CallbackQuery) -> None:
+    data = callback.data or ""
+    message = callback.message
+    if message is None:
+        await callback.answer()
+        return
+
+    if data == "shop_catalog":
+        await handle_catalog(message)
+        await callback.answer("Каталог обновлен")
+        return
+
+    if data.startswith("buy_preview:"):
+        slug = data.split(":", 1)[1]
+        await handle_buy_preview(message, CommandObject(prefix="/", command="buy", mention=None, args=slug))
+        await callback.answer("Открыто описание продукта")
+        return
+
+    if data.startswith("buy_confirm:"):
+        slug = data.split(":", 1)[1]
+        await handle_buy_confirm(message, CommandObject(prefix="/", command="confirm_buy", mention=None, args=slug))
+        await callback.answer("Заявка создана")
+        return
+
+    await callback.answer()
 
 
 CATALOG_HANDLER = (handle_catalog, Command("catalog"))
 BUY_PREVIEW_HANDLER = (handle_buy_preview, Command("buy"))
 BUY_CONFIRM_HANDLER = (handle_buy_confirm, Command("confirm_buy"))
+SHOP_CALLBACK_HANDLER = handle_shop_callback

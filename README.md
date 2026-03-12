@@ -19,19 +19,31 @@ Telegram-first платформа для продажи подписок на с
 - admin dashboard
 - strategy CRUD
 - subscription product CRUD
+- admin subscription registry
 - payment review -> confirm -> subscription activation
+- automatic `T-Bank` pending payment sync via worker
+- `T-Bank` callback endpoint for provider-driven payment confirmation
+- legal docs admin UI
 - author workspace
 - recommendation CRUD
 - structured legs editor
+- author publish workflow hardening
 - preview
 - moderation queue
 - moderation history baseline
+- moderation `file-mode` parity
 - public catalog
 - checkout `stub/manual`
 - ACL delivery
 - Telegram-first subscriber baseline
+- Telegram subscriber surface:
+  - only `/start` and `/help` remain as bot commands
+  - Mini App is the main client interface
+  - no separate client login/password
+  - Telegram verification page remains only as fallback for protected web pages
 - scheduled publish baseline
 - delivery notifications baseline
+- delivery admin UI with retry history
 - local filesystem storage backend baseline with runtime root `storage/runtime/blob`
 - `api + bot + worker` can start in `APP_DATA_MODE=file` without PostgreSQL and without MinIO
 - runtime switch:
@@ -60,6 +72,11 @@ Telegram-first платформа для продажи подписок на с
   - `admin dashboard`
   - `author dashboard`
   - `Telegram checkout -> admin confirm -> subscriber feed`
+  - `T-Bank pending payment -> worker sync -> subscriber activation`
+- first server prototype deployed on target host with:
+  - host nginx
+  - dockerized `api + bot + worker`
+  - test domain `pct.test.ptfin.ru`
 
 ## Архитектурный сдвиг
 Новая целевая схема:
@@ -90,14 +107,16 @@ Telegram-first платформа для продажи подписок на с
 
 Жесткие зависимости, которые сейчас есть:
 - file mode уже поддержан не только на уровне config/runtime, но и в ключевом test contour;
-- repository layer уже введен частично, но `moderation`, `notifications` и часть publishing paths еще не переведены на него полностью;
+- repository layer уже введен частично, но `notifications` и часть publishing paths еще не переведены на него полностью;
 - `author` и `subscriber ACL/feed` уже могут идти через file repositories;
 - `public checkout`, `staff auth` и `admin confirm path` уже проверены в `file` mode;
-- `moderation`, `notifications` и часть publishing/delivery UX еще не имеют полной file-repository parity;
+- `notifications` и часть publishing/delivery UX еще не имеют полной file-repository parity;
 - local filesystem storage backend уже является canonical path для file-mode attachments и legal docs;
-- `docker-compose.yml` все еще поднимает `minio` как штатный сервис;
+- `docker-compose.yml` теперь держит `postgres` и `minio` только как optional profiles:
+  - `local-db`
+  - `local-minio`
 - часть metadata и compose assumptions все еще ориентированы на bucket/object-key path.
-- legal docs уже могут рендериться из локальных markdown source files, но admin editing flow для них еще не реализован.
+- legal docs уже не только рендерятся из локальных markdown source files, но и управляются через admin editing flow.
 
 Это значит:
 - текущая реализация пригодна для продолжения продуктовой разработки;
@@ -135,10 +154,11 @@ Telegram-first платформа для продажи подписок на с
 ### Subscriber / user
 Что делает сейчас:
 - основной путь проходит через Telegram bot
-- видит каталог
-- оформляет `stub/manual` checkout
-- после активации получает feed по ACL
-- при необходимости использует web fallback через Telegram-auth path
+- запускает `/start`
+- открывает Mini App
+- внутри Mini App работает с каталогом, оплатой, статусом и лентой
+- оформляет подписку без отдельного клиентского входа
+- после активации получает рекомендации по ACL
 
 Что получит после storage/file-mode refactor:
 - локальный end-to-end demo без БД
@@ -167,14 +187,27 @@ Telegram smoke baseline:
 - Telegram username resolved as `avt09_bot`
 - webhook state is empty
 - pending updates at check time: `0`
+- subscriber commands reduced to:
+  - `/start`
+  - `/help`
+- catalog, status, оплаты, подписки и лента перемещены в Mini App navigation
+- `/app/status` remains as web fallback landing page after Telegram verification
+- redirect from `/app/*` to `/verify/telegram` when Telegram auth cookie is missing
+- Mini App automatic auth bridge through verified Telegram `initData`
+- provider-aware checkout:
+  - `stub_manual` fallback
+  - `tbank` SBP adapter
+  - automatic `T-Bank` state sync for pending payments
+  - `T-Bank` notify endpoint on `/payments/tbank/notify`
+- Mini App catalog surface now reuses Telegram auth cookie and shows subscriber overview with quick actions
 
 ## Ближайшая цель
-Быстрый путь к тестированию сейчас такой:
-1. внедрить local filesystem storage backend;
-2. ввести `db|file` runtime mode;
-3. сделать file repositories для минимального demo-контура;
-4. добавить local seed data;
-5. поднять `api + bot + worker` локально с test bot.
+Первый server prototype уже поднят. Ближайшая цель теперь не запуск, а переход к product-complete state:
+1. довести real SBP lifecycle до production-ready состояния;
+2. закончить remaining file-mode parity и ops hardening;
+3. усилить support tooling и observability;
+4. довести production payment/delivery reliability;
+5. закрыть оставшиеся analytics/promotions gaps.
 
 ## Demo seed data
 В проект уже добавлен локальный demo pack для `file` mode:
@@ -214,9 +247,10 @@ Demo staff credentials for local file-mode:
   - `GET /admin/dashboard -> 200`
   - `POST /login author1 -> 303 /author/dashboard`
   - `GET /author/dashboard -> 200`
-  - `Telegram /confirm_buy momentum-ru-month -> pending payment`
+  - `Telegram /start -> Mini App open`
+  - `Mini App checkout -> pending payment`
   - `POST /admin/payments/{id}/confirm -> 303`
-  - `Telegram /feed -> visible recommendation after activation`
+  - `Mini App feed/status -> visible recommendation after activation`
 
 ## Документы
 - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
@@ -240,10 +274,11 @@ Demo staff credentials for local file-mode:
 6. Прогнать ручной product smoke:
    - login `admin1 -> /admin/dashboard`
    - login `author1 -> /author/dashboard`
-   - `Telegram /catalog`
-   - `Telegram /confirm_buy momentum-ru-month`
+   - `Telegram /start`
+   - открыть `Mini App`
+   - оформить подписку внутри `Mini App`
    - `admin confirm payment`
-   - `Telegram /feed`
+   - проверить `Mini App` статус и ленту
 7. После review обновить description files:
    - `README.md`
    - `doc/blueprint.md`
@@ -258,27 +293,49 @@ Operational rule:
 
 ## Следующий этап развития
 Task list для test-launch можно считать закрытым. Следующий этап теперь такой:
-1. deployment hardening:
-   - dedicated docker server compose for test contour
-   - `nginx` reverse proxy container
-   - file-mode friendly bind-mount deploy scripts
-2. compose cleanup:
-   - убрать `MinIO-first` assumptions из runtime compose path
-   - оставить `MinIO` только как optional compatibility profile
-3. full file-mode parity:
-   - moderation
-   - notifications
-   - publishing edge cases
-4. legal admin UI:
-   - local markdown editing
-   - version activation
-5. Telegram UX phase:
-   - WebApp auth bridge
-   - richer checkout/status UX
-6. observability and operations:
-   - log rotation
-   - backup strategy for `storage/`
-   - worker retry visibility
+1. Реальный платежный контур:
+   - заменить `stub/manual` на реальный SBP provider
+   - рекомендованный target: `T-Bank`
+   - сохранить manual fallback для оператора
+2. Remaining persistence and ops hardening:
+   - full file-mode parity for remaining contours
+   - compose cleanup `[done]`
+   - storage backup/restore discipline
+3. Support and observability hardening:
+   - worker retries and observability baseline
+   - delivery support tooling and audit visibility
+4. Product analytics and monetization:
+   - promo/discount lifecycle `[partial]`
+   - baseline already done: admin promo registry, checkout apply path, redemption counters
+   - remaining: manual discounts, richer Telegram promo UX, expiry/cancel flows
+   - lead source analytics `[partial]`
+   - baseline already done: normalized checkout attribution and admin lead source report
+   - moderation analytics/SLA UX `[partial]`
+   - baseline already done: queue filters, overdue SLA and resolution latency
+5. Telegram UX depth:
+   - richer interactive checkout/status UX
+   - deeper WebApp auth bridge
+   - more self-service surfaces inside bot/Mini App
+
+## Что осталось до выполнения первоначальной задачи
+Из исходной постановки уже закрыто:
+- витрина стратегий
+- выбор стратегии
+- Telegram-first subscriber flow
+- author cabinet baseline
+- ACL delivery
+- multi-author contour
+- admin baseline
+
+Еще не закрыто до business-complete state:
+- реальная оплата по СБП в рублях;
+- production payment/delivery reliability и support tooling.
+
+## Рекомендуемый порядок задач
+Чтобы дойти до следующего полноценного этапа без расползания scope, делать так:
+1. remaining file-mode parity
+2. callback rollout hardening on target host
+3. lead source / promo / analytics hardening
 
 ## Локальный запуск
 Текущий рекомендованный путь для test-version: `file mode`, без PostgreSQL и без MinIO.
@@ -332,14 +389,14 @@ PYTHONPATH=src python -m pitchcopytrade.worker.main
 8. Проверить Telegram:
    - открыть `@Avt09_Bot`
    - выполнить `/start`
-   - выполнить `/catalog`
-   - выполнить `/confirm_buy momentum-ru-month`
+   - открыть `Mini App`
+   - оформить подписку внутри `Mini App`
 9. Вернуться в admin web:
    - открыть payment queue
    - подтвердить pending payment
 10. Снова в Telegram:
-   - выполнить `/feed`
-   - убедиться, что рекомендация стала видна
+   - открыть `Mini App`
+   - убедиться, что статус и рекомендации стали видны
 
 ## Запуск на выделенном сервере
 Текущий рекомендованный серверный путь для test-version:
@@ -411,6 +468,7 @@ mkdir -p /var/www/pct/storage/runtime/blob
 - [deploy/nginx/pct.test.ptfin.ru.conf](/Users/alexey/site/PitchCopyTrade/deploy/nginx/pct.test.ptfin.ru.conf)
 - [deploy/env.server.example](/Users/alexey/site/PitchCopyTrade/deploy/env.server.example)
 - [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md)
+- [guide.pdf](/Users/alexey/site/PitchCopyTrade/doc/guide.pdf)
 
 Это и есть canonical server bundle для текущей test-version.
 
@@ -460,10 +518,10 @@ ls -laZ /var/www/pct/storage
 - login `author1 / author-demo-pass`
 - в Telegram у `@Avt09_Bot` выполнить:
   - `/start`
-  - `/catalog`
-  - `/confirm_buy momentum-ru-month`
+  - открыть `Mini App`
+  - оформить подписку внутри `Mini App`
 - в admin web подтвердить payment
-- снова в Telegram выполнить `/feed`
+- снова открыть `Mini App` и проверить статус/ленту
 
 ### 12. Обновление сервера
 ```bash

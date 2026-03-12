@@ -10,6 +10,7 @@ from pitchcopytrade.api.main import create_app
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
 from pitchcopytrade.db.models.content import Recommendation
+from pitchcopytrade.db.models.content import RecommendationAttachment
 from pitchcopytrade.db.models.enums import (
     InstrumentType,
     RecommendationKind,
@@ -282,10 +283,29 @@ def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
     monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", lambda _session, _author, _id: _async_return(recommendation))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+    recommendation.attachments = [
+        RecommendationAttachment(
+            id="att-1",
+            recommendation_id="rec-1",
+            bucket_name="blob",
+            object_key="recommendations/rec-1/file.pdf",
+            original_filename="idea.pdf",
+            content_type="application/pdf",
+            size_bytes=123,
+        )
+    ]
+    called = {}
+
     monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
     monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.remove_recommendation_attachments",
+        lambda _session, _recommendation, attachment_ids: _async_return(called.setdefault("attachment_ids", attachment_ids)),
+    )
+    monkeypatch.setattr(
         "pitchcopytrade.api.routes.author.update_author_recommendation",
-        lambda _session, _recommendation, _data, uploaded_by_user_id=None: _async_return(recommendation),
+        lambda _session, _recommendation, _data, uploaded_by_user_id=None: _async_return(
+            called.setdefault("status", _data.status.value) or recommendation
+        ),
     )
 
     with _build_client(author_user) as client:
@@ -300,6 +320,8 @@ def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
                 "thesis": "Тезис",
                 "market_context": "Контекст",
                 "scheduled_for": datetime(2026, 3, 12, 12, 30).strftime("%Y-%m-%dT%H:%M"),
+                "workflow_action": "publish_now",
+                "remove_attachment_ids": "att-1",
                 "leg_0_instrument_id": "instrument-1",
                 "leg_0_side": "buy",
                 "leg_0_entry_from": "101.5",
@@ -311,6 +333,8 @@ def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/author/recommendations/rec-1/edit"
+        assert called["status"] == "published"
+        assert called["attachment_ids"] == ["att-1"]
 
 
 def test_author_recommendation_create_requires_datetime_for_scheduled(monkeypatch) -> None:

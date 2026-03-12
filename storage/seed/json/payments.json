@@ -1,13 +1,13 @@
 [
   {
-    "amount_rub": 4900,
+    "amount_rub": 499,
     "confirmed_at": "2026-03-11T00:00:00+00:00",
     "created_at": "2026-03-11T00:00:00+00:00",
     "currency": "RUB",
     "discount_rub": 0,
     "expires_at": "2026-03-12T00:00:00+00:00",
     "external_id": null,
-    "final_amount_rub": 4900,
+    "final_amount_rub": 499,
     "id": "payment-1",
     "product_id": "product-1",
     "promo_code_id": null,

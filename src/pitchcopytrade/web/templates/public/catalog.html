@@ -2,26 +2,49 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/login">Вход</a>
+  <a class="action ghost" href="https://t.me/{{ telegram_bot_username }}">Открыть Telegram</a>
 </div>
 {% endblock %}
 
 {% block content %}
 <section class="surface" style="padding:30px;">
-  <div class="eyebrow">public catalog</div>
+  <div class="eyebrow">каталог стратегий</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2.2rem,4.8vw,4rem);line-height:0.94;letter-spacing:-0.06em;">Витрина стратегий</h1>
       <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
-        Выберите подход автора, изучите риск и подключите подписку через простой checkout на `stub/manual`.
+        Выберите стратегию, изучите подход автора и подключите подписку. Основной путь клиента проходит внутри Telegram Mini App.
       </p>
       {% if surface == "miniapp" %}
       <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">
-        Вы открыли Mini App surface из Telegram. Для авторизованного subscriber fallback используйте команду `/web` в боте.
+        Вы открыли Mini App из Telegram. Профиль подтверждается автоматически и открывает разделы подписок, ленты и оплаты без отдельного входа.
       </p>
+      <div id="miniapp-auth-status" class="pill" style="margin-top:14px;">Проверяем Telegram-профиль</div>
+      {% if miniapp_snapshot %}
+      <div class="surface" style="padding:18px;margin-top:16px;background:rgba(255,255,255,0.85);">
+        <div class="eyebrow">мой профиль</div>
+        <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:10px;">
+          <div>
+            <strong>{{ miniapp_user.full_name or miniapp_user.username or "Подписчик" }}</strong>
+            <p class="muted" style="margin:8px 0 0;line-height:1.6;">
+              Доступ: {{ "активен" if miniapp_snapshot.has_access else "ожидает активации" }}
+            </p>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <span class="pill">{{ miniapp_snapshot.active_subscriptions|length }} подписок</span>
+            <span class="pill">{{ miniapp_snapshot.pending_payments|length }} оплат в ожидании</span>
+            <span class="pill">{{ miniapp_snapshot.visible_recommendation_titles|length }} доступных идей</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+          <a class="action" href="/app/status">Открыть статус</a>
+          <a class="action ghost" href="/app/feed">Открыть ленту</a>
+        </div>
+      </div>
+      {% endif %}
       {% endif %}
     </div>
-    <div class="pill">{{ strategies|length }} strategy</div>
+    <div class="pill">{{ strategies|length }} стратегий</div>
   </div>
 </section>
 
@@ -38,14 +61,14 @@
     <p class="muted" style="margin:16px 0 0;line-height:1.65;">{{ strategy.short_description }}</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
       {% if strategy.min_capital_rub %}
-      <span class="pill">от {{ strategy.min_capital_rub }} RUB</span>
+      <span class="pill">от {{ strategy.min_capital_rub }} руб</span>
       {% endif %}
-      <span class="pill">{{ strategy.subscription_products|length }} product</span>
+      <span class="pill">{{ strategy.subscription_products|length }} продукт</span>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
-      <a class="action" href="/catalog/strategies/{{ strategy.slug }}">Открыть стратегию</a>
+      <a class="action" href="/catalog/strategies/{{ strategy.slug }}{% if surface == 'miniapp' %}?surface=miniapp{% endif %}">Открыть стратегию</a>
       {% if strategy.subscription_products %}
-      <a class="action ghost" href="/checkout/{{ strategy.subscription_products[0].id }}">Купить первый план</a>
+      <a class="action ghost" href="/checkout/{{ strategy.subscription_products[0].id }}{% if surface == 'miniapp' %}?surface=miniapp{% endif %}">Открыть подписку</a>
       {% endif %}
     </div>
   </article>
@@ -62,4 +85,44 @@
     section[style*="repeat(2"] { grid-template-columns: 1fr !important; }
   }
 </style>
+{% if surface == "miniapp" %}
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+  (async function () {
+    const statusNode = document.getElementById("miniapp-auth-status");
+    const webApp = window.Telegram && window.Telegram.WebApp;
+    if (!webApp || !webApp.initData) {
+      if (statusNode) statusNode.textContent = "Mini App auth: нет initData";
+      return;
+    }
+    try {
+      webApp.ready();
+      if (statusNode) statusNode.textContent = "Подтверждаем Telegram-профиль";
+      const body = new URLSearchParams();
+      body.set("init_data", webApp.initData);
+      body.set("next", "/app/status");
+      const response = await fetch("/tg-webapp/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        credentials: "same-origin",
+        body: body.toString()
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        if (statusNode) statusNode.textContent = "Не удалось подтвердить Telegram-профиль";
+        console.error("Mini App auth failed", payload);
+        return;
+      }
+      const payload = await response.json();
+      if (statusNode) statusNode.textContent = "Telegram-профиль подтвержден";
+      if (payload.redirect_url) {
+        window.location.href = payload.redirect_url;
+      }
+    } catch (error) {
+      if (statusNode) statusNode.textContent = "Ошибка Mini App";
+      console.error(error);
+    }
+  })();
+</script>
+{% endif %}
 {% endblock %}

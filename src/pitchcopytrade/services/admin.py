@@ -22,6 +22,7 @@ from pitchcopytrade.db.models.enums import (
 )
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.promo import sync_promo_redemption_counter
 
 
 @dataclass(slots=True)
@@ -68,6 +69,53 @@ class PaymentReviewStats:
     paid_payments: int
     pending_subscriptions: int
     active_subscriptions: int
+
+
+async def list_admin_subscriptions(
+    session: AsyncSession | None,
+    *,
+    query_text: str | None = None,
+) -> list[Subscription]:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        items = list(graph.subscriptions.values())
+        items.sort(key=lambda item: (item.start_at, item.created_at), reverse=True)
+        return _filter_admin_subscriptions(items, query_text)
+    query = (
+        select(Subscription)
+        .options(
+            selectinload(Subscription.user),
+            selectinload(Subscription.product).selectinload(SubscriptionProduct.strategy),
+            selectinload(Subscription.product).selectinload(SubscriptionProduct.author).selectinload(AuthorProfile.user),
+            selectinload(Subscription.product).selectinload(SubscriptionProduct.bundle),
+            selectinload(Subscription.payment),
+            selectinload(Subscription.lead_source),
+        )
+        .order_by(Subscription.start_at.desc(), Subscription.created_at.desc())
+    )
+    result = await session.execute(query)
+    items = list(result.scalars().all())
+    return _filter_admin_subscriptions(items, query_text)
+
+
+async def get_admin_subscription(session: AsyncSession | None, subscription_id: str) -> Subscription | None:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        return graph.subscriptions.get(subscription_id)
+    query = (
+        select(Subscription)
+        .options(
+            selectinload(Subscription.user),
+            selectinload(Subscription.product).selectinload(SubscriptionProduct.strategy),
+            selectinload(Subscription.product).selectinload(SubscriptionProduct.author).selectinload(AuthorProfile.user),
+            selectinload(Subscription.product).selectinload(SubscriptionProduct.bundle),
+            selectinload(Subscription.payment),
+            selectinload(Subscription.lead_source),
+        )
+        .where(Subscription.id == subscription_id)
+    )
+    result = await session.execute(query)
+    return result.scalar_one_or_none()
 
 
 def _file_admin_graph() -> tuple[FileDatasetGraph, FileDataStore]:
@@ -443,6 +491,7 @@ async def confirm_payment_and_activate_subscription(
         payment.confirmed_at = timestamp
         for subscription in payment.subscriptions:
             subscription.status = SubscriptionStatus.TRIAL if subscription.is_trial else SubscriptionStatus.ACTIVE
+        await sync_promo_redemption_counter(None, payment.promo_code, store=store)
         graph.save(store)
         return payment, payment.subscriptions
 
@@ -462,6 +511,7 @@ async def confirm_payment_and_activate_subscription(
         subscription.status = SubscriptionStatus.TRIAL if subscription.is_trial else SubscriptionStatus.ACTIVE
 
     await session.commit()
+    await sync_promo_redemption_counter(session, payment.promo_code)
     await session.refresh(payment)
     for subscription in payment.subscriptions:
         await session.refresh(subscription)
@@ -471,3 +521,36 @@ async def confirm_payment_and_activate_subscription(
 async def _count_query(session: AsyncSession, query: Any) -> int:
     result = await session.execute(query)
     return int(result.scalar_one() or 0)
+
+
+def _filter_admin_subscriptions(
+    items: list[Subscription],
+    query_text: str | None,
+) -> list[Subscription]:
+    normalized = (query_text or "").strip().lower()
+    if not normalized:
+        return items
+    return [item for item in items if _subscription_matches_query(item, normalized)]
+
+
+def _subscription_matches_query(subscription: Subscription, normalized: str) -> bool:
+    product = subscription.product
+    user = subscription.user
+    parts = [
+        subscription.id,
+        subscription.status.value,
+        user.full_name if user is not None else None,
+        user.email if user is not None else None,
+        user.username if user is not None else None,
+        product.title if product is not None else None,
+        product.slug if product is not None else None,
+        product.strategy.title if product is not None and product.strategy is not None else None,
+        product.strategy.slug if product is not None and product.strategy is not None else None,
+        product.author.display_name if product is not None and product.author is not None else None,
+        product.author.slug if product is not None and product.author is not None else None,
+        product.bundle.title if product is not None and product.bundle is not None else None,
+        product.bundle.slug if product is not None and product.bundle is not None else None,
+        subscription.lead_source.name if subscription.lead_source is not None else None,
+    ]
+    haystack = " ".join(part.strip().lower() for part in parts if part)
+    return normalized in haystack

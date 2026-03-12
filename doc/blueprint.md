@@ -1,6 +1,6 @@
 # PitchCopyTrade Blueprint
 
-Дата: 2026-03-11  
+Дата: 2026-03-12  
 Статус: research-based current state + target migration architecture
 
 ## 1. Назначение
@@ -14,6 +14,7 @@
 Для каждого завершенного implementation step действует правило:
 - сначала выполнить review результата;
 - затем обновить все актуальные description files проекта.
+- если пользователь дал общее разрешение на последовательное выполнение задач, следующий согласованный step запускать без ожидания дополнительного подтверждения, пока не будет достигнут естественный blocker.
 
 Актуальные description files:
 - [README.md](/Users/alexey/site/PitchCopyTrade/README.md)
@@ -27,11 +28,13 @@
 Canonical subscriber model остается:
 - `Telegram-first`;
 - основной канал взаимодействия: `Telegram bot`;
+- bot command surface intentionally reduced to `/start` and `/help`;
+- вся клиентская навигация должна жить внутри `Mini App`;
 - web для подписчика допустим только как:
   - публичная витрина;
   - legal pages;
   - Telegram-authenticated fallback;
-  - future `Telegram WebApp / Mini App`.
+  - `Telegram WebApp / Mini App` на `https`-стенде.
 
 ### 2.2 Staff model
 `admin`, `author`, `moderator` остаются в web-контуре:
@@ -70,11 +73,16 @@ Canonical subscriber model остается:
 - strategy CRUD
 - product CRUD
 - payment queue and confirm flow
+- admin subscription registry
+- legal docs admin UI
+- delivery admin UI with retry history
 - author workspace
+- author publish workflow hardening
 - recommendation CRUD
 - preview
 - moderation queue
 - moderation history baseline
+- moderation routes and actions now work in `db` and `file` modes
 
 ### 3.4 Subscriber surfaces
 Есть:
@@ -82,14 +90,34 @@ Canonical subscriber model остается:
 - web fallback checkout baseline
 - Telegram bot commands:
   - `/start`
-  - `/catalog`
-  - `/buy <product_slug>`
-  - `/confirm_buy <product_slug>`
-  - `/feed`
-  - `/web`
+  - `/help`
+- Mini App sections:
+  - каталог
+  - мои подписки
+  - лента
+  - оплаты
+  - помощь
+- Telegram verification page for web fallback
+- redirect from protected `/app/*` surfaces to Telegram verification flow
+- safe local `next` redirect support in `/tg-auth`
+- `/app/status` as subscriber landing page in web fallback
+- Mini App automatic auth bridge via verified Telegram `initData`
+- Mini App catalog surface is subscriber-aware when Telegram fallback cookie already exists
+- provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
+- worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
+- `T-Bank` callback endpoint for provider-driven payment updates
 - Telegram-auth fallback cookie for `/app/*`
 - ACL-gated web feed and bot feed
 - validated test bot token smoke via Telegram API `getMe`
+- `https` host can expose Mini App safely
+- timezone should be auto-detected from Telegram WebApp / browser when available, fallback `Europe/Moscow`
+- lead source should be derived automatically, not entered by client manually
+- strategy base demo price is `499 руб`; period labels should render as `Месяц`, trial labels as `7 дней бесплатно`
+- required checkout documents should render with full Russian names:
+  - `Предупреждение о рисках`
+  - `Публичная оферта`
+  - `Политика конфиденциальности`
+  - `Согласие на оплату`
 
 ### 3.5 Recommendation lifecycle baseline
 Есть:
@@ -103,6 +131,7 @@ Canonical subscriber model остается:
 - committed seed target `storage/seed/*`
 - attachments local-first by canonical `local_fs`
 - legal documents local-first via `source_path` under `storage/*/blob/legal`
+- worker `payment_expiry_sync` now resolves pending `T-Bank` payments in both `db` and `file` modes
 
 ### 3.6 Repository layer baseline
 Есть:
@@ -122,7 +151,6 @@ Canonical subscriber model остается:
 - real demo blob attachment under `storage/seed/blob`
 
 Пока еще не переведены:
-- moderation
 - notifications
 - publishing
 - часть auth/session fallback paths outside verified smoke contour
@@ -246,6 +274,11 @@ Primary persistence target:
   - `Telegram checkout -> payment pending`;
   - `admin confirm -> subscription activation`;
   - `Telegram feed -> visible recommendation`.
+- первый server prototype тоже подтвержден:
+  - host nginx on target server;
+  - dockerized `api + bot + worker`;
+  - `admin` login works on deployed host;
+  - Telegram bot polling works on deployed host.
 
 ### 6.3 Demo seed baseline
 Текущий baseline теперь включает:
@@ -410,14 +443,16 @@ Test-launch baseline уже достигнут, но full parity будет сч
 7. only after that deeper UX and analytics tasks
 
 ## 13. Что еще нужно реализовать после persistence refactor
-- full Telegram WebApp/Mini App contour
 - richer Telegram checkout UX
-- legal docs admin UI
-- promo/discount lifecycle
-- delivery admin UI
-- moderation analytics/SLA UX
-- attachment management UX
-- lead source analytics
+- deeper WebApp auth bridge beyond current verification link flow
+- promo/discount lifecycle `[partial]`
+- manual discounts and richer Telegram promo UX still remain
+- delivery retry/metrics hardening
+- moderation analytics/SLA UX `[partial]`
+- queue filters, overdue SLA and resolution latency are already in place
+- attachment lifecycle UX hardening
+- lead source analytics `[partial]`
+- normalized checkout attribution and admin source report already exist
 - worker retries and observability
 
 ## 14. Архитектурное правило на ближайшие шаги
@@ -431,29 +466,27 @@ Test-launch baseline уже достигнут, но full parity будет сч
 Task list для запуска тестовой версии закрыт. Следующий этап уже не про foundation, а про operational hardening.
 
 Приоритеты:
-1. deployment contour
-   - canonical server path = `file mode + docker compose + host nginx`
-   - domain for current test server = `pct.test.ptfin.ru`
-   - canonical project root on server = `/var/www/pct`
-   - canonical secret file on server = `/var/www/pct/.env.server`
-   - deploy artifacts must be committed in repo under `deploy/`
-   - polling bot остается основным способом работы test bot
-2. compose cleanup
-   - убрать `MinIO-first` assumptions из runtime compose path
-   - не делать `MinIO` обязательным для `api` и `worker` в `file` mode
-3. full file-mode parity
-   - moderation
-   - notifications
-   - publishing edge cases
-4. local legal editing
-   - admin UI for markdown source files
-5. Telegram UX phase
-   - WebApp auth bridge
-   - richer subscriber status and checkout UX
-6. operations
-   - storage backup strategy
-   - log rotation
-   - release/update procedure
+1. payment completion
+  - keep `stub/manual` as operator fallback
+  - harden callback rollout on deployed host
+   - keep manual operator fallback
+2. remaining persistence hardening
+   - full file-mode parity for remaining contours
+   - backup/restore discipline
+3. operational reliability
+   - worker retries baseline already added
+   - deepen observability and support tooling
+4. product analytics and monetization
+   - promo/discount lifecycle `[partial]`
+   - admin registry, checkout apply path and redemption counters are already in place
+   - lead source analytics `[partial]`
+   - normalized attribution and admin report are already in place
+   - moderation analytics/SLA UX `[partial]`
+   - queue filters and SLA latency metrics are already in place
+5. Telegram customer experience
+   - richer status/checkout self-service
+   - broader Mini App surfaces
+   - deeper verification and handoff UX
 
 ## 16. Canonical clean -> review -> deploy flow
 Каждый следующий этап нужно вести по одной схеме:

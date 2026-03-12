@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from urllib.parse import quote
 
-from pitchcopytrade.api.deps.auth import get_current_subscriber_user
-from pitchcopytrade.api.deps.repositories import get_access_repository
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+
+from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository
+from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
 from pitchcopytrade.db.models.accounts import User
+from pitchcopytrade.repositories.contracts import AuthRepository
 from pitchcopytrade.repositories.contracts import AccessRepository
 from pitchcopytrade.services.acl import (
     get_user_visible_recommendation,
     list_user_visible_recommendations,
     user_has_active_access,
 )
+from pitchcopytrade.services.subscriber import get_subscriber_status_snapshot
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 from pitchcopytrade.storage.minio import MinioStorage
 from pitchcopytrade.web.templates import templates
@@ -23,9 +27,12 @@ router = APIRouter(prefix="/app", tags=["app"])
 @router.get("/feed", response_class=HTMLResponse)
 async def app_feed(
     request: Request,
-    user: User = Depends(get_current_subscriber_user),
+    auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
+    user = await _get_subscriber_or_redirect(request, auth_repository)
+    if isinstance(user, Response):
+        return user
     recommendations = await list_user_visible_recommendations(repository, user_id=user.id)
     has_access = await user_has_active_access(repository, user_id=user.id)
     return templates.TemplateResponse(
@@ -40,13 +47,41 @@ async def app_feed(
     )
 
 
+@router.get("/status", response_class=HTMLResponse)
+async def app_status(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user = await _get_subscriber_or_redirect(request, auth_repository)
+    if isinstance(user, Response):
+        return user
+
+    snapshot = await get_subscriber_status_snapshot(repository, telegram_user_id=user.telegram_user_id or 0)
+    if snapshot is None:
+        return RedirectResponse(url="/verify/telegram?next=/app/status", status_code=status.HTTP_303_SEE_OTHER)
+
+    return templates.TemplateResponse(
+        request,
+        "app/status.html",
+        {
+            "title": "Статус подписки",
+            "user": user,
+            "snapshot": snapshot,
+        },
+    )
+
+
 @router.get("/recommendations/{recommendation_id}", response_class=HTMLResponse)
 async def recommendation_detail_page(
     recommendation_id: str,
     request: Request,
-    user: User = Depends(get_current_subscriber_user),
+    auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
+    user = await _get_subscriber_or_redirect(request, auth_repository)
+    if isinstance(user, Response):
+        return user
     recommendation = await get_user_visible_recommendation(
         repository,
         user_id=user.id,
@@ -71,9 +106,13 @@ async def recommendation_detail_page(
 async def recommendation_attachment_download(
     recommendation_id: str,
     attachment_id: str,
-    user: User = Depends(get_current_subscriber_user),
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
+    user = await _get_subscriber_or_redirect(request, auth_repository)
+    if isinstance(user, Response):
+        return user
     recommendation = await get_user_visible_recommendation(
         repository,
         user_id=user.id,
@@ -96,3 +135,18 @@ async def recommendation_attachment_download(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unsupported storage provider")
     headers = {"Content-Disposition": f'attachment; filename="{attachment.original_filename}"'}
     return StreamingResponse(iter([payload]), media_type=attachment.content_type, headers=headers)
+
+
+async def _get_subscriber_or_redirect(request: Request, repository: AuthRepository) -> User | Response:
+    token = request.cookies.get(get_telegram_fallback_cookie_name())
+    redirect_url = f"/verify/telegram?next={quote(request.url.path, safe='/')}"
+    if not token:
+        return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+
+    user = await get_user_from_telegram_fallback_cookie(repository, token)
+    if user is not None:
+        return user
+
+    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    response.delete_cookie(get_telegram_fallback_cookie_name(), path="/")
+    return response

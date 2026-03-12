@@ -1,6 +1,6 @@
 # PitchCopyTrade Task Pack
 
-Дата: 2026-03-11  
+Дата: 2026-03-12  
 Режим: current implementation status + migration roadmap to local storage and file mode
 
 Process rule:
@@ -93,6 +93,13 @@ Process rule:
 - Telegram-auth fallback for `/app/*`
 - ACL delivery in web and bot
 
+### 13.1 Telegram-only subscriber reset `[done]`
+- subscriber bot commands reduced to `/start` and `/help`
+- Mini App became the main client surface for catalog, status, payments and feed
+- subscriber-facing web pages removed `Вход` and legacy `/web` guidance
+- checkout no longer asks client for manual timezone or lead source
+- Mini App context is preserved across catalog, strategy and checkout pages
+
 ### 14. Recommendation lifecycle baseline `[done]`
 - moderation queue
 - moderation history baseline
@@ -104,7 +111,7 @@ Process rule:
 ### 15. Remote storage as primary model `[refactor]`
 Текущее состояние:
 - attachment flow ориентирован на `MinIO`
-- `docker-compose.yml` поднимает `minio`
+- `docker-compose.yml` больше не делает `minio` обязательным runtime service
 - metadata по-прежнему bucket/object oriented
 
 Новая цель:
@@ -232,7 +239,6 @@ Acceptance:
 - seed legal markdown files committed under `storage/seed/blob/legal`
 
 Сделать:
-- admin/legal editing flow for writing local markdown sources
 - убрать transitional dependency from remaining MinIO-only paths
 
 Acceptance:
@@ -333,7 +339,7 @@ Acceptance:
 
 ## 5. Самый быстрый путь к локальному тестированию
 
-### 29. Fast-track order `[todo]`
+### 29. Fast-track order `[done]`
 Делать строго так:
 1. local storage adapter
 2. runtime switch `APP_DATA_MODE`
@@ -344,7 +350,7 @@ Acceptance:
 7. connect test bot and run Telegram smoke-test
 8. open local staff web and author cabinet
 
-### 30. Fast-track acceptance `[todo]`
+### 30. Fast-track acceptance `[done]`
 Считать быстрый путь завершенным, когда:
 - сайт открывается локально;
 - admin login работает локально;
@@ -358,46 +364,85 @@ Acceptance:
 
 ### 31. Telegram UX depth `[partial]`
 Сделано:
-- command baseline
-- reply keyboard baseline
+- Telegram-only command surface:
+  - `/start`
+  - `/help`
+- reply keyboard reduced to Mini App + help
 - Mini App entry baseline
+- deployed `https` host now allows Telegram `Mini App` button in real bot flow
+- subscriber navigation moved into Mini App sections:
+  - каталог
+  - подписки
+  - оплаты
+  - лента
+  - помощь
+- web fallback now redirects to `/verify/telegram` instead of raw unauthorized response
+- timezone is auto-detected from client/browser
+- lead source attribution is automatic
 
 Не сделано:
 - full WebApp auth bridge
-- richer interactive checkout/status UX
+- richer in-app actions beyond current Mini App pages
 
-### 32. Legal admin UI `[todo]`
+### 32. Legal admin UI `[done]`
 - document CRUD
 - version publish UI
 - active version management
 
-### 33. Promo/discount lifecycle `[todo]`
-- promo UI
+### 33. Promo/discount lifecycle `[partial]`
+Сделано:
+- admin promo registry
+- promo create/edit UI
+- checkout promo apply path
+- payment-linked redemption counters
+
+Сделать:
 - manual discounts
+- richer Telegram promo UX
 - expiry/cancel flows
 
-### 34. Delivery admin UX `[todo]`
+### 34. Delivery admin UX `[done]`
 - notification queue
 - retry/dedup
-- metrics
+- delivery audit visibility
+- metrics still remain as hardening, not as baseline blocker
 
-### 35. Moderation analytics/SLA `[todo]`
-- filters
-- timelines
-- resolution metrics
+### 35. Moderation analytics/SLA `[partial]`
+Сделано:
+- queue filters by query and status
+- overdue review visibility
+- approve/rework/reject counters
+- resolution latency metric on queue and detail
 
-### 36. Lead source analytics `[todo]`
-- normalized attribution
-- reporting
+Сделать:
+- richer timeline slicing
+- moderator workload breakdown
+- export/reporting
 
-### 37. Worker hardening `[todo]`
-- retries
-- observability
+### 36. Lead source analytics `[partial]`
+Сделано:
+- normalized lead source attribution on checkout
+- file/db compatible source lookup and creation
+- admin lead source analytics report
+
+Сделать:
+- richer campaign breakdown
+- time-range filtering
+- conversion slices by source
+
+### 37. Worker hardening `[partial]`
+Сделано:
+- per-job fault tolerance in worker loop
+- per-job duration logging
+- notification retries baseline
+
+Сделать:
 - broader lifecycle jobs
+- stronger metrics/export path
 
 ## 8. Следующий этап после test-launch
 
-### 38. Deployment hardening `[partial]`
+### 38. Deployment hardening `[done]`
 Сделано:
 - canonical server deploy path documented
 - dedicated docker server compose committed in repo
@@ -407,27 +452,29 @@ Acceptance:
   - `deploy/nginx/pct.test.ptfin.ru.conf`
   - `deploy/env.server.example`
   - `deploy/README.md`
+  - `doc/guide.pdf`
 - canonical server root `/var/www/pct`
 - secret runtime file `.env.server`
 - update/restart procedure documented
 
-Сделать:
-- real server validation on target host
-- optional TLS step when test domain is ready
+Сделано:
+- first server prototype validated on target host
+- `admin` login validated on deployed host
+- Telegram bot polling validated on deployed host
+- `https` enabled for `pct.test.ptfin.ru`
 
 Acceptance:
 - test version можно поднимать на одной выделенной машине без ручного старта процессов
 
-### 39. Compose cleanup `[todo]`
-- убрать `MinIO-first` dependency from `api` and `worker` in `file` mode
-- separate dev-only compose assumptions from real server path
-- keep PostgreSQL and MinIO as optional profiles, not mandatory runtime blocks
+### 39. Compose cleanup `[done]`
+- `postgres` and `minio` live behind optional compose profiles
+- `api` and `worker` no longer hard depend on MinIO in file mode
+- real server path is separated from dev-only assumptions
 
 Acceptance:
 - file-mode compose path не требует MinIO по умолчанию
 
-### 40. Full file-mode parity `[todo]`
-- moderation decisions
+### 40. Full file-mode parity `[partial]`
 - notifications persistence edges
 - publishing edge cases
 - remaining auth/session fallback paths
@@ -435,7 +482,7 @@ Acceptance:
 Acceptance:
 - all critical test-version contours behave одинаково в `db` и `file`
 
-### 41. Legal admin UI `[todo]`
+### 41. Legal admin UI hardening `[done]`
 - local markdown editor
 - version activation
 - active document management
@@ -443,11 +490,25 @@ Acceptance:
 Acceptance:
 - legal docs можно править без ручного редактирования файлов на сервере
 
-### 42. Telegram UX phase `[todo]`
-- WebApp auth bridge
-- richer menu/status flow
-- subscriber self-service UX
+### 42. Telegram UX phase `[partial]`
+Сделано:
 - conditional WebApp button behavior for `http` vs `https` environments
+- subscriber status flow in bot
+- `/subscriptions` self-service flow in bot
+- `/payments` self-service flow in bot
+- Telegram verification page for web fallback
+- deep-link start `?start=web`
+- safe local `next` redirect in `/tg-auth`
+- `/app/status` as web fallback landing page after Telegram verification
+- inline product selection and callback-based checkout preview/confirm
+- active subscription and pending payment overview inside bot
+- Mini App automatic auth bridge through `/tg-webapp/auth`
+- Mini App catalog surface shows subscriber overview when Telegram auth cookie already exists
+
+Сделать:
+- full WebApp auth bridge
+- deeper subscriber self-service UX inside Mini App
+- richer in-app actions beyond status/feed/catalog
 
 Acceptance:
 - subscriber flow меньше зависит от command-only interaction
@@ -460,6 +521,81 @@ Acceptance:
 
 Acceptance:
 - каждый новый этап проходит одинаковый `clean -> review -> docs -> deploy` контур
+
+## 9. Что делать дальше до business-complete state
+
+### 44. HTTPS enablement `[done]`
+- certificate issued for `pct.test.ptfin.ru`
+- deployed `BASE_URL` switched to `https`
+- Telegram WebApp prerequisites validated on deployed host
+
+Acceptance:
+- deployed host serves app over `https`
+- bot can safely expose `Mini App` button
+
+### 45. Real SBP payments `[partial]`
+Сделано:
+- provider-aware checkout service
+- `T-Bank` SBP adapter foundation
+- `stub/manual` kept as operator fallback
+- provider payment id is persisted in checkout records
+- worker `payment_expiry_sync` polls pending `T-Bank` payments through `GetState`
+- confirmed provider state auto-activates linked subscriptions
+- terminal failed provider state auto-cancels pending subscriptions
+- sync writes `worker.payment_state_sync` audit events
+- `T-Bank` callback endpoint exists at `/payments/tbank/notify`
+- callback token is validated before payment state update
+- callback path writes `payment.webhook_sync` audit events
+
+Сделать:
+- production credential rollout on target host
+- callback rollout hardening on target host
+
+Acceptance:
+- user can pay in RUB via real SBP flow
+- payment confirmation does not rely only on manual admin action
+
+### 46. Admin subscription registry `[done]`
+- full list of subscriptions
+- start/end dates
+- payment status
+- search by user / strategy / author
+- access scope visibility
+
+Acceptance:
+- admin can answer who is subscribed to what and until when
+
+### 47. Author publish UX hardening `[done]`
+- better multi-leg recommendation editor
+- attachment replace/delete flow
+- clearer draft/review/publish path
+
+Acceptance:
+- author can publish complex recommendation sets without manual operator help
+
+### 48. Legal and compliance operations `[done]`
+- legal docs admin UI
+- version activation
+- consent visibility in admin surfaces
+
+Acceptance:
+- legal lifecycle no longer requires manual file edits in runtime operations
+
+### 49. Delivery operations `[done]`
+- notification queue
+- retry / dedup visibility
+- delivery audit visibility for support
+
+Acceptance:
+- support/admin can understand whether recommendation delivery succeeded
+
+### 50. Final persistence hardening `[todo]`
+- finish remaining file-mode parity
+- compose cleanup `[done]`
+- backup/restore workflow for `storage/`
+
+Acceptance:
+- deployed prototype can be operated and recovered predictably
 
 ## 7. Правила, которые нельзя ломать
 - subscriber path остается `Telegram-first`

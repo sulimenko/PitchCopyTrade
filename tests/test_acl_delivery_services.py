@@ -9,6 +9,7 @@ from pitchcopytrade.db.models.commerce import LegalDocument
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     LegalDocumentType,
+    PaymentProvider,
     PaymentStatus,
     ProductType,
     SubscriptionStatus,
@@ -27,27 +28,18 @@ class FakeSession:
         self.user = None
         self.added = []
 
-    async def execute(self, query):
-        compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+    async def list_active_checkout_documents(self):
+        return self.documents
 
-        class Result:
-            def __init__(self, value):
-                self._value = value
+    async def find_user_by_email(self, email: str):
+        if self.user is not None and self.user.email == email:
+            return self.user
+        return None
 
-            def scalar_one_or_none(self):
-                return self._value
-
-            def scalars(self):
-                return self
-
-            def all(self):
-                return self._value
-
-        if "FROM legal_documents" in compiled:
-            return Result(self.documents)
-        if "FROM users" in compiled:
-            return Result(self.user)
-        raise AssertionError(f"Unexpected query: {compiled}")
+    async def get_user_by_telegram_id(self, telegram_user_id: int):
+        if self.user is not None and self.user.telegram_user_id == telegram_user_id:
+            return self.user
+        return None
 
     def add(self, entity):
         self.added.append(entity)
@@ -149,3 +141,65 @@ async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() ->
     assert result.user.email is None
     assert result.payment.status == PaymentStatus.PENDING
     assert result.subscription.status == SubscriptionStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_create_stub_checkout_uses_tbank_provider_when_enabled(monkeypatch) -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+
+    class DummyClient:
+        def __init__(self, *, terminal_key: str, password: str) -> None:
+            self.terminal_key = terminal_key
+            self.password = password
+
+        async def create_sbp_checkout(self, **kwargs):
+            return type(
+                "Result",
+                (),
+                {
+                    "payment_id": "777",
+                    "order_id": kwargs["order_id"],
+                    "payment_url": "https://pay.tbank.ru/qr/777",
+                    "init_payload": {"PaymentId": "777", "Success": True},
+                    "qr_payload": {"Success": True, "Data": "https://pay.tbank.ru/qr/777"},
+                },
+            )()
+
+    monkeypatch.setattr(
+        "pitchcopytrade.services.public.get_settings",
+        lambda: type(
+            "Settings",
+            (),
+            {
+                "payments": type(
+                    "Payments",
+                    (),
+                    {
+                        "provider": "tbank",
+                        "tinkoff_terminal_key": type("Secret", (), {"get_secret_value": lambda self: "term"})(),
+                        "tinkoff_secret_key": type("Secret", (), {"get_secret_value": lambda self: "secret"})(),
+                    },
+                )(),
+                "app": type("App", (), {"base_url": "https://pct.test.ptfin.ru"})(),
+            },
+        )(),
+    )
+    monkeypatch.setattr("pitchcopytrade.services.public.TBankAcquiringClient", DummyClient)
+
+    result = await create_stub_checkout(
+        session,
+        product=product,
+        request=CheckoutRequest(
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            accepted_document_ids=[item.id for item in session.documents],
+            lead_source_name="ads",
+        ),
+        now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+
+    assert result.payment.provider == PaymentProvider.TBANK
+    assert result.payment_url == "https://pay.tbank.ru/qr/777"
+    assert result.payment.provider_payload["provider_payment_id"] == "777"

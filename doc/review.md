@@ -22,14 +22,24 @@
 - author workspace
 - recommendation CRUD
 - preview / moderation / rendering baseline
+- moderation file-mode parity
 - public catalog
 - checkout `stub/manual`
+- automatic `T-Bank` pending payment sync
+- `T-Bank` callback endpoint for provider-driven payment updates
 - payment confirm -> activate subscription
 - ACL service
 - bot feed and web fallback feed
+- Telegram subscriber self-service baseline
+- richer Telegram self-service menus for subscriptions and payments
+- subscriber-aware Mini App catalog surface
 - worker scheduled publish baseline
 - delivery notifications baseline
 - Telegram-first subscriber baseline
+- reduced subscriber bot command surface: `/start`, `/help`
+- Mini App as primary client UI
+- auto timezone / auto lead source on client checkout
+- Russian legal titles and Russian client-facing labels
 - local filesystem storage backend baseline
 - verified file-mode e2e baseline for:
   - `admin dashboard`
@@ -76,7 +86,18 @@
 Проверь:
 - не возвращает ли change subscriber password-first model;
 - не делает ли web mandatory там, где target is Telegram-first;
+- не возвращает ли change command-heavy subscriber UX вместо Mini App navigation;
 - если web subscriber path остается, идет ли он через Telegram-auth model;
+- если protected subscriber web surface открывается без Telegram cookie, переводит ли flow пользователя в понятную Telegram verification page, а не в сырой `401`;
+- если используется `next` redirect после Telegram auth, защищен ли он от open redirect и остается ли локальным;
+- если web fallback заявлен как subscriber-friendly, есть ли у него понятная landing page, а не только голая лента без статуса;
+- если заявлен Telegram self-service, видит ли пользователь свои подписки и pending оплаты без утечки чужих данных;
+- если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
+- если Telegram checkout заявлен как interactive, идет ли он через Mini App sections и не тянет ли обратно legacy bot commands;
+- если заявлен Mini App auth bridge, валидируется ли Telegram `initData` на backend, а не принимается ли он вслепую;
+- если заявлен реальный SBP provider, есть ли provider abstraction и не ломается ли `stub/manual` fallback;
+- если заявлен worker-based provider sync, активируется ли доступ только после финального provider state;
+- если заявлен provider callback, валидируется ли callback token до изменения payment state;
 - не собирает ли code лишние персональные данные без необходимости.
 - не отправляет ли bot `WebApp` кнопку на `http` base URL, где Telegram ее все равно отвергнет.
 
@@ -96,6 +117,7 @@
 - confirm path делает `subscription -> active|trial`;
 - pending/failed/cancelled/expired не дают delivery access;
 - file-mode implementation не ломает state transitions.
+- worker payment sync не выдает access по `pending` и не ломает `stub/manual` path.
 
 ### E. Local storage contract
 Проверь:
@@ -173,17 +195,22 @@ Reviewer должен считать хорошим признаком:
 - уменьшение прямой зависимости routes/services от `AsyncSession`;
 - выравнивание attachment metadata под локальные пути;
 - сохранение Telegram-first UX при persistence refactor.
+- улучшение Telegram self-service без возврата к password-first subscriber model.
 
 ## 6. Что еще обязательно ждет реализации
 Reviewer должен помнить, что после текущего refactor track все еще нужны:
+- real SBP production hardening
 - full file-mode parity for demo path
-- Telegram WebApp/Mini App auth bridge
-- legal docs admin UI
-- promo/discount lifecycle
-- moderation analytics/SLA UX
-- delivery admin UI
-- lead source analytics
+- deeper WebApp auth bridge
+- promo/discount lifecycle `[partial]`
+- baseline done: admin CRUD, checkout apply path, paid-redemption counters
+- moderation analytics/SLA UX `[partial]`
+- baseline done: queue filters, overdue SLA, resolution latency
+- lead source analytics `[partial]`
+- baseline done: normalized checkout attribution and admin source report
 - worker retries and observability
+- compose profiles should stay optional, not canonical runtime dependencies
+- deeper metrics/export path for worker and delivery ops
 
 Если изменение делает путь к этим задачам хуже, это finding.
 
@@ -242,6 +269,7 @@ Reviewer должен помнить, что после текущего refacto
 - согласованы ли `.env.example`, `README.md`, `doc/blueprint.md`, `doc/task.md`;
 - есть ли committed deploy bundle в репозитории, если server path заявлен как `git clone -> run`;
 - согласован ли server secret contract, например `.env.server`;
+- если change добавляет operator/tester asset, например PDF guide, он должен соответствовать текущему domain/runtime contour;
 - учитывает ли инструкция реальный deploy contour:
   - `api`
   - `bot`

@@ -4,9 +4,9 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
-from pitchcopytrade.db.models.catalog import Instrument, Strategy
+from pitchcopytrade.db.models.catalog import Instrument, LeadSource, Strategy
 from pitchcopytrade.db.models.catalog import SubscriptionProduct
-from pitchcopytrade.db.models.commerce import LegalDocument
+from pitchcopytrade.db.models.commerce import LegalDocument, PromoCode
 from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.enums import RecommendationStatus
 
@@ -72,6 +72,10 @@ class PublicRepository(Protocol):
     async def get_public_product_by_slug(self, slug: str) -> SubscriptionProduct | None: ...
 
     async def list_active_checkout_documents(self) -> list[LegalDocument]: ...
+
+    async def find_active_promo_by_code(self, code: str) -> PromoCode | None: ...
+
+    async def get_lead_source_by_name(self, name: str) -> LeadSource | None: ...
 
     async def find_user_by_email(self, email: str) -> User | None: ...
 

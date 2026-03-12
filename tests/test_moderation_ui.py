@@ -12,7 +12,9 @@ from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import Strategy
 from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, RiskLevel, RoleSlug, StrategyStatus
-from pitchcopytrade.db.session import get_db_session
+from pitchcopytrade.db.session import get_optional_db_session
+from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.moderation import approve_recommendation, build_moderation_detail_metrics
 
 
 class FakeAsyncSession:
@@ -82,7 +84,7 @@ def _build_client(user: User) -> TestClient:
     async def override_moderator():
         return user
 
-    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_optional_db_session] = override_db_session
     app.dependency_overrides[require_moderator] = override_moderator
     return TestClient(app)
 
@@ -104,6 +106,26 @@ def test_moderation_queue_renders(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert "Очередь модерации" in response.text
+        assert "Покупка SBER" in response.text
+
+
+def test_moderation_queue_accepts_filters(monkeypatch) -> None:
+    user = _make_moderator_user()
+    recommendation = _make_recommendation()
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.moderation.list_moderation_recommendations",
+        lambda _session, **kwargs: _async_return([recommendation]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.moderation.get_moderation_queue_stats",
+        lambda _session: _async_return(SimpleNamespace(review_count=1, scheduled_count=0, published_count=0)),
+    )
+
+    with _build_client(user) as client:
+        response = client.get("/moderation/queue?q=sber&status_value=review")
+
+        assert response.status_code == 200
+        assert "Применить" in response.text
         assert "Покупка SBER" in response.text
 
 
@@ -135,6 +157,7 @@ def test_moderation_detail_renders(monkeypatch) -> None:
         assert "Approve" in response.text
         assert "Momentum RU" in response.text
         assert "moderation.approve" in response.text
+        assert "SLA:" in response.text
 
 
 def test_moderation_approve_redirects(monkeypatch) -> None:
@@ -173,6 +196,130 @@ def test_moderation_rework_redirects(monkeypatch) -> None:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/moderation/recommendations/rec-1"
+
+
+async def test_file_mode_approve_recommendation_updates_seed_runtime(tmp_path) -> None:
+    now = datetime(2026, 3, 12, tzinfo=timezone.utc).isoformat()
+    store = FileDataStore(root_dir=tmp_path, seed_dir=tmp_path)
+    store.save_many(
+        {
+            "roles": [{"id": "role-mod", "slug": "moderator", "title": "Moderator", "created_at": now, "updated_at": now}],
+            "users": [
+                {
+                    "id": "moderator-1",
+                    "email": "mod@example.com",
+                    "telegram_user_id": None,
+                    "username": "mod1",
+                    "full_name": "Moderator",
+                    "password_hash": None,
+                    "status": "active",
+                    "timezone": "Europe/Moscow",
+                    "lead_source_id": None,
+                    "role_ids": ["role-mod"],
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                {
+                    "id": "author-user-1",
+                    "email": "author@example.com",
+                    "telegram_user_id": None,
+                    "username": "author1",
+                    "full_name": "Author",
+                    "password_hash": None,
+                    "status": "active",
+                    "timezone": "Europe/Moscow",
+                    "lead_source_id": None,
+                    "role_ids": [],
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            ],
+            "authors": [
+                {
+                    "id": "author-1",
+                    "user_id": "author-user-1",
+                    "display_name": "Alpha Desk",
+                    "slug": "alpha-desk",
+                    "bio": None,
+                    "requires_moderation": True,
+                    "is_active": True,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "lead_sources": [],
+            "instruments": [],
+            "strategies": [
+                {
+                    "id": "strategy-1",
+                    "author_id": "author-1",
+                    "slug": "momentum-ru",
+                    "title": "Momentum RU",
+                    "short_description": "desc",
+                    "full_description": "full",
+                    "risk_level": "medium",
+                    "status": "published",
+                    "min_capital_rub": 100000,
+                    "is_public": True,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "bundles": [],
+            "bundle_members": [],
+            "products": [],
+            "legal_documents": [],
+            "payments": [],
+            "subscriptions": [],
+            "user_consents": [],
+            "audit_events": [],
+            "recommendations": [
+                {
+                    "id": "rec-1",
+                    "strategy_id": "strategy-1",
+                    "author_id": "author-1",
+                    "moderated_by_user_id": None,
+                    "kind": "new_idea",
+                    "status": "review",
+                    "title": "Покупка SBER",
+                    "summary": "Сильный спрос",
+                    "thesis": None,
+                    "market_context": None,
+                    "requires_moderation": True,
+                    "scheduled_for": None,
+                    "published_at": None,
+                    "closed_at": None,
+                    "cancelled_at": None,
+                    "moderation_comment": None,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+            "recommendation_legs": [],
+            "recommendation_attachments": [],
+        }
+    )
+
+    recommendation = _make_recommendation()
+    moderator = _make_moderator_user()
+    updated = await approve_recommendation(None, recommendation, moderator, "OK", store=store)
+
+    assert updated.status == RecommendationStatus.PUBLISHED
+    assert updated.moderation_comment == "OK"
+
+
+def test_build_moderation_detail_metrics_detects_overdue() -> None:
+    recommendation = _make_recommendation()
+    recommendation.created_at = datetime(2026, 3, 10, tzinfo=timezone.utc)
+
+    metrics = build_moderation_detail_metrics(
+        recommendation,
+        [],
+        now=datetime(2026, 3, 12, tzinfo=timezone.utc),
+    )
+
+    assert metrics.sla_state == "overdue"
+    assert metrics.resolution_hours is None
 
 
 async def _async_return(value):

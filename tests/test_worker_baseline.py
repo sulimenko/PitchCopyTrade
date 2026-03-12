@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from pitchcopytrade.worker.jobs.placeholders import WORKER_JOBS, WorkerJob, run_scheduled_publish
+from pitchcopytrade.worker.jobs.placeholders import WORKER_JOBS, WorkerJob, run_payment_expiry_sync, run_scheduled_publish
 from pitchcopytrade.worker.runner import DEFAULT_WORKER_SLEEP_SECONDS, get_worker_jobs, run_worker_loop, run_worker_once
 
 
@@ -33,9 +33,10 @@ async def test_run_worker_once_executes_all_jobs(monkeypatch: pytest.MonkeyPatch
     fake_jobs = tuple(build_job(job.name) for job in WORKER_JOBS)
     monkeypatch.setattr("pitchcopytrade.worker.runner.WORKER_JOBS", fake_jobs)
 
-    await run_worker_once()
+    results = await run_worker_once()
 
     assert executed == [job.name for job in fake_jobs]
+    assert all(result.ok for result in results)
 
 
 @pytest.mark.asyncio
@@ -80,6 +81,61 @@ async def test_run_scheduled_publish_delivers_notifications(monkeypatch: pytest.
 
     notifier.assert_awaited_once()
     fake_bot.session.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_payment_expiry_sync_uses_tbank_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    sync_mock = AsyncMock(return_value=type("Stats", (), {"checked": 1, "paid": 1, "failed": 0, "pending": 0})())
+    monkeypatch.setattr(
+        "pitchcopytrade.worker.jobs.placeholders.get_settings",
+        lambda: type(
+            "Settings",
+            (),
+            {
+                "payments": type(
+                    "Payments",
+                    (),
+                    {
+                        "provider": "tbank",
+                        "tinkoff_terminal_key": type("Secret", (), {"get_secret_value": lambda self: "term"})(),
+                        "tinkoff_secret_key": type("Secret", (), {"get_secret_value": lambda self: "secret"})(),
+                    },
+                )(),
+            },
+        )(),
+    )
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.AsyncSessionLocal", None)
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.sync_tbank_pending_payments", sync_mock)
+
+    await run_payment_expiry_sync()
+
+    sync_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_worker_once_continues_after_job_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    executed: list[str] = []
+
+    async def failing() -> None:
+        executed.append("first")
+        raise RuntimeError("boom")
+
+    async def succeeding() -> None:
+        executed.append("second")
+
+    monkeypatch.setattr(
+        "pitchcopytrade.worker.runner.WORKER_JOBS",
+        (
+            WorkerJob(name="failing", runner=failing),
+            WorkerJob(name="succeeding", runner=succeeding),
+        ),
+    )
+
+    results = await run_worker_once()
+
+    assert executed == ["first", "second"]
+    assert results[0].ok is False
+    assert results[1].ok is True
 
 
 async def _async_return(value):

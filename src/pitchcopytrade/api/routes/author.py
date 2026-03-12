@@ -20,6 +20,7 @@ from pitchcopytrade.services.author import (
     list_author_recommendations,
     list_author_strategies,
     normalize_attachment_uploads,
+    remove_recommendation_attachments,
     recommendation_form_values,
     update_author_recommendation,
 )
@@ -107,12 +108,16 @@ async def recommendation_create_submit(
     instruments = await list_active_instruments(repository)
     form = await request.form()
     leg_rows = build_leg_rows_from_form(form)
+    resolved_status = _resolve_status_value(
+        status_value=str(form.get("status", "") or ""),
+        workflow_action=str(form.get("workflow_action", "") or ""),
+    )
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
         data = build_recommendation_form_data(
             strategy_id=str(form.get("strategy_id", "") or ""),
             kind_value=str(form.get("kind", "") or ""),
-            status_value=str(form.get("status", "") or ""),
+            status_value=resolved_status,
             title=str(form.get("title", "") or ""),
             summary=str(form.get("summary", "") or ""),
             thesis=str(form.get("thesis", "") or ""),
@@ -141,7 +146,7 @@ async def recommendation_create_submit(
             form_values={
                 "strategy_id": str(form.get("strategy_id", "") or ""),
                 "kind": str(form.get("kind", "") or ""),
-                "status": str(form.get("status", "") or ""),
+                "status": resolved_status,
                 "title": str(form.get("title", "") or ""),
                 "summary": str(form.get("summary", "") or ""),
                 "thesis": str(form.get("thesis", "") or ""),
@@ -220,12 +225,17 @@ async def recommendation_edit_submit(
     instruments = await list_active_instruments(repository)
     form = await request.form()
     leg_rows = build_leg_rows_from_form(form)
+    resolved_status = _resolve_status_value(
+        status_value=str(form.get("status", "") or ""),
+        workflow_action=str(form.get("workflow_action", "") or ""),
+    )
+    remove_attachment_ids = [str(item) for item in form.getlist("remove_attachment_ids")]
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
         data = build_recommendation_form_data(
             strategy_id=str(form.get("strategy_id", "") or ""),
             kind_value=str(form.get("kind", "") or ""),
-            status_value=str(form.get("status", "") or ""),
+            status_value=resolved_status,
             title=str(form.get("title", "") or ""),
             summary=str(form.get("summary", "") or ""),
             thesis=str(form.get("thesis", "") or ""),
@@ -237,6 +247,7 @@ async def recommendation_edit_submit(
             leg_rows=leg_rows,
             attachments=uploads,
         )
+        await remove_recommendation_attachments(repository, recommendation, remove_attachment_ids)
         await update_author_recommendation(
             repository,
             recommendation,
@@ -254,7 +265,7 @@ async def recommendation_edit_submit(
             form_values={
                 "strategy_id": str(form.get("strategy_id", "") or ""),
                 "kind": str(form.get("kind", "") or ""),
-                "status": str(form.get("status", "") or ""),
+                "status": resolved_status,
                 "title": str(form.get("title", "") or ""),
                 "summary": str(form.get("summary", "") or ""),
                 "thesis": str(form.get("thesis", "") or ""),
@@ -320,3 +331,18 @@ async def _get_author_or_403(repository: AuthorRepository, user: User) -> Author
     if author is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Author profile is not configured")
     return author
+
+
+def _resolve_status_value(*, status_value: str, workflow_action: str) -> str:
+    mapping = {
+        "save_draft": "draft",
+        "send_to_review": "review",
+        "schedule": "scheduled",
+        "publish_now": "published",
+        "close_idea": "closed",
+        "cancel_idea": "cancelled",
+    }
+    normalized_action = workflow_action.strip()
+    if not normalized_action:
+        return status_value
+    return mapping.get(normalized_action, status_value)

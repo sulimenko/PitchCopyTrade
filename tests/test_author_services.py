@@ -8,7 +8,10 @@ from starlette.datastructures import Headers, UploadFile
 from pitchcopytrade.services.author import (
     build_recommendation_form_data,
     normalize_attachment_uploads,
+    remove_recommendation_attachments,
 )
+from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment
+from pitchcopytrade.storage.local import LocalFilesystemStorage
 
 
 @pytest.mark.asyncio
@@ -99,3 +102,34 @@ def test_build_recommendation_form_data_rejects_unknown_instrument() -> None:
             ],
             attachments=[],
         )
+
+
+@pytest.mark.asyncio
+async def test_remove_recommendation_attachments_deletes_local_blob(tmp_path) -> None:
+    class DummyRepository:
+        def __init__(self) -> None:
+            self.deleted = []
+
+        async def delete(self, entity) -> None:
+            self.deleted.append(entity)
+
+    repository = DummyRepository()
+    recommendation = Recommendation(id="rec-1", strategy_id="strategy-1", author_id="author-1")
+    attachment = RecommendationAttachment(
+        id="att-1",
+        recommendation_id="rec-1",
+        bucket_name="blob",
+        object_key="recommendations/rec-1/file.pdf",
+        original_filename="idea.pdf",
+        content_type="application/pdf",
+        size_bytes=8,
+    )
+    recommendation.attachments = [attachment]
+    storage = LocalFilesystemStorage(root_dir=tmp_path / "storage" / "blob")
+    storage.upload_bytes(attachment.object_key, b"pdf-data", "application/pdf")
+
+    await remove_recommendation_attachments(repository, recommendation, ["att-1"], storage=storage)
+
+    assert recommendation.attachments == []
+    assert repository.deleted == [attachment]
+    assert not (tmp_path / "storage" / "blob" / "recommendations" / "rec-1" / "file.pdf").exists()

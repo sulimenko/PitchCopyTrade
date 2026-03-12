@@ -4,6 +4,11 @@
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a class="action ghost" href="/admin/strategies">Каталог стратегий</a>
   <a class="action ghost" href="/admin/products">Продукты подписки</a>
+  <a class="action ghost" href="/admin/promos">Промокоды</a>
+  <a class="action ghost" href="/admin/analytics/leads">Источники</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/admin/legal">Документы</a>
+  <a class="action ghost" href="/admin/delivery">Доставка</a>
   <a class="action ghost" href="/admin/payments">Платежи</a>
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
@@ -11,7 +16,7 @@
 
 {% block content %}
 <section class="surface" style="padding:28px 28px 22px;">
-  <div class="eyebrow">admin dashboard</div>
+  <div class="eyebrow">панель администратора</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4.2vw,3.6rem);line-height:0.95;letter-spacing:-0.05em;">Операционный центр</h1>
@@ -20,7 +25,7 @@
       </p>
     </div>
     <div class="surface" style="padding:16px 18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;min-width:240px;">
-      <div class="eyebrow">operator</div>
+      <div class="eyebrow">оператор</div>
       <strong style="display:block;margin-top:8px;font-size:1.15rem;">{{ user.full_name or user.username or user.email }}</strong>
       <div class="muted" style="margin-top:8px;">{{ user.email or "email не задан" }}</div>
     </div>
@@ -29,27 +34,27 @@
 
 <section style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;margin-top:18px;">
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">authors</div>
+    <div class="eyebrow">авторы</div>
     <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.authors_total }}</div>
     <div class="muted" style="margin-top:8px;">активных профилей авторов</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">strategies</div>
+    <div class="eyebrow">стратегии</div>
     <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.strategies_total }}</div>
     <div class="muted" style="margin-top:8px;">карточек в каталоге</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">public</div>
+    <div class="eyebrow">публичные</div>
     <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.strategies_public }}</div>
     <div class="muted" style="margin-top:8px;">доступны на витрине</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">subscriptions</div>
+    <div class="eyebrow">подписки</div>
     <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.active_subscriptions }}</div>
     <div class="muted" style="margin-top:8px;">активны или trial</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">live ideas</div>
+    <div class="eyebrow">активные идеи</div>
     <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.recommendations_live }}</div>
     <div class="muted" style="margin-top:8px;">уже опубликовано</div>
   </article>
@@ -59,7 +64,7 @@
   <article class="surface" style="padding:24px;">
     <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
       <div>
-        <div class="eyebrow">strategy catalog</div>
+        <div class="eyebrow">каталог стратегий</div>
         <h2 style="margin:10px 0 0;font-size:1.6rem;">Последние карточки стратегий</h2>
       </div>
       <a class="action" href="/admin/strategies/new">Создать стратегию</a>
@@ -92,7 +97,7 @@
   </article>
 
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">admin focus</div>
+      <div class="eyebrow">зона контроля</div>
     <h2 style="margin:10px 0 14px;font-size:1.6rem;">Что держать под контролем</h2>
     <div style="display:grid;gap:12px;">
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
@@ -114,7 +119,7 @@
 <section class="surface" style="padding:24px;margin-top:18px;">
   <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
     <div>
-      <div class="eyebrow">subscription products</div>
+      <div class="eyebrow">продукты подписки</div>
       <h2 style="margin:10px 0 0;font-size:1.55rem;">Последние коммерческие продукты</h2>
     </div>
     <a class="action" href="/admin/products/new">Создать продукт</a>
@@ -132,12 +137,12 @@
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
         <span class="pill">{{ product.billing_period.value }}</span>
-        <span class="pill">{{ product.price_rub }} RUB</span>
+        <span class="pill">{{ product.price_rub }} руб</span>
         {% if product.trial_days %}
-        <span class="pill">{{ product.trial_days }} trial days</span>
+        <span class="pill">{{ product.trial_days }} дней бесплатно</span>
         {% endif %}
         {% if product.is_active %}
-        <span class="pill">active</span>
+        <span class="pill">активен</span>
         {% endif %}
       </div>
     </a>
@@ -151,7 +156,40 @@
 <section class="surface" style="padding:24px;margin-top:18px;">
   <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
     <div>
-      <div class="eyebrow">payment review</div>
+      <div class="eyebrow">клиентские операции</div>
+      <h2 style="margin:10px 0 0;font-size:1.55rem;">Последние подписки</h2>
+    </div>
+    <a class="action" href="/admin/subscriptions">Открыть реестр</a>
+  </div>
+  {% if recent_subscriptions %}
+  <div style="display:grid;gap:14px;margin-top:18px;">
+    {% for subscription in recent_subscriptions %}
+    <a class="surface" href="/admin/subscriptions/{{ subscription.id }}" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;display:block;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong style="font-size:1.05rem;">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</strong>
+          <div class="muted" style="margin-top:8px;">{{ subscription.product.title }}</div>
+        </div>
+        <span class="pill">{{ subscription.status.value }}</span>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+        <span class="pill">{{ subscription.start_at }} -> {{ subscription.end_at }}</span>
+        {% if subscription.payment %}
+        <span class="pill">{{ subscription.payment.status.value }}</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="margin:18px 0 0;">Подписок пока нет.</p>
+  {% endif %}
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
+    <div>
+      <div class="eyebrow">платежи</div>
       <h2 style="margin:10px 0 0;font-size:1.55rem;">Последние заявки на оплату</h2>
     </div>
     <a class="action" href="/admin/payments">Открыть очередь</a>
@@ -168,7 +206,7 @@
         <span class="pill">{{ payment.status.value }}</span>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-        <span class="pill">{{ payment.final_amount_rub }} RUB</span>
+        <span class="pill">{{ payment.final_amount_rub }} руб</span>
         <span class="pill">{{ payment.provider.value }}</span>
         {% if payment.stub_reference %}
         <span class="pill">{{ payment.stub_reference }}</span>

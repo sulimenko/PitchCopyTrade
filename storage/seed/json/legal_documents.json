@@ -7,7 +7,7 @@
     "is_active": true,
     "published_at": "2026-03-11T00:00:00+00:00",
     "source_path": "legal/disclaimer/v1.md",
-    "title": "disclaimer v1",
+    "title": "Предупреждение о рисках",
     "updated_at": "2026-03-11T00:00:00+00:00",
     "version": "v1"
   },
@@ -19,7 +19,7 @@
     "is_active": true,
     "published_at": "2026-03-11T00:00:00+00:00",
     "source_path": "legal/offer/v1.md",
-    "title": "offer v1",
+    "title": "Публичная оферта",
     "updated_at": "2026-03-11T00:00:00+00:00",
     "version": "v1"
   },
@@ -31,7 +31,7 @@
     "is_active": true,
     "published_at": "2026-03-11T00:00:00+00:00",
     "source_path": "legal/privacy_policy/v1.md",
-    "title": "privacy_policy v1",
+    "title": "Политика конфиденциальности",
     "updated_at": "2026-03-11T00:00:00+00:00",
     "version": "v1"
   },
@@ -43,7 +43,7 @@
     "is_active": true,
     "published_at": "2026-03-11T00:00:00+00:00",
     "source_path": "legal/payment_consent/v1.md",
-    "title": "payment_consent v1",
+    "title": "Согласие на оплату",
     "updated_at": "2026-03-11T00:00:00+00:00",
     "version": "v1"
   }

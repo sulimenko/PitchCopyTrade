@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Сводка</a>
+  <a class="action ghost" href="/admin/products">Продукты</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/admin/payments">Платежи</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px 28px 22px;">
+  <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+    <div>
+      <div class="eyebrow">promo lifecycle</div>
+      <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.95;letter-spacing:-0.05em;">Промокоды и скидки</h1>
+      <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+        Управление скидками для checkout и Mini App. Здесь админ контролирует коды, лимиты использований и срок действия.
+      </p>
+    </div>
+    <a class="action" href="/admin/promos/new">Создать промокод</a>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">active</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.active }}</div>
+    <div class="muted" style="margin-top:8px;">доступны для checkout</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">inactive</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.inactive }}</div>
+    <div class="muted" style="margin-top:8px;">выключены вручную</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">redemptions</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.redeemed }}</div>
+    <div class="muted" style="margin-top:8px;">подтвержденных использований</div>
+  </article>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div class="eyebrow">promo registry</div>
+  <h2 style="margin:10px 0 0;font-size:1.5rem;">Реестр кодов</h2>
+  {% if promo_codes %}
+  <div style="display:grid;gap:14px;margin-top:18px;">
+    {% for promo_code in promo_codes %}
+    <a class="surface" href="/admin/promos/{{ promo_code.id }}/edit" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;display:block;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong style="font-size:1.05rem;">{{ promo_code.code }}</strong>
+          <div class="muted" style="margin-top:8px;">{{ promo_code.description or "Описание пока не заполнено" }}</div>
+        </div>
+        <span class="pill">{{ "active" if promo_code.is_active else "inactive" }}</span>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+        {% if promo_code.discount_percent is not none %}
+        <span class="pill">{{ promo_code.discount_percent }}%</span>
+        {% endif %}
+        {% if promo_code.discount_amount_rub is not none %}
+        <span class="pill">{{ promo_code.discount_amount_rub }} RUB</span>
+        {% endif %}
+        <span class="pill">{{ promo_code.current_redemptions }} redeemed</span>
+        {% if promo_code.max_redemptions is not none %}
+        <span class="pill">limit {{ promo_code.max_redemptions }}</span>
+        {% endif %}
+        {% if promo_code.expires_at %}
+        <span class="pill">до {{ promo_code.expires_at.strftime("%Y-%m-%d %H:%M") }}</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="margin-top:18px;">Промокоды пока не заведены.</p>
+  {% endif %}
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="repeat(3"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}
