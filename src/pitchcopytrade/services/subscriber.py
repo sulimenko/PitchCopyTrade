@@ -26,6 +26,13 @@ class SubscriberStatusSnapshot:
     visible_recommendation_titles: list[str]
 
 
+@dataclass(slots=True, frozen=True)
+class PaymentHistoryEntry:
+    checked_at: str
+    status: str
+    payment_id: str | None
+
+
 async def get_subscriber_status_snapshot(
     repository: AccessRepository,
     *,
@@ -120,6 +127,50 @@ def billing_period_label(period: BillingPeriod | None) -> str:
     if period is None:
         return "Период не указан"
     return BILLING_PERIOD_LABELS.get(period, period.value)
+
+
+def payment_result_message(payment: Payment) -> str:
+    if payment.status is PaymentStatus.PAID:
+        return "Оплата подтверждена. Доступ к рекомендациям уже активирован или будет активирован в ближайший момент."
+    if payment.status is PaymentStatus.PENDING:
+        return "Платеж еще обрабатывается. Вы можете открыть оплату, обновить статус или дождаться автоматической синхронизации."
+    if payment.status is PaymentStatus.FAILED:
+        return "Платеж завершился ошибкой. Попробуйте снова запустить оплату из этой карточки."
+    if payment.status is PaymentStatus.EXPIRED:
+        return "Срок этой оплаты истек. Можно сразу создать новую попытку оплаты."
+    if payment.status is PaymentStatus.CANCELLED:
+        return "Эта заявка отменена. При необходимости создайте новую попытку оплаты."
+    if payment.status is PaymentStatus.REFUNDED:
+        return "По этой оплате оформлен возврат."
+    return "Статус оплаты обновлен."
+
+
+def payment_history(payment: Payment) -> list[PaymentHistoryEntry]:
+    payload = payment.provider_payload or {}
+    history = payload.get("state_history", [])
+    items: list[PaymentHistoryEntry] = []
+    for entry in reversed(history):
+        if not isinstance(entry, dict):
+            continue
+        items.append(
+            PaymentHistoryEntry(
+                checked_at=str(entry.get("checked_at") or "не указано"),
+                status=str(entry.get("status") or "unknown"),
+                payment_id=str(entry.get("payment_id")) if entry.get("payment_id") is not None else None,
+            )
+        )
+    return items
+
+
+def subscription_renewal_history(snapshot: SubscriberStatusSnapshot, subscription: Subscription) -> list[Subscription]:
+    product_id = subscription.product_id
+    if product_id is None:
+        return []
+    return [
+        item
+        for item in snapshot.subscriptions
+        if item.product_id == product_id and item.id != subscription.id
+    ]
 
 
 async def cancel_pending_payment(

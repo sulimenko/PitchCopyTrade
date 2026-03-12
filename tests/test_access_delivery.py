@@ -112,7 +112,16 @@ def _make_user() -> User:
         currency="RUB",
         external_id="tb-1",
         stub_reference="TB-1",
-        provider_payload={"payment_url": "https://pay.example/tb-1"},
+        provider_payload={
+            "payment_url": "https://pay.example/tb-1",
+            "state_history": [
+                {
+                    "checked_at": "2026-03-12T10:00:00+00:00",
+                    "status": "FORM_SHOWED",
+                    "payment_id": "tb-1",
+                }
+            ],
+        },
     )
     subscription = Subscription(
         id="subscription-1",
@@ -357,6 +366,8 @@ def test_app_payment_detail_renders_actions(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Открыть оплату" in response.text
         assert "Отменить заявку" in response.text
+        assert "Платеж еще обрабатывается" in response.text
+        assert "FORM_SHOWED" in response.text
 
 
 def test_app_subscription_detail_renders_autorenew_toggle(monkeypatch) -> None:
@@ -381,6 +392,8 @@ def test_app_subscription_detail_renders_autorenew_toggle(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert "Выключить автопродление" in response.text
+        assert "История продлений" in response.text
+        assert "Это первая подписка по данному продукту." in response.text
 
 
 def test_app_payment_cancel_updates_status(monkeypatch) -> None:

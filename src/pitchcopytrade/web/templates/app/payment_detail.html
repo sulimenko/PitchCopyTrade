@@ -22,6 +22,10 @@
     <div><strong>Срок оплаты:</strong> <span class="muted">{{ payment.expires_at or "не указан" }}</span></div>
   </div>
 
+  <div style="margin-top:18px;padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:18px;background:rgba(255,255,255,0.55);line-height:1.65;">
+    {{ payment_result_message }}
+  </div>
+
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;">
     {% if payment.provider_payload and payment.provider_payload.get("payment_url") and payment.status.value == "pending" %}
     <a class="action" href="{{ payment.provider_payload.get('payment_url') }}">Открыть оплату</a>
@@ -40,6 +44,23 @@
     </form>
     {% endif %}
     <a class="action ghost" href="/app/payments">Назад к оплатам</a>
+  </div>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <strong>История статусов оплаты</strong>
+  <div style="display:grid;gap:12px;margin-top:16px;">
+    {% for entry in payment_history %}
+    <article style="padding:14px 16px;border:1px solid rgba(20,56,166,0.12);border-radius:18px;background:rgba(255,255,255,0.55);">
+      <strong>{{ entry.status }}</strong>
+      <div class="muted" style="margin-top:6px;">{{ entry.checked_at }}</div>
+      {% if entry.payment_id %}
+      <div class="muted" style="margin-top:4px;">Provider payment id: {{ entry.payment_id }}</div>
+      {% endif %}
+    </article>
+    {% else %}
+    <div class="muted">История статусов пока пуста.</div>
+    {% endfor %}
   </div>
 </section>
 {% endblock %}

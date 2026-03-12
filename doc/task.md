@@ -541,7 +541,22 @@ Acceptance:
 - subscriber can recover an unfinished payment scenario without staff help
 - subscriber can start renewal from the current subscription card
 - recovery flow stays inside Mini App and remains Telegram-linked
-### 45. Release and review discipline `[todo]`
+
+### 45. Mini App payment messaging/history and reminders `[done]`
+Сделано:
+- payment result messaging inside payment detail page
+- provider state history rendering inside payment detail page
+- renewal history rendering inside subscription detail page
+- worker-driven subscriber reminders:
+  - pending payment reminder
+  - expiring subscription reminder
+- reminder dedup through audit events
+
+Acceptance:
+- subscriber sees a clear next step on payment detail page
+- subscriber can inspect payment history and renewal history inside Mini App
+- worker reminders do not repeat endlessly on each tick for the same payment/subscription
+### 46. Release and review discipline `[todo]`
 - clean runtime checklist
 - technical review checklist
 - product smoke checklist
@@ -552,7 +567,7 @@ Acceptance:
 
 ## 9. Что делать дальше до business-complete state
 
-### 46. HTTPS enablement `[done]`
+### 47. HTTPS enablement `[done]`
 - certificate issued for `pct.test.ptfin.ru`
 - deployed `BASE_URL` switched to `https`
 - Telegram WebApp prerequisites validated on deployed host
@@ -561,7 +576,7 @@ Acceptance:
 - deployed host serves app over `https`
 - bot can safely expose `Mini App` button
 
-### 47. Real SBP payments `[partial]`
+### 48. Real SBP payments `[partial]`
 Сделано:
 - provider-aware checkout service
 - `T-Bank` SBP adapter foundation
@@ -584,7 +599,7 @@ Acceptance:
 - user can pay in RUB via real SBP flow
 - payment confirmation does not rely only on manual admin action
 
-### 48. Admin subscription registry `[done]`
+### 49. Admin subscription registry `[done]`
 - full list of subscriptions
 - start/end dates
 - payment status
@@ -594,7 +609,7 @@ Acceptance:
 Acceptance:
 - admin can answer who is subscribed to what and until when
 
-### 49. Author publish UX hardening `[done]`
+### 50. Author publish UX hardening `[done]`
 - better multi-leg recommendation editor
 - attachment replace/delete flow
 - clearer draft/review/publish path
@@ -602,7 +617,7 @@ Acceptance:
 Acceptance:
 - author can publish complex recommendation sets without manual operator help
 
-### 50. Legal and compliance operations `[done]`
+### 51. Legal and compliance operations `[done]`
 - legal docs admin UI
 - version activation
 - consent visibility in admin surfaces
@@ -610,7 +625,7 @@ Acceptance:
 Acceptance:
 - legal lifecycle no longer requires manual file edits in runtime operations
 
-### 51. Delivery operations `[done]`
+### 52. Delivery operations `[done]`
 - notification queue
 - retry / dedup visibility
 - delivery audit visibility for support

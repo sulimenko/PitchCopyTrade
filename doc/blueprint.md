@@ -118,6 +118,10 @@ Canonical subscriber model остается:
   - payment status refresh for provider-driven pending payments
   - payment retry for terminal failed/expired/cancelled states
   - subscription renewal flow that creates a new Telegram-linked checkout
+  - payment result messaging
+  - payment state history rendering
+  - renewal history rendering
+  - worker-driven reminders for expiring subscriptions and pending payments
 - provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
 - worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
 - `T-Bank` callback endpoint for provider-driven payment updates

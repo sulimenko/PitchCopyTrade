@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from pitchcopytrade.worker.jobs.placeholders import WORKER_JOBS, WorkerJob, run_payment_expiry_sync, run_scheduled_publish
+from pitchcopytrade.worker.jobs.placeholders import (
+    WORKER_JOBS,
+    WorkerJob,
+    run_payment_expiry_sync,
+    run_reminder_jobs,
+    run_scheduled_publish,
+)
 from pitchcopytrade.worker.runner import DEFAULT_WORKER_SLEEP_SECONDS, get_worker_jobs, run_worker_loop, run_worker_once
 
 
@@ -110,6 +116,34 @@ async def test_run_payment_expiry_sync_uses_tbank_sync(monkeypatch: pytest.Monke
     await run_payment_expiry_sync()
 
     sync_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_reminder_jobs_uses_delivery_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    reminder_mock = AsyncMock(return_value=type("Stats", (), {"sent": 2, "skipped": 1})())
+    fake_bot = AsyncMock()
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.AsyncSessionLocal", None)
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.create_bot", lambda _token: fake_bot)
+    monkeypatch.setattr(
+        "pitchcopytrade.worker.jobs.placeholders.get_settings",
+        lambda: type(
+            "Settings",
+            (),
+            {
+                "telegram": type(
+                    "Telegram",
+                    (),
+                    {"bot_token": type("Secret", (), {"get_secret_value": lambda self: "token"})()},
+                )(),
+            },
+        )(),
+    )
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.deliver_subscriber_reminders", reminder_mock)
+
+    await run_reminder_jobs()
+
+    reminder_mock.assert_awaited_once()
+    fake_bot.session.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio

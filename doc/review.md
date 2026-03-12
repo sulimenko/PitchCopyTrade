@@ -100,6 +100,9 @@
 - если заявлен payment refresh, не ходит ли он во внешний provider для неподходящих статусов и не ломает ли локальный payment state;
 - если заявлен payment retry, создает ли он новый checkout только для terminal payment states и ведет ли пользователя в новую payment card;
 - если заявлен subscription renewal, создает ли он новый Telegram-linked payment flow вместо ручного staff-only продления;
+- если заявлен payment result messaging, соответствует ли текст реальному состоянию оплаты;
+- если рендерится payment history, не смешивает ли она чужие state transitions и provider ids;
+- если worker шлет subscriber reminders, есть ли dedup и не повторяется ли одно и то же напоминание на каждом тике;
 - если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
 - если заявлен единый Mini App workspace, не осталось ли внутри legacy routes, compatibility query params или старых bot commands;
 - если Telegram checkout заявлен как interactive, идет ли он через Mini App sections и не тянет ли обратно legacy bot commands;

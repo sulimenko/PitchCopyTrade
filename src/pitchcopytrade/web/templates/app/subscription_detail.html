@@ -42,4 +42,18 @@
   </form>
   {% endif %}
 </section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <strong>История продлений</strong>
+  <div style="display:grid;gap:12px;margin-top:16px;">
+    {% for item in renewal_history %}
+    <article style="padding:14px 16px;border:1px solid rgba(20,56,166,0.12);border-radius:18px;background:rgba(255,255,255,0.55);">
+      <strong>{{ subscription_status_label(item.status) }}</strong>
+      <div class="muted" style="margin-top:6px;">{{ item.start_at or "не указано" }} → {{ item.end_at or "не указано" }}</div>
+    </article>
+    {% else %}
+    <div class="muted">Это первая подписка по данному продукту.</div>
+    {% endfor %}
+  </div>
+</section>
 {% endblock %}
