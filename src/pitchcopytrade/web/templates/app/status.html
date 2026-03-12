@@ -36,9 +36,28 @@
       <a class="action" href="/app/feed">Открыть ленту</a>
       <a class="action ghost" href="/app/subscriptions">Мои подписки</a>
       <a class="action ghost" href="/app/payments">Мои оплаты</a>
+      <a class="action ghost" href="/app/reminders">Напоминания</a>
+      <a class="action ghost" href="/app/timeline">История</a>
       <a class="action ghost" href="/app/catalog">Открыть каталог</a>
     </div>
   </article>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <strong>Что требует действия сейчас</strong>
+  <div style="display:grid;gap:12px;margin-top:16px;">
+    {% for card in action_cards %}
+    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong>{{ card.title }}</strong>
+          <div class="muted" style="margin-top:8px;line-height:1.6;">{{ card.detail }}</div>
+        </div>
+        <a class="action {% if card.tone == 'neutral' %}ghost{% endif %}" href="{{ card.href }}">{{ card.action_label }}</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
 </section>
 
 <section class="surface" style="padding:24px;margin-top:18px;">

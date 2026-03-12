@@ -969,6 +969,7 @@ def test_payment_detail_renders(monkeypatch) -> None:
         assert "Проверка платежа" in response.text
         assert "Lead User" in response.text
         assert "Momentum RU Monthly" in response.text
+        assert "Ручная скидка" in response.text
 
 
 def test_payment_confirm_redirects_after_activation(monkeypatch) -> None:
@@ -1004,3 +1005,42 @@ def test_payment_confirm_redirects_after_activation(monkeypatch) -> None:
         assert response.headers["location"] == "/admin/payments/payment-1"
         assert called["payment"] is payment
         assert payment.status == PaymentStatus.PAID
+
+
+def test_payment_manual_discount_redirects(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    strategy = _make_strategy("strategy-1", author, "Momentum RU")
+    product = _make_product("product-1", strategy)
+    payment = _make_payment("payment-1", product)
+    session.users_by_id[admin.id] = admin
+
+    called: dict[str, Any] = {}
+
+    async def fake_apply(_session, current_payment, *, discount_rub: int):
+        called["payment"] = current_payment
+        called["discount_rub"] = discount_rub
+        current_payment.final_amount_rub = current_payment.amount_rub - discount_rub
+        return current_payment
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.get_admin_payment",
+        lambda _session, _payment_id: _async_return(payment),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.apply_manual_discount_to_payment",
+        fake_apply,
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/payments/payment-1/manual-discount",
+            data={"discount_rub": "99"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/payments/payment-1"
+        assert called["payment"] is payment
+        assert called["discount_rub"] == 99

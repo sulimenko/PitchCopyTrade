@@ -14,6 +14,7 @@ from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, Pro
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.services.admin import (
     ProductFormData,
+    apply_manual_discount_to_payment,
     confirm_payment_and_activate_subscription,
     StrategyFormData,
     create_product,
@@ -945,6 +946,35 @@ async def payment_confirm_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
     try:
         await confirm_payment_and_activate_subscription(session, payment)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "admin/payment_detail.html",
+            {
+                "title": "Проверка платежа",
+                "user": user,
+                "payment": payment,
+                "error": str(exc),
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/payments/{payment.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/payments/{payment_id}/manual-discount", response_class=HTMLResponse)
+async def payment_manual_discount_submit(
+    payment_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    discount_rub: str = Form("0"),
+) -> Response:
+    payment = await get_admin_payment(session, payment_id)
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    try:
+        parsed_discount = int(discount_rub.strip() or "0")
+        await apply_manual_discount_to_payment(session, payment, discount_rub=parsed_discount)
     except ValueError as exc:
         return templates.TemplateResponse(
             request,

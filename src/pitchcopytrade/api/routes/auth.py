@@ -127,6 +127,7 @@ async def telegram_auth_login(
 async def telegram_webapp_auth(
     init_data: str = Form(...),
     next: str = Form("/app/status"),
+    timezone_name: str = Form("Europe/Moscow"),
     repository: PublicRepository = Depends(get_public_repository),
 ) -> Response:
     settings = get_settings()
@@ -147,6 +148,7 @@ async def telegram_webapp_auth(
             username=profile.username,
             first_name=profile.first_name,
             last_name=profile.last_name,
+            timezone_name=timezone_name.strip() or "Europe/Moscow",
         ),
     )
     await repository.commit()

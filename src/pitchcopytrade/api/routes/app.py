@@ -26,7 +26,9 @@ from pitchcopytrade.services.public import (
 from pitchcopytrade.services.subscriber import SubscriberStatusSnapshot, get_subscriber_status_snapshot
 from pitchcopytrade.services.subscriber import (
     billing_period_label,
+    build_action_cards,
     build_subscriber_timeline,
+    cancel_subscription,
     cancel_pending_payment,
     get_notification_preferences,
     list_reminder_center_entries,
@@ -257,6 +259,7 @@ async def app_status(
             "title": "Статус подписки",
             "user": user,
             "snapshot": snapshot,
+            "action_cards": build_action_cards(snapshot),
             "payment_status_label": payment_status_label,
             "subscription_status_label": subscription_status_label,
             **_build_miniapp_context("status", user=user, snapshot=snapshot),
@@ -368,6 +371,7 @@ async def app_subscription_renew(
     auth_repository: AuthRepository = Depends(get_auth_repository),
     access_repository: AccessRepository = Depends(get_access_repository),
     public_repository: PublicRepository = Depends(get_public_repository),
+    promo_code_value: str = Form(""),
 ) -> Response:
     user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
     if isinstance(user, Response):
@@ -376,10 +380,32 @@ async def app_subscription_renew(
         public_repository,
         telegram_user_id=user.telegram_user_id or 0,
         subscription_id=subscription_id,
+        promo_code_value=promo_code_value.strip().upper() or None,
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
     return RedirectResponse(url=f"/app/payments/{result.payment.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/subscriptions/{subscription_id}/cancel")
+async def app_subscription_cancel(
+    subscription_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    subscription = await cancel_subscription(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        subscription_id=subscription_id,
+    )
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    return RedirectResponse(url=f"/app/subscriptions/{subscription_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/help", response_class=HTMLResponse)
@@ -550,6 +576,7 @@ async def app_payment_retry(
     auth_repository: AuthRepository = Depends(get_auth_repository),
     access_repository: AccessRepository = Depends(get_access_repository),
     public_repository: PublicRepository = Depends(get_public_repository),
+    promo_code_value: str = Form(""),
 ) -> Response:
     user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
     if isinstance(user, Response):
@@ -558,6 +585,7 @@ async def app_payment_retry(
         public_repository,
         telegram_user_id=user.telegram_user_id or 0,
         payment_id=payment_id,
+        promo_code_value=promo_code_value.strip().upper() or None,
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")

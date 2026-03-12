@@ -21,6 +21,8 @@
     <div><strong>Окончание:</strong> <span class="muted">{{ subscription.end_at or "не указано" }}</span></div>
     <div><strong>Пробный период:</strong> <span class="muted">{{ "да" if subscription.is_trial else "нет" }}</span></div>
     <div><strong>Автопродление:</strong> <span class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</span></div>
+    <div><strong>Промокод:</strong> <span class="muted">{{ subscription.applied_promo_code.code if subscription.applied_promo_code else "не применялся" }}</span></div>
+    <div><strong>Ручная скидка:</strong> <span class="muted">{{ subscription.manual_discount_rub }} руб</span></div>
   </div>
 
   {% if subscription.status.value not in ["cancelled", "blocked"] %}
@@ -36,9 +38,15 @@
   {% endif %}
 
   {% if subscription.product %}
-  <form method="post" action="/app/subscriptions/{{ subscription.id }}/renew" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
+  <form method="post" action="/app/subscriptions/{{ subscription.id }}/renew" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+    <input type="text" name="promo_code_value" placeholder="Новый промокод" style="padding:10px 12px;border-radius:999px;border:1px solid var(--line);font:inherit;width:180px;" />
     <button class="action" type="submit">Продлить подписку</button>
     <a class="action ghost" href="/app/subscriptions">Назад к подпискам</a>
+  </form>
+  {% endif %}
+  {% if subscription.status.value in ["active", "trial", "pending"] %}
+  <form method="post" action="/app/subscriptions/{{ subscription.id }}/cancel" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
+    <button class="action ghost" type="submit">Отменить подписку</button>
   </form>
   {% endif %}
 </section>

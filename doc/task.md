@@ -390,17 +390,20 @@ Acceptance:
 - version publish UI
 - active version management
 
-### 33. Promo/discount lifecycle `[partial]`
+### 33. Promo/discount lifecycle `[done baseline]`
 Сделано:
 - admin promo registry
 - promo create/edit UI
 - checkout promo apply path
 - payment-linked redemption counters
-
-Сделать:
 - manual discounts
-- richer Telegram promo UX
+- richer Telegram promo UX inside retry/renew flows
 - expiry/cancel flows
+
+Acceptance:
+- admin can apply a manual discount before confirming a mutable payment
+- subscriber can reuse or replace a promo code inside Mini App retry/renew flows
+- expired payments and subscriptions transition without manual DB edits
 
 ### 34. Delivery admin UX `[done]`
 - notification queue
@@ -567,7 +570,22 @@ Acceptance:
 - subscriber can review reminder history inside Mini App
 - subscriber can enable/disable reminder categories without staff help
 - Mini App exposes a unified event timeline for payments and subscriptions
-### 47. Release and review discipline `[todo]`
+### 47. Full WebApp auth bridge and richer Mini App actions `[done]`
+Сделано:
+- полный WebApp auth bridge для всех Mini App страниц
+- action cards на статус-экране
+- inline действия в списках оплат и подписок
+- промокод в retry/renew flows
+- отмена подписки из subscriber card
+- staff-side manual discount для `pending` `stub_manual` платежей
+- worker expiry/cancel lifecycle для платежей и подписок
+
+Acceptance:
+- subscriber can open any Mini App page and stay inside Telegram-backed auth contour
+- subscriber can restore failed payment flow, renew access and stop a subscription without leaving Mini App
+- mutable payment discounts do not require direct DB edits
+- due payment/subscription lifecycle changes happen automatically in worker
+### 48. Release and review discipline `[todo]`
 - clean runtime checklist
 - technical review checklist
 - product smoke checklist
@@ -578,7 +596,7 @@ Acceptance:
 
 ## 9. Что делать дальше до business-complete state
 
-### 48. HTTPS enablement `[done]`
+### 49. HTTPS enablement `[done]`
 - certificate issued for `pct.test.ptfin.ru`
 - deployed `BASE_URL` switched to `https`
 - Telegram WebApp prerequisites validated on deployed host
@@ -587,7 +605,7 @@ Acceptance:
 - deployed host serves app over `https`
 - bot can safely expose `Mini App` button
 
-### 49. Real SBP payments `[partial]`
+### 50. Real SBP payments `[partial]`
 Сделано:
 - provider-aware checkout service
 - `T-Bank` SBP adapter foundation
@@ -610,7 +628,7 @@ Acceptance:
 - user can pay in RUB via real SBP flow
 - payment confirmation does not rely only on manual admin action
 
-### 50. Admin subscription registry `[done]`
+### 51. Admin subscription registry `[done]`
 - full list of subscriptions
 - start/end dates
 - payment status
@@ -620,7 +638,7 @@ Acceptance:
 Acceptance:
 - admin can answer who is subscribed to what and until when
 
-### 51. Author publish UX hardening `[done]`
+### 52. Author publish UX hardening `[done]`
 - better multi-leg recommendation editor
 - attachment replace/delete flow
 - clearer draft/review/publish path
@@ -628,7 +646,7 @@ Acceptance:
 Acceptance:
 - author can publish complex recommendation sets without manual operator help
 
-### 52. Legal and compliance operations `[done]`
+### 53. Legal and compliance operations `[done]`
 - legal docs admin UI
 - version activation
 - consent visibility in admin surfaces
@@ -636,7 +654,7 @@ Acceptance:
 Acceptance:
 - legal lifecycle no longer requires manual file edits in runtime operations
 
-### 53. Delivery operations `[done]`
+### 54. Delivery operations `[done]`
 - notification queue
 - retry / dedup visibility
 - delivery audit visibility for support

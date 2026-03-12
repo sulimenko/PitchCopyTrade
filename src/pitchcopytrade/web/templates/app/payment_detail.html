@@ -18,6 +18,8 @@
     <div><strong>Статус:</strong> <span class="muted">{{ payment_status_label(payment.status) }}</span></div>
     <div><strong>Провайдер:</strong> <span class="muted">{{ payment.provider.value }}</span></div>
     <div><strong>Сумма:</strong> <span class="muted">{{ payment.final_amount_rub }} руб</span></div>
+    <div><strong>Промо-скидка:</strong> <span class="muted">{{ payment.discount_rub }} руб</span></div>
+    <div><strong>Ручная скидка:</strong> <span class="muted">{{ payment.provider_payload.get("manual_discount_rub", 0) if payment.provider_payload else 0 }} руб</span></div>
     <div><strong>Идентификатор:</strong> <span class="muted">{{ payment.stub_reference or payment.external_id or payment.id }}</span></div>
     <div><strong>Срок оплаты:</strong> <span class="muted">{{ payment.expires_at or "не указан" }}</span></div>
   </div>
@@ -39,7 +41,8 @@
     </form>
     {% endif %}
     {% if payment.status.value in ["failed", "expired", "cancelled"] %}
-    <form method="post" action="/app/payments/{{ payment.id }}/retry">
+    <form method="post" action="/app/payments/{{ payment.id }}/retry" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="text" name="promo_code_value" placeholder="Новый промокод" style="padding:10px 12px;border-radius:999px;border:1px solid var(--line);font:inherit;width:170px;" />
       <button class="action" type="submit">Повторить оплату</button>
     </form>
     {% endif %}

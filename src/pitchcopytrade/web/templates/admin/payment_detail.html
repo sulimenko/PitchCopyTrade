@@ -41,6 +41,8 @@
       <div><strong>Email:</strong> <span class="muted">{{ payment.user.email or "не задан" }}</span></div>
       <div><strong>Продукт:</strong> <span class="muted">{{ payment.product.title }}</span></div>
       <div><strong>Сумма:</strong> <span class="muted">{{ payment.final_amount_rub }} RUB</span></div>
+      <div><strong>Промо-скидка:</strong> <span class="muted">{{ payment.discount_rub }} RUB</span></div>
+      <div><strong>Ручная скидка:</strong> <span class="muted">{{ payment.provider_payload.get("manual_discount_rub", 0) if payment.provider_payload else 0 }} RUB</span></div>
       <div><strong>Reference:</strong> <span class="muted">{{ payment.stub_reference or "нет" }}</span></div>
       <div><strong>Expires at:</strong> <span class="muted">{{ payment.expires_at or "не задан" }}</span></div>
       <div><strong>Confirmed at:</strong> <span class="muted">{{ payment.confirmed_at or "еще не подтвержден" }}</span></div>
@@ -54,6 +56,14 @@
       {% endif %}
       <a class="action ghost" href="/admin/payments">Вернуться к очереди</a>
     </div>
+
+    {% if payment.status.value == "pending" and payment.provider.value != "tbank" %}
+    <form method="post" action="/admin/payments/{{ payment.id }}/manual-discount" style="display:grid;gap:12px;margin-top:22px;max-width:320px;">
+      <strong>Ручная скидка</strong>
+      <input type="number" min="0" name="discount_rub" value="{{ payment.provider_payload.get('manual_discount_rub', 0) if payment.provider_payload else 0 }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+      <button class="action ghost" type="submit">Применить скидку</button>
+    </form>
+    {% endif %}
   </article>
 
   <aside class="surface" style="padding:24px;">

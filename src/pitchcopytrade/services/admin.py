@@ -518,6 +518,48 @@ async def confirm_payment_and_activate_subscription(
     return payment, payment.subscriptions
 
 
+async def apply_manual_discount_to_payment(
+    session: AsyncSession | None,
+    payment: Payment,
+    *,
+    discount_rub: int,
+) -> Payment:
+    if payment.status is not PaymentStatus.PENDING:
+        raise ValueError("Ручную скидку можно применять только к payment в статусе pending")
+    if payment.provider.value == "tbank":
+        raise ValueError("Для T-Bank ручную скидку меняйте до создания checkout, а не на готовом платеже")
+    if discount_rub < 0:
+        raise ValueError("Скидка не может быть отрицательной")
+
+    max_discount = max(0, payment.amount_rub - payment.discount_rub)
+    if discount_rub > max_discount:
+        raise ValueError("Ручная скидка превышает допустимый остаток суммы")
+
+    if session is None:
+        graph, store = _file_admin_graph()
+        payment = graph.payments.get(payment.id)
+        if payment is None:
+            raise ValueError("Payment not found")
+        for subscription in payment.subscriptions:
+            subscription.manual_discount_rub = discount_rub
+        payload = dict(payment.provider_payload or {})
+        payload["manual_discount_rub"] = discount_rub
+        payment.provider_payload = payload
+        payment.final_amount_rub = max(0, payment.amount_rub - payment.discount_rub - discount_rub)
+        graph.save(store)
+        return payment
+
+    for subscription in payment.subscriptions:
+        subscription.manual_discount_rub = discount_rub
+    payload = dict(payment.provider_payload or {})
+    payload["manual_discount_rub"] = discount_rub
+    payment.provider_payload = payload
+    payment.final_amount_rub = max(0, payment.amount_rub - payment.discount_rub - discount_rub)
+    await session.commit()
+    await session.refresh(payment)
+    return payment
+
+
 async def _count_query(session: AsyncSession, query: Any) -> int:
     result = await session.execute(query)
     return int(result.scalar_one() or 0)

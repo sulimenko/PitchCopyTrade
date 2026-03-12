@@ -55,6 +55,15 @@ class TimelineEntry:
     category: str
 
 
+@dataclass(slots=True, frozen=True)
+class ActionCard:
+    title: str
+    detail: str
+    href: str
+    action_label: str
+    tone: str
+
+
 async def get_subscriber_status_snapshot(
     repository: AccessRepository,
     *,
@@ -279,6 +288,49 @@ def build_subscriber_timeline(snapshot: SubscriberStatusSnapshot) -> list[Timeli
     return items
 
 
+def build_action_cards(snapshot: SubscriberStatusSnapshot) -> list[ActionCard]:
+    cards: list[ActionCard] = []
+    for payment in snapshot.pending_payments[:2]:
+        cards.append(
+            ActionCard(
+                title=f"Завершите оплату: {payment.product.title if payment.product else 'Подписка'}",
+                detail=f"{payment.final_amount_rub} руб · {payment_status_label(payment.status)}",
+                href=f"/app/payments/{payment.id}",
+                action_label="Открыть оплату",
+                tone="warning",
+            )
+        )
+    expiring = sorted(
+        [
+            item
+            for item in snapshot.active_subscriptions
+            if item.end_at is not None
+        ],
+        key=lambda item: item.end_at,
+    )
+    for subscription in expiring[:2]:
+        cards.append(
+            ActionCard(
+                title=f"Продлите доступ: {subscription.product.title if subscription.product else 'Подписка'}",
+                detail=f"Окончание: {subscription.end_at}",
+                href=f"/app/subscriptions/{subscription.id}",
+                action_label="Открыть подписку",
+                tone="info",
+            )
+        )
+    if not cards:
+        cards.append(
+            ActionCard(
+                title="Mini App готов к работе",
+                detail="Каталог, оплаты, подписки и лента доступны в одном контуре без отдельного входа.",
+                href="/app/catalog",
+                action_label="Открыть каталог",
+                tone="neutral",
+            )
+        )
+    return cards
+
+
 def _reminder_entry_from_event(event: AuditEvent) -> ReminderEntry:
     payload = event.payload or {}
     kind = str(payload.get("kind") or "reminder")
@@ -360,6 +412,7 @@ async def retry_payment_checkout(
     *,
     telegram_user_id: int,
     payment_id: str,
+    promo_code_value: str | None = None,
 ):
     payment = await repository.get_user_payment(telegram_user_id=telegram_user_id, payment_id=payment_id)
     user = await repository.get_user_by_telegram_id(telegram_user_id)
@@ -375,7 +428,7 @@ async def retry_payment_checkout(
         product=payment.product,
         profile=_build_profile_from_user(user),
         accepted_document_ids=accepted_document_ids,
-        promo_code_value=payment.promo_code.code if payment.promo_code is not None else None,
+        promo_code_value=promo_code_value or (payment.promo_code.code if payment.promo_code is not None else None),
     )
 
 
@@ -384,6 +437,7 @@ async def renew_subscription_checkout(
     *,
     telegram_user_id: int,
     subscription_id: str,
+    promo_code_value: str | None = None,
 ):
     subscription = await repository.get_user_subscription(
         telegram_user_id=telegram_user_id,
@@ -402,8 +456,35 @@ async def renew_subscription_checkout(
         product=subscription.product,
         profile=_build_profile_from_user(user),
         accepted_document_ids=accepted_document_ids,
-        promo_code_value=subscription.applied_promo_code.code if subscription.applied_promo_code is not None else None,
+        promo_code_value=promo_code_value
+        or (subscription.applied_promo_code.code if subscription.applied_promo_code is not None else None),
     )
+
+
+async def cancel_subscription(
+    repository: PublicRepository,
+    *,
+    telegram_user_id: int,
+    subscription_id: str,
+    now: datetime | None = None,
+) -> Subscription | None:
+    subscription = await repository.get_user_subscription(
+        telegram_user_id=telegram_user_id,
+        subscription_id=subscription_id,
+    )
+    if subscription is None or subscription.status in {SubscriptionStatus.CANCELLED, SubscriptionStatus.BLOCKED}:
+        return None
+    timestamp = now or datetime.now(timezone.utc)
+    subscription.status = SubscriptionStatus.CANCELLED
+    subscription.autorenew_enabled = False
+    if subscription.end_at is None or subscription.end_at > timestamp:
+        subscription.end_at = timestamp
+    payment = subscription.payment
+    if payment is not None and payment.status is PaymentStatus.PENDING:
+        payment.status = PaymentStatus.CANCELLED
+    await repository.commit()
+    await repository.refresh(subscription)
+    return subscription
 
 
 def _build_profile_from_user(user: User):
