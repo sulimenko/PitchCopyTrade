@@ -16,7 +16,7 @@ from pitchcopytrade.db.models.catalog import (
     Strategy,
     SubscriptionProduct,
 )
-from pitchcopytrade.db.models.commerce import LegalDocument, Payment, Subscription, UserConsent
+from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
@@ -80,6 +80,7 @@ class FileDatasetGraph:
     bundles: dict[str, Bundle]
     bundle_members: list[BundleMember]
     products: dict[str, SubscriptionProduct]
+    promo_codes: dict[str, PromoCode]
     legal_documents: dict[str, LegalDocument]
     payments: dict[str, Payment]
     subscriptions: dict[str, Subscription]
@@ -119,6 +120,9 @@ class FileDatasetGraph:
             )
             for item in raw["lead_sources"]
         }
+        for lead_source in lead_sources.values():
+            lead_source.users = []
+            lead_source.subscriptions = []
 
         users = {
             item["id"]: User(
@@ -146,6 +150,8 @@ class FileDatasetGraph:
             user.moderated_recommendations = []
             user.audit_events = []
             user.lead_source = lead_sources.get(user.lead_source_id)
+            if user.lead_source is not None and user not in user.lead_source.users:
+                user.lead_source.users.append(user)
 
         authors = {
             item["id"]: AuthorProfile(
@@ -275,6 +281,26 @@ class FileDatasetGraph:
             product.payments = []
             product.subscriptions = []
 
+        promo_codes = {
+            item["id"]: PromoCode(
+                id=item["id"],
+                code=item["code"],
+                description=item.get("description"),
+                discount_percent=item.get("discount_percent"),
+                discount_amount_rub=item.get("discount_amount_rub"),
+                max_redemptions=item.get("max_redemptions"),
+                current_redemptions=item.get("current_redemptions", 0),
+                expires_at=_parse_datetime(item.get("expires_at")),
+                is_active=item.get("is_active", True),
+                created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
+                updated_at=_parse_datetime(item.get("updated_at")) or _utc_now(),
+            )
+            for item in raw["promo_codes"]
+        }
+        for promo in promo_codes.values():
+            promo.payments = []
+            promo.subscriptions = []
+
         legal_documents = {
             item["id"]: LegalDocument(
                 id=item["id"],
@@ -318,10 +344,13 @@ class FileDatasetGraph:
         for payment in payments.values():
             payment.user = users[payment.user_id]
             payment.product = products[payment.product_id]
+            payment.promo_code = promo_codes.get(payment.promo_code_id)
             if payment not in payment.user.payments:
                 payment.user.payments.append(payment)
             if payment not in payment.product.payments:
                 payment.product.payments.append(payment)
+            if payment.promo_code is not None and payment not in payment.promo_code.payments:
+                payment.promo_code.payments.append(payment)
             payment.subscriptions = []
             payment.consents = []
 
@@ -349,7 +378,7 @@ class FileDatasetGraph:
             subscription.product = products[subscription.product_id]
             subscription.payment = payments.get(subscription.payment_id)
             subscription.lead_source = lead_sources.get(subscription.lead_source_id)
-            subscription.applied_promo_code = None
+            subscription.applied_promo_code = promo_codes.get(subscription.applied_promo_code_id)
             if subscription not in subscription.user.subscriptions:
                 subscription.user.subscriptions.append(subscription)
             if subscription not in subscription.product.subscriptions:
@@ -357,6 +386,10 @@ class FileDatasetGraph:
             if subscription.payment is not None:
                 if subscription not in subscription.payment.subscriptions:
                     subscription.payment.subscriptions.append(subscription)
+            if subscription.lead_source is not None and subscription not in subscription.lead_source.subscriptions:
+                subscription.lead_source.subscriptions.append(subscription)
+            if subscription.applied_promo_code is not None and subscription not in subscription.applied_promo_code.subscriptions:
+                subscription.applied_promo_code.subscriptions.append(subscription)
 
         user_consents = {
             item["id"]: UserConsent(
@@ -502,6 +535,7 @@ class FileDatasetGraph:
             bundles=bundles,
             bundle_members=bundle_members,
             products=products,
+            promo_codes=promo_codes,
             legal_documents=legal_documents,
             payments=payments,
             subscriptions=subscriptions,
@@ -523,12 +557,18 @@ class FileDatasetGraph:
 
         if isinstance(entity, User):
             self.users[entity.id] = entity
+        elif isinstance(entity, LeadSource):
+            self.lead_sources[entity.id] = entity
         elif isinstance(entity, AuthorProfile):
             self.authors[entity.id] = entity
         elif isinstance(entity, Strategy):
             self.strategies[entity.id] = entity
         elif isinstance(entity, SubscriptionProduct):
             self.products[entity.id] = entity
+        elif isinstance(entity, PromoCode):
+            entity.payments = list(getattr(entity, "payments", []) or [])
+            entity.subscriptions = list(getattr(entity, "subscriptions", []) or [])
+            self.promo_codes[entity.id] = entity
         elif isinstance(entity, LegalDocument):
             self.legal_documents[entity.id] = entity
         elif isinstance(entity, Payment):
@@ -603,6 +643,7 @@ class FileDatasetGraph:
                 "bundles": [self._bundle_record(item) for item in self.bundles.values()],
                 "bundle_members": [self._bundle_member_record(item) for item in self.bundle_members],
                 "products": [self._product_record(item) for item in self.products.values()],
+                "promo_codes": [self._promo_code_record(item) for item in self.promo_codes.values()],
                 "legal_documents": [self._legal_document_record(item) for item in self.legal_documents.values()],
                 "payments": [self._payment_record(item) for item in self.payments.values()],
                 "subscriptions": [self._subscription_record(item) for item in self.subscriptions.values()],
@@ -666,7 +707,9 @@ class FileDatasetGraph:
             "password_hash": entity.password_hash,
             "status": entity.status.value,
             "timezone": entity.timezone,
-            "lead_source_id": entity.lead_source_id,
+            "lead_source_id": entity.lead_source_id or (
+                entity.lead_source.id if getattr(entity, "lead_source", None) is not None else None
+            ),
             "role_ids": [role.id for role in entity.roles],
         }
 
@@ -754,11 +797,25 @@ class FileDatasetGraph:
             "published_at": _serialize_datetime(entity.published_at),
         }
 
+    def _promo_code_record(self, entity: PromoCode) -> dict[str, Any]:
+        return self._base_record(entity) | {
+            "code": entity.code,
+            "description": entity.description,
+            "discount_percent": entity.discount_percent,
+            "discount_amount_rub": entity.discount_amount_rub,
+            "max_redemptions": entity.max_redemptions,
+            "current_redemptions": entity.current_redemptions,
+            "expires_at": _serialize_datetime(entity.expires_at),
+            "is_active": entity.is_active,
+        }
+
     def _payment_record(self, entity: Payment) -> dict[str, Any]:
         return self._base_record(entity) | {
             "user_id": entity.user_id or (entity.user.id if getattr(entity, "user", None) is not None else None),
             "product_id": entity.product_id or (entity.product.id if getattr(entity, "product", None) is not None else None),
-            "promo_code_id": entity.promo_code_id,
+            "promo_code_id": entity.promo_code_id or (
+                entity.promo_code.id if getattr(entity, "promo_code", None) is not None else None
+            ),
             "provider": entity.provider.value,
             "status": entity.status.value,
             "amount_rub": entity.amount_rub,
@@ -780,7 +837,9 @@ class FileDatasetGraph:
             "lead_source_id": entity.lead_source_id or (
                 entity.lead_source.id if getattr(entity, "lead_source", None) is not None else None
             ),
-            "applied_promo_code_id": entity.applied_promo_code_id,
+            "applied_promo_code_id": entity.applied_promo_code_id or (
+                entity.applied_promo_code.id if getattr(entity, "applied_promo_code", None) is not None else None
+            ),
             "status": entity.status.value,
             "autorenew_enabled": entity.autorenew_enabled,
             "is_trial": entity.is_trial,

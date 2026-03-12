@@ -14,7 +14,7 @@ from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, RiskLevel, RoleSlug, StrategyStatus
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.repositories.file_store import FileDataStore
-from pitchcopytrade.services.moderation import approve_recommendation
+from pitchcopytrade.services.moderation import approve_recommendation, build_moderation_detail_metrics
 
 
 class FakeAsyncSession:
@@ -109,6 +109,26 @@ def test_moderation_queue_renders(monkeypatch) -> None:
         assert "Покупка SBER" in response.text
 
 
+def test_moderation_queue_accepts_filters(monkeypatch) -> None:
+    user = _make_moderator_user()
+    recommendation = _make_recommendation()
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.moderation.list_moderation_recommendations",
+        lambda _session, **kwargs: _async_return([recommendation]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.moderation.get_moderation_queue_stats",
+        lambda _session: _async_return(SimpleNamespace(review_count=1, scheduled_count=0, published_count=0)),
+    )
+
+    with _build_client(user) as client:
+        response = client.get("/moderation/queue?q=sber&status_value=review")
+
+        assert response.status_code == 200
+        assert "Применить" in response.text
+        assert "Покупка SBER" in response.text
+
+
 def test_moderation_detail_renders(monkeypatch) -> None:
     user = _make_moderator_user()
     recommendation = _make_recommendation()
@@ -137,6 +157,7 @@ def test_moderation_detail_renders(monkeypatch) -> None:
         assert "Approve" in response.text
         assert "Momentum RU" in response.text
         assert "moderation.approve" in response.text
+        assert "SLA:" in response.text
 
 
 def test_moderation_approve_redirects(monkeypatch) -> None:
@@ -285,6 +306,20 @@ async def test_file_mode_approve_recommendation_updates_seed_runtime(tmp_path) -
 
     assert updated.status == RecommendationStatus.PUBLISHED
     assert updated.moderation_comment == "OK"
+
+
+def test_build_moderation_detail_metrics_detects_overdue() -> None:
+    recommendation = _make_recommendation()
+    recommendation.created_at = datetime(2026, 3, 10, tzinfo=timezone.utc)
+
+    metrics = build_moderation_detail_metrics(
+        recommendation,
+        [],
+        now=datetime(2026, 3, 12, tzinfo=timezone.utc),
+    )
+
+    assert metrics.sla_state == "overdue"
+    assert metrics.resolution_hours is None
 
 
 async def _async_return(value):

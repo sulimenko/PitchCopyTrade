@@ -93,6 +93,13 @@ Process rule:
 - Telegram-auth fallback for `/app/*`
 - ACL delivery in web and bot
 
+### 13.1 Telegram-only subscriber reset `[done]`
+- subscriber bot commands reduced to `/start` and `/help`
+- Mini App became the main client surface for catalog, status, payments and feed
+- subscriber-facing web pages removed `Вход` and legacy `/web` guidance
+- checkout no longer asks client for manual timezone or lead source
+- Mini App context is preserved across catalog, strategy and checkout pages
+
 ### 14. Recommendation lifecycle baseline `[done]`
 - moderation queue
 - moderation history baseline
@@ -104,7 +111,7 @@ Process rule:
 ### 15. Remote storage as primary model `[refactor]`
 Текущее состояние:
 - attachment flow ориентирован на `MinIO`
-- `docker-compose.yml` поднимает `minio`
+- `docker-compose.yml` больше не делает `minio` обязательным runtime service
 - metadata по-прежнему bucket/object oriented
 
 Новая цель:
@@ -357,28 +364,41 @@ Acceptance:
 
 ### 31. Telegram UX depth `[partial]`
 Сделано:
-- command baseline
-- reply keyboard baseline
+- Telegram-only command surface:
+  - `/start`
+  - `/help`
+- reply keyboard reduced to Mini App + help
 - Mini App entry baseline
 - deployed `https` host now allows Telegram `Mini App` button in real bot flow
-- subscriber self-service baseline:
-  - `/status`
-  - `/web`
-  - `/verify`
+- subscriber navigation moved into Mini App sections:
+  - каталог
+  - подписки
+  - оплаты
+  - лента
+  - помощь
 - web fallback now redirects to `/verify/telegram` instead of raw unauthorized response
+- timezone is auto-detected from client/browser
+- lead source attribution is automatic
 
 Не сделано:
 - full WebApp auth bridge
-- richer interactive checkout/status UX
+- richer in-app actions beyond current Mini App pages
 
 ### 32. Legal admin UI `[done]`
 - document CRUD
 - version publish UI
 - active version management
 
-### 33. Promo/discount lifecycle `[todo]`
-- promo UI
+### 33. Promo/discount lifecycle `[partial]`
+Сделано:
+- admin promo registry
+- promo create/edit UI
+- checkout promo apply path
+- payment-linked redemption counters
+
+Сделать:
 - manual discounts
+- richer Telegram promo UX
 - expiry/cancel flows
 
 ### 34. Delivery admin UX `[done]`
@@ -387,14 +407,28 @@ Acceptance:
 - delivery audit visibility
 - metrics still remain as hardening, not as baseline blocker
 
-### 35. Moderation analytics/SLA `[todo]`
-- filters
-- timelines
-- resolution metrics
+### 35. Moderation analytics/SLA `[partial]`
+Сделано:
+- queue filters by query and status
+- overdue review visibility
+- approve/rework/reject counters
+- resolution latency metric on queue and detail
 
-### 36. Lead source analytics `[todo]`
-- normalized attribution
-- reporting
+Сделать:
+- richer timeline slicing
+- moderator workload breakdown
+- export/reporting
+
+### 36. Lead source analytics `[partial]`
+Сделано:
+- normalized lead source attribution on checkout
+- file/db compatible source lookup and creation
+- admin lead source analytics report
+
+Сделать:
+- richer campaign breakdown
+- time-range filtering
+- conversion slices by source
 
 ### 37. Worker hardening `[partial]`
 Сделано:
@@ -432,10 +466,10 @@ Acceptance:
 Acceptance:
 - test version можно поднимать на одной выделенной машине без ручного старта процессов
 
-### 39. Compose cleanup `[todo]`
-- убрать `MinIO-first` dependency from `api` and `worker` in `file` mode
-- separate dev-only compose assumptions from real server path
-- keep PostgreSQL and MinIO as optional profiles, not mandatory runtime blocks
+### 39. Compose cleanup `[done]`
+- `postgres` and `minio` live behind optional compose profiles
+- `api` and `worker` no longer hard depend on MinIO in file mode
+- real server path is separated from dev-only assumptions
 
 Acceptance:
 - file-mode compose path не требует MinIO по умолчанию
@@ -557,7 +591,7 @@ Acceptance:
 
 ### 50. Final persistence hardening `[todo]`
 - finish remaining file-mode parity
-- compose cleanup
+- compose cleanup `[done]`
 - backup/restore workflow for `storage/`
 
 Acceptance:

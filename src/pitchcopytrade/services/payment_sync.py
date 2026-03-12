@@ -13,6 +13,7 @@ from pitchcopytrade.db.models.enums import PaymentProvider, PaymentStatus, Subsc
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.promo import sync_promo_redemption_counter
 
 TBANK_SUCCESS_STATUSES = {"CONFIRMED"}
 TBANK_FAILED_STATUS_MAP: dict[str, PaymentStatus] = {
@@ -76,6 +77,7 @@ async def sync_tbank_pending_payments(
         changed = _apply_tbank_state(payment, state, provider_status=provider_status, timestamp=timestamp)
         if provider_status in TBANK_SUCCESS_STATUSES:
             if changed:
+                await sync_promo_redemption_counter(session, payment.promo_code)
                 _add_sync_audit_event(
                     session,
                     payment=payment,
@@ -120,6 +122,8 @@ async def process_tbank_callback(
         if payment is None:
             return PaymentCallbackResult(found=False, changed=False, payment_status=None)
         changed = _apply_tbank_state(payment, payload, provider_status=provider_status, timestamp=timestamp)
+        if changed and payment.status == PaymentStatus.PAID:
+            await sync_promo_redemption_counter(None, payment.promo_code, store=file_store)
         graph.add(
             _build_sync_audit_event(
                 payment=payment,
@@ -147,6 +151,8 @@ async def process_tbank_callback(
         return PaymentCallbackResult(found=False, changed=False, payment_status=None)
 
     changed = _apply_tbank_state(payment, payload, provider_status=provider_status, timestamp=timestamp)
+    if changed and payment.status == PaymentStatus.PAID:
+        await sync_promo_redemption_counter(session, payment.promo_code)
     _add_sync_audit_event(
         session,
         payment=payment,
@@ -179,6 +185,7 @@ async def _sync_tbank_pending_payments_file(
         changed = _apply_tbank_state(payment, state, provider_status=provider_status, timestamp=now)
         if provider_status in TBANK_SUCCESS_STATUSES:
             if changed:
+                await sync_promo_redemption_counter(None, payment.promo_code, store=store)
                 graph.add(
                     _build_sync_audit_event(
                         payment=payment,

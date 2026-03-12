@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Сводка</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/admin/promos">Промокоды</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px 28px 22px;">
+  <div class="eyebrow">lead analytics</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.95;letter-spacing:-0.05em;">Источники лидов</h1>
+  <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+    Нормализованный срез по рекламным и реферальным источникам: пользователи, подписки, оплаты и выручка.
+  </p>
+</section>
+
+<section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">sources</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.sources }}</div>
+    <div class="muted" style="margin-top:8px;">источников в отчете</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">subscriptions</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.subscriptions }}</div>
+    <div class="muted" style="margin-top:8px;">всего атрибутированных подписок</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">revenue</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.revenue_rub }} RUB</div>
+    <div class="muted" style="margin-top:8px;">paid revenue по источникам</div>
+  </article>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div class="eyebrow">attribution table</div>
+  <h2 style="margin:10px 0 0;font-size:1.5rem;">Сводка по источникам</h2>
+  {% if rows %}
+  <div style="display:grid;gap:14px;margin-top:18px;">
+    {% for row in rows %}
+    <div class="surface" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong style="font-size:1.05rem;">{{ row.source_name }}</strong>
+          <div class="muted" style="margin-top:8px;">type: {{ row.source_type }}</div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <span class="pill">{{ row.users_total }} users</span>
+          <span class="pill">{{ row.subscriptions_total }} subscriptions</span>
+          <span class="pill">{{ row.active_subscriptions }} active</span>
+          <span class="pill">{{ row.paid_payments }} paid</span>
+          <span class="pill">{{ row.revenue_rub }} RUB</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="margin-top:18px;">Данных по источникам пока нет.</p>
+  {% endif %}
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="repeat(3"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

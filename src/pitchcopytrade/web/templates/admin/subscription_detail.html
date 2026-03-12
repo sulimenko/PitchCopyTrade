@@ -2,10 +2,10 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/dashboard">Сводка</a>
   <a class="action ghost" href="/admin/subscriptions">Подписки</a>
   <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Delivery</a>
+  <a class="action ghost" href="/admin/delivery">Доставка</a>
   <a class="action ghost" href="/admin/payments">Платежи</a>
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
@@ -13,7 +13,7 @@
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">subscription detail</div>
+  <div class="eyebrow">карточка подписки</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Карточка подписки</h1>
@@ -39,11 +39,11 @@
     <div style="display:grid;gap:12px;margin-top:16px;">
       <div><strong>Клиент:</strong> <span class="muted">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</span></div>
       <div><strong>Email:</strong> <span class="muted">{{ subscription.user.email or "не задан" }}</span></div>
-      <div><strong>Username:</strong> <span class="muted">{{ subscription.user.username or "не задан" }}</span></div>
+      <div><strong>Логин:</strong> <span class="muted">{{ subscription.user.username or "не задан" }}</span></div>
       <div><strong>Продукт:</strong> <span class="muted">{{ subscription.product.title }}</span></div>
       <div><strong>Период:</strong> <span class="muted">{{ subscription.start_at }} -> {{ subscription.end_at }}</span></div>
       <div><strong>Автопродление:</strong> <span class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</span></div>
-      <div><strong>Lead source:</strong> <span class="muted">{{ subscription.lead_source.name if subscription.lead_source else "не задан" }}</span></div>
+      <div><strong>Источник лида:</strong> <span class="muted">{{ subscription.lead_source.name if subscription.lead_source else "не задан" }}</span></div>
       {% if subscription.payment %}
       <div><strong>Платеж:</strong> <span class="muted"><a href="/admin/payments/{{ subscription.payment.id }}">{{ subscription.payment.id }}</a></span></div>
       {% endif %}
@@ -73,14 +73,14 @@
         <strong>Доступ ко всем стратегиям автора</strong>
         <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.author.display_name }}</div>
         {% elif subscription.product.bundle %}
-        <strong>Доступ к bundle</strong>
+        <strong>Доступ к пакету</strong>
         <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.bundle.title }}</div>
         {% endif %}
       </div>
       {% if subscription.payment %}
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Финансовая связка</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.payment.final_amount_rub }} RUB / {{ subscription.payment.provider.value }}</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.payment.final_amount_rub }} руб / {{ subscription.payment.provider.value }}</div>
         <div class="muted" style="margin-top:6px;line-height:1.55;">{{ subscription.payment.stub_reference or subscription.payment.external_id or "reference не задан" }}</div>
       </div>
       {% endif %}

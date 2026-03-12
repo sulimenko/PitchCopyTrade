@@ -3,28 +3,30 @@
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a class="action ghost" href="/catalog">Каталог</a>
-  <a class="action ghost" href="/login">Вход</a>
 </div>
 {% endblock %}
 
 {% block content %}
 <section class="surface" style="padding:30px;">
-  <div class="eyebrow">checkout created</div>
+  <div class="eyebrow">заявка создана</div>
   <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.95;letter-spacing:-0.06em;">Заявка создана</h1>
   <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
     Мы создали payment и pending subscription. Если провайдер уже реальный, оплату можно завершить сразу по ссылке ниже.
   </p>
   <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">
-    После подтверждения оплаты основное взаимодействие планируется через Telegram; web checkout больше не требует отдельного subscriber-пароля.
+    После подтверждения оплаты основное взаимодействие продолжается через Telegram Mini App. Отдельный клиентский пароль не нужен.
   </p>
 </section>
 
 <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">payment</div>
-    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.payment.final_amount_rub }} RUB</strong>
-    <div class="muted" style="margin-top:10px;">status: {{ result.payment.status.value }}</div>
+    <div class="eyebrow">оплата</div>
+    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.payment.final_amount_rub }} руб</strong>
+    <div class="muted" style="margin-top:10px;">статус: {{ result.payment.status.value }}</div>
     <div class="muted" style="margin-top:6px;">reference: {{ result.payment.stub_reference }}</div>
+    {% if result.applied_promo_code %}
+    <div class="muted" style="margin-top:6px;">промокод: {{ result.applied_promo_code.code }} / скидка {{ result.payment.discount_rub }} руб</div>
+    {% endif %}
     {% if result.payment_url %}
     <div style="margin-top:14px;">
       <a class="action" href="{{ result.payment_url }}">Оплатить по СБП</a>
@@ -32,13 +34,13 @@
     {% endif %}
   </article>
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">subscription</div>
+    <div class="eyebrow">подписка</div>
     <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.subscription.status.value }}</strong>
-    <div class="muted" style="margin-top:10px;">product: {{ product.title }}</div>
-    <div class="muted" style="margin-top:6px;">autorenew: {{ "on" if result.subscription.autorenew_enabled else "off" }}</div>
+    <div class="muted" style="margin-top:10px;">продукт: {{ product.title }}</div>
+    <div class="muted" style="margin-top:6px;">автопродление: {{ "включено" if result.subscription.autorenew_enabled else "выключено" }}</div>
   </article>
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">client</div>
+    <div class="eyebrow">клиент</div>
     <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.user.full_name }}</strong>
     <div class="muted" style="margin-top:10px;">{{ result.user.email }}</div>
     <div class="muted" style="margin-top:6px;">{{ result.user.timezone }}</div>

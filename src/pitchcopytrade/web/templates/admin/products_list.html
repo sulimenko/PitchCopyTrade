@@ -2,11 +2,11 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/dashboard">Сводка</a>
   <a class="action ghost" href="/admin/strategies">Стратегии</a>
   <a class="action ghost" href="/admin/subscriptions">Подписки</a>
   <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Delivery</a>
+  <a class="action ghost" href="/admin/delivery">Доставка</a>
   <a class="action ghost" href="/admin/payments">Платежи</a>
   <a class="action" href="/admin/products/new">Новый продукт</a>
   <a class="action ghost" href="/logout">Выйти</a>
@@ -15,15 +15,15 @@
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">subscription products</div>
+  <div class="eyebrow">продукты подписки</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Продукты подписки</h1>
       <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Коммерческий слой над стратегиями, авторами и бандлами: цена, период, trial и разрешение на автопродление.
+        Коммерческий слой над стратегиями, авторами и пакетами: цена, период, пробный доступ и разрешение на автопродление.
       </p>
     </div>
-    <div class="pill">{{ products|length }} product</div>
+    <div class="pill">{{ products|length }} продуктов</div>
   </div>
 </section>
 
@@ -37,17 +37,17 @@
           <span class="pill">{{ product.product_type.value }}</span>
           <span class="pill">{{ product.billing_period.value }}</span>
           {% if product.is_active %}
-          <span class="pill">active</span>
+          <span class="pill">активен</span>
           {% endif %}
           {% if product.autorenew_allowed %}
-          <span class="pill">autorenew</span>
+          <span class="pill">автопродление</span>
           {% endif %}
         </div>
         <div class="muted" style="margin-top:10px;line-height:1.65;">{{ product.description or "Описание пока не заполнено" }}</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
           <span class="pill">{{ product.slug }}</span>
-          <span class="pill">{{ product.price_rub }} RUB</span>
-          <span class="pill">{{ product.trial_days }} trial days</span>
+          <span class="pill">{{ product.price_rub }} руб</span>
+          <span class="pill">{{ product.trial_days }} дней бесплатно</span>
           {% if product.strategy %}
           <span class="pill">{{ product.strategy.title }}</span>
           {% elif product.author %}

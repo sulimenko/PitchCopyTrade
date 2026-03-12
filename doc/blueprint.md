@@ -28,6 +28,8 @@
 Canonical subscriber model остается:
 - `Telegram-first`;
 - основной канал взаимодействия: `Telegram bot`;
+- bot command surface intentionally reduced to `/start` and `/help`;
+- вся клиентская навигация должна жить внутри `Mini App`;
 - web для подписчика допустим только как:
   - публичная витрина;
   - legal pages;
@@ -88,22 +90,17 @@ Canonical subscriber model остается:
 - web fallback checkout baseline
 - Telegram bot commands:
   - `/start`
-  - `/catalog`
-  - `/buy <product_slug>`
-  - `/confirm_buy <product_slug>`
-  - `/feed`
-  - `/status`
-  - `/subscriptions`
-  - `/payments`
-  - `/web`
-  - `/verify`
+  - `/help`
+- Mini App sections:
+  - каталог
+  - мои подписки
+  - лента
+  - оплаты
+  - помощь
 - Telegram verification page for web fallback
 - redirect from protected `/app/*` surfaces to Telegram verification flow
-- deep link `?start=web` for faster Telegram -> web handoff
 - safe local `next` redirect support in `/tg-auth`
 - `/app/status` as subscriber landing page in web fallback
-- inline product selection and callback-based checkout preview/confirm in bot
-- subscriber self-service views for active subscriptions and pending payments in bot
 - Mini App automatic auth bridge via verified Telegram `initData`
 - Mini App catalog surface is subscriber-aware when Telegram fallback cookie already exists
 - provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
@@ -113,6 +110,14 @@ Canonical subscriber model остается:
 - ACL-gated web feed and bot feed
 - validated test bot token smoke via Telegram API `getMe`
 - `https` host can expose Mini App safely
+- timezone should be auto-detected from Telegram WebApp / browser when available, fallback `Europe/Moscow`
+- lead source should be derived automatically, not entered by client manually
+- strategy base demo price is `499 руб`; period labels should render as `Месяц`, trial labels as `7 дней бесплатно`
+- required checkout documents should render with full Russian names:
+  - `Предупреждение о рисках`
+  - `Публичная оферта`
+  - `Политика конфиденциальности`
+  - `Согласие на оплату`
 
 ### 3.5 Recommendation lifecycle baseline
 Есть:
@@ -440,11 +445,14 @@ Test-launch baseline уже достигнут, но full parity будет сч
 ## 13. Что еще нужно реализовать после persistence refactor
 - richer Telegram checkout UX
 - deeper WebApp auth bridge beyond current verification link flow
-- promo/discount lifecycle
+- promo/discount lifecycle `[partial]`
+- manual discounts and richer Telegram promo UX still remain
 - delivery retry/metrics hardening
-- moderation analytics/SLA UX
+- moderation analytics/SLA UX `[partial]`
+- queue filters, overdue SLA and resolution latency are already in place
 - attachment lifecycle UX hardening
-- lead source analytics
+- lead source analytics `[partial]`
+- normalized checkout attribution and admin source report already exist
 - worker retries and observability
 
 ## 14. Архитектурное правило на ближайшие шаги
@@ -463,16 +471,18 @@ Task list для запуска тестовой версии закрыт. Сл
   - harden callback rollout on deployed host
    - keep manual operator fallback
 2. remaining persistence hardening
-   - compose cleanup
    - full file-mode parity for remaining contours
    - backup/restore discipline
 3. operational reliability
    - worker retries baseline already added
    - deepen observability and support tooling
 4. product analytics and monetization
-   - promo/discount lifecycle
-   - lead source analytics
-   - moderation analytics/SLA UX
+   - promo/discount lifecycle `[partial]`
+   - admin registry, checkout apply path and redemption counters are already in place
+   - lead source analytics `[partial]`
+   - normalized attribution and admin report are already in place
+   - moderation analytics/SLA UX `[partial]`
+   - queue filters and SLA latency metrics are already in place
 5. Telegram customer experience
    - richer status/checkout self-service
    - broader Mini App surfaces

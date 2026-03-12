@@ -1,30 +1,63 @@
 from __future__ import annotations
 
-from aiogram.filters import CommandObject, CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo
 
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import AsyncSessionLocal
 from pitchcopytrade.repositories.public import FilePublicRepository, SqlAlchemyPublicRepository
 from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
-from pitchcopytrade.services.subscriber import build_subscriber_web_message
 
 
-def _start_keyboard() -> ReplyKeyboardMarkup:
+def _main_keyboard() -> ReplyKeyboardMarkup:
     base_url = get_settings().app.base_url
-    keyboard = [
-        [KeyboardButton(text="/catalog"), KeyboardButton(text="/status")],
-        [KeyboardButton(text="/subscriptions"), KeyboardButton(text="/payments")],
-        [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
-    ]
+    keyboard: list[list[KeyboardButton]] = []
     if base_url.startswith("https://"):
-        keyboard[2].append(KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{base_url}/miniapp")))
+        keyboard.append([KeyboardButton(text="Открыть Mini App", web_app=WebAppInfo(url=f"{base_url}/miniapp"))])
+    keyboard.append([KeyboardButton(text="/help")])
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-async def handle_start(message: Message, command: CommandObject | None = None) -> None:
+def _start_text() -> str:
+    return (
+        "PitchCopyTrade готов к работе.\n"
+        "Клиентский путь полностью переведен в Mini App внутри Telegram.\n\n"
+        "Что делать дальше:\n"
+        "1. Откройте Mini App кнопкой ниже.\n"
+        "2. Выберите стратегию в каталоге.\n"
+        "3. Оформите подписку и следите за статусом внутри Mini App.\n\n"
+        "Доступные команды:\n"
+        "/start - открыть стартовое сообщение\n"
+        "/help - подсказка по работе сервиса"
+    )
+
+
+def _help_text() -> str:
+    lines = [
+        "Как пользоваться PitchCopyTrade:",
+        "1. Mini App в Telegram — основной интерфейс клиента.",
+        "2. В каталоге выберите стратегию и оформите подписку.",
+        "3. После оплаты рекомендации и статус доступа доступны внутри Mini App.",
+        "4. Команды бота сведены к базовым: /start и /help.",
+        "",
+        "Важно:",
+        "- отдельный клиентский логин не нужен;",
+        "- авторизация клиента идет по Telegram ID;",
+        "- сайт остается публичной витриной и справочной страницей;",
+        "- кабинеты admin и author работают отдельно через web.",
+    ]
+    if get_settings().app.base_url.startswith("https://"):
+        lines.extend(
+            [
+                "",
+                "Если кнопка Mini App не отображается, откройте бот заново и отправьте /start.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+async def handle_start(message: Message) -> None:
     telegram_user = message.from_user
-    user = None
     if telegram_user is not None:
         profile = TelegramSubscriberProfile(
             telegram_user_id=telegram_user.id,
@@ -39,35 +72,15 @@ async def handle_start(message: Message, command: CommandObject | None = None) -
         else:
             async with AsyncSessionLocal() as session:
                 repository = SqlAlchemyPublicRepository(session)
-                user = await upsert_telegram_subscriber(repository, profile)
+                await upsert_telegram_subscriber(repository, profile)
                 await repository.commit()
 
-    payload = (command.args or "").strip().lower() if command is not None else ""
-    if payload == "web" and user is not None:
-        await message.answer(
-            build_subscriber_web_message(
-                user,
-                base_url=get_settings().app.base_url,
-                include_webapp=get_settings().app.base_url.startswith("https://"),
-            ),
-            reply_markup=_start_keyboard(),
-        )
-        return
+    await message.answer(_start_text(), reply_markup=_main_keyboard())
 
-    await message.answer(
-        "PitchCopyTrade запущен.\n"
-        "Основной subscriber-flow переводится в Telegram.\n"
-        "Доступные команды:\n"
-        "/catalog - витрина стратегий и продуктов\n"
-        "/status - статус подписки и доступа\n"
-        "/subscriptions - мои подписки\n"
-        "/payments - мои pending оплаты\n"
-        "/web - верификация web fallback через Telegram\n"
-        "/buy <product_slug> - показать условия покупки\n"
-        "/confirm_buy <product_slug> - создать заявку на оплату\n"
-        "/feed - доступные рекомендации",
-        reply_markup=_start_keyboard(),
-    )
+
+async def handle_help(message: Message) -> None:
+    await message.answer(_help_text(), reply_markup=_main_keyboard())
 
 
 START_HANDLER = (handle_start, CommandStart())
+HELP_HANDLER = (handle_help, Command("help"))

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
-from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
-from pitchcopytrade.db.models.commerce import LegalDocument, Payment, Subscription, UserConsent
+from pitchcopytrade.db.models.catalog import LeadSource, Strategy, SubscriptionProduct
+from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
 from pitchcopytrade.db.models.enums import LegalDocumentType, StrategyStatus
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
@@ -103,6 +103,25 @@ class SqlAlchemyPublicRepository(PublicRepository):
             by_type.setdefault(document.document_type, document)
         return [by_type[item] for item in FilePublicRepository.REQUIRED_CHECKOUT_DOCUMENT_TYPES if item in by_type]
 
+    async def find_active_promo_by_code(self, code: str) -> PromoCode | None:
+        normalized = code.strip().upper()
+        if not normalized:
+            return None
+        query = select(PromoCode).where(PromoCode.code == normalized)
+        result = await self.session.execute(query)
+        promo = result.scalar_one_or_none()
+        if promo is None or not promo.is_active:
+            return None
+        return promo
+
+    async def get_lead_source_by_name(self, name: str) -> LeadSource | None:
+        normalized = name.strip()
+        if not normalized:
+            return None
+        query = select(LeadSource).where(func.lower(LeadSource.name) == normalized.lower()).limit(1)
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def find_user_by_email(self, email: str) -> User | None:
         query = select(User).options(selectinload(User.consents)).where(User.email == email)
         result = await self.session.execute(query)
@@ -177,6 +196,21 @@ class FilePublicRepository(PublicRepository):
             if document.is_active and document.document_type in self.REQUIRED_CHECKOUT_DOCUMENT_TYPES:
                 by_type.setdefault(document.document_type, document)
         return [by_type[item] for item in self.REQUIRED_CHECKOUT_DOCUMENT_TYPES if item in by_type]
+
+    async def find_active_promo_by_code(self, code: str) -> PromoCode | None:
+        normalized = code.strip().upper()
+        if not normalized:
+            return None
+        promo = next((item for item in self.graph.promo_codes.values() if item.code == normalized), None)
+        if promo is None or not promo.is_active:
+            return None
+        return promo
+
+    async def get_lead_source_by_name(self, name: str) -> LeadSource | None:
+        normalized = name.strip().lower()
+        if not normalized:
+            return None
+        return next((item for item in self.graph.lead_sources.values() if item.name.lower() == normalized), None)
 
     async def find_user_by_email(self, email: str) -> User | None:
         return next((item for item in self.graph.users.values() if item.email == email), None)

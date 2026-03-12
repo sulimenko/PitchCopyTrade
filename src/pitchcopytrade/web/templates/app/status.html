@@ -4,21 +4,20 @@
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a class="action ghost" href="/app/feed">Лента</a>
   <a class="action ghost" href="/catalog">Каталог</a>
-  <a class="action ghost" href="/logout">Выйти</a>
 </div>
 {% endblock %}
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">subscriber status</div>
+  <div class="eyebrow">мой статус</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">Статус подписки</h1>
       <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Этот экран открывается после Telegram verification и показывает, что сейчас доступно по вашему профилю.
+        Этот экран показывает текущее состояние подписок, оплат и доступных рекомендаций по вашему Telegram-профилю.
       </p>
     </div>
-    <span class="pill">{{ "active" if snapshot.has_access else "pending" }}</span>
+    <span class="pill">{{ "Активен" if snapshot.has_access else "Ожидает активации" }}</span>
   </div>
 </section>
 
@@ -26,7 +25,7 @@
   <article class="surface" style="padding:24px;">
     <strong>Профиль</strong>
     <div class="muted" style="margin-top:14px;line-height:1.8;">
-      <div>Username: {{ user.username or "n/a" }}</div>
+      <div>Telegram: {{ user.username or "не указан" }}</div>
       <div>Доступ: {{ "активен" if snapshot.has_access else "ожидает активации" }}</div>
       <div>Рекомендаций сейчас: {{ snapshot.visible_recommendation_titles|length }}</div>
     </div>
@@ -51,7 +50,7 @@
           <strong>{{ subscription.product.title if subscription.product else "Продукт" }}</strong>
           <div class="muted" style="margin-top:8px;">Статус: {{ subscription.status.value }}</div>
         </div>
-        <span class="pill">{{ subscription.end_at or "n/a" }}</span>
+        <span class="pill">{{ subscription.end_at or "не указано" }}</span>
       </div>
     </article>
     {% else %}

@@ -17,6 +17,7 @@ from pitchcopytrade.repositories.access import FileAccessRepository
 from pitchcopytrade.repositories.author import FileAuthorRepository
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.repositories.public import FilePublicRepository
+from pitchcopytrade.services.public import CheckoutRequest, create_stub_checkout
 from pitchcopytrade.services.author import IncomingAttachment, RecommendationFormData, StructuredLegFormData, create_author_recommendation
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 
@@ -110,13 +111,13 @@ def _seed_demo_json(store: FileDataStore) -> None:
                     "id": "product-1",
                     "product_type": "strategy",
                     "slug": "momentum-ru-month",
-                    "title": "Momentum RU Monthly",
+                    "title": "Momentum RU",
                     "description": None,
                     "strategy_id": "strategy-1",
                     "author_id": None,
                     "bundle_id": None,
                     "billing_period": "month",
-                    "price_rub": 4900,
+                    "price_rub": 499,
                     "trial_days": 7,
                     "is_active": True,
                     "autorenew_allowed": True,
@@ -124,12 +125,18 @@ def _seed_demo_json(store: FileDataStore) -> None:
                     "updated_at": now,
                 }
             ],
+            "promo_codes": [],
             "legal_documents": [
                 {
                     "id": f"doc-{doc_type.value}",
                     "document_type": doc_type.value,
                     "version": "v1",
-                    "title": f"{doc_type.value} v1",
+                    "title": {
+                        LegalDocumentType.DISCLAIMER: "Предупреждение о рисках",
+                        LegalDocumentType.OFFER: "Публичная оферта",
+                        LegalDocumentType.PRIVACY_POLICY: "Политика конфиденциальности",
+                        LegalDocumentType.PAYMENT_CONSENT: "Согласие на оплату",
+                    }[doc_type],
                     "content_md": "text",
                     "source_path": f"legal/{doc_type.value}/v1.md",
                     "is_active": True,
@@ -152,9 +159,9 @@ def _seed_demo_json(store: FileDataStore) -> None:
                     "promo_code_id": None,
                     "provider": "stub_manual",
                     "status": "paid",
-                    "amount_rub": 4900,
+                    "amount_rub": 499,
                     "discount_rub": 0,
-                    "final_amount_rub": 4900,
+                    "final_amount_rub": 499,
                     "currency": "RUB",
                     "external_id": None,
                     "stub_reference": "MANUAL-1",
@@ -361,5 +368,39 @@ async def test_file_public_repository_reads_products_documents_and_payments_scop
 
     assert len(strategies) == 1
     assert product is not None
-    assert product.price_rub == 4900
+    assert product.price_rub == 499
     assert len(documents) == 4
+
+
+@pytest.mark.asyncio
+async def test_file_public_checkout_creates_and_links_lead_source(tmp_path) -> None:
+    store = FileDataStore(root_dir=tmp_path / "storage" / "json")
+    _seed_demo_json(store)
+    repo = FilePublicRepository(store)
+    product = await repo.get_public_product("product-1")
+    assert product is not None
+
+    result = await create_stub_checkout(
+        repo,
+        product=product,
+        request=CheckoutRequest(
+            full_name="Lead User",
+            email="lead-new@example.com",
+            timezone_name="Europe/Moscow",
+            accepted_document_ids=[
+                "doc-disclaimer",
+                "doc-offer",
+                "doc-privacy_policy",
+                "doc-payment_consent",
+            ],
+            lead_source_name="ads_meta",
+        ),
+    )
+
+    refreshed = FilePublicRepository(store)
+    created_user = await refreshed.find_user_by_email("lead-new@example.com")
+    assert created_user is not None
+    assert created_user.lead_source is not None
+    assert created_user.lead_source.name == "ads_meta"
+    assert result.subscription.lead_source is not None
+    assert result.subscription.lead_source.name == "ads_meta"

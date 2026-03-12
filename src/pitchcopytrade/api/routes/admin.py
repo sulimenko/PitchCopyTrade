@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +46,15 @@ from pitchcopytrade.services.legal_admin import (
     list_admin_legal_documents,
     update_admin_legal_document,
 )
+from pitchcopytrade.services.lead_analytics import list_lead_source_analytics
 from pitchcopytrade.services.legal_documents import read_legal_document_markdown
+from pitchcopytrade.services.promo_admin import (
+    PromoCodeFormData,
+    create_admin_promo_code,
+    get_admin_promo_code,
+    list_admin_promo_codes,
+    update_admin_promo_code,
+)
 from pitchcopytrade.web.templates import templates
 
 
@@ -284,6 +294,161 @@ async def product_create_page(
     )
 
 
+@router.get("/promos", response_class=HTMLResponse)
+async def promo_code_list_page(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    promo_codes = await list_admin_promo_codes(session)
+    stats = {
+        "active": sum(1 for item in promo_codes if item.is_active),
+        "inactive": sum(1 for item in promo_codes if not item.is_active),
+        "redeemed": sum(item.current_redemptions for item in promo_codes),
+    }
+    return templates.TemplateResponse(
+        request,
+        "admin/promos_list.html",
+        {
+            "title": "Промокоды",
+            "user": user,
+            "promo_codes": promo_codes,
+            "stats": stats,
+        },
+    )
+
+
+@router.get("/promos/new", response_class=HTMLResponse)
+async def promo_code_create_page(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    return await _render_promo_form(
+        request=request,
+        user=user,
+        session=session,
+        promo_code=None,
+        error=None,
+        form_values={},
+    )
+
+
+@router.post("/promos", response_class=HTMLResponse)
+async def promo_code_create_submit(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    code: str = Form(...),
+    description: str = Form(""),
+    discount_percent: str = Form(""),
+    discount_amount_rub: str = Form(""),
+    max_redemptions: str = Form(""),
+    expires_at: str = Form(""),
+    is_active: str | None = Form(default=None),
+) -> Response:
+    try:
+        data = _build_promo_form_data(
+            code=code,
+            description=description,
+            discount_percent=discount_percent,
+            discount_amount_rub=discount_amount_rub,
+            max_redemptions=max_redemptions,
+            expires_at=expires_at,
+            is_active=is_active,
+        )
+        promo_code = await create_admin_promo_code(session, data)
+    except ValueError as exc:
+        return await _render_promo_form(
+            request=request,
+            user=user,
+            session=session,
+            promo_code=None,
+            error=str(exc),
+            form_values={
+                "code": code,
+                "description": description,
+                "discount_percent": discount_percent,
+                "discount_amount_rub": discount_amount_rub,
+                "max_redemptions": max_redemptions,
+                "expires_at": expires_at,
+                "is_active": is_active is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/promos/{promo_code.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/promos/{promo_code_id}/edit", response_class=HTMLResponse)
+async def promo_code_edit_page(
+    promo_code_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    promo_code = await get_admin_promo_code(session, promo_code_id)
+    if promo_code is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found")
+    return await _render_promo_form(
+        request=request,
+        user=user,
+        session=session,
+        promo_code=promo_code,
+        error=None,
+        form_values=_form_values_from_promo_code(promo_code),
+    )
+
+
+@router.post("/promos/{promo_code_id}", response_class=HTMLResponse)
+async def promo_code_edit_submit(
+    promo_code_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    code: str = Form(...),
+    description: str = Form(""),
+    discount_percent: str = Form(""),
+    discount_amount_rub: str = Form(""),
+    max_redemptions: str = Form(""),
+    expires_at: str = Form(""),
+    is_active: str | None = Form(default=None),
+) -> Response:
+    promo_code = await get_admin_promo_code(session, promo_code_id)
+    if promo_code is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found")
+
+    try:
+        data = _build_promo_form_data(
+            code=code,
+            description=description,
+            discount_percent=discount_percent,
+            discount_amount_rub=discount_amount_rub,
+            max_redemptions=max_redemptions,
+            expires_at=expires_at,
+            is_active=is_active,
+        )
+        await update_admin_promo_code(session, promo_code, data)
+    except ValueError as exc:
+        return await _render_promo_form(
+            request=request,
+            user=user,
+            session=session,
+            promo_code=promo_code,
+            error=str(exc),
+            form_values={
+                "code": code,
+                "description": description,
+                "discount_percent": discount_percent,
+                "discount_amount_rub": discount_amount_rub,
+                "max_redemptions": max_redemptions,
+                "expires_at": expires_at,
+                "is_active": is_active is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/promos/{promo_code.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/products", response_class=HTMLResponse)
 async def product_create_submit(
     request: Request,
@@ -493,6 +658,30 @@ async def subscription_detail_page(
             "title": "Карточка подписки",
             "user": user,
             "subscription": subscription,
+        },
+    )
+
+
+@router.get("/analytics/leads", response_class=HTMLResponse)
+async def lead_analytics_page(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    rows = await list_lead_source_analytics(session)
+    stats = {
+        "sources": len(rows),
+        "subscriptions": sum(item.subscriptions_total for item in rows),
+        "revenue_rub": sum(item.revenue_rub for item in rows),
+    }
+    return templates.TemplateResponse(
+        request,
+        "admin/lead_analytics.html",
+        {
+            "title": "Lead source analytics",
+            "user": user,
+            "rows": rows,
+            "stats": stats,
         },
     )
 
@@ -855,6 +1044,31 @@ async def _render_legal_form(
     )
 
 
+async def _render_promo_form(
+    request: Request,
+    user: User,
+    session: AsyncSession | None,
+    promo_code,
+    error: str | None,
+    form_values: dict[str, object],
+    status_code: int = status.HTTP_200_OK,
+) -> Response:
+    promo_codes = await list_admin_promo_codes(session)
+    return templates.TemplateResponse(
+        request,
+        "admin/promo_form.html",
+        {
+            "title": "Промокод" if promo_code is not None else "Новый промокод",
+            "user": user,
+            "promo_code": promo_code,
+            "promo_codes": promo_codes,
+            "error": error,
+            "form_values": form_values,
+        },
+        status_code=status_code,
+    )
+
+
 def _build_strategy_form_data(
     *,
     author_id: str,
@@ -903,6 +1117,20 @@ def _form_values_from_strategy(strategy) -> dict[str, object]:
         "status": strategy.status.value,
         "min_capital_rub": strategy.min_capital_rub or "",
         "is_public": strategy.is_public,
+    }
+
+
+def _form_values_from_promo_code(promo_code) -> dict[str, object]:
+    return {
+        "code": promo_code.code,
+        "description": promo_code.description or "",
+        "discount_percent": promo_code.discount_percent or "",
+        "discount_amount_rub": promo_code.discount_amount_rub or "",
+        "max_redemptions": promo_code.max_redemptions or "",
+        "expires_at": promo_code.expires_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M")
+        if promo_code.expires_at is not None
+        else "",
+        "is_active": promo_code.is_active,
     }
 
 
@@ -975,6 +1203,54 @@ def _build_product_form_data(
         trial_days=parsed_trial,
         is_active=is_active is not None,
         autorenew_allowed=autorenew_allowed is not None,
+    )
+
+
+def _build_promo_form_data(
+    *,
+    code: str,
+    description: str,
+    discount_percent: str,
+    discount_amount_rub: str,
+    max_redemptions: str,
+    expires_at: str,
+    is_active: str | None,
+) -> PromoCodeFormData:
+    normalized_code = code.strip().upper()
+    if not normalized_code:
+        raise ValueError("Код промокода обязателен")
+
+    percent_value = discount_percent.strip()
+    amount_value = discount_amount_rub.strip()
+    max_value = max_redemptions.strip()
+    expires_value = expires_at.strip()
+
+    parsed_percent = int(percent_value) if percent_value else None
+    parsed_amount = int(amount_value) if amount_value else None
+    parsed_max = int(max_value) if max_value else None
+    parsed_expires_at = datetime.fromisoformat(expires_value) if expires_value else None
+    if parsed_expires_at is not None and parsed_expires_at.tzinfo is None:
+        parsed_expires_at = parsed_expires_at.replace(tzinfo=UTC)
+
+    if parsed_percent is None and parsed_amount is None:
+        raise ValueError("Нужно указать discount percent или fixed amount")
+    if parsed_percent is not None and parsed_amount is not None:
+        raise ValueError("Используйте либо discount percent, либо fixed amount")
+    if parsed_percent is not None and not (1 <= parsed_percent <= 100):
+        raise ValueError("Discount percent должен быть в диапазоне 1..100")
+    if parsed_amount is not None and parsed_amount < 0:
+        raise ValueError("Discount amount не может быть отрицательным")
+    if parsed_max is not None and parsed_max <= 0:
+        raise ValueError("Лимит использований должен быть больше нуля")
+
+    return PromoCodeFormData(
+        code=normalized_code,
+        description=description.strip() or None,
+        discount_percent=parsed_percent,
+        discount_amount_rub=parsed_amount,
+        max_redemptions=parsed_max,
+        expires_at=parsed_expires_at,
+        is_active=is_active is not None,
     )
 
 

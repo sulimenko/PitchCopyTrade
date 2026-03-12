@@ -2,8 +2,7 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/catalog">Каталог</a>
-  <a class="action ghost" href="/login">Вход</a>
+  <a class="action ghost" href="/catalog{% if surface == 'miniapp' %}?surface=miniapp{% endif %}">Каталог</a>
 </div>
 {% endblock %}
 
@@ -18,7 +17,7 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <span class="pill">{{ strategy.risk_level.value }}</span>
       {% if strategy.min_capital_rub %}
-      <span class="pill">от {{ strategy.min_capital_rub }} RUB</span>
+      <span class="pill">от {{ strategy.min_capital_rub }} руб</span>
       {% endif %}
     </div>
   </div>
@@ -26,24 +25,24 @@
 
 <section style="display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">strategy thesis</div>
+    <div class="eyebrow">о стратегии</div>
     <h2 style="margin:10px 0 14px;font-size:1.55rem;">Описание</h2>
     <p class="muted" style="line-height:1.75;">{{ strategy.full_description or strategy.short_description }}</p>
   </article>
 
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">available plans</div>
+    <div class="eyebrow">доступные планы</div>
     <h2 style="margin:10px 0 14px;font-size:1.55rem;">Продукты подписки</h2>
     <div style="display:grid;gap:12px;">
       {% for product in strategy.subscription_products %}
-      <a class="surface" href="/checkout/{{ product.id }}" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
+      <a class="surface" href="/checkout/{{ product.id }}{% if surface == 'miniapp' %}?surface=miniapp{% endif %}" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
         <strong>{{ product.title }}</strong>
         <div class="muted" style="margin-top:8px;line-height:1.6;">{{ product.description or "Описание продукта пока не заполнено" }}</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
-          <span class="pill">{{ product.billing_period.value }}</span>
-          <span class="pill">{{ product.price_rub }} RUB</span>
+          <span class="pill">Месяц</span>
+          <span class="pill">{{ product.price_rub }} руб</span>
           {% if product.trial_days %}
-          <span class="pill">{{ product.trial_days }} trial days</span>
+          <span class="pill">{{ product.trial_days }} дней бесплатно</span>
           {% endif %}
         </div>
       </a>

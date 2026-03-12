@@ -11,19 +11,19 @@
 
 {% block content %}
 <section class="surface" style="padding:30px;">
-  <div class="eyebrow">{{ payment_provider }} checkout</div>
+  <div class="eyebrow">оформление подписки</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4.2vw,3.6rem);line-height:0.95;letter-spacing:-0.06em;">{{ product.title }}</h1>
       <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
-        Основной путь для клиента переводится в Telegram. Этот web checkout остается как fallback и не требует отдельного subscriber-пароля.
+        Подписка оформляется без отдельного клиентского входа. Если вы открыли страницу из Telegram Mini App, профиль будет связан автоматически.
       </p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ product.billing_period.value }}</span>
-      <span class="pill">{{ product.price_rub }} RUB</span>
+      <span class="pill">Месяц</span>
+      <span class="pill">{{ product.price_rub }} руб</span>
       {% if product.trial_days %}
-      <span class="pill">{{ product.trial_days }} trial days</span>
+      <span class="pill">{{ product.trial_days }} дней бесплатно</span>
       {% endif %}
     </div>
   </div>
@@ -41,6 +41,8 @@
       {{ error }}
     </div>
     {% endif %}
+    <input type="hidden" name="timezone_name" id="timezone_name" value="{{ form_values.timezone_name }}" />
+    <input type="hidden" name="lead_source_name" value="{{ form_values.lead_source_name }}" />
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
       <label style="display:grid;gap:8px;">
         <strong>ФИО, если хотите оставить</strong>
@@ -53,13 +55,15 @@
     </div>
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
       <label style="display:grid;gap:8px;">
-        <strong>Часовой пояс</strong>
-        <input type="text" name="timezone_name" value="{{ form_values.timezone_name }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+        <strong>Промокод, если есть</strong>
+        <input type="text" name="promo_code_value" value="{{ form_values.promo_code_value or '' }}" placeholder="WELCOME10" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;text-transform:uppercase;" />
       </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Источник лида</strong>
-        <input type="text" name="lead_source_name" value="{{ form_values.lead_source_name }}" placeholder="ads / blogger / referral" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Что определится автоматически</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.6;">
+          Часовой пояс берем из устройства, источник обращения фиксируем автоматически.
+        </div>
+      </div>
     </div>
     <div style="display:grid;gap:12px;">
       <strong>Обязательные документы</strong>
@@ -80,12 +84,12 @@
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
       <button class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Создать заявку на оплату</button>
-      <a class="action ghost" href="/catalog">Вернуться в каталог</a>
+      <a class="action ghost" href="/catalog{% if request.query_params.get('surface') == 'miniapp' %}?surface=miniapp{% endif %}">Вернуться в каталог</a>
     </div>
   </form>
 
   <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">checkout summary</div>
+    <div class="eyebrow">что произойдет дальше</div>
     <h2 style="margin:10px 0 14px;font-size:1.5rem;">Что произойдет дальше</h2>
     <div style="display:grid;gap:12px;">
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
@@ -101,8 +105,8 @@
         <div class="muted" style="margin-top:8px;line-height:1.55;">Принятые документы фиксируются и привязываются к payment.</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>4. Telegram остается основным каналом</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Основной subscriber-flow переносится в бота; web здесь не требует отдельного клиентского пароля.</div>
+        <strong>4. Mini App остается основным каналом</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Каталог, статусы, оплата и лента доступны без отдельного клиентского пароля, через Telegram-профиль.</div>
       </div>
     </div>
   </aside>
@@ -114,4 +118,20 @@
     div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
   }
 </style>
+<script>
+  (function () {
+    const timezoneInput = document.getElementById("timezone_name");
+    if (!timezoneInput) {
+      return;
+    }
+    try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (timezone) {
+        timezoneInput.value = timezone;
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  })();
+</script>
 {% endblock %}

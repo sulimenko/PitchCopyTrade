@@ -22,6 +22,7 @@ from pitchcopytrade.db.models.enums import (
 )
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.promo import sync_promo_redemption_counter
 
 
 @dataclass(slots=True)
@@ -490,6 +491,7 @@ async def confirm_payment_and_activate_subscription(
         payment.confirmed_at = timestamp
         for subscription in payment.subscriptions:
             subscription.status = SubscriptionStatus.TRIAL if subscription.is_trial else SubscriptionStatus.ACTIVE
+        await sync_promo_redemption_counter(None, payment.promo_code, store=store)
         graph.save(store)
         return payment, payment.subscriptions
 
@@ -509,6 +511,7 @@ async def confirm_payment_and_activate_subscription(
         subscription.status = SubscriptionStatus.TRIAL if subscription.is_trial else SubscriptionStatus.ACTIVE
 
     await session.commit()
+    await sync_promo_redemption_counter(session, payment.promo_code)
     await session.refresh(payment)
     for subscription in payment.subscriptions:
         await session.refresh(subscription)

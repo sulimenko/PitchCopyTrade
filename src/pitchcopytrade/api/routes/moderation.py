@@ -12,6 +12,7 @@ from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.services.moderation import (
     approve_recommendation,
+    build_moderation_detail_metrics,
     get_moderation_queue_stats,
     get_moderation_recommendation,
     list_recommendation_audit_events,
@@ -34,10 +35,19 @@ async def moderation_root() -> Response:
 @router.get("/queue", response_class=HTMLResponse)
 async def moderation_queue_page(
     request: Request,
+    q: str = "",
+    status_value: str = "",
     user: User = Depends(require_moderator),
     session=Depends(get_optional_db_session),
 ) -> Response:
-    items = await list_moderation_recommendations(session)
+    if q or status_value:
+        items = await list_moderation_recommendations(
+            session,
+            status_filter=_parse_queue_status(status_value),
+            query_text=q,
+        )
+    else:
+        items = await list_moderation_recommendations(session)
     stats = await get_moderation_queue_stats(session)
     return templates.TemplateResponse(
         request,
@@ -47,6 +57,9 @@ async def moderation_queue_page(
             "user": user,
             "items": items,
             "stats": stats,
+            "query_text": q,
+            "status_value": status_value,
+            "status_options": ["review", "approved", "scheduled", "published"],
         },
     )
 
@@ -62,6 +75,7 @@ async def moderation_detail_page(
     if recommendation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
     history = await list_recommendation_audit_events(session, recommendation_id)
+    metrics = build_moderation_detail_metrics(recommendation, history)
     return templates.TemplateResponse(
         request,
         "moderation/detail.html",
@@ -70,6 +84,7 @@ async def moderation_detail_page(
             "user": user,
             "recommendation": recommendation,
             "history": history,
+            "metrics": metrics,
         },
     )
 
@@ -127,3 +142,15 @@ async def moderation_reject_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
     await reject_recommendation(session, recommendation, user, comment)
     return RedirectResponse(url=f"/moderation/recommendations/{recommendation_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _parse_queue_status(status_value: str):
+    normalized = status_value.strip().lower()
+    if not normalized:
+        return None
+    from pitchcopytrade.db.models.enums import RecommendationStatus
+
+    try:
+        return RecommendationStatus(normalized)
+    except ValueError:
+        return None

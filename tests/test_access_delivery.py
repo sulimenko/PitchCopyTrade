@@ -382,12 +382,12 @@ async def test_feed_handler_returns_visible_items(monkeypatch) -> None:
     assert "1 files" in sent_text
 
 
-def test_build_dispatcher_registers_feed_handler() -> None:
+def test_build_dispatcher_registers_telegram_only_subscriber_handlers() -> None:
     dispatcher = build_dispatcher()
     registered_handlers = dispatcher.message.handlers
 
-    assert len(registered_handlers) == 10
-    assert len(dispatcher.callback_query.handlers) == 1
+    assert len(registered_handlers) == 2
+    assert len(dispatcher.callback_query.handlers) == 0
 
 
 @pytest.mark.asyncio

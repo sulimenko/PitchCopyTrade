@@ -43,7 +43,7 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
     tg_user = await get_user_from_telegram_fallback_cookie(repository, tg_token) if tg_token else None
     if tg_user is not None:
-        return RedirectResponse(url="/app/feed", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/app/status", status_code=status.HTTP_303_SEE_OTHER)
 
     return templates.TemplateResponse(
         request,
@@ -171,7 +171,7 @@ async def app_home(request: Request, repository: AuthRepository = Depends(get_au
     if tg_token:
         subscriber = await get_user_from_telegram_fallback_cookie(repository, tg_token)
         if subscriber is not None:
-            return RedirectResponse(url="/app/feed", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(url="/app/status", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
         user = await _require_authenticated_user(request, repository)
@@ -229,9 +229,9 @@ def _resolve_role_redirect(user) -> str:
 
 def _sanitize_subscriber_next_path(next_path: str | None) -> str:
     if not next_path:
-        return "/app/feed"
+        return "/app/status"
     if not next_path.startswith("/") or next_path.startswith("//"):
-        return "/app/feed"
+        return "/app/status"
     return next_path
 
 

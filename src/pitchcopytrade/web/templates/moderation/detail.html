@@ -67,6 +67,8 @@
       <div><strong>Стратегия:</strong> <span class="muted">{{ recommendation.strategy.title }}</span></div>
       <div><strong>Вложений:</strong> <span class="muted">{{ recommendation.attachments|length }}</span></div>
       <div><strong>Комментарий модерации:</strong> <span class="muted">{{ recommendation.moderation_comment or "пока нет" }}</span></div>
+      <div><strong>SLA:</strong> <span class="muted">{{ metrics.sla_state }}</span></div>
+      <div><strong>Latency:</strong> <span class="muted">{{ metrics.resolution_hours if metrics.resolution_hours is not none else "n/a" }} h</span></div>
     </div>
 
     <div class="eyebrow" style="margin-top:22px;">history</div>

@@ -19,6 +19,7 @@ class FileDataStore:
         "bundles",
         "bundle_members",
         "products",
+        "promo_codes",
         "legal_documents",
         "payments",
         "subscriptions",

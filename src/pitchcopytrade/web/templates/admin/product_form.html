@@ -2,12 +2,12 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/dashboard">Сводка</a>
   <a class="action ghost" href="/admin/strategies">Стратегии</a>
   <a class="action ghost" href="/admin/products">Продукты</a>
   <a class="action ghost" href="/admin/subscriptions">Подписки</a>
   <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Delivery</a>
+  <a class="action ghost" href="/admin/delivery">Доставка</a>
   <a class="action ghost" href="/admin/payments">Платежи</a>
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
@@ -15,7 +15,7 @@
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">product editor</div>
+  <div class="eyebrow">редактор продукта</div>
   <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">
     {% if product %}Редактирование продукта{% else %}Новый продукт подписки{% endif %}
   </h1>
@@ -53,7 +53,7 @@
 
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
       <label style="display:grid;gap:8px;">
-        <strong>Slug</strong>
+        <strong>Слаг</strong>
         <input type="text" name="slug" value="{{ form_values.slug }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
       <label style="display:grid;gap:8px;">
@@ -69,7 +69,7 @@
 
     <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;">
       <label style="display:grid;gap:8px;">
-        <strong>Strategy target</strong>
+        <strong>Стратегия</strong>
         <select name="strategy_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
           <option value="">не выбран</option>
           {% for item in strategies %}
@@ -78,7 +78,7 @@
         </select>
       </label>
       <label style="display:grid;gap:8px;">
-        <strong>Author target</strong>
+        <strong>Автор</strong>
         <select name="author_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
           <option value="">не выбран</option>
           {% for item in authors %}
@@ -87,7 +87,7 @@
         </select>
       </label>
       <label style="display:grid;gap:8px;">
-        <strong>Bundle target</strong>
+        <strong>Пакет</strong>
         <select name="bundle_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
           <option value="">не выбран</option>
           {% for item in bundles %}
@@ -99,11 +99,11 @@
 
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
       <label style="display:grid;gap:8px;">
-        <strong>Цена, RUB</strong>
+        <strong>Цена, руб</strong>
         <input type="number" name="price_rub" min="0" value="{{ form_values.price_rub }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
       <label style="display:grid;gap:8px;">
-        <strong>Trial days</strong>
+        <strong>Пробный период, дней</strong>
         <input type="number" name="trial_days" min="0" value="{{ form_values.trial_days }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
     </div>
@@ -124,19 +124,19 @@
   </form>
 
   <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">pricing guidance</div>
+    <div class="eyebrow">подсказки по тарифу</div>
     <h2 style="margin:10px 0 14px;font-size:1.45rem;">Правила модели</h2>
     <div style="display:grid;gap:12px;">
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Один target</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Product type определяет ровно один target: strategy, author или bundle.</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Тип продукта определяет ровно одну цель: strategy, author или bundle.</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Прозрачная коммерция</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Цена и trial должны быть реальными для продажи, а не тестовыми placeholder-значениями.</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Цена и пробный период должны быть реальными для продажи, а не тестовыми значениями.</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Active only when ready</strong>
+        <strong>Активировать только после проверки</strong>
         <div class="muted" style="margin-top:8px;line-height:1.55;">Не включайте активность, пока карточка не привязана к корректному target и не проверена командой.</div>
       </div>
     </div>

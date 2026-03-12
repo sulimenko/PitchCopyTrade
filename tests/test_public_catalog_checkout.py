@@ -11,7 +11,7 @@ from pitchcopytrade.auth.session import build_telegram_fallback_cookie_value
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
-from pitchcopytrade.db.models.commerce import LegalDocument, Payment, Subscription
+from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     LegalDocumentType,
@@ -98,7 +98,7 @@ def _make_strategy_and_product() -> tuple[Strategy, SubscriptionProduct]:
         author_id=None,
         bundle_id=None,
         billing_period=BillingPeriod.MONTH,
-        price_rub=4900,
+        price_rub=499,
         trial_days=7,
         is_active=True,
         autorenew_allowed=True,
@@ -109,22 +109,23 @@ def _make_strategy_and_product() -> tuple[Strategy, SubscriptionProduct]:
 
 
 def _make_documents() -> list[LegalDocument]:
+    labels = {
+        LegalDocumentType.DISCLAIMER: "Предупреждение о рисках",
+        LegalDocumentType.OFFER: "Публичная оферта",
+        LegalDocumentType.PRIVACY_POLICY: "Политика конфиденциальности",
+        LegalDocumentType.PAYMENT_CONSENT: "Согласие на оплату",
+    }
     return [
         LegalDocument(
             id=f"doc-{item.value}",
             document_type=item,
             version="v1",
-            title=f"{item.value} v1",
+            title=labels[item],
             content_md="text",
             source_path=f"legal/{item.value}/v1.md",
             is_active=True,
         )
-        for item in (
-            LegalDocumentType.DISCLAIMER,
-            LegalDocumentType.OFFER,
-            LegalDocumentType.PRIVACY_POLICY,
-            LegalDocumentType.PAYMENT_CONSENT,
-        )
+        for item in labels
     ]
 
 
@@ -189,7 +190,7 @@ def test_catalog_miniapp_shows_subscriber_overview_when_cookie_exists(monkeypatc
         response = client.get("/catalog?surface=miniapp")
 
         assert response.status_code == 200
-        assert "subscriber overview" in response.text
+        assert "мой профиль" in response.text
         assert "Lead User" in response.text
         assert "/app/status" in response.text
 
@@ -226,9 +227,9 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
         response = client.get("/checkout/product-1")
 
         assert response.status_code == 200
-        assert "stub_manual checkout" in response.text
+        assert "оформление подписки" in response.text
         assert "Momentum RU Monthly" in response.text
-        assert "payment_consent" in response.text
+        assert "Согласие на оплату" in response.text
         assert '/legal/doc-payment_consent' in response.text
 
 
@@ -247,7 +248,7 @@ def test_legal_document_page_reads_local_markdown(monkeypatch) -> None:
         response = client.get("/legal/doc-offer")
 
         assert response.status_code == 200
-        assert "offer v1" in response.text
+        assert "Публичная оферта" in response.text
         assert "loaded from legal/offer/v1.md" in response.text
 
 
@@ -309,6 +310,85 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
         assert response.status_code == 201
         assert "Заявка создана" in response.text
         assert "MANUAL-MOMENTUM-ABCD1234" in response.text
+
+
+def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:
+    _strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    promo_code = PromoCode(
+        id="promo-1",
+        code="WELCOME10",
+        description="Launch promo",
+        discount_percent=10,
+        current_redemptions=0,
+        is_active=True,
+    )
+    user = User(id="user-1", email="lead@example.com", full_name="Lead User", timezone="Europe/Moscow")
+    payment = Payment(
+        id="payment-1",
+        user_id="user-1",
+        product_id="product-1",
+        promo_code_id="promo-1",
+        provider=PaymentProvider.STUB_MANUAL,
+        status=PaymentStatus.PENDING,
+        amount_rub=4900,
+        discount_rub=490,
+        final_amount_rub=4410,
+        currency="RUB",
+        stub_reference="MANUAL-MOMENTUM-PROMO",
+    )
+    payment.promo_code = promo_code
+    subscription = Subscription(
+        id="subscription-1",
+        user_id="user-1",
+        product_id="product-1",
+        payment_id="payment-1",
+        applied_promo_code_id="promo-1",
+        status=SubscriptionStatus.PENDING,
+        autorenew_enabled=True,
+        is_trial=True,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+    subscription.applied_promo_code = promo_code
+    result = SimpleNamespace(
+        user=user,
+        payment=payment,
+        subscription=subscription,
+        required_documents=documents,
+        applied_promo_code=promo_code,
+    )
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_product",
+        lambda _session, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _session: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.create_stub_checkout",
+        lambda _session, product, request: _async_return(result),
+    )
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.post(
+            "/checkout/product-1",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "lead_source_name": "ads",
+                "promo_code_value": "WELCOME10",
+                "accepted_document_ids": [item.id for item in documents],
+            },
+        )
+
+        assert response.status_code == 201
+        assert "WELCOME10" in response.text
+        assert "скидка 490 руб" in response.text
 
 
 def test_tbank_notify_accepts_valid_callback(monkeypatch) -> None:

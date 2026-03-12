@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +55,7 @@ async def telegram_verify_page(request: Request) -> Response:
         request,
         "public/telegram_verify.html",
         {
-            "title": "Telegram verification",
+            "title": "Подтверждение через Telegram",
             "telegram_bot_username": get_settings().telegram.bot_username,
             "surface_next": request.query_params.get("next", "/app/feed"),
             "base_url": get_settings().app.base_url,
@@ -86,7 +88,7 @@ async def catalog_page(
         request,
         "public/catalog.html",
         {
-            "title": "PitchCopyTrade Catalog",
+            "title": "Каталог PitchCopyTrade",
             "strategies": strategies,
             "surface": surface,
             "telegram_bot_username": get_settings().telegram.bot_username,
@@ -105,12 +107,14 @@ async def strategy_detail_page(
     strategy = await get_public_strategy_by_slug(repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    surface = request.query_params.get("surface", "web")
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
         {
             "title": strategy.title,
             "strategy": strategy,
+            "surface": surface,
         },
     )
 
@@ -127,21 +131,24 @@ async def checkout_page(
 
     documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
+    surface = request.query_params.get("surface", "web")
     return templates.TemplateResponse(
         request,
         "public/checkout.html",
         {
-            "title": f"Checkout {product.title}",
+            "title": f"Подписка {product.title}",
             "product": product,
             "documents": documents,
             "checkout_ready": checkout_ready,
             "payment_provider": get_settings().payments.provider,
+            "surface": surface,
             "error": None,
             "form_values": {
                 "full_name": "",
                 "email": "",
                 "timezone_name": "Europe/Moscow",
-                "lead_source_name": "",
+                "lead_source_name": _detect_lead_source_name(request),
+                "promo_code_value": "",
                 "accepted_document_ids": [],
             },
         },
@@ -179,6 +186,7 @@ async def checkout_submit(
     timezone_name: str = Form("Europe/Moscow"),
     lead_source_name: str = Form(""),
     accepted_document_ids: list[str] = Form(...),
+    promo_code_value: str = Form(""),
 ) -> Response:
     product = await get_public_product(repository, product_id)
     if product is None:
@@ -186,6 +194,7 @@ async def checkout_submit(
 
     documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
+    detected_lead_source = lead_source_name.strip() or _detect_lead_source_name(request)
     try:
         result = await create_stub_checkout(
             repository,
@@ -195,7 +204,8 @@ async def checkout_submit(
                 email=email.strip().lower() or None,
                 timezone_name=timezone_name.strip() or "Europe/Moscow",
                 accepted_document_ids=accepted_document_ids,
-                lead_source_name=lead_source_name.strip() or None,
+                lead_source_name=detected_lead_source,
+                promo_code_value=promo_code_value.strip().upper() or None,
                 ip_address=request.client.host if request.client else None,
             ),
         )
@@ -204,17 +214,19 @@ async def checkout_submit(
             request,
             "public/checkout.html",
             {
-                "title": f"Checkout {product.title}",
+                "title": f"Подписка {product.title}",
                 "product": product,
                 "documents": documents,
                 "checkout_ready": checkout_ready,
                 "payment_provider": get_settings().payments.provider,
+                "surface": request.query_params.get("surface", "web"),
                 "error": str(exc),
                 "form_values": {
                     "full_name": full_name,
                     "email": email,
                     "timezone_name": timezone_name,
-                    "lead_source_name": lead_source_name,
+                    "lead_source_name": detected_lead_source,
+                    "promo_code_value": promo_code_value,
                     "accepted_document_ids": accepted_document_ids,
                 },
             },
@@ -225,7 +237,7 @@ async def checkout_submit(
         request,
         "public/checkout_success.html",
         {
-            "title": "Checkout Created",
+            "title": "Заявка создана",
             "product": product,
             "result": result,
             "payment_provider": get_settings().payments.provider,
@@ -250,3 +262,22 @@ async def tbank_payment_notify(
 
     await process_tbank_callback(session, payload=payload)
     return PlainTextResponse("OK")
+
+
+def _detect_lead_source_name(request: Request) -> str:
+    for key in ("utm_source", "source", "lead_source"):
+        value = request.query_params.get(key)
+        if value:
+            return value.strip().lower()
+
+    surface = request.query_params.get("surface")
+    if surface == "miniapp":
+        return "telegram_miniapp"
+
+    referer = request.headers.get("referer")
+    if referer:
+        host = urlparse(referer).hostname or ""
+        if "t.me" in host or "telegram" in host:
+            return "telegram"
+
+    return "website"

@@ -12,7 +12,7 @@ from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Bundle, Strategy, SubscriptionProduct
-from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
+from pitchcopytrade.db.models.commerce import Payment, PromoCode, Subscription, UserConsent
 from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.commerce import LegalDocument
 from pitchcopytrade.db.models.enums import (
@@ -193,17 +193,39 @@ def _make_subscription(subscription_id: str, product: SubscriptionProduct) -> Su
 
 
 def _make_legal_document(document_id: str, document_type: LegalDocumentType) -> LegalDocument:
+    titles = {
+        LegalDocumentType.DISCLAIMER: "Предупреждение о рисках",
+        LegalDocumentType.OFFER: "Публичная оферта",
+        LegalDocumentType.PRIVACY_POLICY: "Политика конфиденциальности",
+        LegalDocumentType.PAYMENT_CONSENT: "Согласие на оплату",
+    }
     document = LegalDocument(
         id=document_id,
         document_type=document_type,
         version="v1",
-        title=f"{document_type.value} v1",
+        title=titles[document_type],
         content_md="seed markdown",
         source_path=f"legal/{document_type.value}/v1.md",
         is_active=document_type is LegalDocumentType.OFFER,
     )
     document.consents = []
     return document
+
+
+def _make_promo_code(promo_code_id: str, code: str) -> PromoCode:
+    promo_code = PromoCode(
+        id=promo_code_id,
+        code=code,
+        description="Welcome promo",
+        discount_percent=10,
+        discount_amount_rub=None,
+        max_redemptions=100,
+        current_redemptions=3,
+        is_active=True,
+    )
+    promo_code.payments = []
+    promo_code.subscriptions = []
+    return promo_code
 
 
 def _make_published_recommendation(recommendation_id: str, strategy: Strategy, author: AuthorProfile) -> Recommendation:
@@ -351,7 +373,7 @@ def test_legal_document_list_renders(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert "Юридические документы" in response.text
-        assert "offer v1" in response.text
+        assert "Публичная оферта" in response.text
         assert "/admin/legal/doc-offer/edit" in response.text
 
 
@@ -436,7 +458,7 @@ def test_delivery_list_renders(monkeypatch) -> None:
         response = client.get("/admin/delivery")
 
         assert response.status_code == 200
-        assert "Delivery queue и retry" in response.text
+        assert "Очередь доставки и повторов" in response.text
         assert "Покупка SBER" in response.text
         assert "/admin/delivery/rec-1" in response.text
 
@@ -645,6 +667,95 @@ def test_product_list_renders(monkeypatch) -> None:
         assert "Продукты подписки" in response.text
         assert "Momentum RU Monthly" in response.text
         assert "/admin/products/product-1/edit" in response.text
+
+
+def test_promo_code_list_renders(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    promo_code = _make_promo_code("promo-1", "WELCOME10")
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_promo_codes",
+        lambda _session: _async_return([promo_code]),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/promos")
+
+        assert response.status_code == 200
+        assert "Промокоды" in response.text
+        assert "WELCOME10" in response.text
+        assert "/admin/promos/promo-1/edit" in response.text
+
+
+def test_promo_code_create_redirects_to_editor(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    async def fake_create(_session, data):
+        promo_code = _make_promo_code("promo-new", data.code)
+        promo_code.discount_percent = data.discount_percent
+        promo_code.discount_amount_rub = data.discount_amount_rub
+        promo_code.max_redemptions = data.max_redemptions
+        return promo_code
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_promo_codes",
+        lambda _session: _async_return([]),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.create_admin_promo_code", fake_create)
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/promos",
+            data={
+                "code": "WELCOME10",
+                "description": "launch promo",
+                "discount_percent": "10",
+                "discount_amount_rub": "",
+                "max_redemptions": "100",
+                "expires_at": "",
+                "is_active": "1",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/promos/promo-new/edit"
+
+
+def test_lead_analytics_page_renders(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_lead_source_analytics",
+        lambda _session: _async_return(
+            [
+                SimpleNamespace(
+                    source_name="ads_meta",
+                    source_type="ads",
+                    users_total=3,
+                    subscriptions_total=2,
+                    active_subscriptions=1,
+                    payments_total=2,
+                    paid_payments=1,
+                    revenue_rub=4410,
+                )
+            ]
+        ),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/analytics/leads")
+
+        assert response.status_code == 200
+        assert "Источники лидов" in response.text
+        assert "ads_meta" in response.text
+        assert "4410 RUB" in response.text
 
 
 def test_product_create_submit_redirects_to_editor(monkeypatch) -> None:

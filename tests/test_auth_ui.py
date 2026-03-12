@@ -224,7 +224,7 @@ def test_tg_auth_sets_session_cookie_and_redirects_to_feed() -> None:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/app/feed"
+        assert response.headers["location"] == "/app/status"
         assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
 
 
@@ -265,8 +265,8 @@ def test_verify_telegram_page_renders() -> None:
 
         assert response.status_code == 200
         assert "Подтвердите доступ через Telegram" in response.text
-        assert "/web" in response.text
-        assert "start=web" in response.text
+        assert "Mini App автоматически подтвердит" in response.text
+        assert "Открыть бота" in response.text
 
 
 def test_tg_webapp_auth_sets_cookie_and_returns_redirect(monkeypatch) -> None:
