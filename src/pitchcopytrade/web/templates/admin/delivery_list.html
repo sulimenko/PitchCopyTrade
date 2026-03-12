@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/admin/legal">Документы</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">delivery operations</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Delivery queue и retry</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
+        Оператор видит опубликованные рекомендации, историю notification delivery и может инициировать повторную отправку.
+      </p>
+    </div>
+    <div class="pill">{{ records|length }} record</div>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px;">
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">published</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.published }}</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">with delivery</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.delivered }}</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">attempts</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.attempts }}</div>
+  </article>
+  <article class="surface" style="padding:20px;">
+    <div class="eyebrow">recipients</div>
+    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.recipients }}</div>
+  </article>
+</section>
+
+<section style="display:grid;gap:14px;margin-top:18px;">
+  {% for record in records %}
+  <a class="surface" href="/admin/delivery/{{ record.recommendation.id }}" style="padding:22px;display:block;">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="max-width:820px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <strong style="font-size:1.15rem;">{{ record.recommendation.title or record.recommendation.strategy.title }}</strong>
+          <span class="pill">{{ record.recommendation.status.value }}</span>
+          <span class="pill">{{ record.delivery_attempts }} attempt</span>
+        </div>
+        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ record.recommendation.strategy.title }}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <span class="pill">delivered: {{ record.delivered_recipients }}</span>
+          {% if record.latest_delivery_event %}
+          <span class="pill">{{ record.latest_delivery_event.created_at }}</span>
+          <span class="pill">{{ record.latest_delivery_event.payload.trigger if record.latest_delivery_event.payload else "publish" }}</span>
+          {% else %}
+          <span class="pill">no delivery yet</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="muted">Открыть</div>
+    </div>
+  </a>
+  {% else %}
+  <article class="surface" style="padding:24px;">
+    <strong>Пока нет опубликованных рекомендаций</strong>
+    <p class="muted" style="line-height:1.6;margin:10px 0 0;">После публикации или scheduled publish карточки доставки появятся здесь автоматически.</p>
+  </article>
+  {% endfor %}
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  }
+  @media (max-width: 640px) {
+    section[style*="repeat(4"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

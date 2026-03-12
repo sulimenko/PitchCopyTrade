@@ -13,6 +13,7 @@ from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Bundle, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
+from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.commerce import LegalDocument
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
@@ -20,6 +21,8 @@ from pitchcopytrade.db.models.enums import (
     PaymentProvider,
     PaymentStatus,
     ProductType,
+    RecommendationKind,
+    RecommendationStatus,
     RiskLevel,
     RoleSlug,
     StrategyStatus,
@@ -156,6 +159,7 @@ def _make_payment(payment_id: str, product: SubscriptionProduct) -> Payment:
         start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
         end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
     )
+    subscription.user = user
     subscription.product = product
     document = LegalDocument(
         id="doc-1",
@@ -177,6 +181,47 @@ def _make_payment(payment_id: str, product: SubscriptionProduct) -> Payment:
     payment.subscriptions = [subscription]
     payment.consents = [consent]
     return payment
+
+
+def _make_subscription(subscription_id: str, product: SubscriptionProduct) -> Subscription:
+    payment = _make_payment("payment-linked", product)
+    subscription = payment.subscriptions[0]
+    subscription.id = subscription_id
+    subscription.payment = payment
+    subscription.payment_id = payment.id
+    return subscription
+
+
+def _make_legal_document(document_id: str, document_type: LegalDocumentType) -> LegalDocument:
+    document = LegalDocument(
+        id=document_id,
+        document_type=document_type,
+        version="v1",
+        title=f"{document_type.value} v1",
+        content_md="seed markdown",
+        source_path=f"legal/{document_type.value}/v1.md",
+        is_active=document_type is LegalDocumentType.OFFER,
+    )
+    document.consents = []
+    return document
+
+
+def _make_published_recommendation(recommendation_id: str, strategy: Strategy, author: AuthorProfile) -> Recommendation:
+    recommendation = Recommendation(
+        id=recommendation_id,
+        strategy_id=strategy.id,
+        author_id=author.id,
+        kind=RecommendationKind.NEW_IDEA,
+        status=RecommendationStatus.PUBLISHED,
+        title="Покупка SBER",
+        summary="Сильный спрос",
+        published_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+    recommendation.strategy = strategy
+    recommendation.author = author
+    recommendation.attachments = []
+    recommendation.legs = []
+    return recommendation
 
 
 def _build_client(session: FakeAsyncSession, admin_user: User) -> TestClient:
@@ -226,6 +271,10 @@ def test_admin_dashboard_renders(monkeypatch) -> None:
         "pitchcopytrade.api.routes.admin.list_admin_payments",
         lambda _session: _async_return([payment]),
     )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_subscriptions",
+        lambda _session: _async_return(payment.subscriptions),
+    )
 
     with _build_client(session, admin) as client:
         response = client.get("/admin/dashboard")
@@ -236,6 +285,191 @@ def test_admin_dashboard_renders(monkeypatch) -> None:
         assert "14" in response.text
         assert "Momentum RU Monthly" in response.text
         assert "Lead User" in response.text
+
+
+def test_subscription_list_renders(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    strategy = _make_strategy("strategy-1", author, "Momentum RU")
+    product = _make_product("product-1", strategy)
+    subscription = _make_subscription("subscription-1", product)
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_subscriptions",
+        lambda _session, query_text="": _async_return([subscription]),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/subscriptions")
+
+        assert response.status_code == 200
+        assert "Подписки и доступ" in response.text
+        assert "Lead User" in response.text
+        assert "Momentum RU Monthly" in response.text
+        assert "/admin/subscriptions/subscription-1" in response.text
+
+
+def test_subscription_detail_renders(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    strategy = _make_strategy("strategy-1", author, "Momentum RU")
+    product = _make_product("product-1", strategy)
+    subscription = _make_subscription("subscription-1", product)
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.get_admin_subscription",
+        lambda _session, _subscription_id: _async_return(subscription),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/subscriptions/subscription-1")
+
+        assert response.status_code == 200
+        assert "Карточка подписки" in response.text
+        assert "Lead User" in response.text
+        assert "Momentum RU Monthly" in response.text
+        assert "Доступ к стратегии" in response.text
+
+
+def test_legal_document_list_renders(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    document = _make_legal_document("doc-offer", LegalDocumentType.OFFER)
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_legal_documents",
+        lambda _session: _async_return([document]),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/legal")
+
+        assert response.status_code == 200
+        assert "Юридические документы" in response.text
+        assert "offer v1" in response.text
+        assert "/admin/legal/doc-offer/edit" in response.text
+
+
+def test_legal_document_create_redirects_to_editor(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    async def fake_create(_session, data):
+        document = _make_legal_document("doc-new", data.document_type)
+        document.version = data.version
+        document.title = data.title
+        document.content_md = data.content_md
+        document.source_path = f"legal/{data.document_type.value}/{data.version}.md"
+        return document
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_legal_documents",
+        lambda _session: _async_return([]),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.create_admin_legal_document", fake_create)
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/legal",
+            data={
+                "document_type": "offer",
+                "version": "v2",
+                "title": "offer v2",
+                "content_md": "# offer\nbody",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/legal/doc-new/edit"
+
+
+def test_legal_document_activate_redirects(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    document = _make_legal_document("doc-privacy", LegalDocumentType.PRIVACY_POLICY)
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.get_admin_legal_document",
+        lambda _session, _document_id: _async_return(document),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.activate_admin_legal_document",
+        lambda _session, _document: _async_return(document),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.post("/admin/legal/doc-privacy/activate", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/legal/doc-privacy/edit"
+
+
+def test_delivery_list_renders(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    strategy = _make_strategy("strategy-1", author, "Momentum RU")
+    recommendation = _make_published_recommendation("rec-1", strategy, author)
+    session.users_by_id[admin.id] = admin
+    record = SimpleNamespace(
+        recommendation=recommendation,
+        events=[],
+        latest_delivery_event=None,
+        delivery_attempts=1,
+        delivered_recipients=3,
+    )
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_delivery_records",
+        lambda _session: _async_return([record]),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/delivery")
+
+        assert response.status_code == 200
+        assert "Delivery queue и retry" in response.text
+        assert "Покупка SBER" in response.text
+        assert "/admin/delivery/rec-1" in response.text
+
+
+def test_delivery_retry_redirects(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    strategy = _make_strategy("strategy-1", author, "Momentum RU")
+    recommendation = _make_published_recommendation("rec-1", strategy, author)
+    session.users_by_id[admin.id] = admin
+    record = SimpleNamespace(
+        recommendation=recommendation,
+        events=[],
+        latest_delivery_event=None,
+        delivery_attempts=2,
+        delivered_recipients=5,
+    )
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.create_bot",
+        lambda _token: SimpleNamespace(session=SimpleNamespace(close=lambda: _async_return(None))),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.retry_recommendation_delivery",
+        lambda _session, _recommendation_id, _bot: _async_return(record),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.post("/admin/delivery/rec-1/retry", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/delivery/rec-1"
 
 
 def test_strategy_list_renders(monkeypatch) -> None:

@@ -1,6 +1,6 @@
 # PitchCopyTrade Task Pack
 
-Дата: 2026-03-11  
+Дата: 2026-03-12  
 Режим: current implementation status + migration roadmap to local storage and file mode
 
 Process rule:
@@ -232,7 +232,6 @@ Acceptance:
 - seed legal markdown files committed under `storage/seed/blob/legal`
 
 Сделать:
-- admin/legal editing flow for writing local markdown sources
 - убрать transitional dependency from remaining MinIO-only paths
 
 Acceptance:
@@ -333,7 +332,7 @@ Acceptance:
 
 ## 5. Самый быстрый путь к локальному тестированию
 
-### 29. Fast-track order `[todo]`
+### 29. Fast-track order `[done]`
 Делать строго так:
 1. local storage adapter
 2. runtime switch `APP_DATA_MODE`
@@ -344,7 +343,7 @@ Acceptance:
 7. connect test bot and run Telegram smoke-test
 8. open local staff web and author cabinet
 
-### 30. Fast-track acceptance `[todo]`
+### 30. Fast-track acceptance `[done]`
 Считать быстрый путь завершенным, когда:
 - сайт открывается локально;
 - admin login работает локально;
@@ -361,12 +360,13 @@ Acceptance:
 - command baseline
 - reply keyboard baseline
 - Mini App entry baseline
+- deployed `https` host now allows Telegram `Mini App` button in real bot flow
 
 Не сделано:
 - full WebApp auth bridge
 - richer interactive checkout/status UX
 
-### 32. Legal admin UI `[todo]`
+### 32. Legal admin UI `[done]`
 - document CRUD
 - version publish UI
 - active version management
@@ -376,10 +376,11 @@ Acceptance:
 - manual discounts
 - expiry/cancel flows
 
-### 34. Delivery admin UX `[todo]`
+### 34. Delivery admin UX `[done]`
 - notification queue
 - retry/dedup
-- metrics
+- delivery audit visibility
+- metrics still remain as hardening, not as baseline blocker
 
 ### 35. Moderation analytics/SLA `[todo]`
 - filters
@@ -397,7 +398,7 @@ Acceptance:
 
 ## 8. Следующий этап после test-launch
 
-### 38. Deployment hardening `[partial]`
+### 38. Deployment hardening `[done]`
 Сделано:
 - canonical server deploy path documented
 - dedicated docker server compose committed in repo
@@ -412,9 +413,11 @@ Acceptance:
 - secret runtime file `.env.server`
 - update/restart procedure documented
 
-Сделать:
-- real server validation on target host
-- optional TLS step when test domain is ready
+Сделано:
+- first server prototype validated on target host
+- `admin` login validated on deployed host
+- Telegram bot polling validated on deployed host
+- `https` enabled for `pct.test.ptfin.ru`
 
 Acceptance:
 - test version можно поднимать на одной выделенной машине без ручного старта процессов
@@ -436,7 +439,7 @@ Acceptance:
 Acceptance:
 - all critical test-version contours behave одинаково в `db` и `file`
 
-### 41. Legal admin UI `[todo]`
+### 41. Legal admin UI hardening `[done]`
 - local markdown editor
 - version activation
 - active document management
@@ -461,6 +464,68 @@ Acceptance:
 
 Acceptance:
 - каждый новый этап проходит одинаковый `clean -> review -> docs -> deploy` контур
+
+## 9. Что делать дальше до business-complete state
+
+### 44. HTTPS enablement `[done]`
+- certificate issued for `pct.test.ptfin.ru`
+- deployed `BASE_URL` switched to `https`
+- Telegram WebApp prerequisites validated on deployed host
+
+Acceptance:
+- deployed host serves app over `https`
+- bot can safely expose `Mini App` button
+
+### 45. Real SBP payments `[todo]`
+- integrate first real provider
+- recommended provider: `T-Bank`
+- keep `stub/manual` as operator fallback
+
+Acceptance:
+- user can pay in RUB via real SBP flow
+- payment confirmation does not rely only on manual admin action
+
+### 46. Admin subscription registry `[done]`
+- full list of subscriptions
+- start/end dates
+- payment status
+- search by user / strategy / author
+- access scope visibility
+
+Acceptance:
+- admin can answer who is subscribed to what and until when
+
+### 47. Author publish UX hardening `[done]`
+- better multi-leg recommendation editor
+- attachment replace/delete flow
+- clearer draft/review/publish path
+
+Acceptance:
+- author can publish complex recommendation sets without manual operator help
+
+### 48. Legal and compliance operations `[done]`
+- legal docs admin UI
+- version activation
+- consent visibility in admin surfaces
+
+Acceptance:
+- legal lifecycle no longer requires manual file edits in runtime operations
+
+### 49. Delivery operations `[done]`
+- notification queue
+- retry / dedup visibility
+- delivery audit visibility for support
+
+Acceptance:
+- support/admin can understand whether recommendation delivery succeeded
+
+### 50. Final persistence hardening `[todo]`
+- finish remaining file-mode parity
+- compose cleanup
+- backup/restore workflow for `storage/`
+
+Acceptance:
+- deployed prototype can be operated and recovered predictably
 
 ## 7. Правила, которые нельзя ломать
 - subscriber path остается `Telegram-first`

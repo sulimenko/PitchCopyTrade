@@ -176,12 +176,10 @@ Reviewer должен считать хорошим признаком:
 
 ## 6. Что еще обязательно ждет реализации
 Reviewer должен помнить, что после текущего refactor track все еще нужны:
+- real SBP provider integration
 - full file-mode parity for demo path
-- Telegram WebApp/Mini App auth bridge
-- legal docs admin UI
 - promo/discount lifecycle
 - moderation analytics/SLA UX
-- delivery admin UI
 - lead source analytics
 - worker retries and observability
 

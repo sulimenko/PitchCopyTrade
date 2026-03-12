@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/admin/legal">Документы</a>
+  <a class="action ghost" href="/admin/delivery">Delivery</a>
+  <a class="action ghost" href="/admin/payments">Платежи</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">subscription detail</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Карточка подписки</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
+        Операционная карточка показывает продукт, access scope, даты, источник лида и связанный платеж.
+      </p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <span class="pill">{{ subscription.status.value }}</span>
+      {% if subscription.payment %}
+      <span class="pill">{{ subscription.payment.status.value }}</span>
+      {% endif %}
+      {% if subscription.is_trial %}
+      <span class="pill">trial</span>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">subscription data</div>
+    <div style="display:grid;gap:12px;margin-top:16px;">
+      <div><strong>Клиент:</strong> <span class="muted">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</span></div>
+      <div><strong>Email:</strong> <span class="muted">{{ subscription.user.email or "не задан" }}</span></div>
+      <div><strong>Username:</strong> <span class="muted">{{ subscription.user.username or "не задан" }}</span></div>
+      <div><strong>Продукт:</strong> <span class="muted">{{ subscription.product.title }}</span></div>
+      <div><strong>Период:</strong> <span class="muted">{{ subscription.start_at }} -> {{ subscription.end_at }}</span></div>
+      <div><strong>Автопродление:</strong> <span class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</span></div>
+      <div><strong>Lead source:</strong> <span class="muted">{{ subscription.lead_source.name if subscription.lead_source else "не задан" }}</span></div>
+      {% if subscription.payment %}
+      <div><strong>Платеж:</strong> <span class="muted"><a href="/admin/payments/{{ subscription.payment.id }}">{{ subscription.payment.id }}</a></span></div>
+      {% endif %}
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
+      <a class="action ghost" href="/admin/subscriptions">Вернуться к реестру</a>
+      {% if subscription.payment %}
+      <a class="action ghost" href="/admin/payments/{{ subscription.payment.id }}">Открыть платеж</a>
+      {% endif %}
+    </div>
+  </article>
+
+  <aside class="surface" style="padding:24px;">
+    <div class="eyebrow">access scope</div>
+    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Что получает клиент</h2>
+    <div style="display:grid;gap:12px;">
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>{{ subscription.product.title }}</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.description or "Описание продукта пока не заполнено" }}</div>
+      </div>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        {% if subscription.product.strategy %}
+        <strong>Доступ к стратегии</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.strategy.title }}</div>
+        {% elif subscription.product.author %}
+        <strong>Доступ ко всем стратегиям автора</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.author.display_name }}</div>
+        {% elif subscription.product.bundle %}
+        <strong>Доступ к bundle</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.bundle.title }}</div>
+        {% endif %}
+      </div>
+      {% if subscription.payment %}
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Финансовая связка</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.payment.final_amount_rub }} RUB / {{ subscription.payment.provider.value }}</div>
+        <div class="muted" style="margin-top:6px;line-height:1.55;">{{ subscription.payment.stub_reference or subscription.payment.external_id or "reference не задан" }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </aside>
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

@@ -4,6 +4,9 @@
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a class="action ghost" href="/admin/strategies">Каталог стратегий</a>
   <a class="action ghost" href="/admin/products">Продукты подписки</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/admin/legal">Документы</a>
+  <a class="action ghost" href="/admin/delivery">Delivery</a>
   <a class="action ghost" href="/admin/payments">Платежи</a>
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
@@ -145,6 +148,39 @@
   </div>
   {% else %}
   <p class="muted" style="margin:18px 0 0;">Платные планы пока не заведены. После создания продукта его можно будет использовать в оплатах и подписках.</p>
+  {% endif %}
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;">
+    <div>
+      <div class="eyebrow">subscriber ops</div>
+      <h2 style="margin:10px 0 0;font-size:1.55rem;">Последние подписки</h2>
+    </div>
+    <a class="action" href="/admin/subscriptions">Открыть реестр</a>
+  </div>
+  {% if recent_subscriptions %}
+  <div style="display:grid;gap:14px;margin-top:18px;">
+    {% for subscription in recent_subscriptions %}
+    <a class="surface" href="/admin/subscriptions/{{ subscription.id }}" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;display:block;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong style="font-size:1.05rem;">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</strong>
+          <div class="muted" style="margin-top:8px;">{{ subscription.product.title }}</div>
+        </div>
+        <span class="pill">{{ subscription.status.value }}</span>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+        <span class="pill">{{ subscription.start_at }} -> {{ subscription.end_at }}</span>
+        {% if subscription.payment %}
+        <span class="pill">{{ subscription.payment.status.value }}</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="margin:18px 0 0;">Подписок пока нет.</p>
   {% endif %}
 </section>
 

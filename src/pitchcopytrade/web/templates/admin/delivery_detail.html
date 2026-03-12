@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/delivery">Delivery</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">delivery detail</div>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">{{ record.recommendation.title or record.recommendation.strategy.title }}</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
+        История publish/delivery по конкретной рекомендации и ручной retry для Telegram-доставки.
+      </p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <span class="pill">{{ record.recommendation.status.value }}</span>
+      <span class="pill">{{ record.delivery_attempts }} attempt</span>
+    </div>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    {% if error %}
+    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);margin-bottom:18px;">
+      {{ error }}
+    </div>
+    {% endif %}
+    <div class="eyebrow">delivery summary</div>
+    <div style="display:grid;gap:12px;margin-top:16px;">
+      <div><strong>Стратегия:</strong> <span class="muted">{{ record.recommendation.strategy.title }}</span></div>
+      <div><strong>Автор:</strong> <span class="muted">{{ record.recommendation.author.display_name }}</span></div>
+      <div><strong>Published at:</strong> <span class="muted">{{ record.recommendation.published_at or "не опубликовано" }}</span></div>
+      <div><strong>Delivery attempts:</strong> <span class="muted">{{ record.delivery_attempts }}</span></div>
+      <div><strong>Delivered recipients:</strong> <span class="muted">{{ record.delivered_recipients }}</span></div>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
+      <form method="post" action="/admin/delivery/{{ record.recommendation.id }}/retry">
+        <button class="action" type="submit">Повторить Telegram delivery</button>
+      </form>
+      <a class="action ghost" href="/admin/delivery">Вернуться к очереди</a>
+      <a class="action ghost" href="/app/recommendations/{{ record.recommendation.id }}">Открыть subscriber rendering</a>
+    </div>
+  </article>
+
+  <aside class="surface" style="padding:24px;">
+    <div class="eyebrow">audit timeline</div>
+    <h2 style="margin:10px 0 14px;font-size:1.45rem;">События доставки</h2>
+    <div style="display:grid;gap:12px;">
+      {% for event in record.events %}
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>{{ event.action }}</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ event.created_at }}</div>
+        {% if event.payload %}
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ event.payload }}</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="muted">Delivery audit пока отсутствует.</div>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

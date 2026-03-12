@@ -17,7 +17,7 @@ from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.storage.base import StorageBackend
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 
-MAX_EDITOR_LEGS = 3
+MAX_EDITOR_LEGS = 5
 MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024
 ALLOWED_ATTACHMENT_CONTENT_TYPES = {
     "application/pdf",
@@ -180,6 +180,29 @@ async def update_author_recommendation(
         )
     await repository.commit()
     await repository.refresh(recommendation)
+    return recommendation
+
+
+async def remove_recommendation_attachments(
+    repository: AuthorRepository,
+    recommendation: Recommendation,
+    attachment_ids: Iterable[str],
+    *,
+    storage: StorageBackend | None = None,
+) -> Recommendation:
+    runtime_storage = storage or LocalFilesystemStorage()
+    targets = {item.strip() for item in attachment_ids if item and item.strip()}
+    if not targets:
+        return recommendation
+
+    remaining: list[RecommendationAttachment] = []
+    for attachment in list(recommendation.attachments):
+        if attachment.id not in targets:
+            remaining.append(attachment)
+            continue
+        runtime_storage.delete_object(attachment.object_key)
+        await repository.delete(attachment)
+    recommendation.attachments = remaining
     return recommendation
 
 

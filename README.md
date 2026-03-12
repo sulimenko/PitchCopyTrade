@@ -19,10 +19,13 @@ Telegram-first платформа для продажи подписок на с
 - admin dashboard
 - strategy CRUD
 - subscription product CRUD
+- admin subscription registry
 - payment review -> confirm -> subscription activation
+- legal docs admin UI
 - author workspace
 - recommendation CRUD
 - structured legs editor
+- author publish workflow hardening
 - preview
 - moderation queue
 - moderation history baseline
@@ -32,6 +35,7 @@ Telegram-first платформа для продажи подписок на с
 - Telegram-first subscriber baseline
 - scheduled publish baseline
 - delivery notifications baseline
+- delivery admin UI with retry history
 - local filesystem storage backend baseline with runtime root `storage/runtime/blob`
 - `api + bot + worker` can start in `APP_DATA_MODE=file` without PostgreSQL and without MinIO
 - runtime switch:
@@ -60,6 +64,10 @@ Telegram-first платформа для продажи подписок на с
   - `admin dashboard`
   - `author dashboard`
   - `Telegram checkout -> admin confirm -> subscriber feed`
+- first server prototype deployed on target host with:
+  - host nginx
+  - dockerized `api + bot + worker`
+  - test domain `pct.test.ptfin.ru`
 
 ## Архитектурный сдвиг
 Новая целевая схема:
@@ -97,7 +105,7 @@ Telegram-first платформа для продажи подписок на с
 - local filesystem storage backend уже является canonical path для file-mode attachments и legal docs;
 - `docker-compose.yml` все еще поднимает `minio` как штатный сервис;
 - часть metadata и compose assumptions все еще ориентированы на bucket/object-key path.
-- legal docs уже могут рендериться из локальных markdown source files, но admin editing flow для них еще не реализован.
+- legal docs уже не только рендерятся из локальных markdown source files, но и управляются через admin editing flow.
 
 Это значит:
 - текущая реализация пригодна для продолжения продуктовой разработки;
@@ -169,12 +177,12 @@ Telegram smoke baseline:
 - pending updates at check time: `0`
 
 ## Ближайшая цель
-Быстрый путь к тестированию сейчас такой:
-1. внедрить local filesystem storage backend;
-2. ввести `db|file` runtime mode;
-3. сделать file repositories для минимального demo-контура;
-4. добавить local seed data;
-5. поднять `api + bot + worker` локально с test bot.
+Первый server prototype уже поднят. Ближайшая цель теперь не запуск, а переход к product-complete state:
+1. подключить реальную оплату по СБП;
+2. закончить remaining file-mode parity и ops hardening;
+3. усилить support tooling и observability;
+4. довести production payment/delivery reliability;
+5. закрыть оставшиеся analytics/promotions gaps.
 
 ## Demo seed data
 В проект уже добавлен локальный demo pack для `file` mode:
@@ -258,27 +266,42 @@ Operational rule:
 
 ## Следующий этап развития
 Task list для test-launch можно считать закрытым. Следующий этап теперь такой:
-1. deployment hardening:
-   - dedicated docker server compose for test contour
-   - `nginx` reverse proxy container
-   - file-mode friendly bind-mount deploy scripts
-2. compose cleanup:
-   - убрать `MinIO-first` assumptions из runtime compose path
-   - оставить `MinIO` только как optional compatibility profile
-3. full file-mode parity:
-   - moderation
-   - notifications
-   - publishing edge cases
-4. legal admin UI:
-   - local markdown editing
-   - version activation
-5. Telegram UX phase:
-   - WebApp auth bridge
-   - richer checkout/status UX
-6. observability and operations:
-   - log rotation
-   - backup strategy for `storage/`
-   - worker retry visibility
+1. Реальный платежный контур:
+   - заменить `stub/manual` на реальный SBP provider
+   - рекомендованный target: `T-Bank`
+   - сохранить manual fallback для оператора
+2. Remaining persistence and ops hardening:
+   - full file-mode parity for remaining contours
+   - compose cleanup
+   - storage backup/restore discipline
+3. Support and observability hardening:
+   - worker retries and observability
+   - delivery support tooling and audit visibility
+4. Product analytics and monetization:
+   - promo/discount lifecycle
+   - lead source analytics
+   - moderation analytics/SLA UX
+
+## Что осталось до выполнения первоначальной задачи
+Из исходной постановки уже закрыто:
+- витрина стратегий
+- выбор стратегии
+- Telegram-first subscriber flow
+- author cabinet baseline
+- ACL delivery
+- multi-author contour
+- admin baseline
+
+Еще не закрыто до business-complete state:
+- реальная оплата по СБП в рублях;
+- production payment/delivery reliability и support tooling.
+
+## Рекомендуемый порядок задач
+Чтобы дойти до следующего полноценного этапа без расползания scope, делать так:
+1. T-Bank SBP integration
+2. compose cleanup and remaining file-mode parity
+3. worker retries and observability
+4. lead source / promo / analytics hardening
 
 ## Локальный запуск
 Текущий рекомендованный путь для test-version: `file mode`, без PostgreSQL и без MinIO.

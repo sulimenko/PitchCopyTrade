@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
+from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import (
     Bundle,
     BundleMember,
@@ -83,6 +84,7 @@ class FileDatasetGraph:
     payments: dict[str, Payment]
     subscriptions: dict[str, Subscription]
     user_consents: dict[str, UserConsent]
+    audit_events: dict[str, AuditEvent]
     recommendations: dict[str, Recommendation]
     recommendation_legs: dict[str, RecommendationLeg]
     recommendation_attachments: dict[str, RecommendationAttachment]
@@ -382,6 +384,24 @@ class FileDatasetGraph:
                 if consent not in consent.payment.consents:
                     consent.payment.consents.append(consent)
 
+        audit_events = {
+            item["id"]: AuditEvent(
+                id=item["id"],
+                actor_user_id=item.get("actor_user_id"),
+                entity_type=item["entity_type"],
+                entity_id=item.get("entity_id"),
+                action=item["action"],
+                payload=item.get("payload"),
+                created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
+                updated_at=_parse_datetime(item.get("updated_at")) or _utc_now(),
+            )
+            for item in raw["audit_events"]
+        }
+        for event in audit_events.values():
+            event.actor_user = users.get(event.actor_user_id)
+            if event.actor_user is not None and event not in event.actor_user.audit_events:
+                event.actor_user.audit_events.append(event)
+
         recommendations = {
             item["id"]: Recommendation(
                 id=item["id"],
@@ -486,6 +506,7 @@ class FileDatasetGraph:
             payments=payments,
             subscriptions=subscriptions,
             user_consents=user_consents,
+            audit_events=audit_events,
             recommendations=recommendations,
             recommendation_legs=recommendation_legs,
             recommendation_attachments=recommendation_attachments,
@@ -516,6 +537,12 @@ class FileDatasetGraph:
             self.subscriptions[entity.id] = entity
         elif isinstance(entity, UserConsent):
             self.user_consents[entity.id] = entity
+        elif isinstance(entity, AuditEvent):
+            if getattr(entity, "actor_user", None) is None and entity.actor_user_id is not None:
+                entity.actor_user = self.users.get(entity.actor_user_id)
+            self.audit_events[entity.id] = entity
+            if entity.actor_user is not None and entity not in entity.actor_user.audit_events:
+                entity.actor_user.audit_events.append(entity)
         elif isinstance(entity, Recommendation):
             if getattr(entity, "author", None) is None:
                 entity.author = self.authors[entity.author_id]
@@ -580,6 +607,7 @@ class FileDatasetGraph:
                 "payments": [self._payment_record(item) for item in self.payments.values()],
                 "subscriptions": [self._subscription_record(item) for item in self.subscriptions.values()],
                 "user_consents": [self._user_consent_record(item) for item in self.user_consents.values()],
+                "audit_events": [self._audit_event_record(item) for item in self.audit_events.values()],
                 "recommendations": [self._recommendation_record(item) for item in self.recommendations.values()],
                 "recommendation_legs": [self._recommendation_leg_record(item) for item in self.recommendation_legs.values()],
                 "recommendation_attachments": [
@@ -771,6 +799,17 @@ class FileDatasetGraph:
             "accepted_at": _serialize_datetime(entity.accepted_at),
             "source": entity.source,
             "ip_address": entity.ip_address,
+        }
+
+    def _audit_event_record(self, entity: AuditEvent) -> dict[str, Any]:
+        return self._base_record(entity) | {
+            "actor_user_id": entity.actor_user_id or (
+                entity.actor_user.id if getattr(entity, "actor_user", None) is not None else None
+            ),
+            "entity_type": entity.entity_type,
+            "entity_id": entity.entity_id,
+            "action": entity.action,
+            "payload": entity.payload,
         }
 
     def _recommendation_record(self, entity: Recommendation) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 # PitchCopyTrade Blueprint
 
-Дата: 2026-03-11  
+Дата: 2026-03-12  
 Статус: research-based current state + target migration architecture
 
 ## 1. Назначение
@@ -31,7 +31,7 @@ Canonical subscriber model остается:
   - публичная витрина;
   - legal pages;
   - Telegram-authenticated fallback;
-  - future `Telegram WebApp / Mini App`.
+  - `Telegram WebApp / Mini App` на `https`-стенде.
 
 ### 2.2 Staff model
 `admin`, `author`, `moderator` остаются в web-контуре:
@@ -70,7 +70,11 @@ Canonical subscriber model остается:
 - strategy CRUD
 - product CRUD
 - payment queue and confirm flow
+- admin subscription registry
+- legal docs admin UI
+- delivery admin UI with retry history
 - author workspace
+- author publish workflow hardening
 - recommendation CRUD
 - preview
 - moderation queue
@@ -246,6 +250,11 @@ Primary persistence target:
   - `Telegram checkout -> payment pending`;
   - `admin confirm -> subscription activation`;
   - `Telegram feed -> visible recommendation`.
+- первый server prototype тоже подтвержден:
+  - host nginx on target server;
+  - dockerized `api + bot + worker`;
+  - `admin` login works on deployed host;
+  - Telegram bot polling works on deployed host.
 
 ### 6.3 Demo seed baseline
 Текущий baseline теперь включает:
@@ -410,13 +419,11 @@ Test-launch baseline уже достигнут, но full parity будет сч
 7. only after that deeper UX and analytics tasks
 
 ## 13. Что еще нужно реализовать после persistence refactor
-- full Telegram WebApp/Mini App contour
 - richer Telegram checkout UX
-- legal docs admin UI
 - promo/discount lifecycle
-- delivery admin UI
+- delivery retry/metrics hardening
 - moderation analytics/SLA UX
-- attachment management UX
+- attachment lifecycle UX hardening
 - lead source analytics
 - worker retries and observability
 
@@ -431,30 +438,22 @@ Test-launch baseline уже достигнут, но full parity будет сч
 Task list для запуска тестовой версии закрыт. Следующий этап уже не про foundation, а про operational hardening.
 
 Приоритеты:
-1. deployment contour
-   - canonical server path = `file mode + docker compose + host nginx`
-   - domain for current test server = `pct.test.ptfin.ru`
-   - canonical project root on server = `/var/www/pct`
-   - canonical secret file on server = `/var/www/pct/.env.server`
-   - deploy artifacts must be committed in repo under `deploy/`
-   - operator/tester guides may also be shipped in `deploy/` as ready-to-use PDF assets
-   - polling bot остается основным способом работы test bot
-2. compose cleanup
-   - убрать `MinIO-first` assumptions из runtime compose path
-   - не делать `MinIO` обязательным для `api` и `worker` в `file` mode
-3. full file-mode parity
-   - moderation
-   - notifications
-   - publishing edge cases
-4. local legal editing
-   - admin UI for markdown source files
-5. Telegram UX phase
-   - WebApp auth bridge
-   - richer subscriber status and checkout UX
-6. operations
-   - storage backup strategy
-   - log rotation
-   - release/update procedure
+1. payment completion
+   - replace `stub/manual` with real SBP provider
+   - recommended first provider = `T-Bank`
+   - keep manual operator fallback
+2. remaining persistence hardening
+   - compose cleanup
+   - full file-mode parity for remaining contours
+   - backup/restore discipline
+3. operational reliability
+   - worker retries
+   - observability
+   - support tooling hardening
+4. product analytics and monetization
+   - promo/discount lifecycle
+   - lead source analytics
+   - moderation analytics/SLA UX
 
 ## 16. Canonical clean -> review -> deploy flow
 Каждый следующий этап нужно вести по одной схеме:

@@ -20,7 +20,7 @@
         {% if recommendation %}Редактирование рекомендации{% else %}Новая рекомендация{% endif %}
       </h1>
       <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Полный author-editor baseline: статус публикации, structured legs, scheduled publish и вложения через MinIO.
+        Author-editor для draft -> review -> publish: multi-leg setup, scheduled publish и локальные вложения без ручной работы со storage.
       </p>
     </div>
     {% if recommendation %}
@@ -181,17 +181,32 @@
       {% if recommendation and recommendation.attachments %}
       <div style="display:grid;gap:10px;margin-top:14px;">
         {% for attachment in recommendation.attachments %}
-        <div class="surface" style="padding:14px;border-radius:18px;background:rgba(20,56,166,0.03);box-shadow:none;">
-          <strong>{{ attachment.original_filename }}</strong>
-          <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} bytes</div>
-        </div>
+        <label class="surface" style="padding:14px;border-radius:18px;background:rgba(20,56,166,0.03);box-shadow:none;display:block;">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+              <strong>{{ attachment.original_filename }}</strong>
+              <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} bytes</div>
+            </div>
+            <span style="display:inline-flex;gap:8px;align-items:center;">
+              <input type="checkbox" name="remove_attachment_ids" value="{{ attachment.id }}" />
+              <span class="muted">удалить</span>
+            </span>
+          </div>
+        </label>
         {% endfor %}
       </div>
       {% endif %}
     </section>
 
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="action" type="submit">{% if recommendation %}Сохранить изменения{% else %}Создать рекомендацию{% endif %}</button>
+      <button class="action" type="submit" name="workflow_action" value="save_draft">Сохранить draft</button>
+      <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить в review</button>
+      <button class="action ghost" type="submit" name="workflow_action" value="schedule">Запланировать</button>
+      <button class="action ghost" type="submit" name="workflow_action" value="publish_now">Опубликовать</button>
+      {% if recommendation %}
+      <button class="action ghost" type="submit" name="workflow_action" value="close_idea">Закрыть идею</button>
+      <button class="action ghost" type="submit" name="workflow_action" value="cancel_idea">Отменить идею</button>
+      {% endif %}
       <a class="action ghost" href="/author/recommendations">Отмена</a>
     </div>
   </form>
@@ -209,8 +224,8 @@
         <div class="muted" style="margin-top:8px;line-height:1.55;">`new_idea`, `update`, `close`, `cancel`.</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Следующий этап</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Следом идут preview, subscriber-facing rendering, moderation queue и attach/delete UX.</div>
+        <strong>Workflow actions</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Кнопки внизу формы сразу переводят идею в `draft`, `review`, `scheduled`, `published`, `closed` или `cancelled`.</div>
       </div>
     </div>
   </aside>

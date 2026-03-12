@@ -5,8 +5,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import require_admin
+from pitchcopytrade.bot.main import create_bot
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
-from pitchcopytrade.db.models.enums import BillingPeriod, ProductType, RiskLevel, StrategyStatus
+from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, ProductType, RiskLevel, StrategyStatus
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.services.admin import (
     ProductFormData,
@@ -14,6 +16,7 @@ from pitchcopytrade.services.admin import (
     StrategyFormData,
     create_product,
     create_strategy,
+    get_admin_subscription,
     get_admin_payment,
     get_admin_product,
     get_admin_dashboard_stats,
@@ -23,10 +26,25 @@ from pitchcopytrade.services.admin import (
     list_admin_bundles,
     list_admin_payments,
     list_admin_products,
+    list_admin_subscriptions,
     list_admin_strategies,
     update_product,
     update_strategy,
 )
+from pitchcopytrade.services.delivery_admin import (
+    get_admin_delivery_record,
+    list_admin_delivery_records,
+    retry_recommendation_delivery,
+)
+from pitchcopytrade.services.legal_admin import (
+    LegalDocumentFormData,
+    activate_admin_legal_document,
+    create_admin_legal_document,
+    get_admin_legal_document,
+    list_admin_legal_documents,
+    update_admin_legal_document,
+)
+from pitchcopytrade.services.legal_documents import read_legal_document_markdown
 from pitchcopytrade.web.templates import templates
 
 
@@ -48,6 +66,7 @@ async def admin_dashboard(
     strategies = await list_admin_strategies(session)
     products = await list_admin_products(session)
     payments = await list_admin_payments(session)
+    subscriptions = await list_admin_subscriptions(session)
     return templates.TemplateResponse(
         request,
         "admin/dashboard.html",
@@ -58,6 +77,7 @@ async def admin_dashboard(
             "recent_strategies": strategies[:5],
             "recent_products": products[:5],
             "recent_payments": payments[:5],
+            "recent_subscriptions": subscriptions[:5],
         },
     )
 
@@ -429,6 +449,279 @@ async def payment_list_page(
     )
 
 
+@router.get("/subscriptions", response_class=HTMLResponse)
+async def subscription_list_page(
+    request: Request,
+    q: str = "",
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    subscriptions = await list_admin_subscriptions(session, query_text=q)
+    stats = {
+        "active": sum(1 for item in subscriptions if item.status.value == "active"),
+        "trial": sum(1 for item in subscriptions if item.status.value == "trial"),
+        "pending": sum(1 for item in subscriptions if item.status.value == "pending"),
+        "paid": sum(1 for item in subscriptions if item.payment is not None and item.payment.status.value == "paid"),
+    }
+    return templates.TemplateResponse(
+        request,
+        "admin/subscriptions_list.html",
+        {
+            "title": "Подписки",
+            "user": user,
+            "subscriptions": subscriptions,
+            "query_text": q,
+            "stats": stats,
+        },
+    )
+
+
+@router.get("/subscriptions/{subscription_id}", response_class=HTMLResponse)
+async def subscription_detail_page(
+    subscription_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    subscription = await get_admin_subscription(session, subscription_id)
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    return templates.TemplateResponse(
+        request,
+        "admin/subscription_detail.html",
+        {
+            "title": "Карточка подписки",
+            "user": user,
+            "subscription": subscription,
+        },
+    )
+
+
+@router.get("/legal", response_class=HTMLResponse)
+async def legal_document_list_page(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    documents = await list_admin_legal_documents(session)
+    return templates.TemplateResponse(
+        request,
+        "admin/legal_list.html",
+        {
+            "title": "Юридические документы",
+            "user": user,
+            "documents": documents,
+        },
+    )
+
+
+@router.get("/legal/new", response_class=HTMLResponse)
+async def legal_document_create_page(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    return await _render_legal_form(
+        request=request,
+        user=user,
+        session=session,
+        document=None,
+        error=None,
+        form_values={},
+    )
+
+
+@router.post("/legal", response_class=HTMLResponse)
+async def legal_document_create_submit(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    document_type: str = Form(...),
+    version: str = Form(...),
+    title: str = Form(...),
+    content_md: str = Form(...),
+) -> Response:
+    try:
+        data = _build_legal_form_data(
+            document_type=document_type,
+            version=version,
+            title=title,
+            content_md=content_md,
+        )
+        document = await create_admin_legal_document(session, data)
+    except ValueError as exc:
+        return await _render_legal_form(
+            request=request,
+            user=user,
+            session=session,
+            document=None,
+            error=str(exc),
+            form_values={
+                "document_type": document_type,
+                "version": version,
+                "title": title,
+                "content_md": content_md,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/legal/{document.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/legal/{document_id}/edit", response_class=HTMLResponse)
+async def legal_document_edit_page(
+    document_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    document = await get_admin_legal_document(session, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
+    return await _render_legal_form(
+        request=request,
+        user=user,
+        session=session,
+        document=document,
+        error=None,
+        form_values=_form_values_from_legal_document(document),
+    )
+
+
+@router.post("/legal/{document_id}", response_class=HTMLResponse)
+async def legal_document_edit_submit(
+    document_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    document_type: str = Form(...),
+    version: str = Form(...),
+    title: str = Form(...),
+    content_md: str = Form(...),
+) -> Response:
+    document = await get_admin_legal_document(session, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
+
+    try:
+        data = _build_legal_form_data(
+            document_type=document_type,
+            version=version,
+            title=title,
+            content_md=content_md,
+        )
+        await update_admin_legal_document(session, document, data)
+    except ValueError as exc:
+        return await _render_legal_form(
+            request=request,
+            user=user,
+            session=session,
+            document=document,
+            error=str(exc),
+            form_values={
+                "document_type": document_type,
+                "version": version,
+                "title": title,
+                "content_md": content_md,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/legal/{document.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/legal/{document_id}/activate", response_class=HTMLResponse)
+async def legal_document_activate_submit(
+    document_id: str,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    document = await get_admin_legal_document(session, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
+    await activate_admin_legal_document(session, document)
+    return RedirectResponse(url=f"/admin/legal/{document.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/delivery", response_class=HTMLResponse)
+async def delivery_list_page(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    records = await list_admin_delivery_records(session)
+    stats = {
+        "published": len(records),
+        "delivered": sum(1 for item in records if item.latest_delivery_event is not None),
+        "attempts": sum(item.delivery_attempts for item in records),
+        "recipients": sum(item.delivered_recipients for item in records),
+    }
+    return templates.TemplateResponse(
+        request,
+        "admin/delivery_list.html",
+        {
+            "title": "Delivery operations",
+            "user": user,
+            "records": records,
+            "stats": stats,
+        },
+    )
+
+
+@router.get("/delivery/{recommendation_id}", response_class=HTMLResponse)
+async def delivery_detail_page(
+    recommendation_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    record = await get_admin_delivery_record(session, recommendation_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery record not found")
+    return templates.TemplateResponse(
+        request,
+        "admin/delivery_detail.html",
+        {
+            "title": "Delivery detail",
+            "user": user,
+            "record": record,
+            "error": None,
+        },
+    )
+
+
+@router.post("/delivery/{recommendation_id}/retry", response_class=HTMLResponse)
+async def delivery_retry_submit(
+    recommendation_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
+    try:
+        try:
+            record = await retry_recommendation_delivery(session, recommendation_id, bot)
+        except ValueError as exc:
+            current = await get_admin_delivery_record(session, recommendation_id)
+            if current is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery record not found") from exc
+            return templates.TemplateResponse(
+                request,
+                "admin/delivery_detail.html",
+                {
+                    "title": "Delivery detail",
+                    "user": user,
+                    "record": current,
+                    "error": str(exc),
+                },
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+    finally:
+        await bot.session.close()
+    return RedirectResponse(
+        url=f"/admin/delivery/{record.recommendation.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 @router.get("/payments/{payment_id}", response_class=HTMLResponse)
 async def payment_detail_page(
     payment_id: str,
@@ -531,6 +824,32 @@ async def _render_product_form(
             "form_values": form_values,
             "product_types": list(ProductType),
             "billing_periods": list(BillingPeriod),
+        },
+        status_code=status_code,
+    )
+
+
+async def _render_legal_form(
+    request: Request,
+    user: User,
+    session: AsyncSession | None,
+    document,
+    error: str | None,
+    form_values: dict[str, object],
+    status_code: int = status.HTTP_200_OK,
+) -> Response:
+    documents = await list_admin_legal_documents(session)
+    return templates.TemplateResponse(
+        request,
+        "admin/legal_form.html",
+        {
+            "title": "Юридический документ" if document is not None else "Новый юридический документ",
+            "user": user,
+            "document": document,
+            "documents": documents,
+            "error": error,
+            "form_values": form_values,
+            "document_types": list(LegalDocumentType),
         },
         status_code=status_code,
     )
@@ -673,4 +992,35 @@ def _form_values_from_product(product) -> dict[str, object]:
         "trial_days": product.trial_days,
         "is_active": product.is_active,
         "autorenew_allowed": product.autorenew_allowed,
+    }
+
+
+def _build_legal_form_data(
+    *,
+    document_type: str,
+    version: str,
+    title: str,
+    content_md: str,
+) -> LegalDocumentFormData:
+    normalized_version = version.strip()
+    if not normalized_version:
+        raise ValueError("Версия документа обязательна")
+    if not title.strip():
+        raise ValueError("Название документа обязательно")
+    if not content_md.strip():
+        raise ValueError("Markdown содержимое обязательно")
+    return LegalDocumentFormData(
+        document_type=LegalDocumentType(document_type),
+        version=normalized_version,
+        title=title.strip(),
+        content_md=content_md.strip(),
+    )
+
+
+def _form_values_from_legal_document(document) -> dict[str, object]:
+    return {
+        "document_type": document.document_type.value,
+        "version": document.version,
+        "title": document.title,
+        "content_md": read_legal_document_markdown(document),
     }

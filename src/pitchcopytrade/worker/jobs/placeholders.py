@@ -8,10 +8,11 @@ from datetime import datetime, timezone
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import AsyncSessionLocal
+from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.db.models.enums import RecommendationStatus, SubscriptionStatus
-from pitchcopytrade.services.notifications import build_recommendation_notification_text, deliver_recommendation_notifications
+from pitchcopytrade.services.notifications import deliver_recommendation_notifications, deliver_recommendation_notifications_file
 from pitchcopytrade.services.publishing import publish_due_recommendations
 
 logger = logging.getLogger(__name__)
@@ -41,34 +42,27 @@ async def run_scheduled_publish() -> None:
                 item.published_at = current_time
                 item.scheduled_for = None
                 published.append(item)
+                graph.add(
+                    AuditEvent(
+                        actor_user_id=None,
+                        entity_type="recommendation",
+                        entity_id=item.id,
+                        action="worker.scheduled_publish",
+                        payload={"status": item.status.value},
+                    )
+                )
         if published:
             graph.save(store)
             bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
             try:
                 for item in published:
-                    recipients = {
-                        subscription.user.telegram_user_id
-                        for subscription in graph.subscriptions.values()
-                        if subscription.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
-                        and subscription.user.telegram_user_id is not None
-                        and (
-                            subscription.product.strategy_id == item.strategy_id
-                            or subscription.product.author_id == item.author_id
-                            or (
-                                subscription.product.bundle_id is not None
-                                and any(
-                                    member.bundle_id == subscription.product.bundle_id and member.strategy_id == item.strategy_id
-                                    for member in graph.bundle_members
-                                )
-                            )
-                        )
-                    }
-                    text = build_recommendation_notification_text(item)
-                    for chat_id in recipients:
-                        try:
-                            await bot.send_message(int(chat_id), text)
-                        except Exception:
-                            logger.exception("Failed to deliver file-mode recommendation notification to chat_id=%s", chat_id)
+                    await deliver_recommendation_notifications_file(
+                        graph,
+                        store,
+                        item,
+                        bot,
+                        trigger="scheduled_publish",
+                    )
             finally:
                 await bot.session.close()
         logger.info("scheduled_publish tick(file): %s published", len(published))
@@ -80,7 +74,7 @@ async def run_scheduled_publish() -> None:
             bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
             try:
                 for item in published:
-                    await deliver_recommendation_notifications(session, item, bot)
+                    await deliver_recommendation_notifications(session, item, bot, trigger="scheduled_publish")
             finally:
                 await bot.session.close()
     logger.info("scheduled_publish tick: %s published", len(published))

@@ -23,6 +23,7 @@ class FileDataStore:
         "payments",
         "subscriptions",
         "user_consents",
+        "audit_events",
         "recommendations",
         "recommendation_legs",
         "recommendation_attachments",

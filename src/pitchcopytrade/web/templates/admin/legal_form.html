@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/dashboard">Dashboard</a>
+  <a class="action ghost" href="/admin/legal">Документы</a>
+  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
+  <a class="action ghost" href="/admin/delivery">Delivery</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">legal editor</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">
+    {% if document %}Редактирование документа{% else %}Новый юридический документ{% endif %}
+  </h1>
+  <p class="muted" style="max-width:760px;line-height:1.65;margin:16px 0 0;">
+    Editor сохраняет markdown в локальный `source_path`, а активная версия используется в checkout и public legal pages.
+  </p>
+</section>
+
+<section style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,0.8fr);gap:18px;margin-top:18px;">
+  <form class="surface" method="post" action="{% if document %}/admin/legal/{{ document.id }}{% else %}/admin/legal{% endif %}" style="padding:24px;display:grid;gap:18px;">
+    {% if error %}
+    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+      <label style="display:grid;gap:8px;">
+        <strong>Тип документа</strong>
+        <select name="document_type" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
+          {% for item in document_types %}
+          <option value="{{ item.value }}" {% if form_values.document_type == item.value %}selected{% endif %}>{{ item.value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="display:grid;gap:8px;">
+        <strong>Версия</strong>
+        <input type="text" name="version" value="{{ form_values.version }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+      </label>
+    </div>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Название</strong>
+      <input type="text" name="title" value="{{ form_values.title }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    </label>
+
+    <label style="display:grid;gap:8px;">
+      <strong>Markdown</strong>
+      <textarea name="content_md" rows="18" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.content_md }}</textarea>
+    </label>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <button class="action" type="submit">{% if document %}Сохранить документ{% else %}Создать draft{% endif %}</button>
+      {% if document and not document.is_active %}
+      <button class="action ghost" type="submit" formaction="/admin/legal/{{ document.id }}/activate" formmethod="post">Сделать активной версией</button>
+      {% endif %}
+      {% if document and document.is_active %}
+      <span class="pill">active version</span>
+      {% endif %}
+      <a class="action ghost" href="/admin/legal">Вернуться к списку</a>
+      {% if document and document.is_active %}
+      <a class="action ghost" href="/legal/{{ document.id }}" target="_blank" rel="noreferrer">Открыть public view</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <aside class="surface" style="padding:24px;">
+    <div class="eyebrow">doc ops</div>
+    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Контекст версии</h2>
+    {% if document %}
+    <div style="display:grid;gap:12px;">
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Source path</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ document.source_path }}</div>
+      </div>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Статус</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ "active" if document.is_active else "draft" }}</div>
+        <div class="muted" style="margin-top:6px;line-height:1.55;">published_at: {{ document.published_at or "не опубликован" }}</div>
+      </div>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Consents</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ document.consents|length if document.consents is not none else 0 }} записей согласия</div>
+      </div>
+    </div>
+    {% else %}
+    <div style="display:grid;gap:12px;">
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Новая версия</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Создайте draft и затем активируйте его после проверки текста.</div>
+      </div>
+      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Local-first storage</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Markdown сохраняется в `storage/runtime/blob/legal/*`, а не в remote object storage.</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="eyebrow" style="margin-top:22px;">available versions</div>
+    <div style="display:grid;gap:10px;margin-top:12px;">
+      {% for item in documents %}
+      <a class="surface" href="/admin/legal/{{ item.id }}/edit" style="padding:14px 16px;border-radius:18px;background:var(--surface-strong);box-shadow:none;display:block;">
+        <strong>{{ item.document_type.value }} / {{ item.version }}</strong>
+        <div class="muted" style="margin-top:6px;">{{ item.title }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.2fr"] { grid-template-columns: 1fr !important; }
+    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

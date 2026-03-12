@@ -11,6 +11,8 @@ from pitchcopytrade.db.models.catalog import BundleMember, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Subscription
 from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.enums import SubscriptionStatus
+from pitchcopytrade.repositories.file_graph import FileDatasetGraph
+from pitchcopytrade.repositories.file_store import FileDataStore
 
 
 logger = logging.getLogger(__name__)
@@ -68,6 +70,8 @@ async def deliver_recommendation_notifications(
     session: AsyncSession,
     recommendation: Recommendation,
     notifier,
+    *,
+    trigger: str = "publish",
 ) -> list[int]:
     recipients = await list_recommendation_recipient_telegram_ids(session, recommendation)
     text = build_recommendation_notification_text(recommendation)
@@ -85,8 +89,65 @@ async def deliver_recommendation_notifications(
             entity_type="recommendation",
             entity_id=recommendation.id,
             action="notification.delivery",
-            payload={"recipient_count": len(delivered)},
+            payload={
+                "recipient_count": len(delivered),
+                "attempted_count": len(recipients),
+                "failed_count": len(recipients) - len(delivered),
+                "trigger": trigger,
+            },
         )
     )
     await session.commit()
+    return delivered
+
+
+async def deliver_recommendation_notifications_file(
+    graph: FileDatasetGraph,
+    store: FileDataStore,
+    recommendation: Recommendation,
+    notifier,
+    *,
+    trigger: str = "publish",
+) -> list[int]:
+    recipients = {
+        subscription.user.telegram_user_id
+        for subscription in graph.subscriptions.values()
+        if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES
+        and subscription.user.telegram_user_id is not None
+        and (
+            subscription.product.strategy_id == recommendation.strategy_id
+            or subscription.product.author_id == recommendation.author_id
+            or (
+                subscription.product.bundle_id is not None
+                and any(
+                    member.bundle_id == subscription.product.bundle_id and member.strategy_id == recommendation.strategy_id
+                    for member in graph.bundle_members
+                )
+            )
+        )
+    }
+    text = build_recommendation_notification_text(recommendation)
+    delivered: list[int] = []
+    for chat_id in sorted(int(item) for item in recipients if item is not None):
+        try:
+            await notifier.send_message(chat_id, text)
+            delivered.append(chat_id)
+        except Exception:
+            logger.exception("Failed to deliver file-mode recommendation notification to chat_id=%s", chat_id)
+
+    graph.add(
+        AuditEvent(
+            actor_user_id=None,
+            entity_type="recommendation",
+            entity_id=recommendation.id,
+            action="notification.delivery",
+            payload={
+                "recipient_count": len(delivered),
+                "attempted_count": len(recipients),
+                "failed_count": len(recipients) - len(delivered),
+                "trigger": trigger,
+            },
+        )
+    )
+    graph.save(store)
     return delivered
