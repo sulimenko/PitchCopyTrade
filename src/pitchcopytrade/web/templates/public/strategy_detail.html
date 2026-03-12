@@ -2,11 +2,15 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/catalog{% if surface == 'miniapp' %}?surface=miniapp{% endif %}">Каталог</a>
+  <a class="action ghost" href="{% if miniapp_mode %}/app/catalog{% else %}/catalog{% endif %}">Каталог</a>
 </div>
 {% endblock %}
 
 {% block content %}
+{% if miniapp_mode %}
+{% include "app/_miniapp_nav.html" %}
+{% endif %}
+
 <section class="surface" style="padding:30px;">
   <div class="eyebrow">{{ strategy.author.display_name }}</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
@@ -35,7 +39,7 @@
     <h2 style="margin:10px 0 14px;font-size:1.55rem;">Продукты подписки</h2>
     <div style="display:grid;gap:12px;">
       {% for product in strategy.subscription_products %}
-      <a class="surface" href="/checkout/{{ product.id }}{% if surface == 'miniapp' %}?surface=miniapp{% endif %}" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
+      <a class="surface" href="{% if miniapp_mode %}/app/checkout/{{ product.id }}{% else %}/checkout/{{ product.id }}{% endif %}" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
         <strong>{{ product.title }}</strong>
         <div class="muted" style="margin-top:8px;line-height:1.6;">{{ product.description or "Описание продукта пока не заполнено" }}</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">

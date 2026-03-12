@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:30px;">
+  <div class="eyebrow">telegram mini app</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.94;letter-spacing:-0.05em;">Подключаем Telegram-профиль</h1>
+  <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.7;">
+    Mini App подтверждает ваш Telegram-профиль и открывает клиентский workspace без отдельного входа.
+  </p>
+  <div id="miniapp-bootstrap-status" class="pill" style="margin-top:16px;">
+    {% if webapp_enabled %}Ожидаем подтверждение Telegram{% else %}Mini App требует HTTPS{% endif %}
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:1.2fr 0.8fr;gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <strong>Что будет дальше</strong>
+    <ol class="muted" style="margin:14px 0 0;padding-left:20px;line-height:1.8;">
+      <li>Mini App проверит Telegram initData.</li>
+      <li>Backend создаст или обновит профиль подписчика по Telegram ID.</li>
+      <li>После этого откроется стартовый экран Mini App со статусом доступа.</li>
+    </ol>
+  </article>
+
+  <article class="surface" style="padding:24px;">
+    <strong>Если что-то пошло не так</strong>
+    <div class="muted" style="margin-top:12px;line-height:1.7;">
+      Вернитесь в бота и повторно откройте Mini App. Отдельная кнопка входа больше не используется.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+      <a class="action" href="https://t.me/{{ telegram_bot_username }}">Открыть бота</a>
+      <a class="action ghost" href="/catalog">Открыть сайт-витрину</a>
+    </div>
+  </article>
+</section>
+
+{% if webapp_enabled %}
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+  (async function () {
+    const statusNode = document.getElementById("miniapp-bootstrap-status");
+    const webApp = window.Telegram && window.Telegram.WebApp;
+    if (!webApp || !webApp.initData) {
+      if (statusNode) statusNode.textContent = "Нет Telegram initData";
+      return;
+    }
+    try {
+      webApp.ready();
+      if (statusNode) statusNode.textContent = "Подтверждаем Telegram-профиль";
+      const body = new URLSearchParams();
+      body.set("init_data", webApp.initData);
+      body.set("next", "{{ next_path }}");
+      const response = await fetch("/tg-webapp/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        credentials: "same-origin",
+        body: body.toString()
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        if (statusNode) statusNode.textContent = "Не удалось подтвердить Telegram-профиль";
+        console.error("Mini App auth failed", payload);
+        return;
+      }
+      const payload = await response.json();
+      if (statusNode) statusNode.textContent = "Telegram-профиль подтвержден";
+      if (payload.redirect_url) {
+        window.location.href = payload.redirect_url;
+      }
+    } catch (error) {
+      if (statusNode) statusNode.textContent = "Ошибка Mini App";
+      console.error(error);
+    }
+  })();
+</script>
+{% endif %}
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.2fr"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

@@ -236,12 +236,12 @@ def test_tg_auth_respects_safe_next_redirect() -> None:
     with _build_client(repository) as client:
         response = client.get(
             "/tg-auth",
-            params={"token": build_telegram_login_link_token(user), "next": "/catalog?surface=miniapp"},
+            params={"token": build_telegram_login_link_token(user), "next": "/app/catalog"},
             follow_redirects=False,
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/catalog?surface=miniapp"
+        assert response.headers["location"] == "/app/catalog"
 
 
 def test_workspace_session_does_not_open_subscriber_feed() -> None:
@@ -267,6 +267,7 @@ def test_verify_telegram_page_renders() -> None:
         assert "Подтвердите доступ через Telegram" in response.text
         assert "Mini App автоматически подтвердит" in response.text
         assert "Открыть бота" in response.text
+        assert "Открыть экран запуска Mini App" in response.text
 
 
 def test_tg_webapp_auth_sets_cookie_and_returns_redirect(monkeypatch) -> None:

@@ -133,6 +133,7 @@ async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() ->
             timezone_name="Europe/Moscow",
             lead_source_name="telegram_bot",
         ),
+        accepted_document_ids=[document.id for document in _make_documents()],
         now=datetime(2026, 3, 11, tzinfo=timezone.utc),
     )
 

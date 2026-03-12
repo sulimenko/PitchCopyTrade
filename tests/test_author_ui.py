@@ -269,7 +269,7 @@ def test_author_recommendation_preview_renders_subscriber_view(monkeypatch) -> N
         response = client.get("/author/recommendations/rec-1/preview")
 
         assert response.status_code == 200
-        assert "author preview" in response.text
+        assert "предпросмотр автора" in response.text
         assert "Покупка SBER" in response.text
 
 

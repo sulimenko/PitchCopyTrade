@@ -49,6 +49,8 @@ class TelegramSubscriberProfile:
     username: str | None
     first_name: str | None
     last_name: str | None
+    full_name: str | None = None
+    email: str | None = None
     timezone_name: str = "Europe/Moscow"
     lead_source_name: str | None = None
 
@@ -90,12 +92,16 @@ async def find_user_by_email(repository: PublicRepository, email: str) -> User |
 
 async def upsert_telegram_subscriber(repository: PublicRepository, profile: TelegramSubscriberProfile) -> User:
     user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
-    display_name = " ".join(part for part in [profile.first_name, profile.last_name] if part).strip() or None
+    display_name = (profile.full_name or "").strip() or " ".join(
+        part for part in [profile.first_name, profile.last_name] if part
+    ).strip() or None
+    normalized_email = (profile.email or "").strip().lower() or None
     if user is None:
         user = User(
             telegram_user_id=profile.telegram_user_id,
             username=profile.username,
             full_name=display_name,
+            email=normalized_email,
             status=UserStatus.ACTIVE,
             timezone=profile.timezone_name,
         )
@@ -107,6 +113,8 @@ async def upsert_telegram_subscriber(repository: PublicRepository, profile: Tele
 
     user.username = profile.username
     user.full_name = display_name
+    if normalized_email is not None:
+        user.email = normalized_email
     user.timezone = profile.timezone_name
     if user.consents is None:
         user.consents = []
@@ -196,14 +204,24 @@ async def create_telegram_stub_checkout(
     *,
     product: SubscriptionProduct,
     profile: TelegramSubscriberProfile,
+    accepted_document_ids: list[str],
+    promo_code_value: str | None = None,
     now: datetime | None = None,
 ) -> CheckoutResult:
     timestamp = now or datetime.now(timezone.utc)
     required_documents = await list_active_checkout_documents(repository)
     if len(required_documents) != len(REQUIRED_CHECKOUT_DOCUMENT_TYPES):
         raise ValueError("Checkout недоступен: не опубликован полный комплект обязательных документов")
+    required_document_ids = {document.id for document in required_documents}
+    if required_document_ids != set(accepted_document_ids):
+        raise ValueError("Нужно принять все обязательные документы перед оплатой")
 
     user = await upsert_telegram_subscriber(repository, profile)
+    promo_code = await _resolve_checkout_promo_code(
+        repository,
+        promo_code_value,
+        now=timestamp,
+    )
     lead_source = await _resolve_checkout_lead_source(repository, profile.lead_source_name)
     if lead_source is not None and user.lead_source is None:
         user.lead_source = lead_source
@@ -215,7 +233,7 @@ async def create_telegram_stub_checkout(
             product=product,
             lead_source=lead_source,
             lead_source_name=profile.lead_source_name,
-            promo_code=None,
+            promo_code=promo_code,
             ip_address=None,
             source="telegram_checkout",
             required_documents=required_documents,
@@ -228,7 +246,7 @@ async def create_telegram_stub_checkout(
         product=product,
         lead_source=lead_source,
         lead_source_name=profile.lead_source_name,
-        promo_code=None,
+        promo_code=promo_code,
         ip_address=None,
         source="telegram_checkout",
         required_documents=required_documents,

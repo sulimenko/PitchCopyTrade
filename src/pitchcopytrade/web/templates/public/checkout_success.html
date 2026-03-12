@@ -2,11 +2,15 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/catalog">Каталог</a>
+  <a class="action ghost" href="{% if miniapp_mode %}/app/payments{% else %}/catalog{% endif %}">{% if miniapp_mode %}Оплаты{% else %}Каталог{% endif %}</a>
 </div>
 {% endblock %}
 
 {% block content %}
+{% if miniapp_mode %}
+{% include "app/_miniapp_nav.html" %}
+{% endif %}
+
 <section class="surface" style="padding:30px;">
   <div class="eyebrow">заявка создана</div>
   <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.95;letter-spacing:-0.06em;">Заявка создана</h1>

@@ -15,6 +15,8 @@
 - сначала выполнить review результата;
 - затем обновить все актуальные description files проекта.
 - если пользователь дал общее разрешение на последовательное выполнение задач, следующий согласованный step запускать без ожидания дополнительного подтверждения, пока не будет достигнут естественный blocker.
+- все следующие задачи выполнять крупными блоками без сохранения backward compatibility, если новый canonical contour уже согласован.
+- legacy layers, shim-ы и временные переходные пути нужно удалять, а не поддерживать бесконечно.
 
 Актуальные description files:
 - [README.md](/Users/alexey/site/PitchCopyTrade/README.md)
@@ -29,6 +31,7 @@ Canonical subscriber model остается:
 - `Telegram-first`;
 - основной канал взаимодействия: `Telegram bot`;
 - bot command surface intentionally reduced to `/start` and `/help`;
+- legacy subscriber bot handlers and command-only flows must be removed, not preserved behind compatibility shims;
 - вся клиентская навигация должна жить внутри `Mini App`;
 - web для подписчика допустим только как:
   - публичная витрина;
@@ -102,7 +105,10 @@ Canonical subscriber model остается:
 - safe local `next` redirect support in `/tg-auth`
 - `/app/status` as subscriber landing page in web fallback
 - Mini App automatic auth bridge via verified Telegram `initData`
-- Mini App catalog surface is subscriber-aware when Telegram fallback cookie already exists
+- `/miniapp` is the canonical Telegram bootstrap entry
+- `/app/catalog`, `/app/subscriptions`, `/app/payments`, `/app/help`, `/app/feed` form a single subscriber workspace
+- Mini App workspace is subscriber-aware when Telegram fallback cookie already exists
+- Mini App checkout binds payment/subscription creation to the current Telegram identity
 - provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
 - worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
 - `T-Bank` callback endpoint for provider-driven payment updates

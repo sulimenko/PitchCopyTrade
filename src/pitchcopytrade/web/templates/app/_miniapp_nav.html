@@ -1,0 +1,28 @@
+<section class="surface" style="padding:16px 18px;margin-bottom:18px;">
+  <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;">
+    <div>
+      <div class="eyebrow">mini app</div>
+      <strong>{{ miniapp_user.full_name or miniapp_user.username or "Подписчик" }}</strong>
+      {% if miniapp_snapshot %}
+      <div class="muted" style="margin-top:8px;line-height:1.6;">
+        Доступ: {{ "активен" if miniapp_snapshot.has_access else "ожидает активации" }}
+      </div>
+      {% endif %}
+    </div>
+    {% if miniapp_snapshot %}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <span class="pill">{{ miniapp_snapshot.active_subscriptions|length }} подписок</span>
+      <span class="pill">{{ miniapp_snapshot.pending_payments|length }} оплат</span>
+      <span class="pill">{{ miniapp_snapshot.visible_recommendation_titles|length }} идей</span>
+    </div>
+    {% endif %}
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+    <a class="action {% if miniapp_active != 'status' %}ghost{% endif %}" href="/app/status">Статус</a>
+    <a class="action {% if miniapp_active != 'subscriptions' %}ghost{% endif %}" href="/app/subscriptions">Подписки</a>
+    <a class="action {% if miniapp_active != 'payments' %}ghost{% endif %}" href="/app/payments">Оплаты</a>
+    <a class="action {% if miniapp_active != 'feed' %}ghost{% endif %}" href="/app/feed">Лента</a>
+    <a class="action {% if miniapp_active != 'catalog' %}ghost{% endif %}" href="/app/catalog">Каталог</a>
+    <a class="action {% if miniapp_active != 'help' %}ghost{% endif %}" href="/app/help">Помощь</a>
+  </div>
+</section>
