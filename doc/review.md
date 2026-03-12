@@ -76,6 +76,7 @@
 - есть ли явный путь к `APP_DATA_MODE=db|file`;
 - не прошивает ли service layer прямую зависимость от `AsyncSession` там, где уже должен быть repository layer;
 - хранится ли attachment metadata в локально-совместимом виде, а не только как bucket/object-key.
+- если runtime imports payment provider client, его библиотеки должны быть в main dependencies, а не только в `dev`.
 
 Считать finding'ом:
 - новый критический flow, который требует `MinIO`;
@@ -279,3 +280,5 @@ Reviewer должен помнить, что после текущего refacto
   - `worker`
   - host nginx reverse proxy
   - storage root
+## Deploy review note
+- Verify host nginx upstream matches compose API bind (`127.0.0.1:8110`).

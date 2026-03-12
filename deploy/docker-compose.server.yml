@@ -8,7 +8,7 @@ services:
       - ../.env.server
     command: uvicorn pitchcopytrade.api.main:app --host 0.0.0.0 --port 8000
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8110:8000"
     volumes:
       - ../storage:/data/storage:Z
     networks:

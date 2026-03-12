@@ -77,6 +77,7 @@ Telegram-first платформа для продажи подписок на с
   - host nginx
   - dockerized `api + bot + worker`
   - test domain `pct.test.ptfin.ru`
+  - canonical nginx upstream `127.0.0.1:8110`
 
 ## Архитектурный сдвиг
 Новая целевая схема:
@@ -498,6 +499,11 @@ docker compose -f deploy/docker-compose.server.yml build
 docker compose -f deploy/docker-compose.server.yml up -d
 ```
 
+Важно:
+- системный `nginx` должен проксировать именно на `http://127.0.0.1:8110`;
+- старый upstream `127.0.0.1:8000` для текущего deploy bundle больше невалиден;
+- после изменения зависимостей контейнеры нужно пересобрать, не только перезапустить.
+
 ### 9. Проверить контейнеры и логи
 ```bash
 cd /var/www/pct
@@ -509,7 +515,7 @@ docker compose -f deploy/docker-compose.server.yml logs --tail=100 worker
 
 ### 10. Smoke-check API и сайта
 ```bash
-curl -I http://127.0.0.1:8000/catalog
+curl -I http://127.0.0.1:8110/catalog
 curl -I http://pct.test.ptfin.ru/catalog
 curl -I http://pct.test.ptfin.ru/login
 ```
