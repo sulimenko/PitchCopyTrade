@@ -29,3 +29,8 @@ Canonical server deploy path for the current test version:
 8. `nginx -t && systemctl reload nginx`
 9. `docker compose -f deploy/docker-compose.server.yml build`
 10. `docker compose -f deploy/docker-compose.server.yml up -d`
+
+Important:
+- host `nginx` must proxy to `http://127.0.0.1:8110`
+- if server config still points to `127.0.0.1:8000`, site will return `502`
+- after dependency changes, rebuild images before restart

@@ -112,10 +112,12 @@ Canonical subscriber model остается:
 - provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
 - worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
 - `T-Bank` callback endpoint for provider-driven payment updates
+- `httpx` is a runtime dependency because payment provider code imports it in live API and worker paths
 - Telegram-auth fallback cookie for `/app/*`
 - ACL-gated web feed and bot feed
 - validated test bot token smoke via Telegram API `getMe`
 - `https` host can expose Mini App safely
+- canonical server deploy upstream for host nginx is `127.0.0.1:8110`
 - timezone should be auto-detected from Telegram WebApp / browser when available, fallback `Europe/Moscow`
 - lead source should be derived automatically, not entered by client manually
 - strategy base demo price is `499 руб`; period labels should render as `Месяц`, trial labels as `7 дней бесплатно`

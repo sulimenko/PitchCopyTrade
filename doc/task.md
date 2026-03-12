@@ -546,6 +546,7 @@ Acceptance:
 - confirmed provider state auto-activates linked subscriptions
 - terminal failed provider state auto-cancels pending subscriptions
 - sync writes `worker.payment_state_sync` audit events
+- runtime dependency `httpx` moved to main project dependencies because live payment code imports it outside test-only scope
 - `T-Bank` callback endpoint exists at `/payments/tbank/notify`
 - callback token is validated before payment state update
 - callback path writes `payment.webhook_sync` audit events
@@ -607,3 +608,5 @@ Acceptance:
 - entitlement rules одинаковы в web и bot
 - новые шаги не должны усиливать remote storage dependency
 - новые шаги не должны делать БД обязательной для базового локального тестирования
+### Server deploy note
+- host nginx canonical upstream must be `127.0.0.1:8110`
