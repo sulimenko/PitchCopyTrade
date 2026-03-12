@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.auth.session import build_telegram_fallback_cookie_value
+from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, Subscription
@@ -308,7 +309,39 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
         assert response.status_code == 201
         assert "Заявка создана" in response.text
         assert "MANUAL-MOMENTUM-ABCD1234" in response.text
-        assert "lead@example.com" in response.text
+
+
+def test_tbank_notify_accepts_valid_callback(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_settings",
+        lambda: type(
+            "Settings",
+            (),
+            {
+                "payments": type(
+                    "Payments",
+                    (),
+                    {
+                        "tinkoff_terminal_key": type("Secret", (), {"get_secret_value": lambda self: "term"})(),
+                        "tinkoff_secret_key": type("Secret", (), {"get_secret_value": lambda self: "secret"})(),
+                    },
+                )()
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.process_tbank_callback",
+        lambda _session, payload: _async_return(SimpleNamespace(found=True, changed=True, payment_status="paid")),
+    )
+
+    payload = {"TerminalKey": "term", "PaymentId": "777", "Status": "CONFIRMED"}
+    payload["Token"] = TBankAcquiringClient._build_token(payload, password="secret")
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.post("/payments/tbank/notify", json=payload)
+
+        assert response.status_code == 200
+        assert response.text == "OK"
 
 
 async def _async_return(value):

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import require_moderator
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
-from pitchcopytrade.db.session import get_db_session
+from pitchcopytrade.db.session import get_optional_db_session
+from pitchcopytrade.repositories.file_graph import FileDatasetGraph
+from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.services.moderation import (
     approve_recommendation,
     get_moderation_queue_stats,
@@ -18,7 +19,7 @@ from pitchcopytrade.services.moderation import (
     reject_recommendation,
     send_recommendation_to_rework,
 )
-from pitchcopytrade.services.notifications import deliver_recommendation_notifications
+from pitchcopytrade.services.notifications import deliver_recommendation_notifications, deliver_recommendation_notifications_file
 from pitchcopytrade.web.templates import templates
 
 
@@ -34,7 +35,7 @@ async def moderation_root() -> Response:
 async def moderation_queue_page(
     request: Request,
     user: User = Depends(require_moderator),
-    session: AsyncSession = Depends(get_db_session),
+    session=Depends(get_optional_db_session),
 ) -> Response:
     items = await list_moderation_recommendations(session)
     stats = await get_moderation_queue_stats(session)
@@ -55,7 +56,7 @@ async def moderation_detail_page(
     recommendation_id: str,
     request: Request,
     user: User = Depends(require_moderator),
-    session: AsyncSession = Depends(get_db_session),
+    session=Depends(get_optional_db_session),
 ) -> Response:
     recommendation = await get_moderation_recommendation(session, recommendation_id)
     if recommendation is None:
@@ -78,7 +79,7 @@ async def moderation_approve_submit(
     recommendation_id: str,
     comment: str = Form(""),
     user: User = Depends(require_moderator),
-    session: AsyncSession = Depends(get_db_session),
+    session=Depends(get_optional_db_session),
 ) -> Response:
     recommendation = await get_moderation_recommendation(session, recommendation_id)
     if recommendation is None:
@@ -87,7 +88,14 @@ async def moderation_approve_submit(
     if updated.status.value == "published":
         bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
         try:
-            await deliver_recommendation_notifications(session, updated, bot)
+            if session is None:
+                store = FileDataStore()
+                graph = FileDatasetGraph.load(store)
+                latest = graph.recommendations.get(updated.id)
+                if latest is not None:
+                    await deliver_recommendation_notifications_file(graph, store, latest, bot)
+            else:
+                await deliver_recommendation_notifications(session, updated, bot)
         finally:
             await bot.session.close()
     return RedirectResponse(url=f"/moderation/recommendations/{recommendation_id}", status_code=status.HTTP_303_SEE_OTHER)
@@ -98,7 +106,7 @@ async def moderation_rework_submit(
     recommendation_id: str,
     comment: str = Form(...),
     user: User = Depends(require_moderator),
-    session: AsyncSession = Depends(get_db_session),
+    session=Depends(get_optional_db_session),
 ) -> Response:
     recommendation = await get_moderation_recommendation(session, recommendation_id)
     if recommendation is None:
@@ -112,7 +120,7 @@ async def moderation_reject_submit(
     recommendation_id: str,
     comment: str = Form(...),
     user: User = Depends(require_moderator),
-    session: AsyncSession = Depends(get_db_session),
+    session=Depends(get_optional_db_session),
 ) -> Response:
     recommendation = await get_moderation_recommendation(session, recommendation_id)
     if recommendation is None:

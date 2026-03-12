@@ -396,10 +396,15 @@ Acceptance:
 - normalized attribution
 - reporting
 
-### 37. Worker hardening `[todo]`
-- retries
-- observability
+### 37. Worker hardening `[partial]`
+Сделано:
+- per-job fault tolerance in worker loop
+- per-job duration logging
+- notification retries baseline
+
+Сделать:
 - broader lifecycle jobs
+- stronger metrics/export path
 
 ## 8. Следующий этап после test-launch
 
@@ -413,7 +418,7 @@ Acceptance:
   - `deploy/nginx/pct.test.ptfin.ru.conf`
   - `deploy/env.server.example`
   - `deploy/README.md`
-  - `deploy/https_login_guide.pdf`
+  - `doc/guide.pdf`
 - canonical server root `/var/www/pct`
 - secret runtime file `.env.server`
 - update/restart procedure documented
@@ -435,8 +440,7 @@ Acceptance:
 Acceptance:
 - file-mode compose path не требует MinIO по умолчанию
 
-### 40. Full file-mode parity `[todo]`
-- moderation decisions
+### 40. Full file-mode parity `[partial]`
 - notifications persistence edges
 - publishing edge cases
 - remaining auth/session fallback paths
@@ -505,10 +509,13 @@ Acceptance:
 - confirmed provider state auto-activates linked subscriptions
 - terminal failed provider state auto-cancels pending subscriptions
 - sync writes `worker.payment_state_sync` audit events
+- `T-Bank` callback endpoint exists at `/payments/tbank/notify`
+- callback token is validated before payment state update
+- callback path writes `payment.webhook_sync` audit events
 
 Сделать:
-- webhook/callback completion and production host rollout
 - production credential rollout on target host
+- callback rollout hardening on target host
 
 Acceptance:
 - user can pay in RUB via real SBP flow

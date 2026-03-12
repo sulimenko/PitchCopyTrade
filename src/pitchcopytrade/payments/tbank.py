@@ -83,6 +83,12 @@ class TBankAcquiringClient:
             },
         )
 
+    def validate_callback_token(self, payload: dict[str, object]) -> bool:
+        token = payload.get("Token")
+        if token is None:
+            return False
+        return str(token) == self._build_token(payload, password=self.password)
+
     async def _post(self, method: str, payload: dict[str, object]) -> dict[str, object]:
         signed_payload = dict(payload)
         signed_payload["Token"] = self._build_token(payload, password=self.password)

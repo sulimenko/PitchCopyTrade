@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
 from pitchcopytrade.core.config import get_settings
@@ -18,10 +19,22 @@ from pitchcopytrade.services.public import (
     list_public_strategies,
 )
 from pitchcopytrade.services.legal_documents import read_legal_document_markdown
+from pitchcopytrade.services.payment_sync import process_tbank_callback
+from pitchcopytrade.db.session import get_optional_db_session
+from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.web.templates import templates
 
 
 router = APIRouter(tags=["public"])
+
+
+async def _read_request_payload(request: Request) -> dict[str, object]:
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        payload = await request.json()
+        return payload if isinstance(payload, dict) else {}
+    form = await request.form()
+    return {key: value for key, value in form.items()}
 
 
 @router.get("/", include_in_schema=False)
@@ -219,3 +232,21 @@ async def checkout_submit(
         },
         status_code=status.HTTP_201_CREATED,
     )
+
+
+@router.post("/payments/tbank/notify", include_in_schema=False)
+async def tbank_payment_notify(
+    request: Request,
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    payload = await _read_request_payload(request)
+    settings = get_settings()
+    client = TBankAcquiringClient(
+        terminal_key=settings.payments.tinkoff_terminal_key.get_secret_value(),
+        password=settings.payments.tinkoff_secret_key.get_secret_value(),
+    )
+    if not client.validate_callback_token(payload):
+        return PlainTextResponse("ERROR", status_code=status.HTTP_400_BAD_REQUEST)
+
+    await process_tbank_callback(session, payload=payload)
+    return PlainTextResponse("OK")

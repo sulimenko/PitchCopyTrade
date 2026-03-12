@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
+
+import pytest
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
 from pitchcopytrade.db.models.enums import InstrumentType, RecommendationKind, RecommendationStatus, RiskLevel, StrategyStatus, TradeSide
-from pitchcopytrade.services.notifications import build_recommendation_notification_text
+from pitchcopytrade.services.notifications import _send_with_retry, build_recommendation_notification_text
 
 
 def test_build_recommendation_notification_text_includes_leg_and_attachments() -> None:
@@ -75,3 +78,13 @@ def test_build_recommendation_notification_text_includes_leg_and_attachments() -
     assert "Покупка SBER" in text
     assert "SBER buy 101.5" in text
     assert "Вложений: 1" in text
+
+
+@pytest.mark.asyncio
+async def test_send_with_retry_recovers_after_first_failure() -> None:
+    send_message = AsyncMock(side_effect=[RuntimeError("temp"), None])
+
+    delivered = await _send_with_retry(send_message, 12345, "hello", attempts=3)
+
+    assert delivered is True
+    assert send_message.await_count == 2

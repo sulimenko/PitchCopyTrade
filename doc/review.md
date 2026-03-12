@@ -22,9 +22,11 @@
 - author workspace
 - recommendation CRUD
 - preview / moderation / rendering baseline
+- moderation file-mode parity
 - public catalog
 - checkout `stub/manual`
 - automatic `T-Bank` pending payment sync
+- `T-Bank` callback endpoint for provider-driven payment updates
 - payment confirm -> activate subscription
 - ACL service
 - bot feed and web fallback feed
@@ -90,6 +92,7 @@
 - если заявлен Mini App auth bridge, валидируется ли Telegram `initData` на backend, а не принимается ли он вслепую;
 - если заявлен реальный SBP provider, есть ли provider abstraction и не ломается ли `stub/manual` fallback;
 - если заявлен worker-based provider sync, активируется ли доступ только после финального provider state;
+- если заявлен provider callback, валидируется ли callback token до изменения payment state;
 - не собирает ли code лишние персональные данные без необходимости.
 - не отправляет ли bot `WebApp` кнопку на `http` base URL, где Telegram ее все равно отвергнет.
 
@@ -191,13 +194,14 @@ Reviewer должен считать хорошим признаком:
 
 ## 6. Что еще обязательно ждет реализации
 Reviewer должен помнить, что после текущего refactor track все еще нужны:
-- real SBP webhook/callback integration
+- real SBP production hardening
 - full file-mode parity for demo path
 - deeper WebApp auth bridge
 - promo/discount lifecycle
 - moderation analytics/SLA UX
 - lead source analytics
 - worker retries and observability
+- deeper metrics/export path for worker and delivery ops
 
 Если изменение делает путь к этим задачам хуже, это finding.
 

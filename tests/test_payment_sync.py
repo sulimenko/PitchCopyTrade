@@ -7,7 +7,7 @@ import pytest
 from pitchcopytrade.db.models.enums import PaymentStatus, SubscriptionStatus
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
-from pitchcopytrade.services.payment_sync import sync_tbank_pending_payments
+from pitchcopytrade.services.payment_sync import process_tbank_callback, sync_tbank_pending_payments
 
 
 class DummyTBankClient:
@@ -173,3 +173,26 @@ async def test_sync_tbank_pending_payments_marks_rejected_payment_failed(tmp_pat
     assert stats.failed == 1
     assert payment.status == PaymentStatus.FAILED
     assert subscription.status == SubscriptionStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_process_tbank_callback_marks_payment_paid_in_file_mode(tmp_path) -> None:
+    store = FileDataStore(root_dir=tmp_path)
+    _seed_tbank_pending_checkout(store)
+
+    result = await process_tbank_callback(
+        None,
+        payload={"TerminalKey": "term", "PaymentId": "777", "Status": "CONFIRMED"},
+        now=datetime(2026, 3, 12, 13, tzinfo=timezone.utc),
+        store=store,
+    )
+
+    graph = FileDatasetGraph.load(store)
+    payment = graph.payments["payment-1"]
+    subscription = graph.subscriptions["sub-1"]
+
+    assert result.found is True
+    assert result.changed is True
+    assert payment.status == PaymentStatus.PAID
+    assert subscription.status == SubscriptionStatus.TRIAL
+    assert any(event.action == "payment.webhook_sync" for event in graph.audit_events.values())

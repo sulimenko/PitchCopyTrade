@@ -14,6 +14,7 @@
 Для каждого завершенного implementation step действует правило:
 - сначала выполнить review результата;
 - затем обновить все актуальные description files проекта.
+- если пользователь дал общее разрешение на последовательное выполнение задач, следующий согласованный step запускать без ожидания дополнительного подтверждения, пока не будет достигнут естественный blocker.
 
 Актуальные description files:
 - [README.md](/Users/alexey/site/PitchCopyTrade/README.md)
@@ -79,6 +80,7 @@ Canonical subscriber model остается:
 - preview
 - moderation queue
 - moderation history baseline
+- moderation routes and actions now work in `db` and `file` modes
 
 ### 3.4 Subscriber surfaces
 Есть:
@@ -106,6 +108,7 @@ Canonical subscriber model остается:
 - Mini App catalog surface is subscriber-aware when Telegram fallback cookie already exists
 - provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
 - worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
+- `T-Bank` callback endpoint for provider-driven payment updates
 - Telegram-auth fallback cookie for `/app/*`
 - ACL-gated web feed and bot feed
 - validated test bot token smoke via Telegram API `getMe`
@@ -143,7 +146,6 @@ Canonical subscriber model остается:
 - real demo blob attachment under `storage/seed/blob`
 
 Пока еще не переведены:
-- moderation
 - notifications
 - publishing
 - часть auth/session fallback paths outside verified smoke contour
@@ -457,17 +459,16 @@ Task list для запуска тестовой версии закрыт. Сл
 
 Приоритеты:
 1. payment completion
-   - finish `T-Bank` webhook/callback path
-   - keep `stub/manual` as operator fallback
+  - keep `stub/manual` as operator fallback
+  - harden callback rollout on deployed host
    - keep manual operator fallback
 2. remaining persistence hardening
    - compose cleanup
    - full file-mode parity for remaining contours
    - backup/restore discipline
 3. operational reliability
-   - worker retries
-   - observability
-   - support tooling hardening
+   - worker retries baseline already added
+   - deepen observability and support tooling
 4. product analytics and monetization
    - promo/discount lifecycle
    - lead source analytics
