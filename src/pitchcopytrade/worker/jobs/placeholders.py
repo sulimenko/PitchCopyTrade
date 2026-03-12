@@ -13,7 +13,12 @@ from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.db.models.enums import RecommendationStatus, SubscriptionStatus
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
-from pitchcopytrade.services.notifications import deliver_recommendation_notifications, deliver_recommendation_notifications_file
+from pitchcopytrade.services.notifications import (
+    deliver_recommendation_notifications,
+    deliver_recommendation_notifications_file,
+    deliver_subscriber_reminders,
+)
+from pitchcopytrade.services.lifecycle import expire_due_payments, expire_due_subscriptions
 from pitchcopytrade.services.payment_sync import sync_tbank_pending_payments
 from pitchcopytrade.services.publishing import publish_due_recommendations
 
@@ -84,18 +89,24 @@ async def run_scheduled_publish() -> None:
 
 async def run_payment_expiry_sync() -> None:
     settings = get_settings()
-    if settings.payments.provider != "tbank":
-        logger.debug("payment_expiry_sync skipped: provider=%s", settings.payments.provider)
-        return
-
-    client = TBankAcquiringClient(
-        terminal_key=settings.payments.tinkoff_terminal_key.get_secret_value(),
-        password=settings.payments.tinkoff_secret_key.get_secret_value(),
-    )
     if AsyncSessionLocal is None:
+        expiry_stats = await expire_due_payments(None)
+        if settings.payments.provider != "tbank":
+            logger.info(
+                "payment_expiry_sync tick(file): expired=%s cancelled=%s",
+                expiry_stats.expired,
+                expiry_stats.cancelled,
+            )
+            return
+        client = TBankAcquiringClient(
+            terminal_key=settings.payments.tinkoff_terminal_key.get_secret_value(),
+            password=settings.payments.tinkoff_secret_key.get_secret_value(),
+        )
         stats = await sync_tbank_pending_payments(None, client=client)
         logger.info(
-            "payment_expiry_sync tick(file): checked=%s paid=%s failed=%s pending=%s",
+            "payment_expiry_sync tick(file): expired=%s cancelled=%s checked=%s paid=%s failed=%s pending=%s",
+            expiry_stats.expired,
+            expiry_stats.cancelled,
             stats.checked,
             stats.paid,
             stats.failed,
@@ -104,9 +115,23 @@ async def run_payment_expiry_sync() -> None:
         return
 
     async with AsyncSessionLocal() as session:
+        expiry_stats = await expire_due_payments(session)
+        if settings.payments.provider != "tbank":
+            logger.info(
+                "payment_expiry_sync tick: expired=%s cancelled=%s",
+                expiry_stats.expired,
+                expiry_stats.cancelled,
+            )
+            return
+        client = TBankAcquiringClient(
+            terminal_key=settings.payments.tinkoff_terminal_key.get_secret_value(),
+            password=settings.payments.tinkoff_secret_key.get_secret_value(),
+        )
         stats = await sync_tbank_pending_payments(session, client=client)
     logger.info(
-        "payment_expiry_sync tick: checked=%s paid=%s failed=%s pending=%s",
+        "payment_expiry_sync tick: expired=%s cancelled=%s checked=%s paid=%s failed=%s pending=%s",
+        expiry_stats.expired,
+        expiry_stats.cancelled,
         stats.checked,
         stats.paid,
         stats.failed,
@@ -115,11 +140,29 @@ async def run_payment_expiry_sync() -> None:
 
 
 async def run_subscription_expiry() -> None:
-    logger.debug("subscription_expiry tick")
+    if AsyncSessionLocal is None:
+        stats = await expire_due_subscriptions(None)
+        logger.info("subscription_expiry tick(file): expired=%s", stats.expired)
+        return
+
+    async with AsyncSessionLocal() as session:
+        stats = await expire_due_subscriptions(session)
+    logger.info("subscription_expiry tick: expired=%s", stats.expired)
 
 
 async def run_reminder_jobs() -> None:
-    logger.debug("reminder_jobs tick")
+    bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
+    try:
+        if AsyncSessionLocal is None:
+            stats = await deliver_subscriber_reminders(None, bot)
+            logger.info("reminder_jobs tick(file): sent=%s skipped=%s", stats.sent, stats.skipped)
+            return
+
+        async with AsyncSessionLocal() as session:
+            stats = await deliver_subscriber_reminders(session, bot)
+        logger.info("reminder_jobs tick: sent=%s skipped=%s", stats.sent, stats.skipped)
+    finally:
+        await bot.session.close()
 
 
 WORKER_JOBS: tuple[WorkerJob, ...] = (

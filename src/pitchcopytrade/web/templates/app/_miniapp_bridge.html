@@ -1,0 +1,40 @@
+{% if miniapp_mode %}
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+  (function () {
+    const webApp = window.Telegram && window.Telegram.WebApp;
+    if (!webApp || !webApp.initData) {
+      return;
+    }
+
+    const path = window.location.pathname + window.location.search;
+    const timezone = (function () {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Moscow";
+      } catch (error) {
+        return "Europe/Moscow";
+      }
+    })();
+
+    async function refreshTelegramSession() {
+      try {
+        webApp.ready();
+        const body = new URLSearchParams();
+        body.set("init_data", webApp.initData);
+        body.set("next", path);
+        body.set("timezone_name", timezone);
+        await fetch("/tg-webapp/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          credentials: "same-origin",
+          body: body.toString()
+        });
+      } catch (error) {
+        console.error("Mini App bridge error", error);
+      }
+    }
+
+    refreshTelegramSession();
+  })();
+</script>
+{% endif %}

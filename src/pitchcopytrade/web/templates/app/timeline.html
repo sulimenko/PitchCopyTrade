@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}{% endblock %}
+
+{% block content %}
+{% include "app/_miniapp_nav.html" %}
+
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">история</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.96;letter-spacing:-0.05em;">История событий</h1>
+  <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+    Единая лента событий по оплатам, изменениям статуса и подпискам.
+  </p>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div style="display:grid;gap:12px;">
+    {% for item in timeline %}
+    <article style="padding:14px 16px;border:1px solid rgba(20,56,166,0.12);border-radius:18px;background:rgba(255,255,255,0.55);">
+      <strong>{{ item.title }}</strong>
+      <div class="muted" style="margin-top:6px;">{{ item.detail }}</div>
+      <div class="muted" style="margin-top:4px;">{{ item.happened_at }}</div>
+    </article>
+    {% else %}
+    <div class="muted">История событий пока пуста.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

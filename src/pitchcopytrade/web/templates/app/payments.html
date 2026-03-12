@@ -23,11 +23,29 @@
           <div class="muted" style="margin-top:8px;line-height:1.6;">
             {{ payment.final_amount_rub }} руб · {{ payment_status_label(payment.status) }}
           </div>
+          {% if payment.discount_rub or (payment.provider_payload and payment.provider_payload.get("manual_discount_rub")) %}
+          <div class="muted" style="margin-top:8px;line-height:1.6;">
+            Скидка: {{ payment.discount_rub + (payment.provider_payload.get("manual_discount_rub", 0) if payment.provider_payload else 0) }} руб
+          </div>
+          {% endif %}
           {% if payment.provider_payload and payment.provider_payload.get("payment_url") %}
           <div style="margin-top:12px;">
             <a class="action ghost" href="{{ payment.provider_payload.get('payment_url') }}">Открыть оплату</a>
           </div>
           {% endif %}
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+            {% if payment.status.value == "pending" %}
+            <form method="post" action="/app/payments/{{ payment.id }}/refresh">
+              <button class="action ghost" type="submit">Обновить статус</button>
+            </form>
+            {% endif %}
+            {% if payment.status.value in ["failed", "expired", "cancelled"] %}
+            <form method="post" action="/app/payments/{{ payment.id }}/retry" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <input type="text" name="promo_code_value" placeholder="Промокод" style="padding:10px 12px;border-radius:999px;border:1px solid var(--line);font:inherit;width:140px;" />
+              <button class="action" type="submit">Повторить</button>
+            </form>
+            {% endif %}
+          </div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <span class="pill">{{ payment.stub_reference or payment.external_id or payment.id }}</span>

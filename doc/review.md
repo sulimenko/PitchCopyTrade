@@ -14,6 +14,16 @@
    - `/Users/alexey/site/PitchCopyTrade/doc/task.md`
    - `/Users/alexey/site/PitchCopyTrade/doc/review.md`
 
+## 0. Последний полный review snapshot
+- дата: `2026-03-12`
+- полный regression suite: `165 passed`
+- критичных findings на уровне whole-project review не обнаружено
+- основные остаточные риски:
+  - production hardening для `T-Bank` / real SBP
+  - richer subscriber notification granularity
+  - support tooling / observability
+  - remaining analytics depth
+
 ## 1. Важный контекст
 Проект уже имеет существенный baseline:
 - foundation infrastructure
@@ -97,6 +107,19 @@
 - если заявлены payment/subscription detail pages, ограничены ли они только сущностями текущего `telegram_user_id`;
 - если заявлена отмена `pending` оплаты из Mini App, не отменяет ли она уже финализированные платежи и связанные access states;
 - если заявлен autorenew toggle, не дает ли он управлять чужой подпиской и сохраняется ли состояние после reload;
+- если заявлен payment refresh, не ходит ли он во внешний provider для неподходящих статусов и не ломает ли локальный payment state;
+- если заявлен payment retry, создает ли он новый checkout только для terminal payment states и ведет ли пользователя в новую payment card;
+- если заявлен subscription renewal, создает ли он новый Telegram-linked payment flow вместо ручного staff-only продления;
+- если заявлен payment result messaging, соответствует ли текст реальному состоянию оплаты;
+- если рендерится payment history, не смешивает ли она чужие state transitions и provider ids;
+- если worker шлет subscriber reminders, есть ли dedup и не повторяется ли одно и то же напоминание на каждом тике;
+- если есть центр напоминаний, видит ли subscriber только свои reminder events;
+- если есть настройки напоминаний, учитываются ли они worker reminder job и сохраняются ли после reload;
+- если есть единая лента событий, не смешивает ли она чужие payments/subscriptions и остается ли Telegram-scoped;
+- если заявлен full WebApp auth bridge, обновляет ли каждая Mini App page Telegram-backed cookie только через validated `initData`, а не через слепой trust на client-side данные;
+- если заявлены richer in-app actions, не ломают ли inline формы retry/renew/cancel существующий Telegram-only contour;
+- если есть manual discount, не применяется ли он к уже финализированным платежам и не пытается ли менять live-provider payment amount post-init;
+- если заявлены expiry/cancel flows, переводит ли worker payment/subscription lifecycle в terminal states ровно один раз и без повторного drift на каждом тике;
 - если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
 - если заявлен единый Mini App workspace, не осталось ли внутри legacy routes, compatibility query params или старых bot commands;
 - если Telegram checkout заявлен как interactive, идет ли он через Mini App sections и не тянет ли обратно legacy bot commands;
@@ -208,9 +231,9 @@ Reviewer должен считать хорошим признаком:
 Reviewer должен помнить, что после текущего refactor track все еще нужны:
 - real SBP production hardening
 - full file-mode parity for demo path
-- deeper WebApp auth bridge
-- promo/discount lifecycle `[partial]`
-- baseline done: admin CRUD, checkout apply path, paid-redemption counters
+- richer subscriber notification granularity and action composition inside Mini App
+- promo/discount lifecycle `[done baseline]`
+- baseline done: admin CRUD, checkout apply path, paid-redemption counters, manual discounts, Mini App promo actions, expiry/cancel automation
 - moderation analytics/SLA UX `[partial]`
 - baseline done: queue filters, overdue SLA, resolution latency
 - lead source analytics `[partial]`

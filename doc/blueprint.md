@@ -3,6 +3,11 @@
 Дата: 2026-03-12  
 Статус: research-based current state + target migration architecture
 
+Review snapshot:
+- full project review on `2026-03-12`
+- no critical findings discovered
+- full regression suite passed: `165 passed`
+
 ## 1. Назначение
 Этот документ фиксирует:
 - что уже реально реализовано в проекте;
@@ -113,8 +118,28 @@ Canonical subscriber model остается:
   - subscription detail page
   - payment detail page
   - pending payment cancellation
+  - subscription cancellation from the subscriber card
   - autorenew toggle
   - Russian labels for payment/subscription statuses and billing period
+  - payment status refresh for provider-driven pending payments
+  - payment retry for terminal failed/expired/cancelled states
+  - subscription renewal flow that creates a new Telegram-linked checkout
+  - promo code re-entry during retry and renewal
+  - payment result messaging
+  - payment state history rendering
+  - renewal history rendering
+  - worker-driven reminders for expiring subscriptions and pending payments
+  - центр напоминаний внутри Mini App
+  - настройки напоминаний подписчика
+  - единая лента событий по оплатам и подпискам
+- full WebApp auth bridge:
+  - every Mini App page may silently refresh Telegram-backed subscriber session via validated `initData`
+  - no separate subscriber login or explicit fallback entry should be required inside Telegram
+- manual discounts are staff-driven and apply only to mutable `pending` `stub_manual` payments; live provider amounts must be changed before checkout creation
+- lifecycle automation:
+  - due `pending` payments expire automatically
+  - linked `pending` subscriptions cancel automatically on payment expiry
+  - due `active/trial` subscriptions expire automatically
 - provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
 - worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
 - `T-Bank` callback endpoint for provider-driven payment updates
@@ -459,9 +484,8 @@ Test-launch baseline уже достигнут, но full parity будет сч
 
 ## 13. Что еще нужно реализовать после persistence refactor
 - richer Telegram checkout UX
-- deeper WebApp auth bridge beyond current verification link flow
 - promo/discount lifecycle `[partial]`
-- manual discounts and richer Telegram promo UX still remain
+- richer notification granularity and advanced in-app action composition
 - delivery retry/metrics hardening
 - moderation analytics/SLA UX `[partial]`
 - queue filters, overdue SLA and resolution latency are already in place

@@ -26,10 +26,22 @@ from pitchcopytrade.services.public import (
 from pitchcopytrade.services.subscriber import SubscriberStatusSnapshot, get_subscriber_status_snapshot
 from pitchcopytrade.services.subscriber import (
     billing_period_label,
+    build_action_cards,
+    build_subscriber_timeline,
+    cancel_subscription,
     cancel_pending_payment,
+    get_notification_preferences,
+    list_reminder_center_entries,
     payment_status_label,
+    payment_history,
+    payment_result_message,
+    refresh_pending_payment,
+    renew_subscription_checkout,
+    retry_payment_checkout,
+    subscription_renewal_history,
     subscription_status_label,
     toggle_subscription_autorenew,
+    update_notification_preferences,
 )
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 from pitchcopytrade.storage.minio import MinioStorage
@@ -247,6 +259,7 @@ async def app_status(
             "title": "Статус подписки",
             "user": user,
             "snapshot": snapshot,
+            "action_cards": build_action_cards(snapshot),
             "payment_status_label": payment_status_label,
             "subscription_status_label": subscription_status_label,
             **_build_miniapp_context("status", user=user, snapshot=snapshot),
@@ -320,6 +333,7 @@ async def app_subscription_detail(
             "user": user,
             "snapshot": snapshot,
             "subscription": subscription,
+            "renewal_history": subscription_renewal_history(snapshot, subscription),
             "subscription_status_label": subscription_status_label,
             "billing_period_label": billing_period_label,
             **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
@@ -350,6 +364,50 @@ async def app_subscription_autorenew(
     return RedirectResponse(url=f"/app/subscriptions/{subscription_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/subscriptions/{subscription_id}/renew")
+async def app_subscription_renew(
+    subscription_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+    promo_code_value: str = Form(""),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    result = await renew_subscription_checkout(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        subscription_id=subscription_id,
+        promo_code_value=promo_code_value.strip().upper() or None,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    return RedirectResponse(url=f"/app/payments/{result.payment.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/subscriptions/{subscription_id}/cancel")
+async def app_subscription_cancel(
+    subscription_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    subscription = await cancel_subscription(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        subscription_id=subscription_id,
+    )
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    return RedirectResponse(url=f"/app/subscriptions/{subscription_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/help", response_class=HTMLResponse)
 async def app_help(
     request: Request,
@@ -368,6 +426,74 @@ async def app_help(
             "snapshot": snapshot,
             "telegram_bot_username": get_settings().telegram.bot_username,
             **_build_miniapp_context("help", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.get("/reminders", response_class=HTMLResponse)
+async def app_reminders(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    preferences = await get_notification_preferences(repository, user_id=user.id)
+    reminders = await list_reminder_center_entries(repository, user_id=user.id)
+    return templates.TemplateResponse(
+        request,
+        "app/reminders.html",
+        {
+            "title": "Напоминания",
+            "user": user,
+            "snapshot": snapshot,
+            "preferences": preferences,
+            "reminders": reminders,
+            **_build_miniapp_context("reminders", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.post("/reminders/preferences")
+async def app_reminder_preferences_submit(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+    payment_reminders: str | None = Form(default=None),
+    subscription_reminders: str | None = Form(default=None),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    await update_notification_preferences(
+        repository,
+        user_id=user.id,
+        payment_reminders=payment_reminders is not None,
+        subscription_reminders=subscription_reminders is not None,
+    )
+    return RedirectResponse(url="/app/reminders", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/timeline", response_class=HTMLResponse)
+async def app_timeline(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    timeline = build_subscriber_timeline(snapshot)
+    return templates.TemplateResponse(
+        request,
+        "app/timeline.html",
+        {
+            "title": "История событий",
+            "user": user,
+            "snapshot": snapshot,
+            "timeline": timeline,
+            **_build_miniapp_context("timeline", user=user, snapshot=snapshot),
         },
     )
 
@@ -393,6 +519,8 @@ async def app_payment_detail(
             "user": user,
             "snapshot": snapshot,
             "payment": payment,
+            "payment_history": payment_history(payment),
+            "payment_result_message": payment_result_message(payment),
             "payment_status_label": payment_status_label,
             **_build_miniapp_context("payments", user=user, snapshot=snapshot),
         },
@@ -418,6 +546,50 @@ async def app_payment_cancel(
     if payment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
     return RedirectResponse(url=f"/app/payments/{payment_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/payments/{payment_id}/refresh")
+async def app_payment_refresh(
+    payment_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    payment = await refresh_pending_payment(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        payment_id=payment_id,
+    )
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    return RedirectResponse(url=f"/app/payments/{payment_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/payments/{payment_id}/retry")
+async def app_payment_retry(
+    payment_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+    promo_code_value: str = Form(""),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    result = await retry_payment_checkout(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        payment_id=payment_id,
+        promo_code_value=promo_code_value.strip().upper() or None,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    return RedirectResponse(url=f"/app/payments/{result.payment.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/recommendations/{recommendation_id}", response_class=HTMLResponse)

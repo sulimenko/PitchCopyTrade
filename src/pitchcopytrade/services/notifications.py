@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import BundleMember, SubscriptionProduct
-from pitchcopytrade.db.models.commerce import Subscription
+from pitchcopytrade.db.models.commerce import Payment, Subscription
 from pitchcopytrade.db.models.content import Recommendation
-from pitchcopytrade.db.models.enums import SubscriptionStatus
+from pitchcopytrade.db.models.enums import PaymentStatus, SubscriptionStatus
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 
@@ -19,6 +22,14 @@ from pitchcopytrade.repositories.file_store import FileDataStore
 logger = logging.getLogger(__name__)
 ACTIVE_SUBSCRIPTION_STATUSES = (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
 DEFAULT_NOTIFICATION_ATTEMPTS = 3
+SUBSCRIPTION_REMINDER_WINDOW = timedelta(days=3)
+PAYMENT_REMINDER_WINDOW = timedelta(hours=6)
+
+
+@dataclass(slots=True)
+class ReminderStats:
+    sent: int = 0
+    skipped: int = 0
 
 
 async def list_recommendation_recipient_telegram_ids(
@@ -174,3 +185,308 @@ async def _send_with_retry(
                 attempts,
             )
     return False
+
+
+async def deliver_subscriber_reminders(
+    session: AsyncSession | None,
+    notifier,
+    *,
+    now: datetime | None = None,
+    store: FileDataStore | None = None,
+    attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
+) -> ReminderStats:
+    timestamp = now or datetime.now(timezone.utc)
+    if session is None:
+        runtime_store = store or FileDataStore()
+        graph = FileDatasetGraph.load(runtime_store)
+        return await _deliver_subscriber_reminders_file(graph, runtime_store, notifier, now=timestamp, attempts=attempts)
+    return await _deliver_subscriber_reminders_db(session, notifier, now=timestamp, attempts=attempts)
+
+
+async def _deliver_subscriber_reminders_db(
+    session: AsyncSession,
+    notifier,
+    *,
+    now: datetime,
+    attempts: int,
+) -> ReminderStats:
+    stats = ReminderStats()
+    sent_keys = await _load_existing_reminder_keys_db(session)
+    preferences = await _load_reminder_preferences_db(session)
+    subscriptions = await _list_db_subscription_reminders(session, now=now)
+    payments = await _list_db_payment_reminders(session, now=now)
+
+    for subscription in subscriptions:
+        if not preferences.get(subscription.user_id, {}).get("subscription_reminders", True):
+            stats.skipped += 1
+            continue
+        key = _subscription_reminder_key(subscription)
+        if key in sent_keys:
+            stats.skipped += 1
+            continue
+        text = _build_subscription_reminder_text(subscription)
+        if await _send_with_retry(notifier.send_message, int(subscription.user.telegram_user_id), text, attempts=attempts):
+            session.add(
+                _build_reminder_event(
+                    "subscription",
+                    subscription.id,
+                    key,
+                    "subscription_expiring",
+                    user_id=subscription.user_id,
+                    title=subscription.product.title if subscription.product is not None else "Подписка",
+                )
+            )
+            sent_keys.add(key)
+            stats.sent += 1
+
+    for payment in payments:
+        if not preferences.get(payment.user_id, {}).get("payment_reminders", True):
+            stats.skipped += 1
+            continue
+        key = _payment_reminder_key(payment)
+        if key in sent_keys:
+            stats.skipped += 1
+            continue
+        text = _build_payment_reminder_text(payment)
+        if await _send_with_retry(notifier.send_message, int(payment.user.telegram_user_id), text, attempts=attempts):
+            session.add(
+                _build_reminder_event(
+                    "payment",
+                    payment.id,
+                    key,
+                    "payment_pending",
+                    user_id=payment.user_id,
+                    title=payment.product.title if payment.product is not None else "Оплата",
+                )
+            )
+            sent_keys.add(key)
+            stats.sent += 1
+
+    if stats.sent:
+        await session.commit()
+    return stats
+
+
+async def _deliver_subscriber_reminders_file(
+    graph: FileDatasetGraph,
+    store: FileDataStore,
+    notifier,
+    *,
+    now: datetime,
+    attempts: int,
+) -> ReminderStats:
+    stats = ReminderStats()
+    sent_keys = _load_existing_reminder_keys_file(graph)
+    preferences = _load_reminder_preferences_file(graph)
+
+    for subscription in _list_file_subscription_reminders(graph, now=now):
+        if not preferences.get(subscription.user_id, {}).get("subscription_reminders", True):
+            stats.skipped += 1
+            continue
+        key = _subscription_reminder_key(subscription)
+        if key in sent_keys:
+            stats.skipped += 1
+            continue
+        text = _build_subscription_reminder_text(subscription)
+        if await _send_with_retry(notifier.send_message, int(subscription.user.telegram_user_id), text, attempts=attempts):
+            graph.add(
+                _build_reminder_event(
+                    "subscription",
+                    subscription.id,
+                    key,
+                    "subscription_expiring",
+                    user_id=subscription.user_id,
+                    title=subscription.product.title if subscription.product is not None else "Подписка",
+                )
+            )
+            sent_keys.add(key)
+            stats.sent += 1
+
+    for payment in _list_file_payment_reminders(graph, now=now):
+        if not preferences.get(payment.user_id, {}).get("payment_reminders", True):
+            stats.skipped += 1
+            continue
+        key = _payment_reminder_key(payment)
+        if key in sent_keys:
+            stats.skipped += 1
+            continue
+        text = _build_payment_reminder_text(payment)
+        if await _send_with_retry(notifier.send_message, int(payment.user.telegram_user_id), text, attempts=attempts):
+            graph.add(
+                _build_reminder_event(
+                    "payment",
+                    payment.id,
+                    key,
+                    "payment_pending",
+                    user_id=payment.user_id,
+                    title=payment.product.title if payment.product is not None else "Оплата",
+                )
+            )
+            sent_keys.add(key)
+            stats.sent += 1
+
+    if stats.sent:
+        graph.save(store)
+    return stats
+
+
+async def _load_existing_reminder_keys_db(session: AsyncSession) -> set[str]:
+    query = select(AuditEvent).where(AuditEvent.action == "notification.reminder")
+    result = await session.execute(query)
+    return {
+        str((item.payload or {}).get("reminder_key"))
+        for item in result.scalars().all()
+        if (item.payload or {}).get("reminder_key") is not None
+    }
+
+
+def _load_existing_reminder_keys_file(graph: FileDatasetGraph) -> set[str]:
+    return {
+        str((item.payload or {}).get("reminder_key"))
+        for item in graph.audit_events.values()
+        if item.action == "notification.reminder" and (item.payload or {}).get("reminder_key") is not None
+    }
+
+
+async def _load_reminder_preferences_db(session: AsyncSession) -> dict[str, dict[str, bool]]:
+    query = (
+        select(AuditEvent)
+        .where(AuditEvent.action == "subscriber.notification_preferences")
+        .order_by(AuditEvent.created_at.desc())
+    )
+    result = await session.execute(query)
+    prefs: dict[str, dict[str, bool]] = {}
+    for event in result.scalars().all():
+        payload = event.payload or {}
+        user_id = payload.get("user_id")
+        if user_id is None or str(user_id) in prefs:
+            continue
+        prefs[str(user_id)] = {
+            "payment_reminders": bool(payload.get("payment_reminders", True)),
+            "subscription_reminders": bool(payload.get("subscription_reminders", True)),
+        }
+    return prefs
+
+
+def _load_reminder_preferences_file(graph: FileDatasetGraph) -> dict[str, dict[str, bool]]:
+    events = [
+        event
+        for event in graph.audit_events.values()
+        if event.action == "subscriber.notification_preferences"
+    ]
+    events.sort(key=lambda event: event.created_at, reverse=True)
+    prefs: dict[str, dict[str, bool]] = {}
+    for event in events:
+        payload = event.payload or {}
+        user_id = payload.get("user_id")
+        if user_id is None or str(user_id) in prefs:
+            continue
+        prefs[str(user_id)] = {
+            "payment_reminders": bool(payload.get("payment_reminders", True)),
+            "subscription_reminders": bool(payload.get("subscription_reminders", True)),
+        }
+    return prefs
+
+
+async def _list_db_subscription_reminders(session: AsyncSession, *, now: datetime) -> list[Subscription]:
+    query = (
+        select(Subscription)
+        .options(selectinload(Subscription.user), selectinload(Subscription.product))
+        .join(User, Subscription.user_id == User.id)
+        .where(
+            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
+            Subscription.end_at <= now + SUBSCRIPTION_REMINDER_WINDOW,
+            User.telegram_user_id.is_not(None),
+        )
+    )
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def _list_db_payment_reminders(session: AsyncSession, *, now: datetime) -> list[Payment]:
+    query = (
+        select(Payment)
+        .options(selectinload(Payment.user), selectinload(Payment.product))
+        .join(User, Payment.user_id == User.id)
+        .where(
+            Payment.status == PaymentStatus.PENDING,
+            Payment.expires_at.is_not(None),
+            Payment.expires_at <= now + PAYMENT_REMINDER_WINDOW,
+            User.telegram_user_id.is_not(None),
+        )
+    )
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+def _list_file_subscription_reminders(graph: FileDatasetGraph, *, now: datetime) -> list[Subscription]:
+    return [
+        item
+        for item in graph.subscriptions.values()
+        if item.status in ACTIVE_SUBSCRIPTION_STATUSES
+        and item.end_at is not None
+        and item.end_at <= now + SUBSCRIPTION_REMINDER_WINDOW
+        and item.user.telegram_user_id is not None
+    ]
+
+
+def _list_file_payment_reminders(graph: FileDatasetGraph, *, now: datetime) -> list[Payment]:
+    return [
+        item
+        for item in graph.payments.values()
+        if item.status is PaymentStatus.PENDING
+        and item.expires_at is not None
+        and item.expires_at <= now + PAYMENT_REMINDER_WINDOW
+        and item.user.telegram_user_id is not None
+    ]
+
+
+def _subscription_reminder_key(subscription: Subscription) -> str:
+    end_marker = subscription.end_at.isoformat() if subscription.end_at is not None else "na"
+    return f"subscription:{subscription.id}:{end_marker}"
+
+
+def _payment_reminder_key(payment: Payment) -> str:
+    expire_marker = payment.expires_at.isoformat() if payment.expires_at is not None else "na"
+    return f"payment:{payment.id}:{expire_marker}"
+
+
+def _build_subscription_reminder_text(subscription: Subscription) -> str:
+    title = subscription.product.title if subscription.product is not None else "Подписка"
+    return (
+        f"Скоро закончится подписка: {title}\n"
+        f"Действует до: {subscription.end_at}\n"
+        "Откройте Mini App и продлите подписку заранее, чтобы не потерять доступ."
+    )
+
+
+def _build_payment_reminder_text(payment: Payment) -> str:
+    title = payment.product.title if payment.product is not None else "Оплата"
+    return (
+        f"Оплата ожидает завершения: {title}\n"
+        f"Срок заявки: {payment.expires_at}\n"
+        "Откройте Mini App, обновите статус или завершите оплату до истечения срока."
+    )
+
+
+def _build_reminder_event(
+    entity_type: str,
+    entity_id: str,
+    reminder_key: str,
+    reminder_kind: str,
+    *,
+    user_id: str,
+    title: str,
+) -> AuditEvent:
+    return AuditEvent(
+        actor_user_id=None,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action="notification.reminder",
+        payload={
+            "user_id": user_id,
+            "title": title,
+            "reminder_key": reminder_key,
+            "kind": reminder_kind,
+        },
+    )

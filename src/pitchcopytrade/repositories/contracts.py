@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
+from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import Instrument, LeadSource, Strategy
 from pitchcopytrade.db.models.catalog import SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription
@@ -62,6 +63,12 @@ class AccessRepository(Protocol):
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None: ...
 
     async def commit(self) -> None: ...
+
+    async def list_user_reminder_events(self, *, user_id: str, limit: int = 20) -> list[AuditEvent]: ...
+
+    async def get_notification_preferences(self, *, user_id: str) -> dict[str, bool]: ...
+
+    async def save_notification_preferences(self, *, user_id: str, preferences: dict[str, bool]) -> dict[str, bool]: ...
 
 
 class PublicRepository(Protocol):

@@ -44,6 +44,11 @@ class FakeAuthRepository:
 class FakeAccessRepository:
     def __init__(self, user: User) -> None:
         self.user = user
+        self.preferences = {
+            "payment_reminders": True,
+            "subscription_reminders": True,
+        }
+        self.reminder_events = []
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
         return self.user if self.user.telegram_user_id == telegram_user_id else None
@@ -59,6 +64,19 @@ class FakeAccessRepository:
 
     async def commit(self) -> None:
         return None
+
+    async def list_user_reminder_events(self, *, user_id: str, limit: int = 20):
+        return self.reminder_events[:limit]
+
+    async def get_notification_preferences(self, *, user_id: str) -> dict[str, bool]:
+        return dict(self.preferences)
+
+    async def save_notification_preferences(self, *, user_id: str, preferences: dict[str, bool]) -> dict[str, bool]:
+        self.preferences = {
+            "payment_reminders": bool(preferences.get("payment_reminders", True)),
+            "subscription_reminders": bool(preferences.get("subscription_reminders", True)),
+        }
+        return dict(self.preferences)
 
 
 class FakePublicRepository:
@@ -112,7 +130,16 @@ def _make_user() -> User:
         currency="RUB",
         external_id="tb-1",
         stub_reference="TB-1",
-        provider_payload={"payment_url": "https://pay.example/tb-1"},
+        provider_payload={
+            "payment_url": "https://pay.example/tb-1",
+            "state_history": [
+                {
+                    "checked_at": "2026-03-12T10:00:00+00:00",
+                    "status": "FORM_SHOWED",
+                    "payment_id": "tb-1",
+                }
+            ],
+        },
     )
     subscription = Subscription(
         id="subscription-1",
@@ -131,6 +158,18 @@ def _make_user() -> User:
     user.payments = [payment]
     user.subscriptions = [subscription]
     return user
+
+
+def _make_snapshot(user: User) -> SimpleNamespace:
+    return SimpleNamespace(
+        user=user,
+        has_access=True,
+        subscriptions=user.subscriptions,
+        active_subscriptions=user.subscriptions,
+        payments=user.payments,
+        pending_payments=user.payments,
+        visible_recommendation_titles=["Покупка SBER"],
+    )
 
 
 def _make_recommendation() -> Recommendation:
@@ -247,17 +286,7 @@ def test_app_status_shows_snapshot(monkeypatch) -> None:
     user = _make_user()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
-        lambda _repository, telegram_user_id: _async_return(
-            SimpleNamespace(
-                user=user,
-                has_access=True,
-                subscriptions=user.subscriptions,
-                active_subscriptions=[],
-                payments=user.payments,
-                pending_payments=[],
-                visible_recommendation_titles=["Покупка SBER"],
-            )
-        ),
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
     )
 
     with _build_client(user) as client:
@@ -268,6 +297,8 @@ def test_app_status_shows_snapshot(monkeypatch) -> None:
         assert "Покупка SBER" in response.text
         assert "/app/subscriptions" in response.text
         assert "/app/payments" in response.text
+        assert "/app/reminders" in response.text
+        assert "/app/timeline" in response.text
 
 
 def test_app_feed_shows_visible_recommendations(monkeypatch) -> None:
@@ -338,17 +369,7 @@ def test_app_payment_detail_renders_actions(monkeypatch) -> None:
     user = _make_user()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
-        lambda _repository, telegram_user_id: _async_return(
-            SimpleNamespace(
-                user=user,
-                has_access=True,
-                subscriptions=user.subscriptions,
-                active_subscriptions=user.subscriptions,
-                payments=user.payments,
-                pending_payments=user.payments,
-                visible_recommendation_titles=[],
-            )
-        ),
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
     )
 
     with _build_client(user) as client:
@@ -357,23 +378,16 @@ def test_app_payment_detail_renders_actions(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Открыть оплату" in response.text
         assert "Отменить заявку" in response.text
+        assert "Платеж еще обрабатывается" in response.text
+        assert "FORM_SHOWED" in response.text
+        assert "Промо-скидка" in response.text
 
 
 def test_app_subscription_detail_renders_autorenew_toggle(monkeypatch) -> None:
     user = _make_user()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
-        lambda _repository, telegram_user_id: _async_return(
-            SimpleNamespace(
-                user=user,
-                has_access=True,
-                subscriptions=user.subscriptions,
-                active_subscriptions=user.subscriptions,
-                payments=user.payments,
-                pending_payments=user.payments,
-                visible_recommendation_titles=[],
-            )
-        ),
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
     )
 
     with _build_client(user) as client:
@@ -381,23 +395,16 @@ def test_app_subscription_detail_renders_autorenew_toggle(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert "Выключить автопродление" in response.text
+        assert "Отменить подписку" in response.text
+        assert "История продлений" in response.text
+        assert "Это первая подписка по данному продукту." in response.text
 
 
 def test_app_payment_cancel_updates_status(monkeypatch) -> None:
     user = _make_user()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
-        lambda _repository, telegram_user_id: _async_return(
-            SimpleNamespace(
-                user=user,
-                has_access=True,
-                subscriptions=user.subscriptions,
-                active_subscriptions=user.subscriptions,
-                payments=user.payments,
-                pending_payments=user.payments,
-                visible_recommendation_titles=[],
-            )
-        ),
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
     )
 
     with _build_client(user) as client:
@@ -408,21 +415,64 @@ def test_app_payment_cancel_updates_status(monkeypatch) -> None:
         assert user.payments[0].status is PaymentStatus.CANCELLED
 
 
+def test_app_payment_refresh_redirects_to_detail(monkeypatch) -> None:
+    user = _make_user()
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.refresh_pending_payment",
+        lambda _repository, telegram_user_id, payment_id: _async_return(user.payments[0]),
+    )
+
+    with _build_client(user) as client:
+        response = client.post("/app/payments/payment-1/refresh", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/payments/payment-1"
+
+
+def test_app_payment_retry_redirects_to_new_payment(monkeypatch) -> None:
+    user = _make_user()
+    new_payment = Payment(
+        id="payment-2",
+        user_id="user-1",
+        product_id="product-1",
+        provider=PaymentProvider.TBANK,
+        status=PaymentStatus.PENDING,
+        amount_rub=499,
+        discount_rub=0,
+        final_amount_rub=499,
+        currency="RUB",
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.retry_payment_checkout",
+        lambda _repository, telegram_user_id, payment_id, promo_code_value=None: _async_return(
+            SimpleNamespace(payment=new_payment)
+        ),
+    )
+
+    with _build_client(user) as client:
+        response = client.post(
+            "/app/payments/payment-1/retry",
+            data={"promo_code_value": "WELCOME10"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/payments/payment-2"
+
+
 def test_app_subscription_autorenew_toggle_updates_state(monkeypatch) -> None:
     user = _make_user()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
-        lambda _repository, telegram_user_id: _async_return(
-            SimpleNamespace(
-                user=user,
-                has_access=True,
-                subscriptions=user.subscriptions,
-                active_subscriptions=user.subscriptions,
-                payments=user.payments,
-                pending_payments=user.payments,
-                visible_recommendation_titles=[],
-            )
-        ),
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
     )
 
     with _build_client(user) as client:
@@ -435,6 +485,136 @@ def test_app_subscription_autorenew_toggle_updates_state(monkeypatch) -> None:
         assert response.status_code == 303
         assert response.headers["location"] == "/app/subscriptions/subscription-1"
         assert user.subscriptions[0].autorenew_enabled is False
+
+
+def test_app_subscription_renew_redirects_to_new_payment(monkeypatch) -> None:
+    user = _make_user()
+    new_payment = Payment(
+        id="payment-3",
+        user_id="user-1",
+        product_id="product-1",
+        provider=PaymentProvider.TBANK,
+        status=PaymentStatus.PENDING,
+        amount_rub=499,
+        discount_rub=0,
+        final_amount_rub=499,
+        currency="RUB",
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.renew_subscription_checkout",
+        lambda _repository, telegram_user_id, subscription_id, promo_code_value=None: _async_return(
+            SimpleNamespace(payment=new_payment)
+        ),
+    )
+
+    with _build_client(user) as client:
+        response = client.post(
+            "/app/subscriptions/subscription-1/renew",
+            data={"promo_code_value": "WELCOME10"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/payments/payment-3"
+
+
+def test_app_subscription_cancel_redirects_to_detail(monkeypatch) -> None:
+    user = _make_user()
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+
+    with _build_client(user) as client:
+        response = client.post("/app/subscriptions/subscription-1/cancel", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/subscriptions/subscription-1"
+        assert user.subscriptions[0].status is SubscriptionStatus.CANCELLED
+
+
+def test_app_reminders_renders_preferences_and_items(monkeypatch) -> None:
+    user = _make_user()
+    reminder = SimpleNamespace(created_at="2026-03-12T10:00:00+00:00", title="Momentum RU", kind="Оплата")
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_notification_preferences",
+        lambda _repository, user_id: _async_return(SimpleNamespace(payment_reminders=True, subscription_reminders=False)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_reminder_center_entries",
+        lambda _repository, user_id: _async_return([reminder]),
+    )
+
+    with _build_client(user) as client:
+        response = client.get("/app/reminders")
+
+        assert response.status_code == 200
+        assert "Центр напоминаний" in response.text
+        assert "Momentum RU" in response.text
+        assert "Напоминать о незавершенной оплате" in response.text
+
+
+def test_app_reminder_preferences_submit_redirects(monkeypatch) -> None:
+    user = _make_user()
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app._get_subscriber_snapshot_or_redirect",
+        lambda request, auth_repository, access_repository: _async_return((user, _make_snapshot(user))),
+    )
+    saved: dict[str, bool] = {}
+
+    async def fake_update(_repository, *, user_id: str, payment_reminders: bool, subscription_reminders: bool):
+        saved.update(
+            {
+                "payment_reminders": payment_reminders,
+                "subscription_reminders": subscription_reminders,
+            }
+        )
+        return SimpleNamespace(**saved)
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.app.update_notification_preferences", fake_update)
+
+    with _build_client(user) as client:
+        response = client.post(
+            "/app/reminders/preferences",
+            data={"payment_reminders": "1"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/reminders"
+        assert saved == {"payment_reminders": True, "subscription_reminders": False}
+
+
+def test_app_timeline_renders_items(monkeypatch) -> None:
+    user = _make_user()
+    timeline = [
+        SimpleNamespace(
+            happened_at="2026-03-12T10:00:00+00:00",
+            title="Оплата: Momentum RU",
+            detail="Ожидает оплаты",
+            category="payment",
+        )
+    ]
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.app.build_subscriber_timeline", lambda snapshot: timeline)
+
+    with _build_client(user) as client:
+        response = client.get("/app/timeline")
+
+        assert response.status_code == 200
+        assert "История событий" in response.text
+        assert "Оплата: Momentum RU" in response.text
 
 
 def test_recommendation_attachment_download_from_local_storage(monkeypatch) -> None:

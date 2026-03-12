@@ -199,6 +199,7 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
         assert "/app/status" in response.text
         assert "/app/subscriptions" in response.text
         assert "/app/payments" in response.text
+        assert "/tg-webapp/auth" in response.text
 
 
 def test_strategy_detail_renders_products(monkeypatch) -> None:
