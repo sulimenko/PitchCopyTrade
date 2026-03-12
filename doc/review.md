@@ -120,6 +120,11 @@
 - если заявлены richer in-app actions, не ломают ли inline формы retry/renew/cancel существующий Telegram-only contour;
 - если есть manual discount, не применяется ли он к уже финализированным платежам и не пытается ли менять live-provider payment amount post-init;
 - если заявлены expiry/cancel flows, переводит ли worker payment/subscription lifecycle в terminal states ровно один раз и без повторного drift на каждом тике;
+- если меняется author editor CSS, не появляется ли horizontal drift / overlap полей на обычной desktop ширине и на узких экранах;
+- если legs editor стал динамическим, не остался ли hidden fixed ceiling в parser/service layer;
+- если legs editor принимает dynamic row ids, не ломается ли сохранение при индексах вроде `leg_7_*`, `leg_12_*` и при повторной отрисовке формы после ошибки;
+- если заявлено `минимум 1 бумага`, не позволяет ли backend сохранить рекомендацию без единого валидного leg;
+- если optional legs удаляются через UI, не может ли пользователь удалить последнюю обязательную бумагу и отправить пустую форму;
 - если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
 - если заявлен единый Mini App workspace, не осталось ли внутри legacy routes, compatibility query params или старых bot commands;
 - если Telegram checkout заявлен как interactive, идет ли он через Mini App sections и не тянет ли обратно legacy bot commands;

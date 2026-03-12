@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+import re
 from typing import Iterable
 from uuid import uuid4
 
@@ -17,7 +18,7 @@ from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.storage.base import StorageBackend
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 
-MAX_EDITOR_LEGS = 5
+MIN_REQUIRED_LEGS = 1
 MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024
 ALLOWED_ATTACHMENT_CONTENT_TYPES = {
     "application/pdf",
@@ -298,27 +299,33 @@ def recommendation_form_values(recommendation: Recommendation | None) -> dict[st
             "market_context": "",
             "requires_moderation": False,
             "scheduled_for": "",
-            "legs": _blank_leg_values(),
+            "legs": [_blank_leg_value("0")],
         }
 
     scheduled_for = ""
     if recommendation.scheduled_for is not None:
         scheduled_for = recommendation.scheduled_for.strftime("%Y-%m-%dT%H:%M")
 
-    legs = _blank_leg_values()
-    for index, leg in enumerate(recommendation.legs[:MAX_EDITOR_LEGS]):
-        legs[index] = {
-            "instrument_id": leg.instrument_id or "",
-            "side": leg.side.value if leg.side else "",
-            "entry_from": _format_decimal(leg.entry_from),
-            "entry_to": _format_decimal(leg.entry_to),
-            "stop_loss": _format_decimal(leg.stop_loss),
-            "take_profit_1": _format_decimal(leg.take_profit_1),
-            "take_profit_2": _format_decimal(leg.take_profit_2),
-            "take_profit_3": _format_decimal(leg.take_profit_3),
-            "time_horizon": leg.time_horizon or "",
-            "note": leg.note or "",
-        }
+    legs: list[dict[str, str]] = []
+    for index, leg in enumerate(recommendation.legs):
+        legs.append(
+            {
+                "row_id": str(index),
+                "instrument_id": leg.instrument_id or "",
+                "side": leg.side.value if leg.side else "",
+                "entry_from": _format_decimal(leg.entry_from),
+                "entry_to": _format_decimal(leg.entry_to),
+                "stop_loss": _format_decimal(leg.stop_loss),
+                "take_profit_1": _format_decimal(leg.take_profit_1),
+                "take_profit_2": _format_decimal(leg.take_profit_2),
+                "take_profit_3": _format_decimal(leg.take_profit_3),
+                "time_horizon": leg.time_horizon or "",
+                "note": leg.note or "",
+            }
+        )
+
+    if not legs:
+        legs = [_blank_leg_value("0")]
 
     return {
         "strategy_id": recommendation.strategy_id,
@@ -334,15 +341,21 @@ def recommendation_form_values(recommendation: Recommendation | None) -> dict[st
     }
 
 
-def blank_leg_values() -> list[dict[str, str]]:
-    return _blank_leg_values()
-
-
 def build_leg_rows_from_form(form) -> list[dict[str, str]]:
+    pattern = re.compile(r"^leg_(\d+)_(.+)$")
+    indexes = {
+        match.group(1)
+        for key in form.keys()
+        if (match := pattern.match(str(key)))
+    }
+    if not indexes:
+        return [_blank_leg_value("0")]
+
     rows: list[dict[str, str]] = []
-    for index in range(MAX_EDITOR_LEGS):
+    for index in sorted(indexes, key=lambda item: int(item)):
         rows.append(
             {
+                "row_id": str(index),
                 "instrument_id": str(form.get(f"leg_{index}_instrument_id", "") or ""),
                 "side": str(form.get(f"leg_{index}_side", "") or ""),
                 "entry_from": str(form.get(f"leg_{index}_entry_from", "") or ""),
@@ -359,9 +372,11 @@ def build_leg_rows_from_form(form) -> list[dict[str, str]]:
 
 
 def leg_form_values_from_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    values = _blank_leg_values()
-    for index, row in enumerate(rows[:MAX_EDITOR_LEGS]):
-        values[index] = {
+    if not rows:
+        return [_blank_leg_value("0")]
+    return [
+        {
+            "row_id": str(row.get("row_id", index)),
             "instrument_id": row.get("instrument_id", ""),
             "side": row.get("side", ""),
             "entry_from": row.get("entry_from", ""),
@@ -373,9 +388,8 @@ def leg_form_values_from_rows(rows: list[dict[str, str]]) -> list[dict[str, str]
             "time_horizon": row.get("time_horizon", ""),
             "note": row.get("note", ""),
         }
-    return values
-
-
+        for index, row in enumerate(rows)
+    ]
 def build_attachment_object_key(recommendation_id: str, filename: str) -> str:
     safe_name = Path(filename).name.replace(" ", "_")
     return f"recommendations/{recommendation_id}/{uuid4().hex}_{safe_name}"
@@ -400,7 +414,7 @@ def _apply_publish_state(recommendation: Recommendation) -> None:
 def _build_leg_rows(rows: Iterable[dict[str, str]], allowed_instrument_ids: set[str]) -> list[StructuredLegFormData]:
     legs: list[StructuredLegFormData] = []
     for index, row in enumerate(rows, start=1):
-        if not any((value or "").strip() for value in row.values()):
+        if not any((value or "").strip() for key, value in row.items() if key != "row_id"):
             continue
 
         instrument_id = row.get("instrument_id", "").strip()
@@ -440,6 +454,8 @@ def _build_leg_rows(rows: Iterable[dict[str, str]], allowed_instrument_ids: set[
                 note=row.get("note", "").strip() or None,
             )
         )
+    if len(legs) < MIN_REQUIRED_LEGS:
+        raise ValueError("Добавьте минимум одну бумагу с инструментом и направлением.")
     return legs
 
 
@@ -524,19 +540,17 @@ def _format_decimal(value: Decimal | None) -> str:
     return format(value, "f").rstrip("0").rstrip(".") or "0"
 
 
-def _blank_leg_values() -> list[dict[str, str]]:
-    return [
-        {
-            "instrument_id": "",
-            "side": "",
-            "entry_from": "",
-            "entry_to": "",
-            "stop_loss": "",
-            "take_profit_1": "",
-            "take_profit_2": "",
-            "take_profit_3": "",
-            "time_horizon": "",
-            "note": "",
-        }
-        for _ in range(MAX_EDITOR_LEGS)
-    ]
+def _blank_leg_value(row_id: str | int) -> dict[str, str]:
+    return {
+        "row_id": str(row_id),
+        "instrument_id": "",
+        "side": "",
+        "entry_from": "",
+        "entry_to": "",
+        "stop_loss": "",
+        "take_profit_1": "",
+        "take_profit_2": "",
+        "take_profit_3": "",
+        "time_horizon": "",
+        "note": "",
+    }

@@ -170,6 +170,8 @@ def test_author_recommendation_create_page_renders(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Новая рекомендация" in response.text
         assert "Momentum RU" in response.text
+        assert "+ Добавить бумагу" in response.text
+        assert "Обязательная бумага для публикации" in response.text
 
 
 def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
@@ -198,11 +200,11 @@ def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
                 "summary": "Кратко",
                 "thesis": "Тезис",
                 "market_context": "Контекст",
-                "leg_0_instrument_id": "instrument-1",
-                "leg_0_side": "buy",
-                "leg_0_entry_from": "101.5",
-                "leg_0_stop_loss": "99.9",
-                "leg_0_take_profit_1": "106.2",
+                "leg_7_instrument_id": "instrument-1",
+                "leg_7_side": "buy",
+                "leg_7_entry_from": "101.5",
+                "leg_7_stop_loss": "99.9",
+                "leg_7_take_profit_1": "106.2",
             },
             follow_redirects=False,
         )
@@ -237,6 +239,34 @@ def test_author_recommendation_create_validation_error(monkeypatch) -> None:
 
         assert response.status_code == 422
         assert "Выберите стратегию автора" in response.text
+
+
+def test_author_recommendation_create_requires_at_least_one_leg(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+    instrument = _make_instrument()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
+
+    with _build_client(author_user) as client:
+        response = client.post(
+            "/author/recommendations",
+            data={
+                "strategy_id": "strategy-1",
+                "kind": "new_idea",
+                "status": "draft",
+                "title": "Покупка SBER",
+                "summary": "Кратко",
+                "thesis": "Тезис",
+                "market_context": "Контекст",
+            },
+        )
+
+        assert response.status_code == 422
+        assert "Добавьте минимум одну бумагу" in response.text
 
 
 def test_author_recommendation_edit_page_renders(monkeypatch) -> None:

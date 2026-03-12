@@ -248,6 +248,12 @@ Telegram smoke baseline:
 4. довести production payment/delivery reliability;
 5. закрыть оставшиеся analytics/promotions gaps.
 
+Последний UX-refactor для author workspace уже закрыт:
+- редактор рекомендаций переведен на responsive class-based layout без inline-grid drift;
+- первая бумага всегда присутствует и обязательна;
+- остальные бумаги добавляются через `+ Добавить бумагу` без UI-side лимита;
+- parser и server-side validation больше не держат hidden ceiling и принимают произвольные row indices.
+
 ## Demo seed data
 В проект уже добавлен локальный demo pack для `file` mode:
 - [storage/seed/json/roles.json](/Users/alexey/site/PitchCopyTrade/storage/seed/json/roles.json)

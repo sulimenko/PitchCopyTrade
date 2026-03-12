@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+<div class="author-editor-topbar">
   <a class="action ghost" href="/author/recommendations">Назад к списку</a>
   <a class="action ghost" href="/author/dashboard">Сводка</a>
   {% if recommendation %}
@@ -12,19 +12,18 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
+<section class="surface author-editor-hero">
   <div class="eyebrow">редактор рекомендации</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">
-        {% if recommendation %}Редактирование рекомендации{% else %}Новая рекомендация{% endif %}
-      </h1>
-      <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Редактор автора для сценария draft -> review -> publish: несколько сделок, отложенная публикация и локальные вложения без ручной работы с хранилищем.
+  <div class="author-editor-hero-head">
+    <div class="author-editor-hero-copy">
+      <h1>{% if recommendation %}Редактирование рекомендации{% else %}Новая рекомендация{% endif %}</h1>
+      <p class="muted">
+        Заполните параметры идеи, добавьте минимум одну бумагу и соберите публикацию в одном экране. Дополнительные
+        бумаги добавляются через <strong>+</strong> без фиксированного лимита.
       </p>
     </div>
     {% if recommendation %}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <div class="author-editor-status-badges">
       <span class="pill">{{ recommendation.kind.value }}</span>
       <span class="pill">{{ recommendation.status.value }}</span>
     </div>
@@ -32,35 +31,33 @@
   </div>
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
-  <form class="surface" method="post" enctype="multipart/form-data" style="padding:24px;display:grid;gap:18px;">
+<section class="author-editor-shell">
+  <form class="surface author-editor-form" method="post" enctype="multipart/form-data">
     {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
-      {{ error }}
-    </div>
+    <div class="author-editor-error">{{ error }}</div>
     {% endif %}
 
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Стратегия</strong>
-        <select name="strategy_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;">
+    <div class="author-editor-grid author-editor-grid--meta">
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Стратегия</span>
+        <select name="strategy_id">
           <option value="">Выберите стратегию</option>
           {% for strategy in strategies %}
           <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
           {% endfor %}
         </select>
       </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Тип публикации</strong>
-        <select name="kind" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;">
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Тип публикации</span>
+        <select name="kind">
           {% for item in recommendation_kind_options %}
           <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>{{ item }}</option>
           {% endfor %}
         </select>
       </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Статус</strong>
-        <select name="status" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;">
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Статус</span>
+        <select name="status">
           {% for item in recommendation_status_options %}
           <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>{{ item }}</option>
           {% endfor %}
@@ -68,101 +65,124 @@
       </label>
     </div>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Заголовок</strong>
-      <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER от уровня" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    <label class="author-editor-field">
+      <span class="author-editor-field-title">Заголовок</span>
+      <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER от уровня" />
     </label>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Краткое описание</strong>
-      <textarea name="summary" rows="4" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.summary }}</textarea>
+    <label class="author-editor-field">
+      <span class="author-editor-field-title">Краткое описание</span>
+      <textarea name="summary" rows="4">{{ form_values.summary }}</textarea>
     </label>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Тезис идеи</strong>
-      <textarea name="thesis" rows="6" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.thesis }}</textarea>
+    <label class="author-editor-field">
+      <span class="author-editor-field-title">Тезис идеи</span>
+      <textarea name="thesis" rows="6">{{ form_values.thesis }}</textarea>
     </label>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Контекст рынка</strong>
-      <textarea name="market_context" rows="5" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.market_context }}</textarea>
+    <label class="author-editor-field">
+      <span class="author-editor-field-title">Контекст рынка</span>
+      <textarea name="market_context" rows="5">{{ form_values.market_context }}</textarea>
     </label>
 
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Дата публикации</strong>
-        <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    <div class="author-editor-grid author-editor-grid--schedule">
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Дата публикации</span>
+        <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" />
       </label>
-      <label style="display:flex;gap:12px;align-items:center;padding-top:30px;">
+      <label class="author-editor-check">
         <input type="checkbox" name="requires_moderation" {% if form_values.requires_moderation %}checked{% endif %} />
-        <span><strong>Требует модерации</strong></span>
+        <span>
+          <strong>Требует модерации</strong>
+          <small class="muted">Отправьте идею в review перед публикацией, если это необходимо по правам автора.</small>
+        </span>
       </label>
     </div>
 
-    <section class="surface" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;">
+    <section class="surface author-editor-section author-editor-section--legs">
       <div class="eyebrow">структура сделок</div>
-      <h2 style="margin:10px 0 14px;font-size:1.35rem;">Параметры идеи</h2>
-      <div style="display:grid;gap:14px;">
+      <div class="author-editor-section-head">
+        <div class="author-editor-section-copy">
+          <h2>Параметры идеи</h2>
+          <p class="muted">Минимум одна бумага обязательна. Остальные добавляйте через кнопку <strong>+ Добавить бумагу</strong>.</p>
+        </div>
+        <button class="action ghost" type="button" id="add-leg-button">+ Добавить бумагу</button>
+      </div>
+
+      <div id="leg-list" class="author-legs-list" data-next-index="{{ next_leg_index }}">
         {% for leg in form_values.legs %}
-        {% set index = loop.index0 %}
-        <article style="padding:16px;border:1px solid var(--line);border-radius:20px;background:rgba(20,56,166,0.03);display:grid;gap:14px;">
-          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-            <strong>Сделка {{ loop.index }}</strong>
-            <span class="muted">Заполняйте только если эта сделка нужна в публикации</span>
+        <article class="author-leg-card" data-row-id="{{ leg.row_id }}">
+          <div class="author-leg-card-head">
+            <div class="author-leg-card-copy">
+              <strong class="author-leg-card-title js-leg-title">Бумага {{ loop.index }}</strong>
+              <p class="muted author-leg-card-note">
+                {% if loop.first %}
+                Обязательная бумага для публикации. Заполните инструмент, направление и хотя бы один уровень входа или цели.
+                {% else %}
+                Дополнительная бумага. Удалите ее, если она не нужна в этой публикации.
+                {% endif %}
+              </p>
+            </div>
+            <button class="action ghost js-remove-leg" type="button" {% if form_values.legs|length == 1 %}disabled{% endif %}>
+              Удалить
+            </button>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
-            <label style="display:grid;gap:8px;">
-              <span>Инструмент</span>
-              <select name="leg_{{ index }}_instrument_id" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;">
+
+          <div class="author-leg-grid author-leg-grid--primary">
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">Инструмент</span>
+              <select name="leg_{{ leg.row_id }}_instrument_id">
                 <option value="">Выберите инструмент</option>
                 {% for instrument in instruments %}
                 <option value="{{ instrument.id }}" {% if leg.instrument_id == instrument.id %}selected{% endif %}>{{ instrument.ticker }} · {{ instrument.name }}</option>
                 {% endfor %}
               </select>
             </label>
-            <label style="display:grid;gap:8px;">
-              <span>Направление</span>
-              <select name="leg_{{ index }}_side" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;">
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">Направление</span>
+              <select name="leg_{{ leg.row_id }}_side">
                 <option value="">Выберите направление</option>
-                <option value="buy" {% if leg.side == "buy" %}selected{% endif %}>buy</option>
-                <option value="sell" {% if leg.side == "sell" %}selected{% endif %}>sell</option>
+                <option value="buy" {% if leg.side == "buy" %}selected{% endif %}>Покупка</option>
+                <option value="sell" {% if leg.side == "sell" %}selected{% endif %}>Продажа</option>
               </select>
             </label>
-            <label style="display:grid;gap:8px;">
-              <span>Горизонт</span>
-              <input type="text" name="leg_{{ index }}_time_horizon" value="{{ leg.time_horizon }}" placeholder="1-3 дня / swing / intraday" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">Горизонт</span>
+              <input type="text" name="leg_{{ leg.row_id }}_time_horizon" value="{{ leg.time_horizon }}" placeholder="1-3 дня / swing / intraday" />
             </label>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;">
-            <label style="display:grid;gap:8px;">
-              <span>Вход от</span>
-              <input type="text" name="leg_{{ index }}_entry_from" value="{{ leg.entry_from }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+
+          <div class="author-leg-grid author-leg-grid--secondary">
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">Вход от</span>
+              <input type="text" name="leg_{{ leg.row_id }}_entry_from" value="{{ leg.entry_from }}" />
             </label>
-            <label style="display:grid;gap:8px;">
-              <span>Вход до</span>
-              <input type="text" name="leg_{{ index }}_entry_to" value="{{ leg.entry_to }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">Вход до</span>
+              <input type="text" name="leg_{{ leg.row_id }}_entry_to" value="{{ leg.entry_to }}" />
             </label>
-            <label style="display:grid;gap:8px;">
-              <span>Стоп-лосс</span>
-              <input type="text" name="leg_{{ index }}_stop_loss" value="{{ leg.stop_loss }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">Стоп-лосс</span>
+              <input type="text" name="leg_{{ leg.row_id }}_stop_loss" value="{{ leg.stop_loss }}" />
             </label>
-            <label style="display:grid;gap:8px;">
-              <span>TP1</span>
-              <input type="text" name="leg_{{ index }}_take_profit_1" value="{{ leg.take_profit_1 }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">TP1</span>
+              <input type="text" name="leg_{{ leg.row_id }}_take_profit_1" value="{{ leg.take_profit_1 }}" />
             </label>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
-            <label style="display:grid;gap:8px;">
-              <span>TP2</span>
-              <input type="text" name="leg_{{ index }}_take_profit_2" value="{{ leg.take_profit_2 }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+
+          <div class="author-leg-grid author-leg-grid--secondary">
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">TP2</span>
+              <input type="text" name="leg_{{ leg.row_id }}_take_profit_2" value="{{ leg.take_profit_2 }}" />
             </label>
-            <label style="display:grid;gap:8px;">
-              <span>TP3</span>
-              <input type="text" name="leg_{{ index }}_take_profit_3" value="{{ leg.take_profit_3 }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            <label class="author-editor-field">
+              <span class="author-editor-field-title">TP3</span>
+              <input type="text" name="leg_{{ leg.row_id }}_take_profit_3" value="{{ leg.take_profit_3 }}" />
             </label>
-            <label style="display:grid;gap:8px;">
-              <span>Комментарий сделки</span>
-              <input type="text" name="leg_{{ index }}_note" value="{{ leg.note }}" style="padding:12px 14px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
+            <label class="author-editor-field author-editor-field--wide">
+              <span class="author-editor-field-title">Комментарий сделки</span>
+              <input type="text" name="leg_{{ leg.row_id }}_note" value="{{ leg.note }}" />
             </label>
           </div>
         </article>
@@ -170,26 +190,28 @@
       </div>
     </section>
 
-    <section class="surface" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;">
+    <section class="surface author-editor-section author-editor-section--attachments">
       <div class="eyebrow">вложения</div>
-      <h2 style="margin:10px 0 14px;font-size:1.35rem;">Вложения</h2>
-      <label style="display:grid;gap:8px;">
-        <strong>Добавить PDF или изображение</strong>
-        <input type="file" name="attachment_files" accept=".pdf,image/png,image/jpeg,image/webp" multiple style="padding:12px 0;font:inherit;" />
+      <div class="author-editor-section-copy">
+        <h2>Вложения</h2>
+        <p class="muted">Поддерживаются PDF, JPG, PNG и WEBP. Файл добавится к публикации после сохранения формы.</p>
+      </div>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Добавить PDF или изображение</span>
+        <input type="file" name="attachment_files" accept=".pdf,image/png,image/jpeg,image/webp" multiple />
       </label>
-      <div class="muted" style="margin-top:10px;line-height:1.6;">Поддерживаются PDF, JPG, PNG, WEBP. Лимит файла 10 MB.</div>
       {% if recommendation and recommendation.attachments %}
-      <div style="display:grid;gap:10px;margin-top:14px;">
+      <div class="author-editor-attachment-list">
         {% for attachment in recommendation.attachments %}
-        <label class="surface" style="padding:14px;border-radius:18px;background:rgba(20,56,166,0.03);box-shadow:none;display:block;">
-          <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <label class="surface author-editor-attachment-item">
+          <div class="author-editor-attachment-row">
             <div>
               <strong>{{ attachment.original_filename }}</strong>
-              <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} байт</div>
+              <div class="muted">{{ attachment.content_type }} · {{ attachment.size_bytes }} байт</div>
             </div>
-            <span style="display:inline-flex;gap:8px;align-items:center;">
+            <span class="author-editor-remove-attachment">
               <input type="checkbox" name="remove_attachment_ids" value="{{ attachment.id }}" />
-              <span class="muted">удалить</span>
+              <span class="muted">Удалить</span>
             </span>
           </div>
         </label>
@@ -198,7 +220,7 @@
       {% endif %}
     </section>
 
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+    <div class="author-editor-actions">
       <button class="action" type="submit" name="workflow_action" value="save_draft">Сохранить в draft</button>
       <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить в review</button>
       <button class="action ghost" type="submit" name="workflow_action" value="schedule">Запланировать</button>
@@ -211,32 +233,438 @@
     </div>
   </form>
 
-  <aside class="surface" style="padding:24px;">
+  <aside class="surface author-editor-aside">
     <div class="eyebrow">подсказки редактора</div>
-    <h2 style="margin:10px 0 14px;font-size:1.5rem;">Что уже поддержано</h2>
-    <div style="display:grid;gap:12px;">
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+    <h2>Что уже поддержано</h2>
+    <div class="author-editor-aside-list">
+      <div class="surface author-editor-aside-item">
         <strong>Статусы идеи</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">`draft`, `review`, `approved`, `scheduled`, `published`, `closed`, `cancelled`, `archived`.</div>
+        <div class="muted">`draft`, `review`, `approved`, `scheduled`, `published`, `closed`, `cancelled`, `archived`.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="surface author-editor-aside-item">
         <strong>Типы публикации</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">`new_idea`, `update`, `close`, `cancel`.</div>
+        <div class="muted">`new_idea`, `update`, `close`, `cancel`.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="surface author-editor-aside-item">
         <strong>Действия workflow</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Кнопки внизу формы сразу переводят идею в `draft`, `review`, `scheduled`, `published`, `closed` или `cancelled`.</div>
+        <div class="muted">Кнопки внизу формы переводят идею в `draft`, `review`, `scheduled`, `published`, `closed` или `cancelled`.</div>
+      </div>
+      <div class="surface author-editor-aside-item">
+        <strong>Структура бумаг</strong>
+        <div class="muted">Первая бумага обязательна. Количество дополнительных бумаг не ограничено.</div>
       </div>
     </div>
   </aside>
 </section>
 
+<template id="leg-row-template">
+  <article class="author-leg-card" data-row-id="__ROW_ID__">
+    <div class="author-leg-card-head">
+      <div class="author-leg-card-copy">
+        <strong class="author-leg-card-title js-leg-title">Бумага __ROW_NUMBER__</strong>
+        <p class="muted author-leg-card-note">Дополнительная бумага. Удалите ее, если она не нужна в этой публикации.</p>
+      </div>
+      <button class="action ghost js-remove-leg" type="button">Удалить</button>
+    </div>
+
+    <div class="author-leg-grid author-leg-grid--primary">
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Инструмент</span>
+        <select name="leg___ROW_ID___instrument_id">
+          <option value="">Выберите инструмент</option>
+          {% for instrument in instruments %}
+          <option value="{{ instrument.id }}">{{ instrument.ticker }} · {{ instrument.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Направление</span>
+        <select name="leg___ROW_ID___side">
+          <option value="">Выберите направление</option>
+          <option value="buy">Покупка</option>
+          <option value="sell">Продажа</option>
+        </select>
+      </label>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Горизонт</span>
+        <input type="text" name="leg___ROW_ID___time_horizon" placeholder="1-3 дня / swing / intraday" />
+      </label>
+    </div>
+
+    <div class="author-leg-grid author-leg-grid--secondary">
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Вход от</span>
+        <input type="text" name="leg___ROW_ID___entry_from" />
+      </label>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Вход до</span>
+        <input type="text" name="leg___ROW_ID___entry_to" />
+      </label>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Стоп-лосс</span>
+        <input type="text" name="leg___ROW_ID___stop_loss" />
+      </label>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">TP1</span>
+        <input type="text" name="leg___ROW_ID___take_profit_1" />
+      </label>
+    </div>
+
+    <div class="author-leg-grid author-leg-grid--secondary">
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">TP2</span>
+        <input type="text" name="leg___ROW_ID___take_profit_2" />
+      </label>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">TP3</span>
+        <input type="text" name="leg___ROW_ID___take_profit_3" />
+      </label>
+      <label class="author-editor-field author-editor-field--wide">
+        <span class="author-editor-field-title">Комментарий сделки</span>
+        <input type="text" name="leg___ROW_ID___note" />
+      </label>
+    </div>
+  </article>
+</template>
+
 <style>
-  @media (max-width: 920px) {
-    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(3"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(4"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  .author-editor-topbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .author-editor-hero {
+    padding: 28px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .author-editor-hero-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .author-editor-hero-copy h1 {
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 3.4rem);
+    line-height: 0.96;
+    letter-spacing: -0.05em;
+  }
+
+  .author-editor-hero-copy p {
+    margin: 16px 0 0;
+    max-width: 760px;
+    line-height: 1.65;
+  }
+
+  .author-editor-status-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .author-editor-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    gap: 18px;
+    margin-top: 18px;
+    align-items: start;
+  }
+
+  .author-editor-form {
+    padding: 24px;
+    display: grid;
+    gap: 18px;
+  }
+
+  .author-editor-form * {
+    box-sizing: border-box;
+  }
+
+  .author-editor-error {
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(191, 23, 54, 0.08);
+    color: var(--red-600);
+    border: 1px solid rgba(191, 23, 54, 0.18);
+  }
+
+  .author-editor-grid,
+  .author-leg-grid,
+  .author-legs-list,
+  .author-editor-attachment-list,
+  .author-editor-aside-list {
+    display: grid;
+    gap: 14px;
+  }
+
+  .author-editor-grid--meta {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .author-editor-grid--schedule {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    align-items: end;
+  }
+
+  .author-editor-field,
+  .author-editor-check {
+    min-width: 0;
+  }
+
+  .author-editor-field {
+    display: grid;
+    gap: 8px;
+  }
+
+  .author-editor-field-title {
+    font-weight: 700;
+    color: var(--blue-800);
+  }
+
+  .author-editor-field input,
+  .author-editor-field select,
+  .author-editor-field textarea {
+    width: 100%;
+    min-width: 0;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    font: inherit;
+    background: rgba(255, 255, 255, 0.88);
+  }
+
+  .author-editor-field textarea {
+    resize: vertical;
+  }
+
+  .author-editor-check {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgba(20, 56, 166, 0.03);
+  }
+
+  .author-editor-check small {
+    display: block;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  .author-editor-section {
+    padding: 20px;
+    border-radius: 24px;
+    background: var(--surface-strong);
+    box-shadow: none;
+    display: grid;
+    gap: 16px;
+  }
+
+  .author-editor-section-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .author-editor-section-copy {
+    display: grid;
+    gap: 8px;
+  }
+
+  .author-editor-section-copy h2,
+  .author-editor-aside h2 {
+    margin: 0;
+    font-size: 1.35rem;
+  }
+
+  .author-editor-section-copy p {
+    margin: 0;
+    line-height: 1.6;
+  }
+
+  .author-leg-card {
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: rgba(20, 56, 166, 0.03);
+    display: grid;
+    gap: 16px;
+    overflow: hidden;
+  }
+
+  .author-leg-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .author-leg-card-copy {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .author-leg-card-title {
+    font-size: 1.1rem;
+    color: var(--blue-900);
+  }
+
+  .author-leg-card-note {
+    margin: 0;
+    max-width: 48rem;
+    line-height: 1.6;
+  }
+
+  .author-leg-grid--primary {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+
+  .author-leg-grid--secondary {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  .author-editor-field--wide {
+    grid-column: span 2;
+  }
+
+  .author-editor-attachment-item,
+  .author-editor-aside-item {
+    padding: 16px;
+    border-radius: 20px;
+    background: var(--surface-strong);
+    box-shadow: none;
+  }
+
+  .author-editor-attachment-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .author-editor-remove-attachment {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .author-editor-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .author-editor-aside {
+    padding: 24px;
+    display: grid;
+    gap: 14px;
+    position: sticky;
+    top: 24px;
+  }
+
+  .author-editor-aside-item .muted {
+    margin-top: 8px;
+    line-height: 1.55;
+  }
+
+  @media (max-width: 980px) {
+    .author-editor-shell {
+      grid-template-columns: 1fr;
+    }
+
+    .author-editor-aside {
+      position: static;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .author-editor-field--wide {
+      grid-column: auto;
+    }
   }
 </style>
+
+<script>
+  (function () {
+    const list = document.getElementById("leg-list");
+    const addButton = document.getElementById("add-leg-button");
+    const template = document.getElementById("leg-row-template");
+
+    if (!list || !addButton || !template) {
+      return;
+    }
+
+    function syncLegCards() {
+      const cards = Array.from(list.querySelectorAll(".author-leg-card"));
+
+      cards.forEach((card, index) => {
+        const title = card.querySelector(".js-leg-title");
+        const note = card.querySelector(".author-leg-card-note");
+
+        if (title) {
+          title.textContent = `Бумага ${index + 1}`;
+        }
+
+        if (note) {
+          note.textContent = index === 0
+            ? "Обязательная бумага для публикации. Заполните инструмент, направление и хотя бы один уровень входа или цели."
+            : "Дополнительная бумага. Удалите ее, если она не нужна в этой публикации.";
+        }
+      });
+
+      Array.from(list.querySelectorAll(".js-remove-leg")).forEach((button) => {
+        button.disabled = cards.length <= 1;
+      });
+    }
+
+    function addLegCard() {
+      const nextIndex = Number(list.dataset.nextIndex || "1");
+      const rowNumber = list.querySelectorAll(".author-leg-card").length + 1;
+      const html = template.innerHTML
+        .replaceAll("__ROW_ID__", String(nextIndex))
+        .replaceAll("__ROW_NUMBER__", String(rowNumber));
+      list.insertAdjacentHTML("beforeend", html);
+      list.dataset.nextIndex = String(nextIndex + 1);
+      syncLegCards();
+    }
+
+    addButton.addEventListener("click", addLegCard);
+
+    list.addEventListener("click", (event) => {
+      const button = event.target.closest(".js-remove-leg");
+      if (!button) {
+        return;
+      }
+
+      const cards = list.querySelectorAll(".author-leg-card");
+      if (cards.length <= 1) {
+        return;
+      }
+
+      const card = button.closest(".author-leg-card");
+      if (!card) {
+        return;
+      }
+
+      card.remove();
+      syncLegCards();
+    });
+
+    syncLegCards();
+  })();
+</script>
 {% endblock %}
