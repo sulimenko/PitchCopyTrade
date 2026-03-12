@@ -8,7 +8,6 @@ from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.services.author import (
-    blank_leg_values,
     build_leg_rows_from_form,
     build_recommendation_form_data,
     create_author_recommendation,
@@ -320,7 +319,7 @@ async def _render_recommendation_form(
             ],
             "error": error,
             "form_values": effective_form_values,
-            "blank_leg_values": blank_leg_values(),
+            "next_leg_index": _next_leg_index(effective_form_values),
         },
         status_code=status_code,
     )
@@ -346,3 +345,18 @@ def _resolve_status_value(*, status_value: str, workflow_action: str) -> str:
     if not normalized_action:
         return status_value
     return mapping.get(normalized_action, status_value)
+
+
+def _next_leg_index(form_values: dict[str, object]) -> int:
+    legs = form_values.get("legs", [])
+    if not isinstance(legs, list) or not legs:
+        return 1
+    indexes: list[int] = []
+    for item in legs:
+        if not isinstance(item, dict):
+            continue
+        try:
+            indexes.append(int(str(item.get("row_id", "0"))))
+        except ValueError:
+            continue
+    return (max(indexes) + 1) if indexes else len(legs)

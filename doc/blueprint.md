@@ -91,6 +91,11 @@ Canonical subscriber model остается:
 - moderation queue
 - moderation history baseline
 - moderation routes and actions now work in `db` and `file` modes
+- author editor refactor completed:
+  - recommendation editor uses responsive CSS classes instead of fixed inline grids;
+  - first paper is always present and enforced server-side;
+  - extra papers are added through `+` without a UI-side ceiling;
+  - form parser accepts dynamic non-sequential row ids and restores them after validation errors.
 
 ### 3.4 Subscriber surfaces
 Есть:
@@ -172,6 +177,29 @@ Canonical subscriber model остается:
 - attachments local-first by canonical `local_fs`
 - legal documents local-first via `source_path` under `storage/*/blob/legal`
 - worker `payment_expiry_sync` now resolves pending `T-Bank` payments in both `db` and `file` modes
+
+### 3.5.1 Author editor target refactor
+Canonical editor contract should become:
+- recommendation must contain at least one structured leg;
+- first leg is always rendered and required;
+- additional legs are created dynamically via `+ Добавить бумагу`;
+- author may remove any optional leg, but cannot remove the last remaining leg;
+- form parser must discover submitted leg indexes dynamically instead of iterating a fixed range;
+- persisted recommendations may contain any practical number of legs; UI ceiling must not be encoded as a business rule;
+- CSS/layout must use explicit classes and responsive containers instead of large inline `grid-template-columns: repeat(...)` blocks that currently drift visually.
+
+Refactor scope:
+- template:
+  - move leg rows into reusable component block;
+  - add client-side row template and `add/remove` controls;
+  - split row header, field groups and note fields into stable responsive subgrids;
+- route/controller:
+  - accept dynamic leg indexes from form submission;
+  - preserve dynamic rows on validation error;
+- service layer:
+  - replace fixed editor ceiling parsing;
+  - enforce `>= 1` leg with valid instrument and direction;
+  - keep recommendation validation at service level, not only in browser JS.
 
 ### 3.6 Repository layer baseline
 Есть:

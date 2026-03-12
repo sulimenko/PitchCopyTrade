@@ -3,9 +3,10 @@ from __future__ import annotations
 from io import BytesIO
 
 import pytest
-from starlette.datastructures import Headers, UploadFile
+from starlette.datastructures import FormData, Headers, UploadFile
 
 from pitchcopytrade.services.author import (
+    build_leg_rows_from_form,
     build_recommendation_form_data,
     normalize_attachment_uploads,
     remove_recommendation_attachments,
@@ -70,6 +71,44 @@ def test_build_recommendation_form_data_parses_structured_leg() -> None:
     assert len(payload.legs) == 1
     assert payload.legs[0].instrument_id == "instrument-1"
     assert str(payload.legs[0].entry_from) == "101.5"
+
+
+def test_build_leg_rows_from_form_preserves_dynamic_indexes() -> None:
+    form = FormData(
+        {
+            "leg_7_instrument_id": "instrument-7",
+            "leg_7_side": "buy",
+            "leg_7_entry_from": "101.5",
+            "leg_12_instrument_id": "instrument-12",
+            "leg_12_side": "sell",
+            "leg_12_stop_loss": "99.2",
+        }
+    )
+
+    rows = build_leg_rows_from_form(form)
+
+    assert [row["row_id"] for row in rows] == ["7", "12"]
+    assert rows[0]["instrument_id"] == "instrument-7"
+    assert rows[1]["side"] == "sell"
+
+
+def test_build_recommendation_form_data_requires_at_least_one_leg() -> None:
+    with pytest.raises(ValueError, match="Добавьте минимум одну бумагу"):
+        build_recommendation_form_data(
+            strategy_id="strategy-1",
+            kind_value="new_idea",
+            status_value="draft",
+            title="Покупка SBER",
+            summary="summary",
+            thesis="thesis",
+            market_context="context",
+            requires_moderation=None,
+            scheduled_for="",
+            allowed_strategy_ids={"strategy-1"},
+            allowed_instrument_ids={"instrument-1"},
+            leg_rows=[],
+            attachments=[],
+        )
 
 
 def test_build_recommendation_form_data_rejects_unknown_instrument() -> None:

@@ -91,6 +91,22 @@ Process rule:
 - structured legs
 - attachments
 
+### 12.1 Author editor responsive refactor `[done]`
+Сделано:
+- `author/recommendation_form.html` переведен на responsive class-based layout без inline-grid drift
+- первая бумага всегда присутствует и обязательна
+- остальные бумаги добавляются через `+ Добавить бумагу`
+- нельзя удалить последнюю оставшуюся бумагу
+- parser form data больше не зависит от fixed ceiling
+- validation требует минимум одну заполненную бумагу с корректным инструментом и направлением
+- dynamic row ids восстанавливаются в форме после validation error
+
+Acceptance:
+- поля не наезжают друг на друга на обычном desktop width и на tablet/mobile
+- author может добавить больше 5 бумаг без изменения backend contract
+- при ошибке валидации все динамически добавленные legs восстанавливаются в форме
+- business rule `минимум 1 бумага` enforced server-side
+
 ### 13. Subscriber commerce baseline `[done]`
 - public catalog
 - strategy detail
