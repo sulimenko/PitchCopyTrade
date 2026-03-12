@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
+from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.commerce import Payment, Subscription
 from pitchcopytrade.db.models.enums import BillingPeriod, PaymentProvider, PaymentStatus, SubscriptionStatus
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
@@ -31,6 +32,27 @@ class PaymentHistoryEntry:
     checked_at: str
     status: str
     payment_id: str | None
+
+
+@dataclass(slots=True, frozen=True)
+class NotificationPreferences:
+    payment_reminders: bool
+    subscription_reminders: bool
+
+
+@dataclass(slots=True, frozen=True)
+class ReminderEntry:
+    created_at: str
+    title: str
+    kind: str
+
+
+@dataclass(slots=True, frozen=True)
+class TimelineEntry:
+    happened_at: str
+    title: str
+    detail: str
+    category: str
 
 
 async def get_subscriber_status_snapshot(
@@ -171,6 +193,101 @@ def subscription_renewal_history(snapshot: SubscriberStatusSnapshot, subscriptio
         for item in snapshot.subscriptions
         if item.product_id == product_id and item.id != subscription.id
     ]
+
+
+async def get_notification_preferences(
+    repository: AccessRepository,
+    *,
+    user_id: str,
+) -> NotificationPreferences:
+    payload = await repository.get_notification_preferences(user_id=user_id)
+    return NotificationPreferences(
+        payment_reminders=bool(payload.get("payment_reminders", True)),
+        subscription_reminders=bool(payload.get("subscription_reminders", True)),
+    )
+
+
+async def update_notification_preferences(
+    repository: AccessRepository,
+    *,
+    user_id: str,
+    payment_reminders: bool,
+    subscription_reminders: bool,
+) -> NotificationPreferences:
+    payload = await repository.save_notification_preferences(
+        user_id=user_id,
+        preferences={
+            "payment_reminders": payment_reminders,
+            "subscription_reminders": subscription_reminders,
+        },
+    )
+    return NotificationPreferences(
+        payment_reminders=bool(payload.get("payment_reminders", True)),
+        subscription_reminders=bool(payload.get("subscription_reminders", True)),
+    )
+
+
+async def list_reminder_center_entries(
+    repository: AccessRepository,
+    *,
+    user_id: str,
+    limit: int = 20,
+) -> list[ReminderEntry]:
+    events = await repository.list_user_reminder_events(user_id=user_id, limit=limit)
+    return [_reminder_entry_from_event(item) for item in events]
+
+
+def build_subscriber_timeline(snapshot: SubscriberStatusSnapshot) -> list[TimelineEntry]:
+    items: list[TimelineEntry] = []
+    for payment in snapshot.payments:
+        items.append(
+            TimelineEntry(
+                happened_at=str(payment.created_at or "не указано"),
+                title=f"Оплата: {payment.product.title if payment.product else 'Продукт'}",
+                detail=payment_status_label(payment.status),
+                category="payment",
+            )
+        )
+        for event in payment_history(payment):
+            items.append(
+                TimelineEntry(
+                    happened_at=event.checked_at,
+                    title=f"Статус оплаты: {payment.product.title if payment.product else 'Продукт'}",
+                    detail=event.status,
+                    category="payment_state",
+                )
+            )
+    for subscription in snapshot.subscriptions:
+        items.append(
+            TimelineEntry(
+                happened_at=str(subscription.start_at or "не указано"),
+                title=f"Подписка: {subscription.product.title if subscription.product else 'Продукт'}",
+                detail=subscription_status_label(subscription.status),
+                category="subscription",
+            )
+        )
+        if subscription.end_at is not None:
+            items.append(
+                TimelineEntry(
+                    happened_at=str(subscription.end_at),
+                    title=f"Окончание подписки: {subscription.product.title if subscription.product else 'Продукт'}",
+                    detail="Плановая дата окончания",
+                    category="subscription_end",
+                )
+            )
+    items.sort(key=lambda item: item.happened_at, reverse=True)
+    return items
+
+
+def _reminder_entry_from_event(event: AuditEvent) -> ReminderEntry:
+    payload = event.payload or {}
+    kind = str(payload.get("kind") or "reminder")
+    title = str(payload.get("title") or "Напоминание")
+    return ReminderEntry(
+        created_at=str(event.created_at or "не указано"),
+        title=title,
+        kind="Оплата" if kind == "payment_pending" else "Подписка" if kind == "subscription_expiring" else kind,
+    )
 
 
 async def cancel_pending_payment(

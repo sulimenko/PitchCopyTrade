@@ -122,6 +122,9 @@ Canonical subscriber model остается:
   - payment state history rendering
   - renewal history rendering
   - worker-driven reminders for expiring subscriptions and pending payments
+  - центр напоминаний внутри Mini App
+  - настройки напоминаний подписчика
+  - единая лента событий по оплатам и подпискам
 - provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
 - worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
 - `T-Bank` callback endpoint for provider-driven payment updates

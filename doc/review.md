@@ -103,6 +103,9 @@
 - если заявлен payment result messaging, соответствует ли текст реальному состоянию оплаты;
 - если рендерится payment history, не смешивает ли она чужие state transitions и provider ids;
 - если worker шлет subscriber reminders, есть ли dedup и не повторяется ли одно и то же напоминание на каждом тике;
+- если есть центр напоминаний, видит ли subscriber только свои reminder events;
+- если есть настройки напоминаний, учитываются ли они worker reminder job и сохраняются ли после reload;
+- если есть единая лента событий, не смешивает ли она чужие payments/subscriptions и остается ли Telegram-scoped;
 - если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
 - если заявлен единый Mini App workspace, не осталось ли внутри legacy routes, compatibility query params или старых bot commands;
 - если Telegram checkout заявлен как interactive, идет ли он через Mini App sections и не тянет ли обратно legacy bot commands;

@@ -26,7 +26,10 @@ from pitchcopytrade.services.public import (
 from pitchcopytrade.services.subscriber import SubscriberStatusSnapshot, get_subscriber_status_snapshot
 from pitchcopytrade.services.subscriber import (
     billing_period_label,
+    build_subscriber_timeline,
     cancel_pending_payment,
+    get_notification_preferences,
+    list_reminder_center_entries,
     payment_status_label,
     payment_history,
     payment_result_message,
@@ -36,6 +39,7 @@ from pitchcopytrade.services.subscriber import (
     subscription_renewal_history,
     subscription_status_label,
     toggle_subscription_autorenew,
+    update_notification_preferences,
 )
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 from pitchcopytrade.storage.minio import MinioStorage
@@ -396,6 +400,74 @@ async def app_help(
             "snapshot": snapshot,
             "telegram_bot_username": get_settings().telegram.bot_username,
             **_build_miniapp_context("help", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.get("/reminders", response_class=HTMLResponse)
+async def app_reminders(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    preferences = await get_notification_preferences(repository, user_id=user.id)
+    reminders = await list_reminder_center_entries(repository, user_id=user.id)
+    return templates.TemplateResponse(
+        request,
+        "app/reminders.html",
+        {
+            "title": "Напоминания",
+            "user": user,
+            "snapshot": snapshot,
+            "preferences": preferences,
+            "reminders": reminders,
+            **_build_miniapp_context("reminders", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.post("/reminders/preferences")
+async def app_reminder_preferences_submit(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+    payment_reminders: str | None = Form(default=None),
+    subscription_reminders: str | None = Form(default=None),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    await update_notification_preferences(
+        repository,
+        user_id=user.id,
+        payment_reminders=payment_reminders is not None,
+        subscription_reminders=subscription_reminders is not None,
+    )
+    return RedirectResponse(url="/app/reminders", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/timeline", response_class=HTMLResponse)
+async def app_timeline(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    timeline = build_subscriber_timeline(snapshot)
+    return templates.TemplateResponse(
+        request,
+        "app/timeline.html",
+        {
+            "title": "История событий",
+            "user": user,
+            "snapshot": snapshot,
+            "timeline": timeline,
+            **_build_miniapp_context("timeline", user=user, snapshot=snapshot),
         },
     )
 

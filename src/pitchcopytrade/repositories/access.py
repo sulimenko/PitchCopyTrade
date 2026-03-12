@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
+from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import BundleMember, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription
 from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
@@ -103,6 +104,56 @@ class SqlAlchemyAccessRepository(AccessRepository):
     async def commit(self) -> None:
         await self.session.commit()
 
+    async def list_user_reminder_events(self, *, user_id: str, limit: int = 20) -> list[AuditEvent]:
+        query = (
+            select(AuditEvent)
+            .where(AuditEvent.action == "notification.reminder")
+            .order_by(AuditEvent.created_at.desc())
+        )
+        result = await self.session.execute(query)
+        items = [
+            event
+            for event in result.scalars().all()
+            if str((event.payload or {}).get("user_id")) == user_id
+        ]
+        return items[:limit]
+
+    async def get_notification_preferences(self, *, user_id: str) -> dict[str, bool]:
+        query = (
+            select(AuditEvent)
+            .where(AuditEvent.action == "subscriber.notification_preferences")
+            .order_by(AuditEvent.created_at.desc())
+        )
+        result = await self.session.execute(query)
+        for event in result.scalars().all():
+            payload = event.payload or {}
+            if str(payload.get("user_id")) == user_id:
+                return {
+                    "payment_reminders": bool(payload.get("payment_reminders", True)),
+                    "subscription_reminders": bool(payload.get("subscription_reminders", True)),
+                }
+        return {
+            "payment_reminders": True,
+            "subscription_reminders": True,
+        }
+
+    async def save_notification_preferences(self, *, user_id: str, preferences: dict[str, bool]) -> dict[str, bool]:
+        normalized = {
+            "payment_reminders": bool(preferences.get("payment_reminders", True)),
+            "subscription_reminders": bool(preferences.get("subscription_reminders", True)),
+        }
+        self.session.add(
+            AuditEvent(
+                actor_user_id=user_id,
+                entity_type="user",
+                entity_id=user_id,
+                action="subscriber.notification_preferences",
+                payload={"user_id": user_id, **normalized},
+            )
+        )
+        await self.session.commit()
+        return normalized
+
     def _build_user_access_filter(self, user_id: str):
         strategy_ids = (
             select(SubscriptionProduct.strategy_id)
@@ -190,6 +241,50 @@ class FileAccessRepository(AccessRepository):
 
     async def commit(self) -> None:
         self.graph.save(self.store)
+
+    async def list_user_reminder_events(self, *, user_id: str, limit: int = 20) -> list[AuditEvent]:
+        items = [
+            event
+            for event in self.graph.audit_events.values()
+            if event.action == "notification.reminder" and str((event.payload or {}).get("user_id")) == user_id
+        ]
+        items.sort(key=lambda event: event.created_at, reverse=True)
+        return items[:limit]
+
+    async def get_notification_preferences(self, *, user_id: str) -> dict[str, bool]:
+        events = [
+            event
+            for event in self.graph.audit_events.values()
+            if event.action == "subscriber.notification_preferences" and str((event.payload or {}).get("user_id")) == user_id
+        ]
+        events.sort(key=lambda event: event.created_at, reverse=True)
+        if events:
+            payload = events[0].payload or {}
+            return {
+                "payment_reminders": bool(payload.get("payment_reminders", True)),
+                "subscription_reminders": bool(payload.get("subscription_reminders", True)),
+            }
+        return {
+            "payment_reminders": True,
+            "subscription_reminders": True,
+        }
+
+    async def save_notification_preferences(self, *, user_id: str, preferences: dict[str, bool]) -> dict[str, bool]:
+        normalized = {
+            "payment_reminders": bool(preferences.get("payment_reminders", True)),
+            "subscription_reminders": bool(preferences.get("subscription_reminders", True)),
+        }
+        self.graph.add(
+            AuditEvent(
+                actor_user_id=user_id,
+                entity_type="user",
+                entity_id=user_id,
+                action="subscriber.notification_preferences",
+                payload={"user_id": user_id, **normalized},
+            )
+        )
+        self.graph.save(self.store)
+        return normalized
 
     def _active_products_for_user(self, user_id: str) -> list[SubscriptionProduct]:
         products: list[SubscriptionProduct] = []

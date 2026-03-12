@@ -212,28 +212,53 @@ async def _deliver_subscriber_reminders_db(
 ) -> ReminderStats:
     stats = ReminderStats()
     sent_keys = await _load_existing_reminder_keys_db(session)
+    preferences = await _load_reminder_preferences_db(session)
     subscriptions = await _list_db_subscription_reminders(session, now=now)
     payments = await _list_db_payment_reminders(session, now=now)
 
     for subscription in subscriptions:
+        if not preferences.get(subscription.user_id, {}).get("subscription_reminders", True):
+            stats.skipped += 1
+            continue
         key = _subscription_reminder_key(subscription)
         if key in sent_keys:
             stats.skipped += 1
             continue
         text = _build_subscription_reminder_text(subscription)
         if await _send_with_retry(notifier.send_message, int(subscription.user.telegram_user_id), text, attempts=attempts):
-            session.add(_build_reminder_event("subscription", subscription.id, key, "subscription_expiring"))
+            session.add(
+                _build_reminder_event(
+                    "subscription",
+                    subscription.id,
+                    key,
+                    "subscription_expiring",
+                    user_id=subscription.user_id,
+                    title=subscription.product.title if subscription.product is not None else "Подписка",
+                )
+            )
             sent_keys.add(key)
             stats.sent += 1
 
     for payment in payments:
+        if not preferences.get(payment.user_id, {}).get("payment_reminders", True):
+            stats.skipped += 1
+            continue
         key = _payment_reminder_key(payment)
         if key in sent_keys:
             stats.skipped += 1
             continue
         text = _build_payment_reminder_text(payment)
         if await _send_with_retry(notifier.send_message, int(payment.user.telegram_user_id), text, attempts=attempts):
-            session.add(_build_reminder_event("payment", payment.id, key, "payment_pending"))
+            session.add(
+                _build_reminder_event(
+                    "payment",
+                    payment.id,
+                    key,
+                    "payment_pending",
+                    user_id=payment.user_id,
+                    title=payment.product.title if payment.product is not None else "Оплата",
+                )
+            )
             sent_keys.add(key)
             stats.sent += 1
 
@@ -252,26 +277,51 @@ async def _deliver_subscriber_reminders_file(
 ) -> ReminderStats:
     stats = ReminderStats()
     sent_keys = _load_existing_reminder_keys_file(graph)
+    preferences = _load_reminder_preferences_file(graph)
 
     for subscription in _list_file_subscription_reminders(graph, now=now):
+        if not preferences.get(subscription.user_id, {}).get("subscription_reminders", True):
+            stats.skipped += 1
+            continue
         key = _subscription_reminder_key(subscription)
         if key in sent_keys:
             stats.skipped += 1
             continue
         text = _build_subscription_reminder_text(subscription)
         if await _send_with_retry(notifier.send_message, int(subscription.user.telegram_user_id), text, attempts=attempts):
-            graph.add(_build_reminder_event("subscription", subscription.id, key, "subscription_expiring"))
+            graph.add(
+                _build_reminder_event(
+                    "subscription",
+                    subscription.id,
+                    key,
+                    "subscription_expiring",
+                    user_id=subscription.user_id,
+                    title=subscription.product.title if subscription.product is not None else "Подписка",
+                )
+            )
             sent_keys.add(key)
             stats.sent += 1
 
     for payment in _list_file_payment_reminders(graph, now=now):
+        if not preferences.get(payment.user_id, {}).get("payment_reminders", True):
+            stats.skipped += 1
+            continue
         key = _payment_reminder_key(payment)
         if key in sent_keys:
             stats.skipped += 1
             continue
         text = _build_payment_reminder_text(payment)
         if await _send_with_retry(notifier.send_message, int(payment.user.telegram_user_id), text, attempts=attempts):
-            graph.add(_build_reminder_event("payment", payment.id, key, "payment_pending"))
+            graph.add(
+                _build_reminder_event(
+                    "payment",
+                    payment.id,
+                    key,
+                    "payment_pending",
+                    user_id=payment.user_id,
+                    title=payment.product.title if payment.product is not None else "Оплата",
+                )
+            )
             sent_keys.add(key)
             stats.sent += 1
 
@@ -296,6 +346,46 @@ def _load_existing_reminder_keys_file(graph: FileDatasetGraph) -> set[str]:
         for item in graph.audit_events.values()
         if item.action == "notification.reminder" and (item.payload or {}).get("reminder_key") is not None
     }
+
+
+async def _load_reminder_preferences_db(session: AsyncSession) -> dict[str, dict[str, bool]]:
+    query = (
+        select(AuditEvent)
+        .where(AuditEvent.action == "subscriber.notification_preferences")
+        .order_by(AuditEvent.created_at.desc())
+    )
+    result = await session.execute(query)
+    prefs: dict[str, dict[str, bool]] = {}
+    for event in result.scalars().all():
+        payload = event.payload or {}
+        user_id = payload.get("user_id")
+        if user_id is None or str(user_id) in prefs:
+            continue
+        prefs[str(user_id)] = {
+            "payment_reminders": bool(payload.get("payment_reminders", True)),
+            "subscription_reminders": bool(payload.get("subscription_reminders", True)),
+        }
+    return prefs
+
+
+def _load_reminder_preferences_file(graph: FileDatasetGraph) -> dict[str, dict[str, bool]]:
+    events = [
+        event
+        for event in graph.audit_events.values()
+        if event.action == "subscriber.notification_preferences"
+    ]
+    events.sort(key=lambda event: event.created_at, reverse=True)
+    prefs: dict[str, dict[str, bool]] = {}
+    for event in events:
+        payload = event.payload or {}
+        user_id = payload.get("user_id")
+        if user_id is None or str(user_id) in prefs:
+            continue
+        prefs[str(user_id)] = {
+            "payment_reminders": bool(payload.get("payment_reminders", True)),
+            "subscription_reminders": bool(payload.get("subscription_reminders", True)),
+        }
+    return prefs
 
 
 async def _list_db_subscription_reminders(session: AsyncSession, *, now: datetime) -> list[Subscription]:
@@ -379,13 +469,23 @@ def _build_payment_reminder_text(payment: Payment) -> str:
     )
 
 
-def _build_reminder_event(entity_type: str, entity_id: str, reminder_key: str, reminder_kind: str) -> AuditEvent:
+def _build_reminder_event(
+    entity_type: str,
+    entity_id: str,
+    reminder_key: str,
+    reminder_kind: str,
+    *,
+    user_id: str,
+    title: str,
+) -> AuditEvent:
     return AuditEvent(
         actor_user_id=None,
         entity_type=entity_type,
         entity_id=entity_id,
         action="notification.reminder",
         payload={
+            "user_id": user_id,
+            "title": title,
             "reminder_key": reminder_key,
             "kind": reminder_kind,
         },
