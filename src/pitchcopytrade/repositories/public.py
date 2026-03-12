@@ -128,9 +128,30 @@ class SqlAlchemyPublicRepository(PublicRepository):
         return result.scalar_one_or_none()
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
-        query = select(User).options(selectinload(User.consents)).where(User.telegram_user_id == telegram_user_id)
+        query = (
+            select(User)
+            .options(
+                selectinload(User.consents),
+                selectinload(User.payments).selectinload(Payment.product),
+                selectinload(User.subscriptions).selectinload(Subscription.product),
+                selectinload(User.subscriptions).selectinload(Subscription.payment),
+            )
+            .where(User.telegram_user_id == telegram_user_id)
+        )
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
+
+    async def get_user_payment(self, *, telegram_user_id: int, payment_id: str) -> Payment | None:
+        user = await self.get_user_by_telegram_id(telegram_user_id)
+        if user is None:
+            return None
+        return next((item for item in user.payments if item.id == payment_id), None)
+
+    async def get_user_subscription(self, *, telegram_user_id: int, subscription_id: str) -> Subscription | None:
+        user = await self.get_user_by_telegram_id(telegram_user_id)
+        if user is None:
+            return None
+        return next((item for item in user.subscriptions if item.id == subscription_id), None)
 
     def add(self, entity: object) -> None:
         self.session.add(entity)
@@ -217,6 +238,18 @@ class FilePublicRepository(PublicRepository):
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
         return next((item for item in self.graph.users.values() if item.telegram_user_id == telegram_user_id), None)
+
+    async def get_user_payment(self, *, telegram_user_id: int, payment_id: str) -> Payment | None:
+        user = await self.get_user_by_telegram_id(telegram_user_id)
+        if user is None:
+            return None
+        return next((item for item in user.payments if item.id == payment_id), None)
+
+    async def get_user_subscription(self, *, telegram_user_id: int, subscription_id: str) -> Subscription | None:
+        user = await self.get_user_by_telegram_id(telegram_user_id)
+        if user is None:
+            return None
+        return next((item for item in user.subscriptions if item.id == subscription_id), None)
 
     def add(self, entity: object) -> None:
         self.graph.add(entity)

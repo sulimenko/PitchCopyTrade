@@ -24,6 +24,13 @@ from pitchcopytrade.services.public import (
     list_public_strategies,
 )
 from pitchcopytrade.services.subscriber import SubscriberStatusSnapshot, get_subscriber_status_snapshot
+from pitchcopytrade.services.subscriber import (
+    billing_period_label,
+    cancel_pending_payment,
+    payment_status_label,
+    subscription_status_label,
+    toggle_subscription_autorenew,
+)
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 from pitchcopytrade.storage.minio import MinioStorage
 from pitchcopytrade.web.templates import templates
@@ -240,6 +247,8 @@ async def app_status(
             "title": "Статус подписки",
             "user": user,
             "snapshot": snapshot,
+            "payment_status_label": payment_status_label,
+            "subscription_status_label": subscription_status_label,
             **_build_miniapp_context("status", user=user, snapshot=snapshot),
         },
     )
@@ -261,6 +270,8 @@ async def app_subscriptions(
             "title": "Мои подписки",
             "user": user,
             "snapshot": snapshot,
+            "subscription_status_label": subscription_status_label,
+            "billing_period_label": billing_period_label,
             **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
         },
     )
@@ -282,9 +293,61 @@ async def app_payments(
             "title": "Мои оплаты",
             "user": user,
             "snapshot": snapshot,
+            "payment_status_label": payment_status_label,
             **_build_miniapp_context("payments", user=user, snapshot=snapshot),
         },
     )
+
+
+@router.get("/subscriptions/{subscription_id}", response_class=HTMLResponse)
+async def app_subscription_detail(
+    subscription_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    subscription = next((item for item in snapshot.subscriptions if item.id == subscription_id), None)
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    return templates.TemplateResponse(
+        request,
+        "app/subscription_detail.html",
+        {
+            "title": "Подписка",
+            "user": user,
+            "snapshot": snapshot,
+            "subscription": subscription,
+            "subscription_status_label": subscription_status_label,
+            "billing_period_label": billing_period_label,
+            **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.post("/subscriptions/{subscription_id}/autorenew")
+async def app_subscription_autorenew(
+    subscription_id: str,
+    request: Request,
+    enabled: str = Form(...),
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    subscription = await toggle_subscription_autorenew(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        subscription_id=subscription_id,
+        enabled=enabled == "1",
+    )
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    return RedirectResponse(url=f"/app/subscriptions/{subscription_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/help", response_class=HTMLResponse)
@@ -307,6 +370,54 @@ async def app_help(
             **_build_miniapp_context("help", user=user, snapshot=snapshot),
         },
     )
+
+
+@router.get("/payments/{payment_id}", response_class=HTMLResponse)
+async def app_payment_detail(
+    payment_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    payment = next((item for item in snapshot.payments if item.id == payment_id), None)
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    return templates.TemplateResponse(
+        request,
+        "app/payment_detail.html",
+        {
+            "title": "Оплата",
+            "user": user,
+            "snapshot": snapshot,
+            "payment": payment,
+            "payment_status_label": payment_status_label,
+            **_build_miniapp_context("payments", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.post("/payments/{payment_id}/cancel")
+async def app_payment_cancel(
+    payment_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    payment = await cancel_pending_payment(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        payment_id=payment_id,
+    )
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    return RedirectResponse(url=f"/app/payments/{payment_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/recommendations/{recommendation_id}", response_class=HTMLResponse)

@@ -6,7 +6,7 @@ from typing import Protocol
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, LeadSource, Strategy
 from pitchcopytrade.db.models.catalog import SubscriptionProduct
-from pitchcopytrade.db.models.commerce import LegalDocument, PromoCode
+from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription
 from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.enums import RecommendationStatus
 
@@ -61,6 +61,8 @@ class AccessRepository(Protocol):
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None: ...
 
+    async def commit(self) -> None: ...
+
 
 class PublicRepository(Protocol):
     async def list_public_strategies(self) -> list[Strategy]: ...
@@ -80,6 +82,10 @@ class PublicRepository(Protocol):
     async def find_user_by_email(self, email: str) -> User | None: ...
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None: ...
+
+    async def get_user_payment(self, *, telegram_user_id: int, payment_id: str) -> Payment | None: ...
+
+    async def get_user_subscription(self, *, telegram_user_id: int, subscription_id: str) -> Subscription | None: ...
 
     def add(self, entity: object) -> None: ...
 

@@ -516,7 +516,21 @@ Acceptance:
 - subscriber flow больше не зависит от legacy bot command interaction
 - Mini App is the canonical subscriber UI instead of a web/catalog overlay
 
-### 43. Release and review discipline `[todo]`
+### 43. Mini App self-service detail/actions `[done]`
+Сделано:
+- subscriber payment detail page
+- subscriber subscription detail page
+- `pending` payment cancellation from Mini App
+- autorenew toggle from Mini App
+- Russian status labels for payment and subscription lifecycle
+
+Acceptance:
+- subscriber can inspect payment/subscription state without staff help
+- subscriber can cancel a pending payment request from Mini App
+- subscriber can manage autorenew inside Mini App
+- Mini App does not expose raw English enum values for payment/subscription lifecycle
+
+### 44. Release and review discipline `[todo]`
 - clean runtime checklist
 - technical review checklist
 - product smoke checklist
@@ -527,7 +541,7 @@ Acceptance:
 
 ## 9. Что делать дальше до business-complete state
 
-### 44. HTTPS enablement `[done]`
+### 45. HTTPS enablement `[done]`
 - certificate issued for `pct.test.ptfin.ru`
 - deployed `BASE_URL` switched to `https`
 - Telegram WebApp prerequisites validated on deployed host
@@ -536,7 +550,7 @@ Acceptance:
 - deployed host serves app over `https`
 - bot can safely expose `Mini App` button
 
-### 45. Real SBP payments `[partial]`
+### 46. Real SBP payments `[partial]`
 Сделано:
 - provider-aware checkout service
 - `T-Bank` SBP adapter foundation
@@ -559,7 +573,7 @@ Acceptance:
 - user can pay in RUB via real SBP flow
 - payment confirmation does not rely only on manual admin action
 
-### 46. Admin subscription registry `[done]`
+### 47. Admin subscription registry `[done]`
 - full list of subscriptions
 - start/end dates
 - payment status
@@ -569,7 +583,7 @@ Acceptance:
 Acceptance:
 - admin can answer who is subscribed to what and until when
 
-### 47. Author publish UX hardening `[done]`
+### 48. Author publish UX hardening `[done]`
 - better multi-leg recommendation editor
 - attachment replace/delete flow
 - clearer draft/review/publish path
@@ -577,7 +591,7 @@ Acceptance:
 Acceptance:
 - author can publish complex recommendation sets without manual operator help
 
-### 48. Legal and compliance operations `[done]`
+### 49. Legal and compliance operations `[done]`
 - legal docs admin UI
 - version activation
 - consent visibility in admin surfaces
@@ -585,7 +599,7 @@ Acceptance:
 Acceptance:
 - legal lifecycle no longer requires manual file edits in runtime operations
 
-### 49. Delivery operations `[done]`
+### 50. Delivery operations `[done]`
 - notification queue
 - retry / dedup visibility
 - delivery audit visibility for support
@@ -593,7 +607,7 @@ Acceptance:
 Acceptance:
 - support/admin can understand whether recommendation delivery succeeded
 
-### 50. Final persistence hardening `[todo]`
+### 51. Final persistence hardening `[todo]`
 - finish remaining file-mode parity
 - compose cleanup `[done]`
 - backup/restore workflow for `storage/`

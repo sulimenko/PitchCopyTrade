@@ -94,6 +94,9 @@
 - если используется `next` redirect после Telegram auth, защищен ли он от open redirect и остается ли локальным;
 - если web fallback заявлен как subscriber-friendly, есть ли у него понятная landing page, а не только голая лента без статуса;
 - если заявлен Telegram self-service, видит ли пользователь свои подписки и pending оплаты без утечки чужих данных;
+- если заявлены payment/subscription detail pages, ограничены ли они только сущностями текущего `telegram_user_id`;
+- если заявлена отмена `pending` оплаты из Mini App, не отменяет ли она уже финализированные платежи и связанные access states;
+- если заявлен autorenew toggle, не дает ли он управлять чужой подпиской и сохраняется ли состояние после reload;
 - если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
 - если заявлен единый Mini App workspace, не осталось ли внутри legacy routes, compatibility query params или старых bot commands;
 - если Telegram checkout заявлен как interactive, идет ли он через Mini App sections и не тянет ли обратно legacy bot commands;
