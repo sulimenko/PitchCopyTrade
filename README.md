@@ -79,6 +79,17 @@ Telegram-first платформа для продажи подписок на с
   - test domain `pct.test.ptfin.ru`
   - canonical nginx upstream `127.0.0.1:8110`
 
+## Review snapshot
+Последний полный review проекта на `2026-03-12` дал такой результат:
+- критичных findings не найдено;
+- полный regression suite прошел: `165 passed`;
+- `python3 -m compileall src tests alembic` проходит;
+- основные остаточные риски смещены из core-flow в product hardening:
+  - production hardening для real SBP;
+  - richer notification granularity;
+  - support/observability;
+  - remaining analytics/promotions depth.
+
 ## Архитектурный сдвиг
 Новая целевая схема:
 - отказаться от удаленного object storage как основной модели;

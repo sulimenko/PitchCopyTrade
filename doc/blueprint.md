@@ -3,6 +3,11 @@
 Дата: 2026-03-12  
 Статус: research-based current state + target migration architecture
 
+Review snapshot:
+- full project review on `2026-03-12`
+- no critical findings discovered
+- full regression suite passed: `165 passed`
+
 ## 1. Назначение
 Этот документ фиксирует:
 - что уже реально реализовано в проекте;

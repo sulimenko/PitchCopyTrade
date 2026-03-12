@@ -14,6 +14,16 @@
    - `/Users/alexey/site/PitchCopyTrade/doc/task.md`
    - `/Users/alexey/site/PitchCopyTrade/doc/review.md`
 
+## 0. Последний полный review snapshot
+- дата: `2026-03-12`
+- полный regression suite: `165 passed`
+- критичных findings на уровне whole-project review не обнаружено
+- основные остаточные риски:
+  - production hardening для `T-Bank` / real SBP
+  - richer subscriber notification granularity
+  - support tooling / observability
+  - remaining analytics depth
+
 ## 1. Важный контекст
 Проект уже имеет существенный baseline:
 - foundation infrastructure

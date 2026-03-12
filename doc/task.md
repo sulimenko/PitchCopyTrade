@@ -3,6 +3,12 @@
 Дата: 2026-03-12  
 Режим: current implementation status + migration roadmap to local storage and file mode
 
+Current review checkpoint:
+- `2026-03-12`
+- full regression suite: `165 passed`
+- no critical findings
+- current focus shifts from baseline delivery to product hardening and subscriber UX depth
+
 Process rule:
 - after each completed implementation step, run review first;
 - only after review update all current description files:
