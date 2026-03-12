@@ -20,8 +20,8 @@ def _supports_webapp() -> bool:
 
 def _catalog_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
-        [KeyboardButton(text="/catalog"), KeyboardButton(text="/feed")],
-        [KeyboardButton(text="/web")],
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/status")],
+        [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
     ]
     if _supports_webapp():
         keyboard[1].append(
@@ -33,7 +33,8 @@ def _catalog_keyboard() -> ReplyKeyboardMarkup:
 def _buy_preview_keyboard(product_slug: str) -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(text=f"/confirm_buy {product_slug}")],
-        [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/status")],
+        [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
     ]
     if _supports_webapp():
         keyboard.append([KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))])
@@ -42,8 +43,8 @@ def _buy_preview_keyboard(product_slug: str) -> ReplyKeyboardMarkup:
 
 def _buy_confirm_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
-        [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
-        [KeyboardButton(text="/catalog")],
+        [KeyboardButton(text="/feed"), KeyboardButton(text="/status")],
+        [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
     ]
     if _supports_webapp():
         keyboard[1].append(
@@ -70,6 +71,7 @@ async def handle_catalog(message: Message) -> None:
             lines.append(f"  - {product.slug}: {product.title} | {product.price_rub} RUB")
     lines.append("")
     lines.append("Для оформления используйте: /buy <product_slug>")
+    lines.append("Для проверки доступа и оплат используйте: /status")
     await message.answer(
         "\n".join(lines),
         reply_markup=_catalog_keyboard(),

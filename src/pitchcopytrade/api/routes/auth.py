@@ -75,7 +75,7 @@ async def login_submit(
         httponly=True,
         max_age=settings.auth.session_ttl_seconds,
         samesite="lax",
-        secure=False,
+        secure=settings.app.base_url.startswith("https://"),
         path="/",
     )
     return response
@@ -93,6 +93,7 @@ async def logout() -> Response:
 @router.get("/tg-auth", include_in_schema=False)
 async def telegram_auth_login(
     token: str,
+    next: str | None = None,
     repository: AuthRepository = Depends(get_auth_repository),
 ) -> Response:
     user = await get_user_from_telegram_login_token(repository, token)
@@ -100,14 +101,14 @@ async def telegram_auth_login(
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
     settings = get_settings()
-    response = RedirectResponse(url="/app/feed", status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(url=_sanitize_subscriber_next_path(next), status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         key=get_telegram_fallback_cookie_name(),
         value=build_telegram_fallback_cookie_value(user),
         httponly=True,
         max_age=settings.auth.session_ttl_seconds,
         samesite="lax",
-        secure=False,
+        secure=settings.app.base_url.startswith("https://"),
         path="/",
     )
     return response
@@ -174,6 +175,14 @@ def _resolve_role_redirect(user) -> str:
     if RoleSlug.MODERATOR.value in role_labels:
         return "/moderation/queue"
     return "/login"
+
+
+def _sanitize_subscriber_next_path(next_path: str | None) -> str:
+    if not next_path:
+        return "/app/feed"
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        return "/app/feed"
+    return next_path
 
 
 async def _require_authenticated_user(request: Request, repository: AuthRepository):

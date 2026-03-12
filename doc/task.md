@@ -361,6 +361,11 @@ Acceptance:
 - reply keyboard baseline
 - Mini App entry baseline
 - deployed `https` host now allows Telegram `Mini App` button in real bot flow
+- subscriber self-service baseline:
+  - `/status`
+  - `/web`
+  - `/verify`
+- web fallback now redirects to `/verify/telegram` instead of raw unauthorized response
 
 Не сделано:
 - full WebApp auth bridge
@@ -447,11 +452,19 @@ Acceptance:
 Acceptance:
 - legal docs можно править без ручного редактирования файлов на сервере
 
-### 42. Telegram UX phase `[todo]`
-- WebApp auth bridge
-- richer menu/status flow
-- subscriber self-service UX
+### 42. Telegram UX phase `[partial]`
+Сделано:
 - conditional WebApp button behavior for `http` vs `https` environments
+- subscriber status flow in bot
+- Telegram verification page for web fallback
+- deep-link start `?start=web`
+- safe local `next` redirect in `/tg-auth`
+- `/app/status` as web fallback landing page after Telegram verification
+
+Сделать:
+- full WebApp auth bridge
+- richer menu/status flow
+- deeper subscriber self-service UX inside Mini App
 
 Acceptance:
 - subscriber flow меньше зависит от command-only interaction

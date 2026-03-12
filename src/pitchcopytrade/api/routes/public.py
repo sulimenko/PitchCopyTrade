@@ -31,6 +31,21 @@ async def miniapp_root() -> Response:
     return RedirectResponse(url="/catalog?surface=miniapp", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.get("/verify/telegram", response_class=HTMLResponse)
+async def telegram_verify_page(request: Request) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "public/telegram_verify.html",
+        {
+            "title": "Telegram verification",
+            "telegram_bot_username": get_settings().telegram.bot_username,
+            "surface_next": request.query_params.get("next", "/app/feed"),
+            "base_url": get_settings().app.base_url,
+            "webapp_enabled": get_settings().app.base_url.startswith("https://"),
+        },
+    )
+
+
 @router.get("/catalog", response_class=HTMLResponse)
 async def catalog_page(request: Request, repository: PublicRepository = Depends(get_public_repository)) -> Response:
     strategies = await list_public_strategies(repository)

@@ -27,6 +27,7 @@
 - payment confirm -> activate subscription
 - ACL service
 - bot feed and web fallback feed
+- Telegram subscriber self-service baseline
 - worker scheduled publish baseline
 - delivery notifications baseline
 - Telegram-first subscriber baseline
@@ -77,6 +78,9 @@
 - не возвращает ли change subscriber password-first model;
 - не делает ли web mandatory там, где target is Telegram-first;
 - если web subscriber path остается, идет ли он через Telegram-auth model;
+- если protected subscriber web surface открывается без Telegram cookie, переводит ли flow пользователя в понятную Telegram verification page, а не в сырой `401`;
+- если используется `next` redirect после Telegram auth, защищен ли он от open redirect и остается ли локальным;
+- если web fallback заявлен как subscriber-friendly, есть ли у него понятная landing page, а не только голая лента без статуса;
 - не собирает ли code лишние персональные данные без необходимости.
 - не отправляет ли bot `WebApp` кнопку на `http` base URL, где Telegram ее все равно отвергнет.
 
@@ -173,11 +177,13 @@ Reviewer должен считать хорошим признаком:
 - уменьшение прямой зависимости routes/services от `AsyncSession`;
 - выравнивание attachment metadata под локальные пути;
 - сохранение Telegram-first UX при persistence refactor.
+- улучшение Telegram self-service без возврата к password-first subscriber model.
 
 ## 6. Что еще обязательно ждет реализации
 Reviewer должен помнить, что после текущего refactor track все еще нужны:
 - real SBP provider integration
 - full file-mode parity for demo path
+- deeper WebApp auth bridge
 - promo/discount lifecycle
 - moderation analytics/SLA UX
 - lead source analytics

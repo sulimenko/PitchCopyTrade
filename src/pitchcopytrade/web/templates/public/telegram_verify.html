@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/catalog">Каталог</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:30px;">
+  <div class="eyebrow">telegram verification</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.94;letter-spacing:-0.05em;">Подтвердите доступ через Telegram</h1>
+  <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.7;">
+    Subscriber fallback в PitchCopyTrade открывается только после подтверждения через Telegram. Целевой экран после входа:
+    <code>{{ surface_next }}</code>.
+  </p>
+</section>
+
+<section style="display:grid;grid-template-columns:1.2fr 0.8fr;gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <strong>Как войти</strong>
+    <ol class="muted" style="margin:14px 0 0;padding-left:20px;line-height:1.8;">
+      <li>Откройте Telegram и найдите бота <strong>@{{ telegram_bot_username }}</strong>.</li>
+      <li>Отправьте <code>/start</code>, если еще не запускали бота.</li>
+      <li>Отправьте <code>/web</code>. Бот пришлет безопасную ссылку входа без пароля.</li>
+      <li>Откройте ссылку из ответа бота. После этого web fallback будет доступен.</li>
+    </ol>
+    {% if webapp_enabled %}
+    <p class="muted" style="margin:16px 0 0;line-height:1.7;">
+      На текущем `https`-стенде доступен и Mini App. Его тоже можно открыть прямо из меню бота.
+    </p>
+    {% else %}
+    <p class="muted" style="margin:16px 0 0;line-height:1.7;">
+      Mini App появится автоматически после перевода стенда на `https`.
+    </p>
+    {% endif %}
+  </article>
+
+  <article class="surface" style="padding:24px;">
+    <strong>Быстрые действия</strong>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+      <a class="action" href="https://t.me/{{ telegram_bot_username }}?start=web">Открыть @{{ telegram_bot_username }} c web-верификацией</a>
+      <a class="action ghost" href="https://t.me/{{ telegram_bot_username }}">Открыть бота без deep link</a>
+      <a class="action ghost" href="/catalog">Вернуться в каталог</a>
+      {% if webapp_enabled %}
+      <a class="action ghost" href="{{ base_url }}/miniapp">Открыть Mini App</a>
+      {% endif %}
+    </div>
+  </article>
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.2fr"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

@@ -178,6 +178,22 @@ def test_tg_auth_sets_session_cookie_and_redirects_to_feed() -> None:
         assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
 
 
+def test_tg_auth_respects_safe_next_redirect() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        response = client.get(
+            "/tg-auth",
+            params={"token": build_telegram_login_link_token(user), "next": "/catalog?surface=miniapp"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/catalog?surface=miniapp"
+
+
 def test_workspace_session_does_not_open_subscriber_feed() -> None:
     repository = FakeAuthRepository()
     user = _make_user()
@@ -187,4 +203,17 @@ def test_workspace_session_does_not_open_subscriber_feed() -> None:
         client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
         response = client.get("/app/feed", follow_redirects=False)
 
-        assert response.status_code == 401
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("/verify/telegram?next=/app/feed")
+
+
+def test_verify_telegram_page_renders() -> None:
+    repository = FakeAuthRepository()
+
+    with _build_client(repository) as client:
+        response = client.get("/verify/telegram?next=/app/feed")
+
+        assert response.status_code == 200
+        assert "Подтвердите доступ через Telegram" in response.text
+        assert "/web" in response.text
+        assert "start=web" in response.text

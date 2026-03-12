@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import BundleMember, Strategy, SubscriptionProduct
-from pitchcopytrade.db.models.commerce import Subscription
+from pitchcopytrade.db.models.commerce import Payment, Subscription
 from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
 from pitchcopytrade.db.models.enums import RecommendationStatus, SubscriptionStatus
 from pitchcopytrade.repositories.contracts import AccessRepository
@@ -88,7 +88,15 @@ class SqlAlchemyAccessRepository(AccessRepository):
         return result.scalar_one_or_none()
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
-        query = select(User).options(selectinload(User.roles)).where(User.telegram_user_id == telegram_user_id)
+        query = (
+            select(User)
+            .options(
+                selectinload(User.roles),
+                selectinload(User.payments).selectinload(Payment.product),
+                selectinload(User.subscriptions).selectinload(Subscription.product),
+            )
+            .where(User.telegram_user_id == telegram_user_id)
+        )
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
