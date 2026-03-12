@@ -11,7 +11,7 @@
 
 {% block content %}
 <section class="surface" style="padding:30px;">
-  <div class="eyebrow">stub/manual checkout</div>
+  <div class="eyebrow">{{ payment_provider }} checkout</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4.2vw,3.6rem);line-height:0.95;letter-spacing:-0.06em;">{{ product.title }}</h1>
@@ -90,7 +90,7 @@
     <div style="display:grid;gap:12px;">
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>1. Создадим payment</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Статус будет `pending`, провайдер `stub_manual`, а reference сгенерируется автоматически.</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Статус будет `pending`, провайдер `{{ payment_provider }}`, а reference сгенерируется автоматически.</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>2. Создадим subscription</strong>

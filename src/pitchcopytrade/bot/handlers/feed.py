@@ -8,7 +8,9 @@ from pitchcopytrade.db.session import AsyncSessionLocal
 from pitchcopytrade.repositories.access import FileAccessRepository, SqlAlchemyAccessRepository
 from pitchcopytrade.services.acl import get_user_by_telegram_id, list_user_visible_recommendations, user_has_active_access
 from pitchcopytrade.services.subscriber import (
+    build_subscriber_payments_message,
     build_subscriber_status_message,
+    build_subscriber_subscriptions_message,
     build_subscriber_web_message,
     get_subscriber_status_snapshot,
 )
@@ -21,10 +23,11 @@ def _supports_webapp() -> bool:
 def _subscriber_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(text="/status"), KeyboardButton(text="/feed")],
+        [KeyboardButton(text="/subscriptions"), KeyboardButton(text="/payments")],
         [KeyboardButton(text="/catalog"), KeyboardButton(text="/web")],
     ]
     if _supports_webapp():
-        keyboard[1].append(
+        keyboard[2].append(
             KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{get_settings().app.base_url}/miniapp"))
         )
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
@@ -184,7 +187,57 @@ async def handle_web(message: Message) -> None:
         )
 
 
+async def handle_subscriptions(message: Message) -> None:
+    telegram_user = message.from_user
+    if telegram_user is None:
+        await message.answer("Не удалось определить Telegram-пользователя.", reply_markup=_subscriber_keyboard())
+        return
+
+    if AsyncSessionLocal is None:
+        repository = FileAccessRepository()
+        snapshot = await get_subscriber_status_snapshot(repository, telegram_user_id=telegram_user.id)
+    else:
+        async with AsyncSessionLocal() as session:
+            repository = SqlAlchemyAccessRepository(session)
+            snapshot = await get_subscriber_status_snapshot(repository, telegram_user_id=telegram_user.id)
+
+    if snapshot is None:
+        await message.answer(
+            "Профиль подписчика еще не создан. Начните с /start, затем откройте /catalog.",
+            reply_markup=_subscriber_keyboard(),
+        )
+        return
+
+    await message.answer(build_subscriber_subscriptions_message(snapshot), reply_markup=_subscriber_keyboard())
+
+
+async def handle_payments(message: Message) -> None:
+    telegram_user = message.from_user
+    if telegram_user is None:
+        await message.answer("Не удалось определить Telegram-пользователя.", reply_markup=_subscriber_keyboard())
+        return
+
+    if AsyncSessionLocal is None:
+        repository = FileAccessRepository()
+        snapshot = await get_subscriber_status_snapshot(repository, telegram_user_id=telegram_user.id)
+    else:
+        async with AsyncSessionLocal() as session:
+            repository = SqlAlchemyAccessRepository(session)
+            snapshot = await get_subscriber_status_snapshot(repository, telegram_user_id=telegram_user.id)
+
+    if snapshot is None:
+        await message.answer(
+            "Профиль подписчика еще не создан. Начните с /start, затем откройте /catalog.",
+            reply_markup=_subscriber_keyboard(),
+        )
+        return
+
+    await message.answer(build_subscriber_payments_message(snapshot), reply_markup=_subscriber_keyboard())
+
+
 FEED_HANDLER = (handle_feed, Command("feed"))
 STATUS_HANDLER = (handle_status, Command("status"))
+SUBSCRIPTIONS_HANDLER = (handle_subscriptions, Command("subscriptions"))
+PAYMENTS_HANDLER = (handle_payments, Command("payments"))
 WEB_HANDLER = (handle_web, Command("web"))
 VERIFY_HANDLER = (handle_web, Command("verify"))

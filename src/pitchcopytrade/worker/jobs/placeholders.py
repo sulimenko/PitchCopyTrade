@@ -12,7 +12,9 @@ from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.db.models.enums import RecommendationStatus, SubscriptionStatus
+from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.services.notifications import deliver_recommendation_notifications, deliver_recommendation_notifications_file
+from pitchcopytrade.services.payment_sync import sync_tbank_pending_payments
 from pitchcopytrade.services.publishing import publish_due_recommendations
 
 logger = logging.getLogger(__name__)
@@ -81,7 +83,35 @@ async def run_scheduled_publish() -> None:
 
 
 async def run_payment_expiry_sync() -> None:
-    logger.debug("payment_expiry_sync tick")
+    settings = get_settings()
+    if settings.payments.provider != "tbank":
+        logger.debug("payment_expiry_sync skipped: provider=%s", settings.payments.provider)
+        return
+
+    client = TBankAcquiringClient(
+        terminal_key=settings.payments.tinkoff_terminal_key.get_secret_value(),
+        password=settings.payments.tinkoff_secret_key.get_secret_value(),
+    )
+    if AsyncSessionLocal is None:
+        stats = await sync_tbank_pending_payments(None, client=client)
+        logger.info(
+            "payment_expiry_sync tick(file): checked=%s paid=%s failed=%s pending=%s",
+            stats.checked,
+            stats.paid,
+            stats.failed,
+            stats.pending,
+        )
+        return
+
+    async with AsyncSessionLocal() as session:
+        stats = await sync_tbank_pending_payments(session, client=client)
+    logger.info(
+        "payment_expiry_sync tick: checked=%s paid=%s failed=%s pending=%s",
+        stats.checked,
+        stats.paid,
+        stats.failed,
+        stats.pending,
+    )
 
 
 async def run_subscription_expiry() -> None:

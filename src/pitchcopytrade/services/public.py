@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from secrets import token_hex
 
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, Subscription
@@ -16,6 +17,7 @@ from pitchcopytrade.db.models.enums import (
     SubscriptionStatus,
     UserStatus,
 )
+from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.compliance import bind_consents_to_payment, record_user_consent
 
@@ -54,6 +56,8 @@ class CheckoutResult:
     payment: Payment
     subscription: Subscription
     required_documents: list[LegalDocument]
+    payment_url: str | None = None
+    provider_payment_id: str | None = None
 
 
 async def list_public_strategies(repository: PublicRepository) -> list[Strategy]:
@@ -145,6 +149,18 @@ async def create_stub_checkout(
         if user.consents is None:
             user.consents = []
 
+    if get_settings().payments.provider == "tbank":
+        return await _create_tbank_checkout_records(
+            repository,
+            user=user,
+            product=product,
+            lead_source_name=request.lead_source_name,
+            ip_address=request.ip_address,
+            source="public_checkout",
+            required_documents=required_documents,
+            timestamp=timestamp,
+        )
+
     return await _create_checkout_records(
         repository,
         user=user,
@@ -170,6 +186,18 @@ async def create_telegram_stub_checkout(
         raise ValueError("Checkout недоступен: не опубликован полный комплект обязательных документов")
 
     user = await upsert_telegram_subscriber(repository, profile)
+    if get_settings().payments.provider == "tbank":
+        return await _create_tbank_checkout_records(
+            repository,
+            user=user,
+            product=product,
+            lead_source_name=profile.lead_source_name,
+            ip_address=None,
+            source="telegram_checkout",
+            required_documents=required_documents,
+            timestamp=timestamp,
+        )
+
     return await _create_checkout_records(
         repository,
         user=user,
@@ -246,6 +274,93 @@ async def _create_checkout_records(
         payment=payment,
         subscription=subscription,
         required_documents=required_documents,
+    )
+
+
+async def _create_tbank_checkout_records(
+    repository: PublicRepository,
+    *,
+    user: User,
+    product: SubscriptionProduct,
+    lead_source_name: str | None,
+    ip_address: str | None,
+    source: str,
+    required_documents: list[LegalDocument],
+    timestamp: datetime,
+) -> CheckoutResult:
+    settings = get_settings()
+    order_id = _build_stub_reference(product.slug)
+    client = TBankAcquiringClient(
+        terminal_key=settings.payments.tinkoff_terminal_key.get_secret_value(),
+        password=settings.payments.tinkoff_secret_key.get_secret_value(),
+    )
+    checkout_session = await client.create_sbp_checkout(
+        order_id=order_id,
+        amount_rub=product.price_rub,
+        description=product.title,
+        success_url=f"{settings.app.base_url}/checkout/{product.id}",
+    )
+
+    payment = Payment(
+        user=user,
+        product=product,
+        provider=PaymentProvider.TBANK,
+        status=PaymentStatus.PENDING,
+        amount_rub=product.price_rub,
+        discount_rub=0,
+        final_amount_rub=product.price_rub,
+        currency="RUB",
+        external_id=checkout_session.payment_id,
+        stub_reference=order_id,
+        provider_payload={
+            "flow": source,
+            "lead_source_name": lead_source_name,
+            "provider_payment_id": checkout_session.payment_id,
+            "payment_url": checkout_session.payment_url,
+            "init": checkout_session.init_payload,
+            "qr": checkout_session.qr_payload,
+        },
+        expires_at=timestamp + timedelta(hours=24),
+    )
+    payment.consents = []
+    repository.add(payment)
+
+    consents = [
+        record_user_consent(
+            user=user,
+            document=document,
+            source=source,
+            payment=None,
+            accepted_at=timestamp,
+            ip_address=ip_address,
+        )
+        for document in required_documents
+    ]
+    bind_consents_to_payment(consents=consents, payment=payment)
+
+    subscription = Subscription(
+        user=user,
+        product=product,
+        payment=payment,
+        status=SubscriptionStatus.PENDING,
+        autorenew_enabled=product.autorenew_allowed,
+        is_trial=product.trial_days > 0,
+        manual_discount_rub=0,
+        start_at=timestamp,
+        end_at=timestamp + _billing_delta(product.billing_period),
+    )
+    repository.add(subscription)
+
+    await repository.commit()
+    await repository.refresh(payment)
+    await repository.refresh(subscription)
+    return CheckoutResult(
+        user=user,
+        payment=payment,
+        subscription=subscription,
+        required_documents=required_documents,
+        payment_url=checkout_session.payment_url,
+        provider_payment_id=checkout_session.payment_id,
     )
 
 

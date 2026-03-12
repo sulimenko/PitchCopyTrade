@@ -24,10 +24,13 @@
 - preview / moderation / rendering baseline
 - public catalog
 - checkout `stub/manual`
+- automatic `T-Bank` pending payment sync
 - payment confirm -> activate subscription
 - ACL service
 - bot feed and web fallback feed
 - Telegram subscriber self-service baseline
+- richer Telegram self-service menus for subscriptions and payments
+- subscriber-aware Mini App catalog surface
 - worker scheduled publish baseline
 - delivery notifications baseline
 - Telegram-first subscriber baseline
@@ -81,6 +84,12 @@
 - если protected subscriber web surface открывается без Telegram cookie, переводит ли flow пользователя в понятную Telegram verification page, а не в сырой `401`;
 - если используется `next` redirect после Telegram auth, защищен ли он от open redirect и остается ли локальным;
 - если web fallback заявлен как subscriber-friendly, есть ли у него понятная landing page, а не только голая лента без статуса;
+- если заявлен Telegram self-service, видит ли пользователь свои подписки и pending оплаты без утечки чужих данных;
+- если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
+- если Telegram checkout заявлен как interactive, есть ли не только команды, но и рабочий callback/inline path без сломанного fallback;
+- если заявлен Mini App auth bridge, валидируется ли Telegram `initData` на backend, а не принимается ли он вслепую;
+- если заявлен реальный SBP provider, есть ли provider abstraction и не ломается ли `stub/manual` fallback;
+- если заявлен worker-based provider sync, активируется ли доступ только после финального provider state;
 - не собирает ли code лишние персональные данные без необходимости.
 - не отправляет ли bot `WebApp` кнопку на `http` base URL, где Telegram ее все равно отвергнет.
 
@@ -100,6 +109,7 @@
 - confirm path делает `subscription -> active|trial`;
 - pending/failed/cancelled/expired не дают delivery access;
 - file-mode implementation не ломает state transitions.
+- worker payment sync не выдает access по `pending` и не ломает `stub/manual` path.
 
 ### E. Local storage contract
 Проверь:
@@ -181,7 +191,7 @@ Reviewer должен считать хорошим признаком:
 
 ## 6. Что еще обязательно ждет реализации
 Reviewer должен помнить, что после текущего refactor track все еще нужны:
-- real SBP provider integration
+- real SBP webhook/callback integration
 - full file-mode parity for demo path
 - deeper WebApp auth bridge
 - promo/discount lifecycle

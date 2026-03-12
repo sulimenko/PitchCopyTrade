@@ -17,8 +17,31 @@
       </p>
       {% if surface == "miniapp" %}
       <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">
-        Вы открыли Mini App surface из Telegram. Для авторизованного subscriber fallback используйте команду `/web` в боте.
+        Вы открыли Mini App surface из Telegram. Страница попробует автоматически подтвердить Telegram identity и перевести вас в subscriber status.
       </p>
+      <div id="miniapp-auth-status" class="pill" style="margin-top:14px;">Mini App auth: ожидание</div>
+      {% if miniapp_snapshot %}
+      <div class="surface" style="padding:18px;margin-top:16px;background:rgba(255,255,255,0.85);">
+        <div class="eyebrow">subscriber overview</div>
+        <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:10px;">
+          <div>
+            <strong>{{ miniapp_user.full_name or miniapp_user.username or "Subscriber" }}</strong>
+            <p class="muted" style="margin:8px 0 0;line-height:1.6;">
+              Доступ: {{ "активен" if miniapp_snapshot.has_access else "ожидает активации" }}
+            </p>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <span class="pill">{{ miniapp_snapshot.active_subscriptions|length }} subscriptions</span>
+            <span class="pill">{{ miniapp_snapshot.pending_payments|length }} pending payments</span>
+            <span class="pill">{{ miniapp_snapshot.visible_recommendation_titles|length }} visible ideas</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+          <a class="action" href="/app/status">Открыть статус</a>
+          <a class="action ghost" href="/app/feed">Открыть feed</a>
+        </div>
+      </div>
+      {% endif %}
       {% endif %}
     </div>
     <div class="pill">{{ strategies|length }} strategy</div>
@@ -62,4 +85,44 @@
     section[style*="repeat(2"] { grid-template-columns: 1fr !important; }
   }
 </style>
+{% if surface == "miniapp" %}
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+  (async function () {
+    const statusNode = document.getElementById("miniapp-auth-status");
+    const webApp = window.Telegram && window.Telegram.WebApp;
+    if (!webApp || !webApp.initData) {
+      if (statusNode) statusNode.textContent = "Mini App auth: нет initData";
+      return;
+    }
+    try {
+      webApp.ready();
+      if (statusNode) statusNode.textContent = "Mini App auth: проверка";
+      const body = new URLSearchParams();
+      body.set("init_data", webApp.initData);
+      body.set("next", "/app/status");
+      const response = await fetch("/tg-webapp/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        credentials: "same-origin",
+        body: body.toString()
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        if (statusNode) statusNode.textContent = "Mini App auth: ошибка";
+        console.error("Mini App auth failed", payload);
+        return;
+      }
+      const payload = await response.json();
+      if (statusNode) statusNode.textContent = "Mini App auth: ok";
+      if (payload.redirect_url) {
+        window.location.href = payload.redirect_url;
+      }
+    } catch (error) {
+      if (statusNode) statusNode.textContent = "Mini App auth: ошибка";
+      console.error(error);
+    }
+  })();
+</script>
+{% endif %}
 {% endblock %}

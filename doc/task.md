@@ -456,15 +456,21 @@ Acceptance:
 Сделано:
 - conditional WebApp button behavior for `http` vs `https` environments
 - subscriber status flow in bot
+- `/subscriptions` self-service flow in bot
+- `/payments` self-service flow in bot
 - Telegram verification page for web fallback
 - deep-link start `?start=web`
 - safe local `next` redirect in `/tg-auth`
 - `/app/status` as web fallback landing page after Telegram verification
+- inline product selection and callback-based checkout preview/confirm
+- active subscription and pending payment overview inside bot
+- Mini App automatic auth bridge through `/tg-webapp/auth`
+- Mini App catalog surface shows subscriber overview when Telegram auth cookie already exists
 
 Сделать:
 - full WebApp auth bridge
-- richer menu/status flow
 - deeper subscriber self-service UX inside Mini App
+- richer in-app actions beyond status/feed/catalog
 
 Acceptance:
 - subscriber flow меньше зависит от command-only interaction
@@ -489,10 +495,20 @@ Acceptance:
 - deployed host serves app over `https`
 - bot can safely expose `Mini App` button
 
-### 45. Real SBP payments `[todo]`
-- integrate first real provider
-- recommended provider: `T-Bank`
-- keep `stub/manual` as operator fallback
+### 45. Real SBP payments `[partial]`
+Сделано:
+- provider-aware checkout service
+- `T-Bank` SBP adapter foundation
+- `stub/manual` kept as operator fallback
+- provider payment id is persisted in checkout records
+- worker `payment_expiry_sync` polls pending `T-Bank` payments through `GetState`
+- confirmed provider state auto-activates linked subscriptions
+- terminal failed provider state auto-cancels pending subscriptions
+- sync writes `worker.payment_state_sync` audit events
+
+Сделать:
+- webhook/callback completion and production host rollout
+- production credential rollout on target host
 
 Acceptance:
 - user can pay in RUB via real SBP flow

@@ -91,6 +91,8 @@ Canonical subscriber model остается:
   - `/confirm_buy <product_slug>`
   - `/feed`
   - `/status`
+  - `/subscriptions`
+  - `/payments`
   - `/web`
   - `/verify`
 - Telegram verification page for web fallback
@@ -98,6 +100,12 @@ Canonical subscriber model остается:
 - deep link `?start=web` for faster Telegram -> web handoff
 - safe local `next` redirect support in `/tg-auth`
 - `/app/status` as subscriber landing page in web fallback
+- inline product selection and callback-based checkout preview/confirm in bot
+- subscriber self-service views for active subscriptions and pending payments in bot
+- Mini App automatic auth bridge via verified Telegram `initData`
+- Mini App catalog surface is subscriber-aware when Telegram fallback cookie already exists
+- provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
+- worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
 - Telegram-auth fallback cookie for `/app/*`
 - ACL-gated web feed and bot feed
 - validated test bot token smoke via Telegram API `getMe`
@@ -115,6 +123,7 @@ Canonical subscriber model остается:
 - committed seed target `storage/seed/*`
 - attachments local-first by canonical `local_fs`
 - legal documents local-first via `source_path` under `storage/*/blob/legal`
+- worker `payment_expiry_sync` now resolves pending `T-Bank` payments in both `db` and `file` modes
 
 ### 3.6 Repository layer baseline
 Есть:
@@ -448,8 +457,8 @@ Task list для запуска тестовой версии закрыт. Сл
 
 Приоритеты:
 1. payment completion
-   - replace `stub/manual` with real SBP provider
-   - recommended first provider = `T-Bank`
+   - finish `T-Bank` webhook/callback path
+   - keep `stub/manual` as operator fallback
    - keep manual operator fallback
 2. remaining persistence hardening
    - compose cleanup

@@ -12,8 +12,8 @@ from pitchcopytrade.api.main import create_app
 from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.auth.session import build_telegram_fallback_cookie_value, build_telegram_login_link_token
 from pitchcopytrade.bot.dispatcher import build_dispatcher
-from pitchcopytrade.bot.handlers.feed import handle_feed, handle_status, handle_web
-from pitchcopytrade.bot.handlers.shop import handle_buy_confirm, handle_buy_preview, handle_catalog
+from pitchcopytrade.bot.handlers.feed import handle_feed, handle_payments, handle_status, handle_subscriptions, handle_web
+from pitchcopytrade.bot.handlers.shop import handle_buy_confirm, handle_buy_preview, handle_catalog, handle_shop_callback
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription
@@ -386,7 +386,8 @@ def test_build_dispatcher_registers_feed_handler() -> None:
     dispatcher = build_dispatcher()
     registered_handlers = dispatcher.message.handlers
 
-    assert len(registered_handlers) == 8
+    assert len(registered_handlers) == 10
+    assert len(dispatcher.callback_query.handlers) == 1
 
 
 @pytest.mark.asyncio
@@ -406,10 +407,10 @@ async def test_catalog_handler_lists_products(monkeypatch) -> None:
 
     await handle_catalog(message)
 
-    message.answer.assert_awaited_once()
-    sent_text = message.answer.await_args.args[0]
-    assert "Momentum RU" in sent_text
-    assert product.slug in sent_text
+    sent_texts = [call.args[0] for call in message.answer.await_args_list]
+    assert any("Momentum RU" in text for text in sent_texts)
+    assert any(product.slug in text for text in sent_texts)
+    assert any("Быстрый выбор продукта" in text for text in sent_texts)
 
 
 @pytest.mark.asyncio
@@ -433,6 +434,8 @@ async def test_buy_preview_handler_shows_confirm_command(monkeypatch) -> None:
     sent_text = message.answer.await_args.args[0]
     assert "/confirm_buy" in sent_text
     assert product.title in sent_text
+    inline_markup = message.answer.await_args.kwargs["reply_markup"]
+    assert inline_markup.inline_keyboard[0][0].callback_data == f"buy_confirm:{product.slug}"
 
 
 @pytest.mark.asyncio
@@ -484,6 +487,30 @@ async def test_buy_confirm_handler_creates_stub_checkout(monkeypatch) -> None:
     sent_text = message.answer.await_args.args[0]
     assert "Заявка на оплату создана" in sent_text
     assert "MANUAL-MOMENTUM-ABCD1234" in sent_text
+
+
+@pytest.mark.asyncio
+async def test_shop_callback_preview_opens_product(monkeypatch) -> None:
+    _strategy, product = _make_strategy_with_product()
+    callback = AsyncMock()
+    callback.data = f"buy_preview:{product.slug}"
+    callback.message = AsyncMock()
+
+    class DummySessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("pitchcopytrade.bot.handlers.shop.AsyncSessionLocal", lambda: DummySessionContext())
+    monkeypatch.setattr("pitchcopytrade.bot.handlers.shop.get_public_product_by_slug", lambda _session, _slug: _async_return(product))
+
+    await handle_shop_callback(callback)
+
+    sent_text = callback.message.answer.await_args.args[0]
+    assert product.title in sent_text
+    callback.answer.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -585,6 +612,103 @@ async def test_status_handler_returns_access_summary(monkeypatch) -> None:
     assert "Статус подписчика PitchCopyTrade" in sent_text
     assert "Momentum RU Monthly" in sent_text
     assert "Покупка SBER" in sent_text
+
+
+@pytest.mark.asyncio
+async def test_bot_subscriptions_uses_snapshot(monkeypatch) -> None:
+    user = _make_user()
+    _strategy, product = _make_strategy_with_product()
+    subscription = Subscription(
+        id="subscription-1",
+        user_id=user.id,
+        product_id=product.id,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=False,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+    subscription.product = product
+    message = AsyncMock()
+    message.from_user = SimpleNamespace(id=12345)
+
+    class DummySessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("pitchcopytrade.bot.handlers.feed.AsyncSessionLocal", lambda: DummySessionContext())
+    monkeypatch.setattr(
+        "pitchcopytrade.bot.handlers.feed.get_subscriber_status_snapshot",
+        lambda _session, telegram_user_id: _async_return(
+            SimpleNamespace(
+                user=user,
+                has_access=True,
+                active_subscriptions=[subscription],
+                pending_payments=[],
+                visible_recommendation_titles=[],
+            )
+        ),
+    )
+
+    await handle_subscriptions(message)
+
+    sent_text = message.answer.await_args.args[0]
+    assert "Мои подписки" in sent_text
+    assert "Momentum RU Monthly" in sent_text
+
+
+@pytest.mark.asyncio
+async def test_bot_payments_uses_snapshot(monkeypatch) -> None:
+    user = _make_user()
+    _strategy, product = _make_strategy_with_product()
+    payment = Payment(
+        id="payment-1",
+        user_id=user.id,
+        product_id=product.id,
+        provider=PaymentProvider.TBANK,
+        status=PaymentStatus.PENDING,
+        amount_rub=4900,
+        discount_rub=0,
+        final_amount_rub=4900,
+        currency="RUB",
+        external_id="777",
+        stub_reference="ORDER-777",
+        provider_payload={"payment_url": "https://pay.tbank.ru/qr/777"},
+    )
+    payment.product = product
+    message = AsyncMock()
+    message.from_user = SimpleNamespace(id=12345)
+
+    class DummySessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("pitchcopytrade.bot.handlers.feed.AsyncSessionLocal", lambda: DummySessionContext())
+    monkeypatch.setattr(
+        "pitchcopytrade.bot.handlers.feed.get_subscriber_status_snapshot",
+        lambda _session, telegram_user_id: _async_return(
+            SimpleNamespace(
+                user=user,
+                has_access=False,
+                active_subscriptions=[],
+                pending_payments=[payment],
+                visible_recommendation_titles=[],
+            )
+        ),
+    )
+
+    await handle_payments(message)
+
+    sent_text = message.answer.await_args.args[0]
+    assert "Мои оплаты" in sent_text
+    assert "https://pay.tbank.ru/qr/777" in sent_text
 
 
 async def _async_return(value):

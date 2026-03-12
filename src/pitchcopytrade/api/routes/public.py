@@ -3,9 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
 from pitchcopytrade.core.config import get_settings
-from pitchcopytrade.api.deps.repositories import get_public_repository
+from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
+from pitchcopytrade.repositories.contracts import AccessRepository, AuthRepository
 from pitchcopytrade.repositories.contracts import PublicRepository
+from pitchcopytrade.services.subscriber import get_subscriber_status_snapshot
 from pitchcopytrade.services.public import (
     CheckoutRequest,
     create_stub_checkout,
@@ -47,16 +50,35 @@ async def telegram_verify_page(request: Request) -> Response:
 
 
 @router.get("/catalog", response_class=HTMLResponse)
-async def catalog_page(request: Request, repository: PublicRepository = Depends(get_public_repository)) -> Response:
+async def catalog_page(
+    request: Request,
+    repository: PublicRepository = Depends(get_public_repository),
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
     strategies = await list_public_strategies(repository)
+    surface = request.query_params.get("surface", "web")
+    miniapp_user = None
+    miniapp_snapshot = None
+    if surface == "miniapp":
+        token = request.cookies.get(get_telegram_fallback_cookie_name())
+        if token:
+            miniapp_user = await get_user_from_telegram_fallback_cookie(auth_repository, token)
+            if miniapp_user is not None and miniapp_user.telegram_user_id is not None:
+                miniapp_snapshot = await get_subscriber_status_snapshot(
+                    access_repository,
+                    telegram_user_id=miniapp_user.telegram_user_id,
+                )
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
         {
             "title": "PitchCopyTrade Catalog",
             "strategies": strategies,
-            "surface": request.query_params.get("surface", "web"),
+            "surface": surface,
             "telegram_bot_username": get_settings().telegram.bot_username,
+            "miniapp_user": miniapp_user,
+            "miniapp_snapshot": miniapp_snapshot,
         },
     )
 
@@ -100,6 +122,7 @@ async def checkout_page(
             "product": product,
             "documents": documents,
             "checkout_ready": checkout_ready,
+            "payment_provider": get_settings().payments.provider,
             "error": None,
             "form_values": {
                 "full_name": "",
@@ -172,6 +195,7 @@ async def checkout_submit(
                 "product": product,
                 "documents": documents,
                 "checkout_ready": checkout_ready,
+                "payment_provider": get_settings().payments.provider,
                 "error": str(exc),
                 "form_values": {
                     "full_name": full_name,
@@ -191,6 +215,7 @@ async def checkout_submit(
             "title": "Checkout Created",
             "product": product,
             "result": result,
+            "payment_provider": get_settings().payments.provider,
         },
         status_code=status.HTTP_201_CREATED,
     )

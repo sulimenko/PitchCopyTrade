@@ -14,10 +14,11 @@ def _start_keyboard() -> ReplyKeyboardMarkup:
     base_url = get_settings().app.base_url
     keyboard = [
         [KeyboardButton(text="/catalog"), KeyboardButton(text="/status")],
+        [KeyboardButton(text="/subscriptions"), KeyboardButton(text="/payments")],
         [KeyboardButton(text="/feed"), KeyboardButton(text="/web")],
     ]
     if base_url.startswith("https://"):
-        keyboard[1].append(KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{base_url}/miniapp")))
+        keyboard[2].append(KeyboardButton(text="Mini App", web_app=WebAppInfo(url=f"{base_url}/miniapp")))
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
@@ -59,6 +60,8 @@ async def handle_start(message: Message, command: CommandObject | None = None) -
         "Доступные команды:\n"
         "/catalog - витрина стратегий и продуктов\n"
         "/status - статус подписки и доступа\n"
+        "/subscriptions - мои подписки\n"
+        "/payments - мои pending оплаты\n"
         "/web - верификация web fallback через Telegram\n"
         "/buy <product_slug> - показать условия покупки\n"
         "/confirm_buy <product_slug> - создать заявку на оплату\n"

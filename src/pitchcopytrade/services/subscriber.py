@@ -104,6 +104,8 @@ def build_subscriber_status_message(snapshot: SubscriberStatusSnapshot) -> str:
     lines.append("")
     lines.append("Команды:")
     lines.append("/catalog - витрина стратегий")
+    lines.append("/subscriptions - мои подписки")
+    lines.append("/payments - мои оплаты")
     lines.append("/feed - открыть рекомендации")
     lines.append("/web - подтвердить web fallback через Telegram")
     return "\n".join(lines)
@@ -125,6 +127,49 @@ def build_subscriber_web_message(user: User, *, base_url: str, include_webapp: b
         lines.append("")
         lines.append("Mini App тоже доступен в меню бота.")
         lines.append(f"{base_url}/miniapp")
+    return "\n".join(lines)
+
+
+def build_subscriber_subscriptions_message(snapshot: SubscriberStatusSnapshot) -> str:
+    lines = ["Мои подписки"]
+    if snapshot.active_subscriptions:
+        for subscription in snapshot.active_subscriptions:
+            product_title = _product_title(subscription.product)
+            end_at = subscription.end_at.strftime("%Y-%m-%d %H:%M") if subscription.end_at else "n/a"
+            lines.append(f"- {product_title} | до {end_at} | {subscription.status.value}")
+    else:
+        lines.append("Активных подписок пока нет.")
+
+    lines.append("")
+    lines.append("Полезно:")
+    lines.append("/catalog - оформить новую подписку")
+    lines.append("/payments - проверить pending оплаты")
+    lines.append("/feed - открыть рекомендации")
+    return "\n".join(lines)
+
+
+def build_subscriber_payments_message(snapshot: SubscriberStatusSnapshot) -> str:
+    lines = ["Мои оплаты"]
+    if snapshot.pending_payments:
+        for payment in snapshot.pending_payments:
+            product_title = _product_title(payment.product)
+            provider_label = payment.provider.value
+            reference = payment.stub_reference or payment.external_id or payment.id
+            payment_url = None
+            if payment.provider_payload:
+                payment_url = payment.provider_payload.get("payment_url")
+            lines.append(
+                f"- {product_title} | {payment.final_amount_rub} RUB | {provider_label} | {reference}"
+            )
+            if payment_url:
+                lines.append(f"  SBP: {payment_url}")
+    else:
+        lines.append("Ожидающих оплат сейчас нет.")
+
+    lines.append("")
+    lines.append("Полезно:")
+    lines.append("/status - общий статус доступа")
+    lines.append("/catalog - витрина стратегий")
     return "\n".join(lines)
 
 

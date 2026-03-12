@@ -7,8 +7,8 @@ import pytest
 
 from pitchcopytrade.core.config import reset_settings_cache
 from pitchcopytrade.bot.dispatcher import build_dispatcher
-from pitchcopytrade.bot.handlers.feed import FEED_HANDLER, STATUS_HANDLER, VERIFY_HANDLER, WEB_HANDLER
-from pitchcopytrade.bot.handlers.shop import BUY_CONFIRM_HANDLER, BUY_PREVIEW_HANDLER, CATALOG_HANDLER, _catalog_keyboard
+from pitchcopytrade.bot.handlers.feed import FEED_HANDLER, PAYMENTS_HANDLER, STATUS_HANDLER, SUBSCRIPTIONS_HANDLER, VERIFY_HANDLER, WEB_HANDLER
+from pitchcopytrade.bot.handlers.shop import BUY_CONFIRM_HANDLER, BUY_PREVIEW_HANDLER, CATALOG_HANDLER, SHOP_CALLBACK_HANDLER, _catalog_keyboard
 from pitchcopytrade.bot.handlers.start import START_HANDLER, _start_keyboard, handle_start
 from pitchcopytrade.bot.main import create_bot
 
@@ -34,6 +34,8 @@ async def test_start_handler_replies_with_telegram_first_placeholder(monkeypatch
     assert "PitchCopyTrade запущен." in sent_text
     assert "/catalog" in sent_text
     assert "/status" in sent_text
+    assert "/subscriptions" in sent_text
+    assert "/payments" in sent_text
     assert "/confirm_buy" in sent_text
     assert message.answer.await_args.kwargs["reply_markup"] is not None
 
@@ -88,15 +90,19 @@ def test_build_dispatcher_registers_start_handler() -> None:
     dispatcher = build_dispatcher()
     registered_handlers = dispatcher.message.handlers
 
-    assert len(registered_handlers) == 8
+    assert len(registered_handlers) == 10
     assert registered_handlers[0].callback is START_HANDLER[0]
     assert registered_handlers[1].callback is CATALOG_HANDLER[0]
     assert registered_handlers[2].callback is BUY_PREVIEW_HANDLER[0]
     assert registered_handlers[3].callback is BUY_CONFIRM_HANDLER[0]
     assert registered_handlers[4].callback is FEED_HANDLER[0]
     assert registered_handlers[5].callback is STATUS_HANDLER[0]
-    assert registered_handlers[6].callback is WEB_HANDLER[0]
-    assert registered_handlers[7].callback is VERIFY_HANDLER[0]
+    assert registered_handlers[6].callback is SUBSCRIPTIONS_HANDLER[0]
+    assert registered_handlers[7].callback is PAYMENTS_HANDLER[0]
+    assert registered_handlers[8].callback is WEB_HANDLER[0]
+    assert registered_handlers[9].callback is VERIFY_HANDLER[0]
+    assert len(dispatcher.callback_query.handlers) == 1
+    assert dispatcher.callback_query.handlers[0].callback is SHOP_CALLBACK_HANDLER
 
 
 def test_create_bot_uses_provided_token() -> None:
