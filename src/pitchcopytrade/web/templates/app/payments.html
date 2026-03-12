@@ -15,13 +15,13 @@
 
 <section class="surface" style="padding:24px;margin-top:18px;">
   <div style="display:grid;gap:12px;">
-    {% for payment in snapshot.pending_payments %}
+    {% for payment in snapshot.payments %}
     <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
         <div>
           <strong>{{ payment.product.title if payment.product else "Продукт" }}</strong>
           <div class="muted" style="margin-top:8px;line-height:1.6;">
-            {{ payment.final_amount_rub }} руб · {{ payment.provider.value }}
+            {{ payment.final_amount_rub }} руб · {{ payment_status_label(payment.status) }}
           </div>
           {% if payment.provider_payload and payment.provider_payload.get("payment_url") %}
           <div style="margin-top:12px;">
@@ -29,7 +29,10 @@
           </div>
           {% endif %}
         </div>
-        <span class="pill">{{ payment.stub_reference or payment.external_id or payment.id }}</span>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <span class="pill">{{ payment.stub_reference or payment.external_id or payment.id }}</span>
+          <a class="action ghost" href="/app/payments/{{ payment.id }}">Детали</a>
+        </div>
       </div>
     </article>
     {% else %}

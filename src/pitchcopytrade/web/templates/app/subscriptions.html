@@ -15,16 +15,20 @@
 
 <section class="surface" style="padding:24px;margin-top:18px;">
   <div style="display:grid;gap:12px;">
-    {% for subscription in snapshot.active_subscriptions %}
+    {% for subscription in snapshot.subscriptions %}
     <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
         <div>
           <strong>{{ subscription.product.title if subscription.product else "Продукт" }}</strong>
           <div class="muted" style="margin-top:8px;line-height:1.6;">
-            Статус: {{ subscription.status.value }}{% if subscription.is_trial %} · пробный период{% endif %}
+            Статус: {{ subscription_status_label(subscription.status) }}{% if subscription.is_trial %} · пробный период{% endif %}
+            <br />Период: {{ billing_period_label(subscription.product.billing_period if subscription.product else None) }}
           </div>
         </div>
-        <span class="pill">{{ subscription.end_at or "не указано" }}</span>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <span class="pill">{{ subscription.end_at or "не указано" }}</span>
+          <a class="action ghost" href="/app/subscriptions/{{ subscription.id }}">Детали</a>
+        </div>
       </div>
     </article>
     {% else %}

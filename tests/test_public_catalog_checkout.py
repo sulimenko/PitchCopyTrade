@@ -133,7 +133,9 @@ def _make_snapshot(user: User) -> SimpleNamespace:
     return SimpleNamespace(
         user=user,
         has_access=True,
+        subscriptions=[],
         active_subscriptions=[],
+        payments=[],
         pending_payments=[],
         visible_recommendation_titles=["Покупка SBER"],
     )

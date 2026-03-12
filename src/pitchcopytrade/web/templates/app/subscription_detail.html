@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}{% endblock %}
+
+{% block content %}
+{% include "app/_miniapp_nav.html" %}
+
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">подписка</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.96;letter-spacing:-0.05em;">{{ subscription.product.title if subscription.product else "Подписка" }}</h1>
+  <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+    Здесь можно проверить срок действия, период и управлять автопродлением.
+  </p>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div style="display:grid;gap:12px;">
+    <div><strong>Статус:</strong> <span class="muted">{{ subscription_status_label(subscription.status) }}</span></div>
+    <div><strong>Период:</strong> <span class="muted">{{ billing_period_label(subscription.product.billing_period if subscription.product else None) }}</span></div>
+    <div><strong>Начало:</strong> <span class="muted">{{ subscription.start_at or "не указано" }}</span></div>
+    <div><strong>Окончание:</strong> <span class="muted">{{ subscription.end_at or "не указано" }}</span></div>
+    <div><strong>Пробный период:</strong> <span class="muted">{{ "да" if subscription.is_trial else "нет" }}</span></div>
+    <div><strong>Автопродление:</strong> <span class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</span></div>
+  </div>
+
+  {% if subscription.status.value not in ["cancelled", "blocked"] %}
+  <form method="post" action="/app/subscriptions/{{ subscription.id }}/autorenew" style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;">
+    {% if subscription.autorenew_enabled %}
+    <input type="hidden" name="enabled" value="0" />
+    <button class="action ghost" type="submit">Выключить автопродление</button>
+    {% else %}
+    <input type="hidden" name="enabled" value="1" />
+    <button class="action" type="submit">Включить автопродление</button>
+    {% endif %}
+    <a class="action ghost" href="/app/subscriptions">Назад к подпискам</a>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

@@ -109,6 +109,12 @@ Canonical subscriber model остается:
 - `/app/catalog`, `/app/subscriptions`, `/app/payments`, `/app/help`, `/app/feed` form a single subscriber workspace
 - Mini App workspace is subscriber-aware when Telegram fallback cookie already exists
 - Mini App checkout binds payment/subscription creation to the current Telegram identity
+- Mini App self-service includes:
+  - subscription detail page
+  - payment detail page
+  - pending payment cancellation
+  - autorenew toggle
+  - Russian labels for payment/subscription statuses and billing period
 - provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
 - worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
 - `T-Bank` callback endpoint for provider-driven payment updates
@@ -126,6 +132,7 @@ Canonical subscriber model остается:
   - `Публичная оферта`
   - `Политика конфиденциальности`
   - `Согласие на оплату`
+- subscriber should manage current payment/subscription state from Mini App without a staff-side manual detour
 
 ### 3.5 Recommendation lifecycle baseline
 Есть:

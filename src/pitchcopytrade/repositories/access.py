@@ -100,6 +100,9 @@ class SqlAlchemyAccessRepository(AccessRepository):
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
+    async def commit(self) -> None:
+        await self.session.commit()
+
     def _build_user_access_filter(self, user_id: str):
         strategy_ids = (
             select(SubscriptionProduct.strategy_id)
@@ -184,6 +187,9 @@ class FileAccessRepository(AccessRepository):
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
         return next((item for item in self.graph.users.values() if item.telegram_user_id == telegram_user_id), None)
+
+    async def commit(self) -> None:
+        self.graph.save(self.store)
 
     def _active_products_for_user(self, user_id: str) -> list[SubscriptionProduct]:
         products: list[SubscriptionProduct] = []
