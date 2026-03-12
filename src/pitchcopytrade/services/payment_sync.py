@@ -222,6 +222,10 @@ def _extract_provider_payment_id(payment: Payment) -> str | None:
     return str(provider_payment_id)
 
 
+def extract_provider_payment_id(payment: Payment) -> str | None:
+    return _extract_provider_payment_id(payment)
+
+
 def _merge_payment_state(payment: Payment, state: dict[str, object], *, checked_at: datetime) -> None:
     payload = dict(payment.provider_payload or {})
     history = list(payload.get("state_history", []))
@@ -254,6 +258,16 @@ def _apply_tbank_state(
         for subscription in payment.subscriptions:
             subscription.status = SubscriptionStatus.CANCELLED
     return payment.status != previous_status
+
+
+def apply_tbank_state_to_payment(
+    payment: Payment,
+    state: dict[str, object],
+    *,
+    provider_status: str,
+    timestamp: datetime,
+) -> bool:
+    return _apply_tbank_state(payment, state, provider_status=provider_status, timestamp=timestamp)
 
 
 def _mark_payment_paid(payment: Payment, timestamp: datetime) -> None:

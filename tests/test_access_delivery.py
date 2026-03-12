@@ -408,6 +408,73 @@ def test_app_payment_cancel_updates_status(monkeypatch) -> None:
         assert user.payments[0].status is PaymentStatus.CANCELLED
 
 
+def test_app_payment_refresh_redirects_to_detail(monkeypatch) -> None:
+    user = _make_user()
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(
+            SimpleNamespace(
+                user=user,
+                has_access=True,
+                subscriptions=user.subscriptions,
+                active_subscriptions=user.subscriptions,
+                payments=user.payments,
+                pending_payments=user.payments,
+                visible_recommendation_titles=[],
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.refresh_pending_payment",
+        lambda _repository, telegram_user_id, payment_id: _async_return(user.payments[0]),
+    )
+
+    with _build_client(user) as client:
+        response = client.post("/app/payments/payment-1/refresh", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/payments/payment-1"
+
+
+def test_app_payment_retry_redirects_to_new_payment(monkeypatch) -> None:
+    user = _make_user()
+    new_payment = Payment(
+        id="payment-2",
+        user_id="user-1",
+        product_id="product-1",
+        provider=PaymentProvider.TBANK,
+        status=PaymentStatus.PENDING,
+        amount_rub=499,
+        discount_rub=0,
+        final_amount_rub=499,
+        currency="RUB",
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(
+            SimpleNamespace(
+                user=user,
+                has_access=True,
+                subscriptions=user.subscriptions,
+                active_subscriptions=user.subscriptions,
+                payments=user.payments,
+                pending_payments=user.payments,
+                visible_recommendation_titles=[],
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.retry_payment_checkout",
+        lambda _repository, telegram_user_id, payment_id: _async_return(SimpleNamespace(payment=new_payment)),
+    )
+
+    with _build_client(user) as client:
+        response = client.post("/app/payments/payment-1/retry", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/payments/payment-2"
+
+
 def test_app_subscription_autorenew_toggle_updates_state(monkeypatch) -> None:
     user = _make_user()
     monkeypatch.setattr(
@@ -435,6 +502,45 @@ def test_app_subscription_autorenew_toggle_updates_state(monkeypatch) -> None:
         assert response.status_code == 303
         assert response.headers["location"] == "/app/subscriptions/subscription-1"
         assert user.subscriptions[0].autorenew_enabled is False
+
+
+def test_app_subscription_renew_redirects_to_new_payment(monkeypatch) -> None:
+    user = _make_user()
+    new_payment = Payment(
+        id="payment-3",
+        user_id="user-1",
+        product_id="product-1",
+        provider=PaymentProvider.TBANK,
+        status=PaymentStatus.PENDING,
+        amount_rub=499,
+        discount_rub=0,
+        final_amount_rub=499,
+        currency="RUB",
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(
+            SimpleNamespace(
+                user=user,
+                has_access=True,
+                subscriptions=user.subscriptions,
+                active_subscriptions=user.subscriptions,
+                payments=user.payments,
+                pending_payments=user.payments,
+                visible_recommendation_titles=[],
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.renew_subscription_checkout",
+        lambda _repository, telegram_user_id, subscription_id: _async_return(SimpleNamespace(payment=new_payment)),
+    )
+
+    with _build_client(user) as client:
+        response = client.post("/app/subscriptions/subscription-1/renew", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/payments/payment-3"
 
 
 def test_recommendation_attachment_download_from_local_storage(monkeypatch) -> None:

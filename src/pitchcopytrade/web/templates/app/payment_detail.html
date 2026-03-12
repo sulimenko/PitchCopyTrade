@@ -27,8 +27,16 @@
     <a class="action" href="{{ payment.provider_payload.get('payment_url') }}">Открыть оплату</a>
     {% endif %}
     {% if payment.status.value == "pending" %}
+    <form method="post" action="/app/payments/{{ payment.id }}/refresh">
+      <button class="action ghost" type="submit">Обновить статус</button>
+    </form>
     <form method="post" action="/app/payments/{{ payment.id }}/cancel">
       <button class="action ghost" type="submit">Отменить заявку</button>
+    </form>
+    {% endif %}
+    {% if payment.status.value in ["failed", "expired", "cancelled"] %}
+    <form method="post" action="/app/payments/{{ payment.id }}/retry">
+      <button class="action" type="submit">Повторить оплату</button>
     </form>
     {% endif %}
     <a class="action ghost" href="/app/payments">Назад к оплатам</a>

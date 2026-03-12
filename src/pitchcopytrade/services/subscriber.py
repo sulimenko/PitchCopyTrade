@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.enums import BillingPeriod, PaymentStatus, SubscriptionStatus
+from pitchcopytrade.db.models.enums import BillingPeriod, PaymentProvider, PaymentStatus, SubscriptionStatus
+from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.contracts import AccessRepository, PublicRepository
+from pitchcopytrade.services.payment_sync import apply_tbank_state_to_payment, extract_provider_payment_id
 from pitchcopytrade.services.acl import get_user_by_telegram_id, list_user_visible_recommendations, user_has_active_access
 
 
@@ -154,3 +157,113 @@ async def toggle_subscription_autorenew(
     await repository.commit()
     await repository.refresh(subscription)
     return subscription
+
+
+async def refresh_pending_payment(
+    repository: PublicRepository,
+    *,
+    telegram_user_id: int,
+    payment_id: str,
+    now: datetime | None = None,
+) -> Payment | None:
+    payment = await repository.get_user_payment(telegram_user_id=telegram_user_id, payment_id=payment_id)
+    if payment is None or payment.status is not PaymentStatus.PENDING or payment.provider is not PaymentProvider.TBANK:
+        return payment
+
+    provider_payment_id = extract_provider_payment_id(payment)
+    if not provider_payment_id:
+        return payment
+
+    settings = get_settings()
+    client = TBankAcquiringClient(
+        terminal_key=settings.payments.tinkoff_terminal_key.get_secret_value(),
+        password=settings.payments.tinkoff_secret_key.get_secret_value(),
+    )
+    state = await client.get_state(payment_id=provider_payment_id)
+    provider_status = str(state.get("Status") or "").upper()
+    apply_tbank_state_to_payment(payment, state, provider_status=provider_status, timestamp=now or datetime.now(timezone.utc))
+    await repository.commit()
+    await repository.refresh(payment)
+    return payment
+
+
+async def retry_payment_checkout(
+    repository: PublicRepository,
+    *,
+    telegram_user_id: int,
+    payment_id: str,
+):
+    payment = await repository.get_user_payment(telegram_user_id=telegram_user_id, payment_id=payment_id)
+    user = await repository.get_user_by_telegram_id(telegram_user_id)
+    if payment is None or user is None or payment.product is None:
+        return None
+    if payment.status not in {PaymentStatus.FAILED, PaymentStatus.EXPIRED, PaymentStatus.CANCELLED}:
+        return None
+    accepted_document_ids = await _accepted_active_document_ids(repository, user)
+    from pitchcopytrade.services.public import TelegramSubscriberProfile, create_telegram_stub_checkout
+
+    return await create_telegram_stub_checkout(
+        repository,
+        product=payment.product,
+        profile=_build_profile_from_user(user),
+        accepted_document_ids=accepted_document_ids,
+        promo_code_value=payment.promo_code.code if payment.promo_code is not None else None,
+    )
+
+
+async def renew_subscription_checkout(
+    repository: PublicRepository,
+    *,
+    telegram_user_id: int,
+    subscription_id: str,
+):
+    subscription = await repository.get_user_subscription(
+        telegram_user_id=telegram_user_id,
+        subscription_id=subscription_id,
+    )
+    user = await repository.get_user_by_telegram_id(telegram_user_id)
+    if subscription is None or user is None or subscription.product is None:
+        return None
+    if subscription.status is SubscriptionStatus.PENDING:
+        return None
+    accepted_document_ids = await _accepted_active_document_ids(repository, user)
+    from pitchcopytrade.services.public import create_telegram_stub_checkout
+
+    return await create_telegram_stub_checkout(
+        repository,
+        product=subscription.product,
+        profile=_build_profile_from_user(user),
+        accepted_document_ids=accepted_document_ids,
+        promo_code_value=subscription.applied_promo_code.code if subscription.applied_promo_code is not None else None,
+    )
+
+
+def _build_profile_from_user(user: User):
+    from pitchcopytrade.services.public import TelegramSubscriberProfile
+
+    return TelegramSubscriberProfile(
+        telegram_user_id=user.telegram_user_id or 0,
+        username=user.username,
+        first_name=None,
+        last_name=None,
+        full_name=user.full_name,
+        email=user.email,
+        timezone_name=user.timezone or "Europe/Moscow",
+        lead_source_name="telegram_miniapp",
+    )
+
+
+async def _accepted_active_document_ids(repository: PublicRepository, user: User) -> list[str]:
+    from pitchcopytrade.services.public import list_active_checkout_documents
+
+    documents = await list_active_checkout_documents(repository)
+    accepted_ids = {
+        consent.document_id
+        for consent in (user.consents or [])
+        if consent.document_id is not None
+    }
+    required_ids = [document.id for document in documents]
+    missing_ids = [item for item in required_ids if item not in accepted_ids]
+    if missing_ids:
+        raise ValueError("Для повторной оплаты нужно заново открыть оформление и принять актуальные документы")
+    return required_ids

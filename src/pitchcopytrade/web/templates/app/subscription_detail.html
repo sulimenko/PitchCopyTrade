@@ -32,6 +32,12 @@
     <input type="hidden" name="enabled" value="1" />
     <button class="action" type="submit">Включить автопродление</button>
     {% endif %}
+  </form>
+  {% endif %}
+
+  {% if subscription.product %}
+  <form method="post" action="/app/subscriptions/{{ subscription.id }}/renew" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
+    <button class="action" type="submit">Продлить подписку</button>
     <a class="action ghost" href="/app/subscriptions">Назад к подпискам</a>
   </form>
   {% endif %}

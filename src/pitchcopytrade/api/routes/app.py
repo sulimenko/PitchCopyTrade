@@ -28,6 +28,9 @@ from pitchcopytrade.services.subscriber import (
     billing_period_label,
     cancel_pending_payment,
     payment_status_label,
+    refresh_pending_payment,
+    renew_subscription_checkout,
+    retry_payment_checkout,
     subscription_status_label,
     toggle_subscription_autorenew,
 )
@@ -350,6 +353,27 @@ async def app_subscription_autorenew(
     return RedirectResponse(url=f"/app/subscriptions/{subscription_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/subscriptions/{subscription_id}/renew")
+async def app_subscription_renew(
+    subscription_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    result = await renew_subscription_checkout(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        subscription_id=subscription_id,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    return RedirectResponse(url=f"/app/payments/{result.payment.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/help", response_class=HTMLResponse)
 async def app_help(
     request: Request,
@@ -418,6 +442,48 @@ async def app_payment_cancel(
     if payment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
     return RedirectResponse(url=f"/app/payments/{payment_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/payments/{payment_id}/refresh")
+async def app_payment_refresh(
+    payment_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    payment = await refresh_pending_payment(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        payment_id=payment_id,
+    )
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    return RedirectResponse(url=f"/app/payments/{payment_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/payments/{payment_id}/retry")
+async def app_payment_retry(
+    payment_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+    result = await retry_payment_checkout(
+        public_repository,
+        telegram_user_id=user.telegram_user_id or 0,
+        payment_id=payment_id,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    return RedirectResponse(url=f"/app/payments/{result.payment.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/recommendations/{recommendation_id}", response_class=HTMLResponse)
