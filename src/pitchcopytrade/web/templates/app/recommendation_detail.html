@@ -7,13 +7,16 @@
   {% else %}
   <a class="action ghost" href="/app/feed">Лента</a>
   {% endif %}
-  <a class="action ghost" href="/logout">Выйти</a>
 </div>
 {% endblock %}
 
 {% block content %}
+{% if not preview_mode %}
+{% include "app/_miniapp_nav.html" %}
+{% endif %}
+
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">{% if preview_mode %}author preview{% else %}{{ recommendation.author.display_name }}{% endif %}</div>
+  <div class="eyebrow">{% if preview_mode %}предпросмотр автора{% else %}{{ recommendation.author.display_name }}{% endif %}</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
     <div style="max-width:820px;">
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">{{ recommendation.title or recommendation.strategy.title }}</h1>
@@ -28,21 +31,21 @@
 
 <section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">thesis</div>
+    <div class="eyebrow">комментарий</div>
     <h2 style="margin:10px 0 14px;font-size:1.5rem;">Комментарий автора</h2>
     <div class="muted" style="line-height:1.75;">
       {{ recommendation.thesis or recommendation.market_context or recommendation.summary or "Пока без расширенного комментария." }}
     </div>
 
     {% if recommendation.market_context %}
-    <div class="eyebrow" style="margin-top:24px;">market context</div>
+    <div class="eyebrow" style="margin-top:24px;">контекст рынка</div>
     <div class="muted" style="margin-top:10px;line-height:1.75;">
       {{ recommendation.market_context }}
     </div>
     {% endif %}
 
     {% if recommendation.legs %}
-    <div class="eyebrow" style="margin-top:24px;">trade plan</div>
+    <div class="eyebrow" style="margin-top:24px;">торговый план</div>
     <div style="display:grid;gap:12px;margin-top:12px;">
       {% for leg in recommendation.legs %}
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
@@ -51,9 +54,9 @@
           <span class="pill">{{ leg.side.value if leg.side else "n/a" }}</span>
         </div>
         <div class="muted" style="margin-top:8px;line-height:1.55;">
-          entry: {{ leg.entry_from or "n/a" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %},
-          stop: {{ leg.stop_loss or "n/a" }}
-          {% if leg.time_horizon %} · horizon: {{ leg.time_horizon }}{% endif %}
+          вход: {{ leg.entry_from or "n/a" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %},
+          стоп: {{ leg.stop_loss or "n/a" }}
+          {% if leg.time_horizon %} · горизонт: {{ leg.time_horizon }}{% endif %}
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
           {% if leg.take_profit_1 %}<span class="pill">tp1 {{ leg.take_profit_1 }}</span>{% endif %}
@@ -70,30 +73,30 @@
   </article>
 
   <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">meta</div>
+    <div class="eyebrow">метаданные</div>
     <div style="display:grid;gap:12px;margin-top:12px;">
       <div><strong>Стратегия:</strong> <span class="muted">{{ recommendation.strategy.title }}</span></div>
       <div><strong>Автор:</strong> <span class="muted">{{ recommendation.author.display_name }}</span></div>
       <div><strong>Опубликовано:</strong> <span class="muted">{{ recommendation.published_at or "не опубликовано" }}</span></div>
       <div><strong>Вложений:</strong> <span class="muted">{{ recommendation.attachments|length }}</span></div>
       {% if recommendation.scheduled_for %}
-      <div><strong>Scheduled:</strong> <span class="muted">{{ recommendation.scheduled_for }}</span></div>
+      <div><strong>Отложено до:</strong> <span class="muted">{{ recommendation.scheduled_for }}</span></div>
       {% endif %}
       {% if recommendation.closed_at %}
-      <div><strong>Closed:</strong> <span class="muted">{{ recommendation.closed_at }}</span></div>
+      <div><strong>Закрыто:</strong> <span class="muted">{{ recommendation.closed_at }}</span></div>
       {% endif %}
       {% if recommendation.cancelled_at %}
-      <div><strong>Cancelled:</strong> <span class="muted">{{ recommendation.cancelled_at }}</span></div>
+      <div><strong>Отменено:</strong> <span class="muted">{{ recommendation.cancelled_at }}</span></div>
       {% endif %}
     </div>
 
     {% if recommendation.attachments %}
-    <div class="eyebrow" style="margin-top:22px;">attachments</div>
+    <div class="eyebrow" style="margin-top:22px;">вложения</div>
     <div style="display:grid;gap:10px;margin-top:12px;">
       {% for attachment in recommendation.attachments %}
       <div class="surface" style="padding:14px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">
         <strong>{{ attachment.original_filename }}</strong>
-        <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} bytes</div>
+        <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} байт</div>
         {% if attachment_download_enabled %}
         <a class="action ghost" style="margin-top:10px;" href="/app/recommendations/{{ recommendation.id }}/attachments/{{ attachment.id }}">Скачать</a>
         {% endif %}

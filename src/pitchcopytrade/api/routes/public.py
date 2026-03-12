@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
+from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.core.config import get_settings
-from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
-from pitchcopytrade.repositories.contracts import AccessRepository, AuthRepository
+from pitchcopytrade.db.session import get_optional_db_session
+from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.contracts import PublicRepository
-from pitchcopytrade.services.subscriber import get_subscriber_status_snapshot
+from pitchcopytrade.services.legal_documents import read_legal_document_markdown
+from pitchcopytrade.services.payment_sync import process_tbank_callback
 from pitchcopytrade.services.public import (
     CheckoutRequest,
     create_stub_checkout,
@@ -20,10 +21,6 @@ from pitchcopytrade.services.public import (
     list_active_checkout_documents,
     list_public_strategies,
 )
-from pitchcopytrade.services.legal_documents import read_legal_document_markdown
-from pitchcopytrade.services.payment_sync import process_tbank_callback
-from pitchcopytrade.db.session import get_optional_db_session
-from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.web.templates import templates
 
 
@@ -45,8 +42,18 @@ async def root() -> Response:
 
 
 @router.get("/miniapp", include_in_schema=False)
-async def miniapp_root() -> Response:
-    return RedirectResponse(url="/catalog?surface=miniapp", status_code=status.HTTP_303_SEE_OTHER)
+async def miniapp_root(request: Request) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "public/miniapp_bootstrap.html",
+        {
+            "title": "PitchCopyTrade Mini App",
+            "telegram_bot_username": get_settings().telegram.bot_username,
+            "next_path": "/app/status",
+            "base_url": get_settings().app.base_url,
+            "webapp_enabled": get_settings().app.base_url.startswith("https://"),
+        },
+    )
 
 
 @router.get("/verify/telegram", response_class=HTMLResponse)
@@ -57,7 +64,7 @@ async def telegram_verify_page(request: Request) -> Response:
         {
             "title": "Подтверждение через Telegram",
             "telegram_bot_username": get_settings().telegram.bot_username,
-            "surface_next": request.query_params.get("next", "/app/feed"),
+            "surface_next": request.query_params.get("next", "/app/status"),
             "base_url": get_settings().app.base_url,
             "webapp_enabled": get_settings().app.base_url.startswith("https://"),
         },
@@ -68,32 +75,16 @@ async def telegram_verify_page(request: Request) -> Response:
 async def catalog_page(
     request: Request,
     repository: PublicRepository = Depends(get_public_repository),
-    auth_repository: AuthRepository = Depends(get_auth_repository),
-    access_repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
     strategies = await list_public_strategies(repository)
-    surface = request.query_params.get("surface", "web")
-    miniapp_user = None
-    miniapp_snapshot = None
-    if surface == "miniapp":
-        token = request.cookies.get(get_telegram_fallback_cookie_name())
-        if token:
-            miniapp_user = await get_user_from_telegram_fallback_cookie(auth_repository, token)
-            if miniapp_user is not None and miniapp_user.telegram_user_id is not None:
-                miniapp_snapshot = await get_subscriber_status_snapshot(
-                    access_repository,
-                    telegram_user_id=miniapp_user.telegram_user_id,
-                )
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
         {
             "title": "Каталог PitchCopyTrade",
             "strategies": strategies,
-            "surface": surface,
             "telegram_bot_username": get_settings().telegram.bot_username,
-            "miniapp_user": miniapp_user,
-            "miniapp_snapshot": miniapp_snapshot,
+            "miniapp_mode": False,
         },
     )
 
@@ -107,14 +98,13 @@ async def strategy_detail_page(
     strategy = await get_public_strategy_by_slug(repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
-    surface = request.query_params.get("surface", "web")
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
         {
             "title": strategy.title,
             "strategy": strategy,
-            "surface": surface,
+            "miniapp_mode": False,
         },
     )
 
@@ -131,7 +121,6 @@ async def checkout_page(
 
     documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
-    surface = request.query_params.get("surface", "web")
     return templates.TemplateResponse(
         request,
         "public/checkout.html",
@@ -141,7 +130,7 @@ async def checkout_page(
             "documents": documents,
             "checkout_ready": checkout_ready,
             "payment_provider": get_settings().payments.provider,
-            "surface": surface,
+            "miniapp_mode": False,
             "error": None,
             "form_values": {
                 "full_name": "",
@@ -172,6 +161,7 @@ async def legal_document_page(
             "title": document.title,
             "document": document,
             "content_md": read_legal_document_markdown(document),
+            "miniapp_mode": False,
         },
     )
 
@@ -219,7 +209,7 @@ async def checkout_submit(
                 "documents": documents,
                 "checkout_ready": checkout_ready,
                 "payment_provider": get_settings().payments.provider,
-                "surface": request.query_params.get("surface", "web"),
+                "miniapp_mode": False,
                 "error": str(exc),
                 "form_values": {
                     "full_name": full_name,
@@ -241,6 +231,7 @@ async def checkout_submit(
             "product": product,
             "result": result,
             "payment_provider": get_settings().payments.provider,
+            "miniapp_mode": False,
         },
         status_code=status.HTTP_201_CREATED,
     )
@@ -269,10 +260,6 @@ def _detect_lead_source_name(request: Request) -> str:
         value = request.query_params.get(key)
         if value:
             return value.strip().lower()
-
-    surface = request.query_params.get("surface")
-    if surface == "miniapp":
-        return "telegram_miniapp"
 
     referer = request.headers.get("referer")
     if referer:

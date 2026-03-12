@@ -31,13 +31,14 @@
 - ACL service
 - bot feed and web fallback feed
 - Telegram subscriber self-service baseline
-- richer Telegram self-service menus for subscriptions and payments
-- subscriber-aware Mini App catalog surface
+- unified Mini App subscriber workspace
 - worker scheduled publish baseline
 - delivery notifications baseline
 - Telegram-first subscriber baseline
 - reduced subscriber bot command surface: `/start`, `/help`
 - Mini App as primary client UI
+- legacy subscriber bot handlers are removed, not left as dead compatibility code
+- subscriber workspace should be reviewed as `/miniapp -> /app/*`, not as a `surface=miniapp` variation of public routes
 - auto timezone / auto lead source on client checkout
 - Russian legal titles and Russian client-facing labels
 - local filesystem storage backend baseline
@@ -93,6 +94,7 @@
 - если web fallback заявлен как subscriber-friendly, есть ли у него понятная landing page, а не только голая лента без статуса;
 - если заявлен Telegram self-service, видит ли пользователь свои подписки и pending оплаты без утечки чужих данных;
 - если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
+- если заявлен единый Mini App workspace, не осталось ли внутри legacy routes, compatibility query params или старых bot commands;
 - если Telegram checkout заявлен как interactive, идет ли он через Mini App sections и не тянет ли обратно legacy bot commands;
 - если заявлен Mini App auth bridge, валидируется ли Telegram `initData` на backend, а не принимается ли он вслепую;
 - если заявлен реальный SBP provider, есть ли provider abstraction и не ломается ли `stub/manual` fallback;
@@ -196,6 +198,7 @@ Reviewer должен считать хорошим признаком:
 - выравнивание attachment metadata под локальные пути;
 - сохранение Telegram-first UX при persistence refactor.
 - улучшение Telegram self-service без возврата к password-first subscriber model.
+- удаление compatibility layers после согласования нового canonical contour.
 
 ## 6. Что еще обязательно ждет реализации
 Reviewer должен помнить, что после текущего refactor track все еще нужны:

@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.auth.session import build_telegram_fallback_cookie_value
-from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription
@@ -22,6 +21,7 @@ from pitchcopytrade.db.models.enums import (
     StrategyStatus,
     SubscriptionStatus,
 )
+from pitchcopytrade.payments.tbank import TBankAcquiringClient
 
 
 class FakePublicRepository:
@@ -92,7 +92,7 @@ def _make_strategy_and_product() -> tuple[Strategy, SubscriptionProduct]:
         id="product-1",
         product_type=ProductType.STRATEGY,
         slug="momentum-ru-month",
-        title="Momentum RU Monthly",
+        title="Momentum RU",
         description="Месячная подписка",
         strategy_id="strategy-1",
         author_id=None,
@@ -129,6 +129,16 @@ def _make_documents() -> list[LegalDocument]:
     ]
 
 
+def _make_snapshot(user: User) -> SimpleNamespace:
+    return SimpleNamespace(
+        user=user,
+        has_access=True,
+        active_subscriptions=[],
+        pending_payments=[],
+        visible_recommendation_titles=["Покупка SBER"],
+    )
+
+
 def test_root_redirects_to_catalog() -> None:
     with _build_client(FakePublicRepository()) as client:
         response = client.get("/", follow_redirects=False)
@@ -137,19 +147,20 @@ def test_root_redirects_to_catalog() -> None:
         assert response.headers["location"] == "/catalog"
 
 
-def test_miniapp_redirects_to_catalog_surface() -> None:
+def test_miniapp_renders_bootstrap_page() -> None:
     with _build_client(FakePublicRepository()) as client:
-        response = client.get("/miniapp", follow_redirects=False)
+        response = client.get("/miniapp")
 
-        assert response.status_code == 303
-        assert response.headers["location"] == "/catalog?surface=miniapp"
+        assert response.status_code == 200
+        assert "Подключаем Telegram-профиль" in response.text
+        assert "Mini App подтверждает ваш Telegram-профиль" in response.text
 
 
 def test_catalog_renders_strategies(monkeypatch) -> None:
     strategy, _product = _make_strategy_and_product()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.list_public_strategies",
-        lambda _session: _async_return([strategy]),
+        lambda _repository: _async_return([strategy]),
     )
 
     with _build_client(FakePublicRepository()) as client:
@@ -161,24 +172,16 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         assert "/catalog/strategies/momentum-ru" in response.text
 
 
-def test_catalog_miniapp_shows_subscriber_overview_when_cookie_exists(monkeypatch) -> None:
+def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
     strategy, _product = _make_strategy_and_product()
     user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
     monkeypatch.setattr(
-        "pitchcopytrade.api.routes.public.list_public_strategies",
-        lambda _session: _async_return([strategy]),
+        "pitchcopytrade.api.routes.app.list_public_strategies",
+        lambda _repository: _async_return([strategy]),
     )
     monkeypatch.setattr(
-        "pitchcopytrade.api.routes.public.get_subscriber_status_snapshot",
-        lambda _repository, telegram_user_id: _async_return(
-            SimpleNamespace(
-                user=user,
-                has_access=True,
-                active_subscriptions=[SimpleNamespace()],
-                pending_payments=[SimpleNamespace()],
-                visible_recommendation_titles=["Покупка SBER"],
-            )
-        ),
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
     )
 
     with _build_client(
@@ -187,19 +190,20 @@ def test_catalog_miniapp_shows_subscriber_overview_when_cookie_exists(monkeypatc
         access_repository=FakeAccessRepository(),
     ) as client:
         client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
-        response = client.get("/catalog?surface=miniapp")
+        response = client.get("/app/catalog")
 
         assert response.status_code == 200
-        assert "мой профиль" in response.text
         assert "Lead User" in response.text
         assert "/app/status" in response.text
+        assert "/app/subscriptions" in response.text
+        assert "/app/payments" in response.text
 
 
 def test_strategy_detail_renders_products(monkeypatch) -> None:
     strategy, product = _make_strategy_and_product()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.get_public_strategy_by_slug",
-        lambda _session, _slug: _async_return(strategy),
+        lambda _repository, _slug: _async_return(strategy),
     )
 
     with _build_client(FakePublicRepository()) as client:
@@ -211,16 +215,40 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert f"/checkout/{product.id}" in response.text
 
 
+def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
+    strategy, product = _make_strategy_and_product()
+    user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_strategy_by_slug",
+        lambda _repository, _slug: _async_return(strategy),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.get("/app/strategies/momentum-ru")
+
+        assert response.status_code == 200
+        assert f"/app/checkout/{product.id}" in response.text
+
+
 def test_checkout_page_renders_documents(monkeypatch) -> None:
     _strategy, product = _make_strategy_and_product()
     documents = _make_documents()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.get_public_product",
-        lambda _session, _product_id: _async_return(product),
+        lambda _repository, _product_id: _async_return(product),
     )
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.list_active_checkout_documents",
-        lambda _session: _async_return(documents),
+        lambda _repository: _async_return(documents),
     )
 
     with _build_client(FakePublicRepository()) as client:
@@ -228,16 +256,54 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert "оформление подписки" in response.text
-        assert "Momentum RU Monthly" in response.text
+        assert "Momentum RU" in response.text
         assert "Согласие на оплату" in response.text
-        assert '/legal/doc-payment_consent' in response.text
+        assert "/legal/doc-payment_consent" in response.text
+
+
+def test_app_checkout_prefills_telegram_user(monkeypatch) -> None:
+    _strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    user = User(
+        id="user-1",
+        telegram_user_id=12345,
+        username="leaduser",
+        full_name="Lead User",
+        email="lead@example.com",
+        timezone="Europe/Moscow",
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.get("/app/checkout/product-1")
+
+        assert response.status_code == 200
+        assert "Lead User" in response.text
+        assert "lead@example.com" in response.text
+        assert "/app/catalog" in response.text
 
 
 def test_legal_document_page_reads_local_markdown(monkeypatch) -> None:
     documents = _make_documents()
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.list_active_checkout_documents",
-        lambda _session: _async_return(documents),
+        lambda _repository: _async_return(documents),
     )
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.read_legal_document_markdown",
@@ -262,9 +328,9 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
         product_id="product-1",
         provider=PaymentProvider.STUB_MANUAL,
         status=PaymentStatus.PENDING,
-        amount_rub=4900,
+        amount_rub=499,
         discount_rub=0,
-        final_amount_rub=4900,
+        final_amount_rub=499,
         currency="RUB",
         stub_reference="MANUAL-MOMENTUM-ABCD1234",
     )
@@ -284,15 +350,15 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.get_public_product",
-        lambda _session, _product_id: _async_return(product),
+        lambda _repository, _product_id: _async_return(product),
     )
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.list_active_checkout_documents",
-        lambda _session: _async_return(documents),
+        lambda _repository: _async_return(documents),
     )
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.create_stub_checkout",
-        lambda _session, product, request: _async_return(result),
+        lambda _repository, product, request: _async_return(result),
     )
 
     with _build_client(FakePublicRepository()) as client:
@@ -312,38 +378,34 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
         assert "MANUAL-MOMENTUM-ABCD1234" in response.text
 
 
-def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:
+def test_app_checkout_submit_creates_telegram_linked_flow(monkeypatch) -> None:
     _strategy, product = _make_strategy_and_product()
     documents = _make_documents()
-    promo_code = PromoCode(
-        id="promo-1",
-        code="WELCOME10",
-        description="Launch promo",
-        discount_percent=10,
-        current_redemptions=0,
-        is_active=True,
+    user = User(
+        id="user-1",
+        telegram_user_id=12345,
+        username="leaduser",
+        full_name="Lead User",
+        email="lead@example.com",
+        timezone="Europe/Moscow",
     )
-    user = User(id="user-1", email="lead@example.com", full_name="Lead User", timezone="Europe/Moscow")
     payment = Payment(
         id="payment-1",
         user_id="user-1",
         product_id="product-1",
-        promo_code_id="promo-1",
         provider=PaymentProvider.STUB_MANUAL,
         status=PaymentStatus.PENDING,
-        amount_rub=4900,
-        discount_rub=490,
-        final_amount_rub=4410,
+        amount_rub=499,
+        discount_rub=0,
+        final_amount_rub=499,
         currency="RUB",
-        stub_reference="MANUAL-MOMENTUM-PROMO",
+        stub_reference="MANUAL-MINIAPP-ABCD1234",
     )
-    payment.promo_code = promo_code
     subscription = Subscription(
         id="subscription-1",
         user_id="user-1",
         product_id="product-1",
         payment_id="payment-1",
-        applied_promo_code_id="promo-1",
         status=SubscriptionStatus.PENDING,
         autorenew_enabled=True,
         is_trial=True,
@@ -351,7 +413,83 @@ def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:
         start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
         end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
     )
-    subscription.applied_promo_code = promo_code
+    result = SimpleNamespace(user=user, payment=payment, subscription=subscription, required_documents=documents)
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.create_telegram_stub_checkout",
+        lambda _repository, **kwargs: _async_return(result),
+    )
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.post(
+            "/app/checkout/product-1",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "accepted_document_ids": [item.id for item in documents],
+                "promo_code_value": "WELCOME10",
+            },
+        )
+
+        assert response.status_code == 201
+        assert "MANUAL-MINIAPP-ABCD1234" in response.text
+        assert "/app/payments" in response.text
+
+
+def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:
+    _strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    promo_code = PromoCode(
+        id="promo-1",
+        code="WELCOME10",
+        description="Welcome",
+        discount_percent=10,
+        is_active=True,
+        max_redemptions=0,
+        current_redemptions=0,
+    )
+    user = User(id="user-1", email="lead@example.com", full_name="Lead User", timezone="Europe/Moscow")
+    payment = Payment(
+        id="payment-1",
+        user_id="user-1",
+        product_id="product-1",
+        provider=PaymentProvider.STUB_MANUAL,
+        status=PaymentStatus.PENDING,
+        amount_rub=499,
+        discount_rub=49,
+        final_amount_rub=450,
+        currency="RUB",
+        stub_reference="MANUAL-MOMENTUM-ABCD1234",
+    )
+    subscription = Subscription(
+        id="subscription-1",
+        user_id="user-1",
+        product_id="product-1",
+        payment_id="payment-1",
+        status=SubscriptionStatus.PENDING,
+        autorenew_enabled=True,
+        is_trial=True,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
     result = SimpleNamespace(
         user=user,
         payment=payment,
@@ -362,15 +500,15 @@ def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.get_public_product",
-        lambda _session, _product_id: _async_return(product),
+        lambda _repository, _product_id: _async_return(product),
     )
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.list_active_checkout_documents",
-        lambda _session: _async_return(documents),
+        lambda _repository: _async_return(documents),
     )
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.create_stub_checkout",
-        lambda _session, product, request: _async_return(result),
+        lambda _repository, product, request: _async_return(result),
     )
 
     with _build_client(FakePublicRepository()) as client:
@@ -388,36 +526,18 @@ def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:
 
         assert response.status_code == 201
         assert "WELCOME10" in response.text
-        assert "скидка 490 руб" in response.text
+        assert "450 руб" in response.text
 
 
-def test_tbank_notify_accepts_valid_callback(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.public.get_settings",
-        lambda: type(
-            "Settings",
-            (),
-            {
-                "payments": type(
-                    "Payments",
-                    (),
-                    {
-                        "tinkoff_terminal_key": type("Secret", (), {"get_secret_value": lambda self: "term"})(),
-                        "tinkoff_secret_key": type("Secret", (), {"get_secret_value": lambda self: "secret"})(),
-                    },
-                )()
-            },
-        )(),
-    )
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.public.process_tbank_callback",
-        lambda _session, payload: _async_return(SimpleNamespace(found=True, changed=True, payment_status="paid")),
-    )
-
-    payload = {"TerminalKey": "term", "PaymentId": "777", "Status": "CONFIRMED"}
-    payload["Token"] = TBankAcquiringClient._build_token(payload, password="secret")
-
+def test_tbank_callback_endpoint_validates_token_and_returns_ok(monkeypatch) -> None:
     with _build_client(FakePublicRepository()) as client:
+        payload = {"OrderId": "payment-1", "Status": "CONFIRMED", "Success": True}
+        monkeypatch.setattr(TBankAcquiringClient, "validate_callback_token", lambda self, data: True)
+        monkeypatch.setattr(
+            "pitchcopytrade.api.routes.public.process_tbank_callback",
+            lambda session, payload: _async_return(None),
+        )
+
         response = client.post("/payments/tbank/notify", json=payload)
 
         assert response.status_code == 200

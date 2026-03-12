@@ -267,10 +267,11 @@ Acceptance:
 - manual payment confirm path
 - activation path
 - verified path:
-  - `Telegram /confirm_buy`
+  - `Telegram /start -> Mini App`
+  - `Mini App checkout`
   - `payment pending`
   - `admin confirm`
-  - `subscriber /feed` sees recommendation after activation
+  - `subscriber /app/feed` sees recommendation after activation
 
 Acceptance:
 - subscriber flow можно проверить локально end-to-end
@@ -490,28 +491,30 @@ Acceptance:
 Acceptance:
 - legal docs можно править без ручного редактирования файлов на сервере
 
-### 42. Telegram UX phase `[partial]`
+### 42. Telegram UX phase `[done]`
 Сделано:
 - conditional WebApp button behavior for `http` vs `https` environments
-- subscriber status flow in bot
-- `/subscriptions` self-service flow in bot
-- `/payments` self-service flow in bot
+- subscriber bot surface reduced to `/start` and `/help`
+- legacy subscriber bot handlers physically removed from the codebase
 - Telegram verification page for web fallback
-- deep-link start `?start=web`
 - safe local `next` redirect in `/tg-auth`
 - `/app/status` as web fallback landing page after Telegram verification
-- inline product selection and callback-based checkout preview/confirm
-- active subscription and pending payment overview inside bot
 - Mini App automatic auth bridge through `/tg-webapp/auth`
-- Mini App catalog surface shows subscriber overview when Telegram auth cookie already exists
-
-Сделать:
-- full WebApp auth bridge
-- deeper subscriber self-service UX inside Mini App
-- richer in-app actions beyond status/feed/catalog
+- `/miniapp` became the canonical Telegram bootstrap entry
+- canonical subscriber workspace now lives at:
+  - `/app/catalog`
+  - `/app/status`
+  - `/app/subscriptions`
+  - `/app/payments`
+  - `/app/feed`
+  - `/app/help`
+- Mini App catalog/workspace shows subscriber overview when Telegram auth cookie already exists
+- Mini App checkout now uses Telegram-linked identity and accepted legal docs
+- public site and Mini App subscriber routes are split into separate canonical surfaces without `surface=miniapp` compatibility mode
 
 Acceptance:
-- subscriber flow меньше зависит от command-only interaction
+- subscriber flow больше не зависит от legacy bot command interaction
+- Mini App is the canonical subscriber UI instead of a web/catalog overlay
 
 ### 43. Release and review discipline `[todo]`
 - clean runtime checklist

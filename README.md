@@ -187,19 +187,23 @@ Telegram smoke baseline:
 - Telegram username resolved as `avt09_bot`
 - webhook state is empty
 - pending updates at check time: `0`
-- subscriber commands reduced to:
+- subscriber bot surface physically reduced to:
   - `/start`
   - `/help`
-- catalog, status, оплаты, подписки и лента перемещены в Mini App navigation
+- legacy subscriber command handlers removed from codebase
+- catalog, status, оплаты, подписки, помощь и лента перемещены в единый Mini App workspace
 - `/app/status` remains as web fallback landing page after Telegram verification
 - redirect from `/app/*` to `/verify/telegram` when Telegram auth cookie is missing
 - Mini App automatic auth bridge through verified Telegram `initData`
+- `/miniapp` is the canonical bootstrap entry for subscriber auth inside Telegram
+- `/app/catalog`, `/app/subscriptions`, `/app/payments`, `/app/help`, `/app/feed` form the canonical subscriber workspace
+- Mini App checkout is now linked to the current Telegram identity instead of a detached web checkout record
 - provider-aware checkout:
   - `stub_manual` fallback
   - `tbank` SBP adapter
   - automatic `T-Bank` state sync for pending payments
   - `T-Bank` notify endpoint on `/payments/tbank/notify`
-- Mini App catalog surface now reuses Telegram auth cookie and shows subscriber overview with quick actions
+- Mini App workspace reuses Telegram auth cookie and shows subscriber overview with quick actions
 
 ## Ближайшая цель
 Первый server prototype уже поднят. Ближайшая цель теперь не запуск, а переход к product-complete state:
@@ -251,6 +255,13 @@ Demo staff credentials for local file-mode:
   - `Mini App checkout -> pending payment`
   - `POST /admin/payments/{id}/confirm -> 303`
   - `Mini App feed/status -> visible recommendation after activation`
+
+## Правило следующих этапов
+Новые задачи теперь должны выполняться так:
+- менять код крупными блоками, а не добавлять очередной слой совместимости;
+- не сохранять legacy subscriber flows, если принят новый canonical contour;
+- после каждого завершенного блока делать `review -> tests -> docs sync`;
+- docs должны описывать именно текущий canonical path, а не transitional backward-compatible mix.
 
 ## Документы
 - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)

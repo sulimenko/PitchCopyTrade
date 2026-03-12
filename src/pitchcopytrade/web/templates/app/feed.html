@@ -1,13 +1,10 @@
 {% extends "base.html" %}
 
-{% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/app/status">Статус</a>
-  <a class="action ghost" href="/catalog">Каталог</a>
-</div>
-{% endblock %}
+{% block topbar_actions %}{% endblock %}
 
 {% block content %}
+{% include "app/_miniapp_nav.html" %}
+
 <section class="surface" style="padding:28px;">
   <div class="eyebrow">моя лента</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">

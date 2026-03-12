@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}{% endblock %}
+
+{% block content %}
+{% include "app/_miniapp_nav.html" %}
+
+<section class="surface" style="padding:28px;">
+  <div class="eyebrow">мои подписки</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.96;letter-spacing:-0.05em;">Подписки</h1>
+  <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
+    Здесь видны активные и пробные доступы, связанные с вашим Telegram-профилем.
+  </p>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div style="display:grid;gap:12px;">
+    {% for subscription in snapshot.active_subscriptions %}
+    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong>{{ subscription.product.title if subscription.product else "Продукт" }}</strong>
+          <div class="muted" style="margin-top:8px;line-height:1.6;">
+            Статус: {{ subscription.status.value }}{% if subscription.is_trial %} · пробный период{% endif %}
+          </div>
+        </div>
+        <span class="pill">{{ subscription.end_at or "не указано" }}</span>
+      </div>
+    </article>
+    {% else %}
+    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
+      <strong>Активных подписок пока нет</strong>
+      <div class="muted" style="margin-top:8px;line-height:1.6;">Откройте каталог и подключите стратегию внутри Mini App.</div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

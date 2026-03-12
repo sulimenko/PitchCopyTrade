@@ -2,20 +2,28 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository
+from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
 from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
-from pitchcopytrade.repositories.contracts import AuthRepository
-from pitchcopytrade.repositories.contracts import AccessRepository
+from pitchcopytrade.repositories.contracts import AccessRepository, AuthRepository, PublicRepository
 from pitchcopytrade.services.acl import (
     get_user_visible_recommendation,
     list_user_visible_recommendations,
     user_has_active_access,
 )
-from pitchcopytrade.services.subscriber import get_subscriber_status_snapshot
+from pitchcopytrade.services.public import (
+    TelegramSubscriberProfile,
+    create_telegram_stub_checkout,
+    get_public_product,
+    get_public_strategy_by_slug,
+    list_active_checkout_documents,
+    list_public_strategies,
+)
+from pitchcopytrade.services.subscriber import SubscriberStatusSnapshot, get_subscriber_status_snapshot
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 from pitchcopytrade.storage.minio import MinioStorage
 from pitchcopytrade.web.templates import templates
@@ -24,13 +32,180 @@ from pitchcopytrade.web.templates import templates
 router = APIRouter(prefix="/app", tags=["app"])
 
 
+@router.get("/catalog", response_class=HTMLResponse)
+async def app_catalog(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+
+    strategies = await list_public_strategies(public_repository)
+    return templates.TemplateResponse(
+        request,
+        "public/catalog.html",
+        {
+            "title": "Каталог Mini App",
+            "strategies": strategies,
+            "telegram_bot_username": get_settings().telegram.bot_username,
+            **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.get("/strategies/{slug}", response_class=HTMLResponse)
+async def app_strategy_detail(
+    slug: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+
+    strategy = await get_public_strategy_by_slug(public_repository, slug)
+    if strategy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    return templates.TemplateResponse(
+        request,
+        "public/strategy_detail.html",
+        {
+            "title": strategy.title,
+            "strategy": strategy,
+            **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.get("/checkout/{product_id}", response_class=HTMLResponse)
+async def app_checkout_page(
+    product_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+
+    product = await get_public_product(public_repository, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    documents = await list_active_checkout_documents(public_repository)
+    checkout_ready = len(documents) == 4
+    return templates.TemplateResponse(
+        request,
+        "public/checkout.html",
+        {
+            "title": f"Подписка {product.title}",
+            "product": product,
+            "documents": documents,
+            "checkout_ready": checkout_ready,
+            "payment_provider": get_settings().payments.provider,
+            "error": None,
+            "form_values": {
+                "full_name": user.full_name or "",
+                "email": user.email or "",
+                "timezone_name": user.timezone or "Europe/Moscow",
+                "lead_source_name": "telegram_miniapp",
+                "promo_code_value": "",
+                "accepted_document_ids": [],
+            },
+            **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.post("/checkout/{product_id}", response_class=HTMLResponse)
+async def app_checkout_submit(
+    product_id: str,
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    access_repository: AccessRepository = Depends(get_access_repository),
+    public_repository: PublicRepository = Depends(get_public_repository),
+    full_name: str = Form(""),
+    email: str = Form(""),
+    timezone_name: str = Form("Europe/Moscow"),
+    accepted_document_ids: list[str] = Form(...),
+    promo_code_value: str = Form(""),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    if isinstance(user, Response):
+        return user
+
+    product = await get_public_product(public_repository, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    documents = await list_active_checkout_documents(public_repository)
+    checkout_ready = len(documents) == 4
+    try:
+        result = await create_telegram_stub_checkout(
+            public_repository,
+            product=product,
+            profile=TelegramSubscriberProfile(
+                telegram_user_id=user.telegram_user_id or 0,
+                username=user.username,
+                first_name=None,
+                last_name=None,
+                full_name=full_name.strip() or user.full_name,
+                email=email.strip().lower() or user.email,
+                timezone_name=timezone_name.strip() or user.timezone or "Europe/Moscow",
+                lead_source_name="telegram_miniapp",
+            ),
+            accepted_document_ids=accepted_document_ids,
+            promo_code_value=promo_code_value.strip().upper() or None,
+        )
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "public/checkout.html",
+            {
+                "title": f"Подписка {product.title}",
+                "product": product,
+                "documents": documents,
+                "checkout_ready": checkout_ready,
+                "payment_provider": get_settings().payments.provider,
+                "error": str(exc),
+                "form_values": {
+                    "full_name": full_name,
+                    "email": email,
+                    "timezone_name": timezone_name,
+                    "lead_source_name": "telegram_miniapp",
+                    "promo_code_value": promo_code_value,
+                    "accepted_document_ids": accepted_document_ids,
+                },
+                **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "public/checkout_success.html",
+        {
+            "title": "Заявка создана",
+            "product": product,
+            "result": result,
+            "payment_provider": get_settings().payments.provider,
+            **_build_miniapp_context("payments", user=user, snapshot=snapshot),
+        },
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
 @router.get("/feed", response_class=HTMLResponse)
 async def app_feed(
     request: Request,
     auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
-    user = await _get_subscriber_or_redirect(request, auth_repository)
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
     if isinstance(user, Response):
         return user
     recommendations = await list_user_visible_recommendations(repository, user_id=user.id)
@@ -43,6 +218,7 @@ async def app_feed(
             "user": user,
             "recommendations": recommendations,
             "has_access": has_access,
+            **_build_miniapp_context("feed", user=user, snapshot=snapshot),
         },
     )
 
@@ -53,13 +229,9 @@ async def app_status(
     auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
-    user = await _get_subscriber_or_redirect(request, auth_repository)
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
     if isinstance(user, Response):
         return user
-
-    snapshot = await get_subscriber_status_snapshot(repository, telegram_user_id=user.telegram_user_id or 0)
-    if snapshot is None:
-        return RedirectResponse(url="/verify/telegram?next=/app/status", status_code=status.HTTP_303_SEE_OTHER)
 
     return templates.TemplateResponse(
         request,
@@ -68,6 +240,71 @@ async def app_status(
             "title": "Статус подписки",
             "user": user,
             "snapshot": snapshot,
+            **_build_miniapp_context("status", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.get("/subscriptions", response_class=HTMLResponse)
+async def app_subscriptions(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    return templates.TemplateResponse(
+        request,
+        "app/subscriptions.html",
+        {
+            "title": "Мои подписки",
+            "user": user,
+            "snapshot": snapshot,
+            **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.get("/payments", response_class=HTMLResponse)
+async def app_payments(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    return templates.TemplateResponse(
+        request,
+        "app/payments.html",
+        {
+            "title": "Мои оплаты",
+            "user": user,
+            "snapshot": snapshot,
+            **_build_miniapp_context("payments", user=user, snapshot=snapshot),
+        },
+    )
+
+
+@router.get("/help", response_class=HTMLResponse)
+async def app_help(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+    repository: AccessRepository = Depends(get_access_repository),
+) -> Response:
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
+    if isinstance(user, Response):
+        return user
+    return templates.TemplateResponse(
+        request,
+        "app/help.html",
+        {
+            "title": "Помощь",
+            "user": user,
+            "snapshot": snapshot,
+            "telegram_bot_username": get_settings().telegram.bot_username,
+            **_build_miniapp_context("help", user=user, snapshot=snapshot),
         },
     )
 
@@ -79,7 +316,7 @@ async def recommendation_detail_page(
     auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
-    user = await _get_subscriber_or_redirect(request, auth_repository)
+    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
     if isinstance(user, Response):
         return user
     recommendation = await get_user_visible_recommendation(
@@ -98,6 +335,7 @@ async def recommendation_detail_page(
             "recommendation": recommendation,
             "preview_mode": False,
             "attachment_download_enabled": True,
+            **_build_miniapp_context("feed", user=user, snapshot=snapshot),
         },
     )
 
@@ -110,7 +348,7 @@ async def recommendation_attachment_download(
     auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
-    user = await _get_subscriber_or_redirect(request, auth_repository)
+    user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
     if isinstance(user, Response):
         return user
     recommendation = await get_user_visible_recommendation(
@@ -126,7 +364,6 @@ async def recommendation_attachment_download(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
 
     storage_provider = attachment.storage_provider or "local_fs"
-
     if storage_provider == "local_fs":
         payload = LocalFilesystemStorage(bucket_name=attachment.bucket_name).download_bytes(attachment.object_key)
     elif storage_provider == "minio":
@@ -150,3 +387,31 @@ async def _get_subscriber_or_redirect(request: Request, repository: AuthReposito
     response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(get_telegram_fallback_cookie_name(), path="/")
     return response
+
+
+async def _get_subscriber_snapshot_or_redirect(
+    request: Request,
+    auth_repository: AuthRepository,
+    access_repository: AccessRepository,
+) -> tuple[User | Response, SubscriberStatusSnapshot | None]:
+    user = await _get_subscriber_or_redirect(request, auth_repository)
+    if isinstance(user, Response):
+        return user, None
+    snapshot = await get_subscriber_status_snapshot(access_repository, telegram_user_id=user.telegram_user_id or 0)
+    if snapshot is None:
+        return RedirectResponse(url="/verify/telegram?next=/app/status", status_code=status.HTTP_303_SEE_OTHER), None
+    return user, snapshot
+
+
+def _build_miniapp_context(
+    active_tab: str,
+    *,
+    user: User,
+    snapshot: SubscriberStatusSnapshot,
+) -> dict[str, object]:
+    return {
+        "miniapp_mode": True,
+        "miniapp_active": active_tab,
+        "miniapp_user": user,
+        "miniapp_snapshot": snapshot,
+    }
