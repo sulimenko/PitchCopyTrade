@@ -17,8 +17,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    notification_channel = sa.Enum("telegram", "email", name="notification_channel")
-    notification_channel.create(op.get_bind(), checkfirst=True)
+    # Создаём тип отдельно с checkfirst, затем передаём create_type=False в create_table
+    # чтобы SQLAlchemy не пытался создать тип повторно внутри CREATE TABLE
+    notification_channel_type = sa.Enum("telegram", "email", name="notification_channel")
+    notification_channel_type.create(op.get_bind(), checkfirst=True)
+
+    notification_channel = sa.Enum("telegram", "email", name="notification_channel", create_type=False)
 
     op.create_table(
         "notification_log",
