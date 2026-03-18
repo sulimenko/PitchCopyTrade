@@ -34,8 +34,6 @@ def validate_runtime_settings(settings: Settings, service_name: str) -> None:
     if settings.app_data_mode == "db":
         if not settings.database_url:
             missing.append("DATABASE_URL")
-        if not settings.alembic_database_url:
-            missing.append("ALEMBIC_DATABASE_URL")
         if _is_placeholder(settings.minio_root_password):
             missing.append("MINIO_ROOT_PASSWORD")
 

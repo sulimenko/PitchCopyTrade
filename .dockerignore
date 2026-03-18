@@ -9,5 +9,4 @@ dist/
 build/
 htmlcov/
 doc/
-alembic/__pycache__/
 tests/__pycache__/

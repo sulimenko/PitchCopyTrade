@@ -65,10 +65,10 @@ Tests run with `asyncio_mode = "auto"` (configured in `pyproject.toml`). Most te
 python3 -m compileall src tests
 ```
 
-### Database migrations
+### Database schema
 ```bash
-alembic upgrade head       # apply all migrations
-alembic revision --autogenerate -m "description"  # create new migration
+bash deploy/migrate.sh          # apply schema (fresh DB)
+bash deploy/migrate.sh --reset  # drop all + clean JSON/blob + reapply
 ```
 
 ## Architecture

@@ -20,7 +20,6 @@ class EnvName:
     TELEGRAM_USE_WEBHOOK = "TELEGRAM_USE_WEBHOOK"
     TELEGRAM_WEBHOOK_SECRET = "TELEGRAM_WEBHOOK_SECRET"
     DATABASE_URL = "DATABASE_URL"
-    ALEMBIC_DATABASE_URL = "ALEMBIC_DATABASE_URL"
     POSTGRES_DB = "POSTGRES_DB"
     POSTGRES_USER = "POSTGRES_USER"
     POSTGRES_PASSWORD = "POSTGRES_PASSWORD"
@@ -95,7 +94,6 @@ class DatabaseSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     url: str
-    alembic_url: str
     db_name: str
     user: str
     password: SecretStr
@@ -187,7 +185,6 @@ class Settings(BaseSettings):
     telegram_webhook_secret: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.TELEGRAM_WEBHOOK_SECRET)
 
     database_url: str = Field(default="", alias=EnvName.DATABASE_URL)
-    alembic_database_url: str = Field(default="", alias=EnvName.ALEMBIC_DATABASE_URL)
     postgres_db: str = Field(default="pitchcopytrade", alias=EnvName.POSTGRES_DB)
     postgres_user: str = Field(default="pitchcopytrade", alias=EnvName.POSTGRES_USER)
     postgres_password: SecretStr = Field(default=SecretStr("pitchcopytrade"), alias=EnvName.POSTGRES_PASSWORD)
@@ -253,7 +250,7 @@ class Settings(BaseSettings):
             raise ValueError("URL must start with http:// or https://")
         return value.rstrip("/")
 
-    @field_validator("database_url", "alembic_database_url")
+    @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, value: str, info: ValidationInfo) -> str:
         normalized = value.strip()
@@ -329,7 +326,6 @@ class Settings(BaseSettings):
     def database(self) -> DatabaseSettings:
         return DatabaseSettings(
             url=self.database_url,
-            alembic_url=self.alembic_database_url,
             db_name=self.postgres_db,
             user=self.postgres_user,
             password=self.postgres_password,

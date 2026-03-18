@@ -77,9 +77,6 @@ POSTGRES_PASSWORD=        # пароль из Шага 2
 # Контейнеры подключаются к хостовому postgres через host.docker.internal
 DATABASE_URL=postgresql+asyncpg://pct:ПАРОЛЬ@host.docker.internal:5432/pct
 
-# migrate.sh запускает alembic с --network host, поэтому здесь localhost
-ALEMBIC_DATABASE_URL=postgresql+asyncpg://pct:ПАРОЛЬ@localhost:5432/pct
-
 INTERNAL_API_SECRET=      # случайная строка для внутренних вызовов bot→api
 REDIS_URL=redis://localhost:6379/0
 
@@ -134,25 +131,28 @@ docker compose -f deploy/docker-compose.server.yml build
 bash deploy/migrate.sh
 ```
 
-Скрипт читает `.env.server` и применяет все Alembic-миграции через Docker с `--network host`.
+Скрипт читает `POSTGRES_USER` и `POSTGRES_DB` из `.env.server` и выполняет `deploy/schema.sql` через локальный psql.
 
-Ожидаемый вывод:
+Ожидаемый вывод в конце:
 
 ```
-Запуск: alembic upgrade head
-Running upgrade  -> 20260310_0001, Initial foundation schema.
-Running upgrade 20260310_0001 -> 20260318_0002, Add notification_log table.
-
-Готово.
+          List of relations
+ Schema |         Name          | Type  | Owner
+--------+-----------------------+-------+-------
+ public | audit_events          | table | pct
+ public | author_profiles       | table | pct
+ ...
+ public | users                 | table | pct
+(20 rows)
 ```
 
-Проверить таблицы:
+Проверить вручную:
 
 ```bash
 sudo -u postgres psql pct -c "\dt"
 ```
 
-Должно быть 19 таблиц, включая `notification_log`.
+Должно быть 19 таблиц.
 
 ---
 
@@ -258,9 +258,6 @@ notification_channel    — telegram | email
 # список таблиц
 sudo -u postgres psql pct -c "\dt"
 
-# версия применённых миграций
-sudo -u postgres psql pct -c "SELECT version_num FROM alembic_version;"
-
 # кол-во инструментов (должно быть 10 после первого старта API)
 sudo -u postgres psql pct -c "SELECT COUNT(*) FROM instruments;"
 
@@ -279,24 +276,9 @@ JOIN roles r ON r.id = ur.role_id;"
 Удаляет все таблицы, все runtime JSON-файлы и blob-файлы. Seed-данные (`storage/seed/`) не трогает.
 
 ```bash
-# остановить контейнеры
 docker compose -f deploy/docker-compose.server.yml stop
-
-# сброс: DROP SCHEMA → чистые JSON/blob → alembic upgrade head
 bash deploy/migrate.sh --reset
-
-# запустить снова
 docker compose -f deploy/docker-compose.server.yml start
-```
-
----
-
-### Откат миграции
-
-```bash
-bash deploy/migrate.sh downgrade -1
-bash deploy/migrate.sh downgrade 20260310_0001
-bash deploy/migrate.sh history
 ```
 
 ---
