@@ -1,0 +1,75 @@
+{# Ticker Picker popup component
+   Usage: include this and call openTickerPicker(targetInputId) to open
+#}
+<div id="ticker-picker-overlay" onclick="closeTickerPicker()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:999;"></div>
+<div id="ticker-picker-popup" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(480px,95vw);background:#fff;border-radius:20px;box-shadow:0 24px 64px rgba(16,39,115,0.2);z-index:1000;padding:20px;">
+  <input id="ticker-picker-input" type="text" placeholder="Поиск тикера..."
+    style="width:100%;padding:12px 16px;border-radius:12px;border:1px solid rgba(16,39,115,0.2);font:inherit;font-size:1rem;"
+    oninput="debouncedTickerSearch(this.value)" />
+  <div id="ticker-picker-results" style="margin-top:12px;max-height:300px;overflow-y:auto;"></div>
+</div>
+
+<script>
+var _tickerPickerTarget = null;
+var _tickerPickerDebounce = null;
+
+function openTickerPicker(targetInputId) {
+  _tickerPickerTarget = targetInputId;
+  document.getElementById('ticker-picker-overlay').style.display = 'block';
+  document.getElementById('ticker-picker-popup').style.display = 'block';
+  var input = document.getElementById('ticker-picker-input');
+  input.value = '';
+  input.focus();
+  loadTickerResults('');
+}
+
+function closeTickerPicker() {
+  document.getElementById('ticker-picker-overlay').style.display = 'none';
+  document.getElementById('ticker-picker-popup').style.display = 'none';
+}
+
+function selectTicker(ticker) {
+  if (_tickerPickerTarget) {
+    var el = document.getElementById(_tickerPickerTarget);
+    if (el) el.value = ticker;
+    // Save to recent
+    var recents = JSON.parse(localStorage.getItem('pct_recent_tickers') || '[]');
+    recents = recents.filter(function(t) { return t !== ticker; });
+    recents.unshift(ticker);
+    if (recents.length > 5) recents = recents.slice(0, 5);
+    localStorage.setItem('pct_recent_tickers', JSON.stringify(recents));
+  }
+  closeTickerPicker();
+}
+
+function debouncedTickerSearch(q) {
+  clearTimeout(_tickerPickerDebounce);
+  _tickerPickerDebounce = setTimeout(function() { loadTickerResults(q); }, 300);
+}
+
+function loadTickerResults(q) {
+  var url = '/api/instruments' + (q ? '?q=' + encodeURIComponent(q) : '');
+  var recents = JSON.parse(localStorage.getItem('pct_recent_tickers') || '[]');
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(instruments) {
+      var html = '<table style="width:100%;border-collapse:collapse;">';
+      instruments.forEach(function(i) {
+        var star = recents.indexOf(i.ticker) !== -1 ? ' ★' : '';
+        html += '<tr onclick="selectTicker(\'' + i.ticker + '\')" style="cursor:pointer;border-bottom:1px solid rgba(16,39,115,0.08);">'
+          + '<td style="padding:10px 12px;font-weight:700;">' + i.ticker + star + '</td>'
+          + '<td style="padding:10px 12px;color:#61719b;">' + i.name + '</td>'
+          + '</tr>';
+      });
+      html += '</table>';
+      document.getElementById('ticker-picker-results').innerHTML = html;
+    })
+    .catch(function() {
+      document.getElementById('ticker-picker-results').innerHTML = '';
+    });
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeTickerPicker();
+});
+</script>

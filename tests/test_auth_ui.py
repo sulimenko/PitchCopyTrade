@@ -117,7 +117,7 @@ def test_login_page_renders() -> None:
         response = client.get("/login")
 
         assert response.status_code == 200
-        assert "Войти" in response.text
+        assert "PitchCopyTrade" in response.text
 
 
 def test_login_submit_sets_session_cookie() -> None:
@@ -134,7 +134,7 @@ def test_login_submit_sets_session_cookie() -> None:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/author/dashboard"
+        assert response.headers["location"] == "/cabinet/"
         assert "pitchcopytrade_session=" in response.headers["set-cookie"]
 
 
@@ -182,7 +182,7 @@ def test_app_home_renders_for_valid_session() -> None:
         response = client.get("/app", follow_redirects=False)
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/author/dashboard"
+        assert response.headers["location"] == "/cabinet/"
 
 
 def test_app_redirects_admin_to_dashboard() -> None:

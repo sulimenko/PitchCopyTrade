@@ -1,0 +1,44 @@
+<tr id="rec-{{ rec.id }}">
+  <td style="padding:12px;color:var(--muted);font-size:0.85rem;">
+    {{ rec.created_at.strftime('%d.%m %H:%M') if rec.created_at else "—" }}
+  </td>
+  <td style="padding:12px;font-weight:700;">
+    {% if rec.legs %}{{ rec.legs[0].instrument.ticker if rec.legs[0].instrument else "—" }}{% else %}—{% endif %}
+  </td>
+  <td style="padding:12px;">
+    {% if rec.legs and rec.legs[0].side %}
+    <span style="font-weight:700;color:{% if rec.legs[0].side.value == 'buy' %}#007a3d{% else %}var(--red-600){% endif %};">
+      {{ rec.legs[0].side.value.upper() }}
+    </span>
+    {% else %}—{% endif %}
+  </td>
+  <td style="padding:12px;font-family:monospace;">{{ rec.legs[0].entry_from if rec.legs and rec.legs[0].entry_from else "—" }}</td>
+  <td style="padding:12px;font-family:monospace;">{{ rec.legs[0].take_profit_1 if rec.legs and rec.legs[0].take_profit_1 else "—" }}</td>
+  <td style="padding:12px;font-family:monospace;">{{ rec.legs[0].stop_loss if rec.legs and rec.legs[0].stop_loss else "—" }}</td>
+  <td style="padding:12px;">
+    <span class="pill">{{ rec.status.value }}</span>
+  </td>
+  <td style="padding:12px;">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      {% if rec.status.value == 'draft' %}
+      <form method="post" action="/cabinet/recommendations/{{ rec.id }}/publish"
+        hx-post="/cabinet/recommendations/{{ rec.id }}/publish"
+        hx-target="#rec-{{ rec.id }}" hx-swap="outerHTML">
+        <button type="submit" class="action" style="padding:5px 12px;font-size:0.8rem;">Опубликовать</button>
+      </form>
+      {% endif %}
+      {% if rec.status.value in ['draft', 'published'] %}
+      <form method="post" action="/cabinet/recommendations/{{ rec.id }}/close"
+        hx-post="/cabinet/recommendations/{{ rec.id }}/close"
+        hx-target="#rec-{{ rec.id }}" hx-swap="outerHTML">
+        <button type="submit" class="action ghost" style="padding:5px 12px;font-size:0.8rem;">Закрыть</button>
+      </form>
+      <form method="post" action="/cabinet/recommendations/{{ rec.id }}/cancel"
+        hx-post="/cabinet/recommendations/{{ rec.id }}/cancel"
+        hx-target="#rec-{{ rec.id }}" hx-swap="outerHTML">
+        <button type="submit" class="action ghost" style="padding:5px 12px;font-size:0.8rem;color:var(--red-600);">Отменить</button>
+      </form>
+      {% endif %}
+    </div>
+  </td>
+</tr>

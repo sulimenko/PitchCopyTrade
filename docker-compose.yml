@@ -14,6 +14,8 @@ services:
     env_file:
       - .env
     command: python -m pitchcopytrade.bot.main
+    expose:
+      - "8080"
     volumes:
       - .:/app
 
@@ -21,9 +23,11 @@ services:
     build: .
     env_file:
       - .env
-    command: python -m pitchcopytrade.worker.main
+    command: python -m arq pitchcopytrade.worker.arq_worker.WorkerSettings
     volumes:
       - .:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   postgres:
     image: postgres:16-alpine

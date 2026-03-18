@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="UTF-8" /><title>{{ strategy.title }}</title></head>
+<body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <p><strong>Новая рекомендация — {{ strategy.title }}</strong></p>
+  {% if recommendation.title %}<p>{{ recommendation.title }}</p>{% endif %}
+  {% for leg in recommendation.legs %}
+  <p>
+    <strong>{{ leg.instrument.ticker if leg.instrument else "—" }}</strong>
+    — {{ leg.side.value.upper() if leg.side else "—" }}
+    @ {{ leg.entry_from or "рынок" }}<br/>
+    Цель: {{ leg.take_profit_1 or "—" }}<br/>
+    Стоп: {{ leg.stop_loss or "—" }}
+  </p>
+  {% endfor %}
+  {% if recommendation.summary %}<p>{{ recommendation.summary }}</p>{% endif %}
+</body>
+</html>

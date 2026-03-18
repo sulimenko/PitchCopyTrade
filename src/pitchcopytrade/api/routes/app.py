@@ -698,3 +698,23 @@ def _build_miniapp_context(
         "miniapp_user": user,
         "miniapp_snapshot": snapshot,
     }
+
+
+# Phase 9 routes: /my, /strategy/{slug}, /auth redirect
+
+@router.get("/strategy/{slug}", response_class=HTMLResponse)
+async def app_strategy_detail_alias(
+    slug: str,
+    request: Request,
+) -> Response:
+    return RedirectResponse(url=f"/app/strategies/{slug}", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
+@router.get("/my", response_class=HTMLResponse)
+async def app_my_subscriptions(request: Request) -> Response:
+    return RedirectResponse(url="/app/subscriptions", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/auth", response_class=HTMLResponse, include_in_schema=False)
+async def app_auth_redirect(request: Request) -> Response:
+    return RedirectResponse(url="/tg-webapp/auth", status_code=status.HTTP_303_SEE_OTHER)

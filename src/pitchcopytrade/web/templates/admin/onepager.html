@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<a href="/admin/dashboard" class="action ghost">Дашборд</a>
+<a href="/logout" class="action ghost">Выйти</a>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid;gap:24px;">
+  <div style="display:flex;gap:16px;align-items:center;">
+    <h2 style="margin:0;">One Pager: {{ strategy.title }}</h2>
+    <a href="/s/{{ strategy.slug }}" target="_blank" class="action ghost" style="padding:8px 16px;">Предпросмотр</a>
+  </div>
+
+  <section class="surface" style="padding:24px;border-radius:24px;">
+    <form method="post" action="/admin/onepager/{{ strategy.id }}">
+      <label style="display:grid;gap:8px;font-weight:600;">
+        HTML контент
+        <textarea name="html_content" rows="24" style="padding:14px;border-radius:12px;border:1px solid var(--line);font-family:monospace;font-size:0.85rem;resize:vertical;">{{ strategy.full_description or "" }}</textarea>
+      </label>
+      <div style="margin-top:16px;">
+        <button type="submit" class="action">Сохранить</button>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

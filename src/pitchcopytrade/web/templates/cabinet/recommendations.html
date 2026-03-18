@@ -1,0 +1,128 @@
+{% extends "cabinet/layout.html" %}
+
+{% block content %}
+<div style="display:grid;gap:20px;">
+  <div style="display:flex;gap:16px;align-items:center;">
+    <a href="/cabinet/strategies" style="color:var(--muted);font-size:0.9rem;">← Стратегии</a>
+    <h2 style="margin:0;">{{ strategy.title }}</h2>
+  </div>
+
+  <section class="surface" style="padding:0;overflow:auto;">
+    <table style="width:100%;border-collapse:collapse;min-width:800px;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--line);">
+          <th style="text-align:left;padding:10px 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Дата</th>
+          <th style="text-align:left;padding:10px 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Тикер</th>
+          <th style="text-align:left;padding:10px 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Сторона</th>
+          <th style="text-align:left;padding:10px 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Цена</th>
+          <th style="text-align:left;padding:10px 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Цель</th>
+          <th style="text-align:left;padding:10px 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Стоп</th>
+          <th style="text-align:left;padding:10px 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Статус</th>
+          <th style="padding:10px 12px;"></th>
+        </tr>
+      </thead>
+      <tbody id="rec-tbody">
+        {% if recommendations %}
+          {% for rec in recommendations %}
+            {% include "cabinet/recommendation_row.html" %}
+          {% endfor %}
+        {% else %}
+        <tr id="empty-row">
+          <td colspan="8" style="padding:24px;text-align:center;color:var(--muted);">Нет рекомендаций</td>
+        </tr>
+        {% endif %}
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--line);background:rgba(20,56,166,0.02);">
+          <td style="padding:10px 12px;color:var(--muted);font-size:0.85rem;">новая</td>
+          <td style="padding:8px 10px;">
+            <input id="new-ticker" readonly placeholder="Тикер"
+              onclick="openTickerPicker('new-ticker')"
+              style="width:90px;padding:7px 10px;border-radius:10px;border:1px solid var(--line);font:inherit;cursor:pointer;" />
+          </td>
+          <td style="padding:8px 10px;">
+            <button type="button" id="side-toggle" onclick="toggleSide()"
+              style="padding:7px 14px;border-radius:10px;border:1px solid var(--line);font:inherit;font-weight:700;cursor:pointer;background:#e8f5ee;color:#007a3d;"
+              data-value="buy">BUY</button>
+            <input type="hidden" id="new-side" value="buy" />
+          </td>
+          <td style="padding:8px 10px;">
+            <input id="new-price" type="number" step="any" placeholder="Цена"
+              style="width:90px;padding:7px 10px;border-radius:10px;border:1px solid var(--line);font:inherit;" />
+          </td>
+          <td style="padding:8px 10px;">
+            <input id="new-target" type="number" step="any" placeholder="Цель"
+              style="width:90px;padding:7px 10px;border-radius:10px;border:1px solid var(--line);font:inherit;" />
+          </td>
+          <td style="padding:8px 10px;">
+            <input id="new-stop" type="number" step="any" placeholder="Стоп"
+              style="width:90px;padding:7px 10px;border-radius:10px;border:1px solid var(--line);font:inherit;" />
+          </td>
+          <td colspan="2" style="padding:8px 10px;">
+            <button type="button" onclick="submitNewRec()" class="action" style="padding:7px 20px;">+</button>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </section>
+</div>
+
+<script>
+function toggleSide() {
+  var btn = document.getElementById('side-toggle');
+  var inp = document.getElementById('new-side');
+  if (inp.value === 'buy') {
+    inp.value = 'sell';
+    btn.textContent = 'SELL';
+    btn.style.background = '#fde8eb';
+    btn.style.color = 'var(--red-600)';
+  } else {
+    inp.value = 'buy';
+    btn.textContent = 'BUY';
+    btn.style.background = '#e8f5ee';
+    btn.style.color = '#007a3d';
+  }
+}
+
+function submitNewRec() {
+  var ticker = document.getElementById('new-ticker').value.trim();
+  if (!ticker) { alert('Выберите тикер'); return; }
+  var side = document.getElementById('new-side').value;
+  var price = document.getElementById('new-price').value;
+  var target = document.getElementById('new-target').value;
+  var stop = document.getElementById('new-stop').value;
+
+  var formData = new FormData();
+  formData.append('ticker', ticker);
+  formData.append('side', side);
+  formData.append('price', price);
+  formData.append('target', target);
+  formData.append('stop', stop);
+
+  fetch('/cabinet/strategies/{{ strategy.id }}/recommendations', {
+    method: 'POST',
+    body: formData,
+    headers: { 'HX-Request': 'true' }
+  })
+  .then(function(r) { return r.text(); })
+  .then(function(html) {
+    var tbody = document.getElementById('rec-tbody');
+    var emptyRow = document.getElementById('empty-row');
+    if (emptyRow) emptyRow.remove();
+    tbody.insertAdjacentHTML('afterbegin', html);
+    // Reset form
+    document.getElementById('new-ticker').value = '';
+    document.getElementById('new-price').value = '';
+    document.getElementById('new-target').value = '';
+    document.getElementById('new-stop').value = '';
+    document.getElementById('new-side').value = 'buy';
+    var btn = document.getElementById('side-toggle');
+    btn.textContent = 'BUY';
+    btn.style.background = '#e8f5ee';
+    btn.style.color = '#007a3d';
+    // Activate HTMX on new rows
+    if (window.htmx) htmx.process(tbody);
+  });
+}
+</script>
+{% endblock %}

@@ -53,6 +53,8 @@ class EnvName:
     SMTP_PASSWORD = "SMTP_PASSWORD"
     SMTP_FROM = "SMTP_FROM"
     SMTP_FROM_NAME = "SMTP_FROM_NAME"
+    ADMIN_TELEGRAM_ID = "ADMIN_TELEGRAM_ID"
+    ADMIN_EMAIL = "ADMIN_EMAIL"
 
 
 def _normalize_secret(value: SecretStr | str) -> str:
@@ -223,6 +225,8 @@ class Settings(BaseSettings):
     smtp_password: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.SMTP_PASSWORD)
     smtp_from: str = Field(default="pct@ptfin.ru", alias=EnvName.SMTP_FROM)
     smtp_from_name: str = Field(default="PitchCopyTrade", alias=EnvName.SMTP_FROM_NAME)
+    admin_telegram_id: int | None = Field(default=None, alias=EnvName.ADMIN_TELEGRAM_ID)
+    admin_email: str | None = Field(default=None, alias=EnvName.ADMIN_EMAIL)
 
     @field_validator("app_env")
     @classmethod

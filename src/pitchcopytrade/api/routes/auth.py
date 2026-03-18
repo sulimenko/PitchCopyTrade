@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.deps.repositories import get_auth_repository
+from pitchcopytrade.auth.telegram_login_widget import TelegramLoginWidgetError, verify_telegram_login_widget
 from pitchcopytrade.auth.telegram_webapp import (
     TelegramWebAppAuthError,
     extract_telegram_webapp_profile,
@@ -34,6 +35,79 @@ from pitchcopytrade.web.templates import templates
 router = APIRouter(tags=["auth"])
 
 
+@router.get("/auth/login", response_class=HTMLResponse, include_in_schema=False)
+async def auth_login_page(request: Request, repository: AuthRepository = Depends(get_auth_repository)) -> Response:
+    return await login_page(request, repository)
+
+
+@router.get("/auth/telegram/callback", response_class=HTMLResponse, include_in_schema=False)
+async def telegram_widget_callback(
+    request: Request,
+    id: str | None = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    username: str | None = None,
+    auth_date: str | None = None,
+    hash: str | None = None,
+    repository: AuthRepository = Depends(get_auth_repository),
+) -> Response:
+    settings = get_settings()
+    params: dict = {}
+    if id is not None:
+        params["id"] = id
+    if first_name is not None:
+        params["first_name"] = first_name
+    if last_name is not None:
+        params["last_name"] = last_name
+    if username is not None:
+        params["username"] = username
+    if auth_date is not None:
+        params["auth_date"] = auth_date
+    if hash is not None:
+        params["hash"] = hash
+
+    try:
+        verify_telegram_login_widget(
+            params,
+            bot_token=settings.telegram.bot_token.get_secret_value(),
+            max_age_seconds=300,
+        )
+    except TelegramLoginWidgetError:
+        return templates.TemplateResponse(
+            request,
+            "auth/login.html",
+            {"title": "Вход", "error": "Ошибка авторизации Telegram"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    try:
+        telegram_user_id = int(id or "0")
+    except ValueError:
+        telegram_user_id = 0
+
+    user = await repository.get_user_by_identity(str(telegram_user_id))
+    if user is None:
+        return templates.TemplateResponse(
+            request,
+            "auth/login.html",
+            {"title": "Вход", "error": "Пользователь не найден"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    redirect_url = _resolve_role_redirect(user)
+    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    response.set_cookie(
+        key=settings.auth.session_cookie_name,
+        value=build_session_cookie_value(user),
+        httponly=True,
+        max_age=settings.auth.session_ttl_seconds,
+        samesite="strict",
+        secure=settings.app.base_url.startswith("https://"),
+        path="/",
+    )
+    return response
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, repository: AuthRepository = Depends(get_auth_repository)) -> Response:
     token = request.cookies.get(get_settings().auth.session_cookie_name)
@@ -52,6 +126,7 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
             "title": "Вход в PitchCopyTrade",
             "error": None,
             "identity": "",
+            "bot_username": get_settings().telegram.bot_username,
         },
     )
 
@@ -72,6 +147,7 @@ async def login_submit(
                 "title": "Вход в PitchCopyTrade",
                 "error": "Неверный логин или пароль",
                 "identity": identity.strip(),
+                "bot_username": get_settings().telegram.bot_username,
             },
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
@@ -83,7 +159,7 @@ async def login_submit(
         value=build_session_cookie_value(user),
         httponly=True,
         max_age=settings.auth.session_ttl_seconds,
-        samesite="lax",
+        samesite="strict",
         secure=settings.app.base_url.startswith("https://"),
         path="/",
     )
@@ -223,7 +299,7 @@ def _resolve_role_redirect(user) -> str:
     if RoleSlug.ADMIN.value in role_labels:
         return "/admin/dashboard"
     if RoleSlug.AUTHOR.value in role_labels:
-        return "/author/dashboard"
+        return "/cabinet/"
     if RoleSlug.MODERATOR.value in role_labels:
         return "/moderation/queue"
     return "/login"

@@ -16,6 +16,11 @@ from pitchcopytrade.services.admin import (
     ProductFormData,
     apply_manual_discount_to_payment,
     confirm_payment_and_activate_subscription,
+    create_admin_author,
+    get_admin_metrics,
+    get_admin_strategy_for_onepager,
+    save_strategy_onepager,
+    toggle_admin_author,
     StrategyFormData,
     create_product,
     create_strategy,
@@ -1330,3 +1335,105 @@ def _form_values_from_legal_document(document) -> dict[str, object]:
         "title": document.title,
         "content_md": read_legal_document_markdown(document),
     }
+
+
+@router.get("/authors", response_class=HTMLResponse)
+async def admin_authors_list(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    authors = await list_admin_authors(session)
+    return templates.TemplateResponse(
+        request,
+        "admin/authors_list.html",
+        {"title": "Авторы", "user": user, "authors": authors},
+    )
+
+
+@router.post("/authors", response_class=HTMLResponse)
+async def admin_author_create(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    telegram_user_id: str = Form(""),
+) -> Response:
+    try:
+        tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
+        await create_admin_author(
+            session,
+            display_name=display_name.strip(),
+            email=email.strip() or None,
+            telegram_user_id=tg_id,
+        )
+    except Exception as exc:
+        authors = await list_admin_authors(session)
+        return templates.TemplateResponse(
+            request,
+            "admin/authors_list.html",
+            {"title": "Авторы", "user": user, "authors": authors, "error": str(exc)},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+    return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/authors/{author_id}/toggle", response_class=HTMLResponse)
+async def admin_author_toggle(
+    author_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    try:
+        await toggle_admin_author(session, author_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Автор не найден")
+    return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/onepager/{strategy_id}", response_class=HTMLResponse)
+async def admin_onepager_edit(
+    strategy_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    strategy = await get_admin_strategy_for_onepager(session, strategy_id)
+    if strategy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стратегия не найдена")
+    return templates.TemplateResponse(
+        request,
+        "admin/onepager.html",
+        {"title": "One Pager", "user": user, "strategy": strategy},
+    )
+
+
+@router.post("/onepager/{strategy_id}", response_class=HTMLResponse)
+async def admin_onepager_save(
+    strategy_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    html_content: str = Form(""),
+) -> Response:
+    try:
+        await save_strategy_onepager(session, strategy_id, html_content)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стратегия не найдена")
+    return RedirectResponse(url=f"/admin/onepager/{strategy_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/metrics", response_class=HTMLResponse)
+async def admin_metrics(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    metrics = await get_admin_metrics(session)
+    return templates.TemplateResponse(
+        request,
+        "admin/metrics.html",
+        {"title": "Метрики", "user": user, "metrics": metrics},
+    )

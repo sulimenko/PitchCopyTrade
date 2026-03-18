@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<a href="/admin/dashboard" class="action ghost">Дашборд</a>
+<a href="/logout" class="action ghost">Выйти</a>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid;gap:24px;">
+  <h2 style="margin:0;">Авторы</h2>
+
+  {% if error %}
+  <div style="padding:14px 16px;border-radius:16px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;">{{ error }}</div>
+  {% endif %}
+
+  <section class="surface" style="padding:24px;border-radius:24px;">
+    <h3 style="margin:0 0 16px;">Добавить автора</h3>
+    <form method="post" action="/admin/authors" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;">
+      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
+        Имя <input name="display_name" required style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+      </label>
+      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
+        Email <input name="email" type="email" style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+      </label>
+      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
+        Telegram ID <input name="telegram_user_id" type="number" style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+      </label>
+      <button type="submit" class="action" style="height:42px;">Создать</button>
+    </form>
+  </section>
+
+  <section class="surface" style="padding:24px;border-radius:24px;">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--line);">
+          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Имя</th>
+          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Telegram ID</th>
+          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Email</th>
+          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Статус</th>
+          <th style="padding:8px 12px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for author in authors %}
+        <tr style="border-bottom:1px solid var(--line);">
+          <td style="padding:12px;">{{ author.display_name }}</td>
+          <td style="padding:12px;font-family:monospace;">{{ author.user.telegram_user_id or "—" }}</td>
+          <td style="padding:12px;">{{ author.user.email or "—" }}</td>
+          <td style="padding:12px;">
+            {% if author.is_active %}
+            <span class="pill" style="background:rgba(0,160,80,0.1);color:#007a3d;">активен</span>
+            {% else %}
+            <span class="pill" style="background:rgba(191,23,54,0.08);color:var(--red-600);">отключён</span>
+            {% endif %}
+          </td>
+          <td style="padding:12px;">
+            <form method="post" action="/admin/authors/{{ author.id }}/toggle" style="display:inline;">
+              <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">
+                {% if author.is_active %}Отключить{% else %}Включить{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--muted);">Нет авторов</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

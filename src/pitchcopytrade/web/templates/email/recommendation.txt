@@ -1,0 +1,10 @@
+Новая рекомендация — {{ strategy.title }}
+{% if recommendation.title %}{{ recommendation.title }}{% endif %}
+
+{% for leg in recommendation.legs %}
+{{ leg.instrument.ticker if leg.instrument else "—" }} — {{ leg.side.value.upper() if leg.side else "—" }} @ {{ leg.entry_from or "рынок" }}
+Цель: {{ leg.take_profit_1 or "—" }}
+Стоп: {{ leg.stop_loss or "—" }}
+{% endfor %}
+
+{% if recommendation.summary %}{{ recommendation.summary }}{% endif %}

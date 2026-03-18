@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from pitchcopytrade.db.models.accounts import AuthorProfile, User
+from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Bundle, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
 from pitchcopytrade.db.models.content import Recommendation
@@ -17,8 +17,10 @@ from pitchcopytrade.db.models.enums import (
     PaymentStatus,
     ProductType,
     RiskLevel,
+    RoleSlug,
     StrategyStatus,
     SubscriptionStatus,
+    UserStatus,
 )
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
@@ -596,3 +598,164 @@ def _subscription_matches_query(subscription: Subscription, normalized: str) -> 
     ]
     haystack = " ".join(part.strip().lower() for part in parts if part)
     return normalized in haystack
+
+
+def _slugify(text: str) -> str:
+    import re
+    text = text.lower().strip()
+    text = re.sub(r"[^\w\s-]", "", text)
+    text = re.sub(r"[\s_-]+", "-", text)
+    return text.strip("-")[:120]
+
+
+async def create_admin_author(
+    session: AsyncSession | None,
+    *,
+    display_name: str,
+    email: str | None,
+    telegram_user_id: int | None,
+) -> AuthorProfile:
+    if session is None:
+        raise NotImplementedError("create_admin_author not supported in file mode")
+
+    author_role_result = await session.execute(select(Role).where(Role.slug == RoleSlug.AUTHOR))
+    author_role = author_role_result.scalar_one_or_none()
+    if author_role is None:
+        author_role = Role(slug=RoleSlug.AUTHOR, title="Автор")
+        session.add(author_role)
+        await session.flush()
+
+    user = User(
+        email=email or None,
+        telegram_user_id=telegram_user_id or None,
+        full_name=display_name,
+        status=UserStatus.ACTIVE,
+    )
+    session.add(user)
+    await session.flush()
+
+    user.roles.append(author_role)
+
+    slug = _slugify(display_name)
+    # Ensure unique slug
+    existing = await session.execute(
+        select(AuthorProfile).where(AuthorProfile.slug == slug)
+    )
+    if existing.scalar_one_or_none() is not None:
+        import uuid
+        slug = f"{slug}-{str(uuid.uuid4())[:8]}"
+
+    profile = AuthorProfile(
+        user_id=user.id,
+        display_name=display_name,
+        slug=slug,
+        requires_moderation=False,
+        is_active=True,
+    )
+    session.add(profile)
+    await session.commit()
+    await session.refresh(profile)
+    return profile
+
+
+async def toggle_admin_author(session: AsyncSession | None, author_id: str) -> AuthorProfile:
+    if session is None:
+        graph, store = _file_admin_graph()
+        profile = graph.authors.get(author_id)
+        if profile is None:
+            raise ValueError("Author not found")
+        profile.is_active = not profile.is_active
+        graph.save(store)
+        return profile
+
+    result = await session.execute(
+        select(AuthorProfile).options(selectinload(AuthorProfile.user)).where(AuthorProfile.id == author_id)
+    )
+    profile = result.scalar_one_or_none()
+    if profile is None:
+        raise ValueError("Author not found")
+    profile.is_active = not profile.is_active
+    await session.commit()
+    await session.refresh(profile)
+    return profile
+
+
+async def get_admin_metrics(session: AsyncSession | None) -> dict:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        total_subscribers = sum(1 for u in graph.users.values() if not any(r.slug == RoleSlug.ADMIN for r in getattr(u, "roles", [])))
+        active_subscriptions = sum(1 for s in graph.subscriptions.values() if s.status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+        return {
+            "total_subscribers": total_subscribers,
+            "active_subscriptions": active_subscriptions,
+            "new_this_week": 0,
+            "strategy_stats": [],
+        }
+
+    from datetime import timedelta
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+
+    total_subscribers = await _count_query(session, select(func.count(User.id)))
+    active_subscriptions = await _count_query(
+        session,
+        select(func.count(Subscription.id)).where(
+            Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+        ),
+    )
+    new_this_week = await _count_query(
+        session,
+        select(func.count(Subscription.id)).where(
+            Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            Subscription.created_at >= week_ago,
+        ),
+    )
+
+    strategies_result = await session.execute(
+        select(Strategy, func.count(Subscription.id).label("sub_count"))
+        .outerjoin(SubscriptionProduct, SubscriptionProduct.strategy_id == Strategy.id)
+        .outerjoin(Subscription, Subscription.product_id == SubscriptionProduct.id)
+        .group_by(Strategy.id)
+        .order_by(func.count(Subscription.id).desc())
+    )
+    strategy_stats = [
+        {"title": row.Strategy.title, "sub_count": row.sub_count}
+        for row in strategies_result
+    ]
+
+    return {
+        "total_subscribers": total_subscribers,
+        "active_subscriptions": active_subscriptions,
+        "new_this_week": new_this_week,
+        "strategy_stats": strategy_stats,
+    }
+
+
+async def get_admin_strategy_for_onepager(session: AsyncSession | None, strategy_id: str) -> Strategy | None:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        return graph.strategies.get(strategy_id)
+    result = await session.execute(
+        select(Strategy)
+        .options(selectinload(Strategy.author))
+        .where(Strategy.id == strategy_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def save_strategy_onepager(session: AsyncSession | None, strategy_id: str, html_content: str) -> Strategy:
+    if session is None:
+        graph, store = _file_admin_graph()
+        strategy = graph.strategies.get(strategy_id)
+        if strategy is None:
+            raise ValueError("Strategy not found")
+        strategy.full_description = html_content
+        graph.save(store)
+        return strategy
+    result = await session.execute(select(Strategy).where(Strategy.id == strategy_id))
+    strategy = result.scalar_one_or_none()
+    if strategy is None:
+        raise ValueError("Strategy not found")
+    strategy.full_description = html_content
+    await session.commit()
+    await session.refresh(strategy)
+    return strategy

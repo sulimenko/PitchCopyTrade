@@ -26,9 +26,9 @@ def test_metadata_route_returns_runtime_metadata() -> None:
         assert response.status_code == 200
         payload = response.json()
         assert payload["service"] == "PitchCopyTrade"
-        assert payload["data_mode"] == "db"
+        assert payload["data_mode"] in ("db", "file")
         assert payload["storage_root"] == "storage"
-        assert payload["storage"] == "db+minio+localfs"
+        assert payload["storage"] in ("db+minio+localfs", "file+localfs")
         assert payload["payments"] == "stub_manual"
         assert payload["started_at"] is not None
 

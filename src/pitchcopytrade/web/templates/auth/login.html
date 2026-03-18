@@ -1,51 +1,19 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="surface" style="display:grid;grid-template-columns:minmax(0,1.05fr) minmax(320px,0.95fr);gap:20px;padding:28px;">
-  <div style="padding:8px 6px 8px 4px;">
-    <div class="eyebrow">web login</div>
-    <h1 style="margin:10px 0 14px;font-size:clamp(2.2rem,5vw,4rem);line-height:0.92;letter-spacing:-0.05em;">Вход в кабинеты PitchCopyTrade</h1>
-    <p class="muted" style="max-width:520px;line-height:1.65;">
-      Это foundation-версия входа для `admin`, `author` и `moderator`. Telegram identity не используется как web-auth.
-    </p>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:20px;">
-      <article class="surface" style="padding:16px;border-radius:22px;background:var(--surface-strong);box-shadow:none;">
-        <div class="pill">Admin</div>
-        <p class="muted" style="margin:12px 0 0;">Управление подписками, платежами и юридическими документами.</p>
-      </article>
-      <article class="surface" style="padding:16px;border-radius:22px;background:var(--surface-strong);box-shadow:none;">
-        <div class="pill">Автор</div>
-        <p class="muted" style="margin:12px 0 0;">Публикация идей, управление draft flow и review path.</p>
-      </article>
-      <article class="surface" style="padding:16px;border-radius:22px;background:var(--surface-strong);box-shadow:none;">
-        <div class="pill">Moderator</div>
-        <p class="muted" style="margin:12px 0 0;">Очередь валидации и контроль publication lifecycle.</p>
-      </article>
-    </div>
+<section class="surface" style="max-width:400px;margin:60px auto;padding:40px;text-align:center;">
+  {% if error %}
+  <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;">
+    {{ error }}
   </div>
-
-  <div class="surface" style="padding:22px;border-radius:24px;background:var(--surface-strong);box-shadow:none;">
-    <div class="eyebrow">login form</div>
-    <h2 style="margin:10px 0 16px;font-size:1.8rem;line-height:1;">Войти</h2>
-    {% if error %}
-    <div style="margin-bottom:16px;padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;">
-      {{ error }}
-    </div>
-    {% endif %}
-    <form method="post" action="/login" style="display:grid;gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <span style="font-weight:700;">Логин или email</span>
-        <input name="identity" value="{{ identity }}" autocomplete="username" required style="padding:14px 16px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
-      </label>
-      <label style="display:grid;gap:8px;">
-        <span style="font-weight:700;">Пароль</span>
-        <input type="password" name="password" autocomplete="current-password" required style="padding:14px 16px;border-radius:16px;border:1px solid var(--line);font:inherit;" />
-      </label>
-      <button class="action" type="submit">Войти в кабинет</button>
-    </form>
-    <p class="muted" style="margin:18px 0 0;line-height:1.6;">
-      В следующем слое сюда добавятся forgot password, invite flow и role-aware redirects в реальные кабинеты.
-    </p>
-  </div>
+  {% endif %}
+  <div class="brand-mark" style="margin:0 auto 24px;width:64px;height:64px;font-size:1.1rem;">PC</div>
+  <h2 style="margin:0 0 28px;font-size:1.6rem;">PitchCopyTrade</h2>
+  <script async src="https://telegram.org/js/telegram-widget.js?22"
+    data-telegram-login="{{ bot_username }}"
+    data-size="large"
+    data-auth-url="/auth/telegram/callback"
+    data-request-access="write">
+  </script>
 </section>
 {% endblock %}
