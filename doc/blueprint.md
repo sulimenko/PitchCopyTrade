@@ -1,42 +1,55 @@
-# PitchCopyTrade — MVP Architecture Blueprint
-> Version: 0.2.0 — MVP baseline
-> Updated: 2026-03-18
-> Status: **APPROVED for implementation**
+# PitchCopyTrade — Архитектура MVP
+> Версия: 0.2.0
+> Обновлено: 2026-03-18
+> Статус: **УТВЕРЖДЕНО к реализации**
 
 ---
 
-## 1. Scope of MVP
+## Правила работы в CLI
 
-MVP covers:
-- Author Cabinet (web, Telegram auth) — create and publish recommendations
-- Admin Cabinet (web) — create authors, publish One Pager, basic metrics
-- CopyTradeBot (Telegram) — deliver recommendations to subscribers
-- Instruments stub — 10 MOEX tickers, expandable via future API
-- Subscriber Mini App (Telegram WebApp) — view strategies, tariffs, subscribe, pay
+При реализации задач в Claude Code CLI **обязательно** соблюдать:
 
-Out of scope for MVP:
-- Moderator role enforcement (DB field exists, `requires_moderation = False` by default)
-- External payment API (Tinkoff/T-Bank) — stub manual confirmation only
-- Complex promo/trial/discount logic
-- File attachments (MinIO not used in MVP routes, infrastructure stays)
-- Compliance legal documents flow (tables exist, no UI)
+- Читай `doc/task.md` перед каждой задачей
+- После выполнения задачи сразу помечай `[x]` в `task.md`
+- Не переходи к следующей задаче без пометки
+- Переходи к следующей фазе автоматически — без подтверждения пользователя
+- Если задача требует решения — задай один вопрос, не пиши код до ответа
+- Пиши минимально необходимый код, без over-engineering
 
 ---
 
-## 2. Terminology
+## 1. Границы MVP
 
-| Term in UI (RU)     | Term in code (EN)         | Notes |
-|---------------------|---------------------------|-------|
-| Рекомендация / Сделка | `Recommendation`        | Same entity. A recommendation can contain 1+ legs (trades on specific instruments). Most commonly 1 leg. |
-| Нога сделки         | `RecommendationLeg`       | One instrument + side + price/target/stop |
-| Стратегия           | `Strategy`                | Container grouping recommendations by author |
-| Подписчик           | Subscriber / `User` with active `Subscription` | |
-| Автор               | `AuthorProfile` linked to `User` | |
-| Тикер               | `Instrument.ticker`       | E.g. SBER, GAZP |
+**Входит в MVP:**
+- Кабинет автора (веб, авторизация через Telegram)
+- Кабинет администратора (веб)
+- CopyTradeBot (Telegram) — доставка рекомендаций подписчикам
+- Справочник инструментов — 10 бумаг ММВБ, расширяемый через API
+- Mini App для подписчиков (Telegram WebApp)
+
+**Не входит в MVP:**
+- Контроль роли Модератора (поле в БД есть, `requires_moderation = False` везде)
+- Внешнее платёжное API (Tinkoff/T-Bank) — только ручное подтверждение
+- Промо/триал/скидки (логика в БД есть, UI нет)
+- Загрузка файлов через MinIO (инфраструктура готова, маршруты не реализуются)
+- Юридические документы и согласия (таблицы есть, UI нет)
 
 ---
 
-## 3. System Components
+## 2. Термины
+
+| В интерфейсе (RU) | В коде (EN) | Примечание |
+|-------------------|-------------|------------|
+| Рекомендация / Сделка | `Recommendation` | Одна сущность. Рекомендация может содержать 1+ ног (сделок). Обычно 1 нога. |
+| Нога сделки | `RecommendationLeg` | Один инструмент + направление + цена/цель/стоп |
+| Стратегия | `Strategy` | Контейнер рекомендаций одного автора |
+| Подписчик | Subscriber / `User` с активной `Subscription` | |
+| Автор | `AuthorProfile`, связанный с `User` | |
+| Тикер | `Instrument.ticker` | Например: SBER, GAZP |
+
+---
+
+## 3. Компоненты системы
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -44,92 +57,85 @@ Out of scope for MVP:
 │                                                                 │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌─────────────┐ │
 │  │   api    │   │   bot    │   │  worker  │   │  postgres   │ │
-│  │ FastAPI  │   │ aiogram3 │   │ asyncio  │   │  pg16-alpine│ │
-│  │ port 8000│   │ webhook  │   │ bg jobs  │   │             │ │
+│  │ FastAPI  │   │ aiogram3 │   │   ARQ    │   │  pg16-alpine│ │
+│  │ порт 8000│   │ webhook  │   │  задания │   │             │ │
 │  └────┬─────┘   └────┬─────┘   └────┬─────┘   └─────────────┘ │
-│       │              │              │                           │
 │       └──────────────┴──────────────┘                          │
-│                  internal network                               │
-│                                                                 │
+│                  внутренняя сеть Docker                        │
 │  ┌──────────┐                                                   │
-│  │  minio   │  (infrastructure ready, not used in MVP routes)  │
+│  │  minio   │  (инфраструктура готова, маршруты в Phase 2+)    │
 │  └──────────┘                                                   │
 └─────────────────────────────────────────────────────────────────┘
 
-External actors:
-  Telegram API ←→ Bot (webhook on HTTPS, dedicated IP)
-  Author Browser ←→ API (Author Cabinet web UI)
-  Admin Browser ←→ API (Admin Cabinet web UI)
-  Subscriber Telegram ←→ Bot + Mini App (WebApp inside Telegram)
+Внешние акторы:
+  Telegram API ←→ Bot (webhook по HTTPS, выделенный IP)
+  Браузер автора ←→ API (кабинет автора, веб)
+  Браузер админа ←→ API (кабинет администратора, веб)
+  Telegram подписчика ←→ Bot + Mini App (WebApp внутри Telegram)
+  Redis (локально на сервере) ←→ Worker (очередь задач ARQ)
 ```
 
 ---
 
-## 4. Roles
+## 4. Роли
 
-| Role    | Access method       | How created              | Moderator enforcement |
-|---------|--------------------|--------------------------|-----------------------|
-| admin   | Web cabinet        | Seeded at deploy         | —                     |
-| author  | Web cabinet (Telegram auth) | Admin creates in ЛК | `requires_moderation=False` in MVP |
-| subscriber | Telegram bot + Mini App | Self-registration | — |
+| Роль | Способ входа | Как создаётся | Модерация |
+|------|-------------|---------------|-----------|
+| admin | Веб-кабинет | Seed при деплое | — |
+| author | Веб-кабинет (авторизация Telegram) | Создаётся администратором | `requires_moderation=False` в MVP |
+| subscriber | Telegram бот + Mini App | Саморегистрация | — |
 
-Moderator role: DB enum exists, no UI/enforcement in MVP.
+Роль Модератора: enum в БД сохранён, UI и проверки отсутствуют в MVP.
 
 ---
 
-## 5. Author Authentication Flow
+## 5. Авторизация автора
 
-Author cabinet is **web-only**. Auth via **Telegram Login Widget**.
+Кабинет автора — **только веб**. Вход через **Telegram Login Widget**.
 
 ```
-1. Admin creates author in Admin Cabinet
-   → fills: display_name, email (optional), telegram_user_id (optional)
-   → system creates User + AuthorProfile + Role(author)
-   → sends invite link to email and/or Telegram
+1. Администратор создаёт автора в кабинете
+   → заполняет: display_name, email (опц.), telegram_user_id (опц.)
+   → система создаёт: User + AuthorProfile + user_roles(author)
+   → устанавливает requires_moderation=False
 
-2. Author opens web cabinet URL
-   → clicks "Войти через Telegram"
-   → Telegram Login Widget redirects with signed payload
-   → API verifies HMAC-SHA256(bot_token, payload)
-   → creates server session (JWT cookie, HttpOnly, Secure)
-   → author lands in cabinet
+2. Автор открывает URL кабинета в браузере
+   → нажимает "Войти через Telegram"
+   → Telegram Login Widget редиректит с подписанными данными
+   → API проверяет HMAC-SHA256(bot_token, payload)
+   → создаёт JWT (HttpOnly, Secure, SameSite=Strict, 24ч)
+   → автор попадает в кабинет
 ```
 
-No password. No Telegram bot interaction for author login. Author works exclusively via web browser.
+Без пароля. Без взаимодействия с ботом при входе. Работа только через браузер.
 
 ---
 
-## 6. Recommendation Creation UI
+## 6. Интерфейс создания рекомендаций
 
-Two modes coexist on the same page:
+Два режима на одной странице:
 
-### 6.1 Quick Inline (default)
-- Table row with empty cells: `[Тикер ▼] [BUY|SELL] [Цена] [Цель] [Стоп] [+]`
-- Clicking `Тикер` cell opens **Ticker Picker Popup** (see §8)
-- Tab/Enter navigates between cells, Enter on last cell saves
-- Row appears optimistically, saved async in background
-- Other fields (title, thesis, horizon) auto-filled as null/empty
+### 6.1 Быстрый inline (по умолчанию)
+- Строка с полями: `[Тикер ▼] [BUY|SELL] [Цена] [Цель] [Стоп] [+]`
+- Клик «Тикер» → открывается Popup выбора тикера (см. §7)
+- Tab/Enter переключает ячейки; Enter на последней — сохраняет
+- Строка добавляется оптимистично, сохраняется асинхронно
+- Необязательные поля (заголовок, тезис) = null
 
-### 6.2 Full Popup (optional)
-- Triggered by "Новая рекомендация" button above table
-- Modal overlay with full form:
-  - Strategy selector (dropdown)
-  - Kind: new_idea / update / close / cancel
-  - Title, Summary (optional)
-  - Legs: repeatable block (Ticker + Side + Price + Target + Stop + Note)
-  - Scheduled date (optional)
-- Submit → creates recommendation with all legs
+### 6.2 Полная форма (popup)
+- Кнопка «Новая рекомендация» → модальное окно
+- Поля: стратегия, вид (new_idea/update/close/cancel), заголовок, тезис, список ног, дата
+- Кнопка «Добавить ногу» для мультиног
+- Закрытие по Esc или кнопке ×
 
-### 6.3 Table state on load
-- Table is **empty on fresh load** — no placeholder rows, no seed data, no sample text
-- Empty state: minimal text "Нет рекомендаций" + inline add row
-- No onboarding tooltips, no instructions, no welcome modals
+### 6.3 Состояние таблицы при загрузке
+- Таблица **пустая** — без примеров, без placeholder-строк
+- Пустое состояние: только «Нет рекомендаций» + строка ввода
+- Никаких инструкций, туториалов, welcome-экранов в UI
 
 ---
 
-## 7. Ticker Picker
-
-Triggered from any Ticker cell (inline or popup form).
+## 7. Popup выбора тикера
 
 ```
 ┌─────────────────────────────────┐
@@ -140,141 +146,108 @@ Triggered from any Ticker cell (inline or popup form).
 │ ★ LKOH  ЛУКОЙЛ         ▲+0.8%  │
 │   GMKN  Норильский никель       │
 │   YNDX  Яндекс          ▲+2.1%  │
-│   ...                           │
 ├─────────────────────────────────┤
 │ [Отмена]                        │
 └─────────────────────────────────┘
 ```
 
-- Data source: `instruments_stub.json` (10 MOEX stocks, see §9)
-- User's recent picks saved to `localStorage` and shown starred
-- Future: search API endpoint returns additional tickers
-- Real-time price: stub field `last_price` in JSON for now (will be replaced by live API)
-- Filter by typing — client-side search on ticker + name
+- Источник: `doc/instruments_stub.json` (10 бумаг ММВБ, загружаются в БД при старте)
+- Недавние выборы → `localStorage` → отображаются со звёздочкой
+- Фильтрация по тексту — клиентская, без учёта регистра
+- Будущее: `/api/instruments?q=` для поиска через live API
 
 ---
 
-## 8. Recommendation Publishing & Notification
+## 8. Публикация и доставка уведомлений
 
 ```
-Author clicks "Опубликовать" on a draft recommendation
+Автор нажимает «Опубликовать» на черновике
     │
     ▼
 API: recommendation.status → "published", published_at = now()
     │
-    └──► arq_pool.enqueue_job("send_recommendation_notifications", recommendation_id)
-         Returns immediately — UI not blocked
+    └──► arq_pool.enqueue_job("send_recommendation_notifications", rec_id)
+         Ответ UI возвращается мгновенно
               │
               ▼
-         ARQ Worker (Redis-backed, local Redis on server)
+         ARQ Worker (Redis локально, redis://localhost:6379)
               │
-              ├──► Internal HTTP POST to bot service (Docker internal network)
-              │    POST http://bot:8080/internal/broadcast
-              │    Body: { recommendation_id }
-              │    Bot fetches subscribers → sends Telegram message to each
+              ├──► POST http://bot:8080/internal/broadcast
+              │    Бот → Telegram каждому активному подписчику стратегии
               │
-              └──► SMTP send to each subscriber with confirmed email
-                   Server: relay.ptfin.kz:465 SSL
-                   From: pct@ptfin.ru
+              └──► SMTP relay.ptfin.kz:465 SSL
+                   От pct@ptfin.ru → каждому подписчику с email
 ```
 
-### Why this approach:
-- **ARQ + Redis** (Redis already installed on server): job enqueued instantly at publish time, worker picks it up in < 1 second — zero polling delay
-- **Single job handles both channels** (Telegram + Email): atomic, one retry policy, one log entry
-- **Reliable**: if worker crashes, jobs survive in Redis and resume on restart
-- **Internal HTTP API** to bot: bot is on same Docker network, always reachable
-- **No DB polling**: cleaner than 30s timer loops, lower DB load
-- Bot runs in **webhook mode** on dedicated server — see README for activation
+**Почему ARQ + Redis:**
+- Redis уже на сервере — никаких новых зависимостей
+- Нет задержки polling — задание выполняется за < 1 сек
+- Задания выживают при рестарте worker
+- Единая политика retry (3 попытки, 10с задержка)
 
 ---
 
-## 9. Bot Notification Message Format
+## 9. Формат Telegram-уведомления
 
 ```
 📊 Новая рекомендация — {strategy.title}
 
-{recommendation.title or kind_label}
-{leg.ticker} — {leg.side} @ {leg.entry_from or "рынок"}
-🎯 Цель: {leg.tp1 or "—"}
-🛡 Стоп: {leg.stop_loss or "—"}
+{recommendation.title}
+{leg.ticker} — {leg.side} @ {leg.entry_from или "рынок"}
+🎯 Цель: {leg.tp1 или "—"}
+🛡 Стоп: {leg.stop_loss или "—"}
 
-{recommendation.summary or ""}
+{recommendation.summary или ""}
 
 [Открыть в приложении →]
 ```
 
 ---
 
-## 10. Telegram Mini App (Subscriber)
+## 10. Telegram Mini App (подписчики)
 
-Entry point: bot sends button "Открыть приложение" which opens WebApp URL.
+Точка входа: бот → кнопка «Открыть приложение» (WebApp).
 
-Pages:
-1. **Главная** — list of active strategies
-2. **Стратегия / One Pager** — HTML page with strategy description, author, stats
-3. **Тарифы** — subscription products with prices
-4. **Подписка** — checkout flow (stub manual payment)
-5. **Мои подписки** — subscriber's active subscriptions
-
-One Pager = HTML template rendered server-side (Jinja2), embedded in Mini App iframe or served as full WebApp page.
+Страницы:
+1. **Главная** — список активных стратегий
+2. **One Pager** — HTML-страница стратегии (Jinja2, полноэкранная)
+3. **Тарифы** — продукты с ценами
+4. **Оформление подписки** — stub checkout (ручное подтверждение админом)
+5. **Мои подписки** — активные подписки
 
 ---
 
-## 11. Admin Cabinet
+## 11. Кабинет администратора
 
-Pages:
-1. **Авторы** — list of authors, create author (display_name, email, telegram_user_id)
-2. **One Pager** — publish/edit strategy One Pager (HTML content editor)
-3. **Метрики** — aggregated subscriber counts per strategy (authors see only own strategy counts)
-4. **Выплаты** — accruals list, initiate payout (manual stub)
-
----
-
-## 12. Database Conventions
-
-- All tables have UUID PK, `created_at`, `updated_at`
-- `requires_moderation = False` on all AuthorProfiles in MVP
-- `RecommendationStatus.draft` → `published` only (skip review/approved/scheduled for MVP)
-- On fresh deploy: **no seed data except admin user** — tables start empty
-- Instruments loaded from `instruments_stub.json` via startup migration seeder
+1. **Авторы** — список, создание (display_name + email + telegram_user_id)
+2. **One Pager** — редактор HTML-контента страницы стратегии
+3. **Метрики** — агрегированные счётчики подписчиков (без персональных данных)
+4. **Выплаты** — список ожидающих платежей, ручное подтверждение
 
 ---
 
-## 13. Notification Architecture (ARQ + Redis)
+## 12. Соглашения по базе данных
 
-No `notification_queue` DB table needed — ARQ handles queue state in Redis.
-
-```
-Redis (local on server, redis://localhost:6379/0)
-└── ARQ job queue
-    └── job: send_recommendation_notifications(recommendation_id)
-        ├── retries: 3
-        ├── retry_delay: 10s
-        └── timeout: 60s
-```
-
-ARQ worker runs as separate process (or inside the `worker` Docker service).
-Failed jobs viewable via `arq info redis://...` CLI command.
-
-### Email settings
-- Server: `relay.ptfin.kz`
-- Port: `465` (SSL)
-- From: `pct@ptfin.ru`
-- Credentials: in `.env` only, never committed
+- UUID PK, `created_at`, `updated_at` на всех таблицах
+- `requires_moderation = False` везде в MVP
+- Переходы статуса рекомендации: `draft → published → closed/cancelled`
+- Свежий деплой: **только admin user как seed** — все остальные таблицы пустые
+- Инструменты загружаются из `doc/instruments_stub.json` через seeder при старте API
 
 ---
 
-## 14. Fresh Deploy / Full Reset
+## 13. Email
 
-See README.md § "Full Reset Procedure" for step-by-step cleanup before new version deploy.
-No legacy code, no legacy data. Clean slate on every major version.
+- Сервер: `relay.ptfin.kz`, порт `465`, SSL
+- От: `pct@ptfin.ru`
+- Пароль: только в `.env`, не коммитить никогда
 
 ---
 
-## 15. Design Principles
+## 14. Принципы дизайна
 
-- **No instructions in UI** — interface is self-evident. No onboarding text, no "how to use" tooltips, no welcome screens.
-- **Empty = clean** — all tables start empty, no placeholder/sample rows.
-- **Minimal required fields** — only ticker + side mandatory for a recommendation leg. All price fields nullable.
-- **Russian UI** — all user-facing text in Russian.
-- **Mobile-first web** — author cabinet usable on mobile browser.
+- **Никаких инструкций в UI** — без онбординга, туториалов, welcome-экранов
+- **Пусто = чисто** — таблицы стартуют пустыми
+- **Минимум обязательных полей** — только тикер + направление; все ценовые поля nullable
+- **Русский интерфейс** — весь пользовательский текст на русском
+- **Mobile-first** — кабинет автора работает в мобильном браузере
