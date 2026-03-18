@@ -1,0 +1,127 @@
+{
+  "version": "1.0.0",
+  "source": "stub",
+  "note": "Stub data for MVP. Replace with live API when ready. Prices are illustrative.",
+  "instruments": [
+    {
+      "ticker": "SBER",
+      "name": "Сбербанк",
+      "full_name": "ПАО Сбербанк",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 10,
+      "instrument_type": "equity",
+      "last_price": 312.50,
+      "change_pct": 1.2,
+      "is_active": true
+    },
+    {
+      "ticker": "GAZP",
+      "name": "Газпром",
+      "full_name": "ПАО Газпром",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 10,
+      "instrument_type": "equity",
+      "last_price": 148.30,
+      "change_pct": -0.5,
+      "is_active": true
+    },
+    {
+      "ticker": "LKOH",
+      "name": "ЛУКОЙЛ",
+      "full_name": "ПАО ЛУКОЙЛ",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 1,
+      "instrument_type": "equity",
+      "last_price": 7210.00,
+      "change_pct": 0.8,
+      "is_active": true
+    },
+    {
+      "ticker": "GMKN",
+      "name": "Норильский никель",
+      "full_name": "ПАО ГМК Норильский никель",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 1,
+      "instrument_type": "equity",
+      "last_price": 11540.00,
+      "change_pct": -1.1,
+      "is_active": true
+    },
+    {
+      "ticker": "YNDX",
+      "name": "Яндекс",
+      "full_name": "МКПАО Яндекс",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 1,
+      "instrument_type": "equity",
+      "last_price": 4185.00,
+      "change_pct": 2.1,
+      "is_active": true
+    },
+    {
+      "ticker": "NVTK",
+      "name": "НОВАТЭК",
+      "full_name": "ПАО НОВАТЭК",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 1,
+      "instrument_type": "equity",
+      "last_price": 1095.80,
+      "change_pct": 0.3,
+      "is_active": true
+    },
+    {
+      "ticker": "ROSN",
+      "name": "Роснефть",
+      "full_name": "ПАО НК Роснефть",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 1,
+      "instrument_type": "equity",
+      "last_price": 534.20,
+      "change_pct": -0.3,
+      "is_active": true
+    },
+    {
+      "ticker": "TATN",
+      "name": "Татнефть",
+      "full_name": "ПАО Татнефть",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 10,
+      "instrument_type": "equity",
+      "last_price": 698.50,
+      "change_pct": 0.6,
+      "is_active": true
+    },
+    {
+      "ticker": "MGNT",
+      "name": "Магнит",
+      "full_name": "ПАО Магнит",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 1,
+      "instrument_type": "equity",
+      "last_price": 5240.00,
+      "change_pct": -0.8,
+      "is_active": true
+    },
+    {
+      "ticker": "TCSG",
+      "name": "Т-Банк",
+      "full_name": "АО ТКС Холдинг",
+      "board": "TQBR",
+      "currency": "RUB",
+      "lot_size": 1,
+      "instrument_type": "equity",
+      "last_price": 2780.00,
+      "change_pct": 1.5,
+      "is_active": true
+    }
+  ]
+}

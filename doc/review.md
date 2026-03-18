@@ -1,315 +1,126 @@
-# Codex Reviewer Master Prompt
+# PitchCopyTrade — Code Review Checklist
+> Version: 0.2.0
+> Updated: 2026-03-18
+> Use this checklist on every PR before merge
 
-Ты principal reviewer для `PitchCopyTrade`.
+---
 
-Проверяй код против:
-- `/Users/alexey/site/PitchCopyTrade/doc/blueprint.md`
-- `/Users/alexey/site/PitchCopyTrade/doc/task.md`
+## P0 — Blockers (must fix before any merge)
 
-После каждого завершенного шага reviewer должен ожидать:
-1. review результата;
-2. обновление всех description files:
-   - `/Users/alexey/site/PitchCopyTrade/README.md`
-   - `/Users/alexey/site/PitchCopyTrade/doc/blueprint.md`
-   - `/Users/alexey/site/PitchCopyTrade/doc/task.md`
-   - `/Users/alexey/site/PitchCopyTrade/doc/review.md`
+### Security
+- [ ] No raw SQL string interpolation — use SQLAlchemy bound params only
+- [ ] Telegram HMAC-SHA256 verified on every auth callback (`auth_date` < 5 min)
+- [ ] Telegram Mini App `initData` signature verified before trusting user identity
+- [ ] `X-Internal-Token` verified on `/internal/broadcast` — hard-block without it
+- [ ] JWT: HttpOnly + Secure + SameSite=Strict, expiry ≤ 24h
+- [ ] No secret values (tokens, passwords, keys) committed or logged
+- [ ] Author can only read/write their own strategies and recommendations (ACL by `author_profile.id`)
+- [ ] Admin routes protected by `require_role("admin")`
+- [ ] Subscriber cannot access author cabinet or admin cabinet
 
-## 0. Последний полный review snapshot
-- дата: `2026-03-12`
-- полный regression suite: `165 passed`
-- критичных findings на уровне whole-project review не обнаружено
-- основные остаточные риски:
-  - production hardening для `T-Bank` / real SBP
-  - richer subscriber notification granularity
-  - support tooling / observability
-  - remaining analytics depth
+### Data Integrity
+- [ ] `RecommendationLeg.instrument_id` resolved from ticker — no orphan legs
+- [ ] `Recommendation.status` transitions only follow allowed path: draft → published → closed/cancelled
+- [ ] `Payment.final_amount_rub` computed server-side, never trusted from client
+- [ ] `Subscription` created only after payment reaches `paid` status (or manual confirm by admin)
 
-## 1. Важный контекст
-Проект уже имеет существенный baseline:
-- foundation infrastructure
-- ORM + Alembic
-- admin web contour
-- author workspace
-- recommendation CRUD
-- preview / moderation / rendering baseline
-- moderation file-mode parity
-- public catalog
-- checkout `stub/manual`
-- automatic `T-Bank` pending payment sync
-- `T-Bank` callback endpoint for provider-driven payment updates
-- payment confirm -> activate subscription
-- ACL service
-- bot feed and web fallback feed
-- Telegram subscriber self-service baseline
-- unified Mini App subscriber workspace
-- worker scheduled publish baseline
-- delivery notifications baseline
-- Telegram-first subscriber baseline
-- reduced subscriber bot command surface: `/start`, `/help`
-- Mini App as primary client UI
-- legacy subscriber bot handlers are removed, not left as dead compatibility code
-- subscriber workspace should be reviewed as `/miniapp -> /app/*`, not as a `surface=miniapp` variation of public routes
-- auto timezone / auto lead source on client checkout
-- Russian legal titles and Russian client-facing labels
-- local filesystem storage backend baseline
-- verified file-mode e2e baseline for:
-  - `admin dashboard`
-  - `author dashboard`
-  - `Telegram checkout -> admin confirm -> feed`
+### Notifications
+- [ ] Internal broadcast call is **fire-and-forget** — publication not blocked if bot is down
+- [ ] Broadcast errors logged, not swallowed silently
+- [ ] `notification_queue` entries created atomically with recommendation publish (same DB transaction)
 
-Но текущее архитектурное решение изменилось:
-- subscriber должен оставаться `Telegram-first`;
-- staff остается в web contour;
-- primary storage больше не должен быть удаленным;
-- документы и вложения должны уйти в локальный `storage/`;
-- проект должен получить `file` mode без БД для тестирования;
-- `PostgreSQL` остается допустимым `db` mode, но не единственным runtime path.
+---
 
-## 2. Главная цель review
-Найти:
-- bugs
-- security issues
-- ACL/data leaks
-- payment/subscription corruption
-- drift between code and docs
-- усиление remote-storage или DB-only зависимости
-- drift away from Telegram-first subscriber model
+## P1 — High Priority
 
-Сначала findings, потом все остальное.
+### Role & ACL
+- [ ] 3 roles in DB: admin, author, (moderator kept but unused)
+- [ ] `requires_moderation=False` on all MVP AuthorProfiles — no route checks moderation status
+- [ ] Author created by admin only — no self-registration path
+- [ ] `telegram_user_id` uniqueness enforced at DB level + application level
 
-## 3. Проверяй в первую очередь
+### Recommendation Logic
+- [ ] Minimal required fields enforced: `ticker` + `side` only on inline create
+- [ ] All price fields (`entry_from`, `tp1`, `stop_loss`) nullable — blank = NULL, not 0
+- [ ] `RecommendationKind` defaults to `new_idea` on quick inline create
+- [ ] `published_at` set to server UTC time, never client time
+- [ ] Duplicate publish prevented (idempotency check: status must be `draft` to publish)
 
-### A. Persistence architecture drift
-Проверь:
-- не углубляет ли change зависимость от `MinIO` или иного remote storage;
-- не делает ли change `PostgreSQL` обязательным для базового локального запуска;
-- есть ли явный путь к `APP_DATA_MODE=db|file`;
-- не прошивает ли service layer прямую зависимость от `AsyncSession` там, где уже должен быть repository layer;
-- хранится ли attachment metadata в локально-совместимом виде, а не только как bucket/object-key.
-- если runtime imports payment provider client, его библиотеки должны быть в main dependencies, а не только в `dev`.
+### Instruments
+- [ ] Instruments seeded from `doc/instruments_stub.json` on startup (upsert by ticker)
+- [ ] `GET /api/instruments` returns only `is_active=True` instruments
+- [ ] Ticker picker search is case-insensitive
+- [ ] `last_price` and `change_pct` fields present in response (stub values OK in MVP)
 
-Считать finding'ом:
-- новый критический flow, который требует `MinIO`;
-- новый критический flow, который требует БД без fallback;
-- docs/code mismatch по storage model;
-- отсутствие file-mode parity там, где change заявляет ее как сделанную.
+### UI / Templates
+- [ ] No onboarding text, no instruction blocks, no "how to use" tooltips anywhere
+- [ ] Empty tables show minimal empty state ("Нет рекомендаций"), not placeholder rows
+- [ ] Ticker picker popup closes on Esc and on backdrop click
+- [ ] Inline row resets after successful save (fields cleared)
+- [ ] HTMX responses return correct `HX-Trigger` or swap targets — no full page reloads on actions
+- [ ] All user-facing text in Russian
 
-### B. Subscriber architecture drift
-Проверь:
-- не возвращает ли change subscriber password-first model;
-- не делает ли web mandatory там, где target is Telegram-first;
-- не возвращает ли change command-heavy subscriber UX вместо Mini App navigation;
-- если web subscriber path остается, идет ли он через Telegram-auth model;
-- если protected subscriber web surface открывается без Telegram cookie, переводит ли flow пользователя в понятную Telegram verification page, а не в сырой `401`;
-- если используется `next` redirect после Telegram auth, защищен ли он от open redirect и остается ли локальным;
-- если web fallback заявлен как subscriber-friendly, есть ли у него понятная landing page, а не только голая лента без статуса;
-- если заявлен Telegram self-service, видит ли пользователь свои подписки и pending оплаты без утечки чужих данных;
-- если заявлены payment/subscription detail pages, ограничены ли они только сущностями текущего `telegram_user_id`;
-- если заявлена отмена `pending` оплаты из Mini App, не отменяет ли она уже финализированные платежи и связанные access states;
-- если заявлен autorenew toggle, не дает ли он управлять чужой подпиской и сохраняется ли состояние после reload;
-- если заявлен payment refresh, не ходит ли он во внешний provider для неподходящих статусов и не ломает ли локальный payment state;
-- если заявлен payment retry, создает ли он новый checkout только для terminal payment states и ведет ли пользователя в новую payment card;
-- если заявлен subscription renewal, создает ли он новый Telegram-linked payment flow вместо ручного staff-only продления;
-- если заявлен payment result messaging, соответствует ли текст реальному состоянию оплаты;
-- если рендерится payment history, не смешивает ли она чужие state transitions и provider ids;
-- если worker шлет subscriber reminders, есть ли dedup и не повторяется ли одно и то же напоминание на каждом тике;
-- если есть центр напоминаний, видит ли subscriber только свои reminder events;
-- если есть настройки напоминаний, учитываются ли они worker reminder job и сохраняются ли после reload;
-- если есть единая лента событий, не смешивает ли она чужие payments/subscriptions и остается ли Telegram-scoped;
-- если заявлен full WebApp auth bridge, обновляет ли каждая Mini App page Telegram-backed cookie только через validated `initData`, а не через слепой trust на client-side данные;
-- если заявлены richer in-app actions, не ломают ли inline формы retry/renew/cancel существующий Telegram-only contour;
-- если есть manual discount, не применяется ли он к уже финализированным платежам и не пытается ли менять live-provider payment amount post-init;
-- если заявлены expiry/cancel flows, переводит ли worker payment/subscription lifecycle в terminal states ровно один раз и без повторного drift на каждом тике;
-- если меняется author editor CSS, не появляется ли horizontal drift / overlap полей на обычной desktop ширине и на узких экранах;
-- если legs editor стал динамическим, не остался ли hidden fixed ceiling в parser/service layer;
-- если legs editor принимает dynamic row ids, не ломается ли сохранение при индексах вроде `leg_7_*`, `leg_12_*` и при повторной отрисовке формы после ошибки;
-- если заявлено `минимум 1 бумага`, не позволяет ли backend сохранить рекомендацию без единого валидного leg;
-- если optional legs удаляются через UI, не может ли пользователь удалить последнюю обязательную бумагу и отправить пустую форму;
-- если Mini App surface заявлен subscriber-aware, не рендерит ли он subscriber state без валидной Telegram auth cookie;
-- если заявлен единый Mini App workspace, не осталось ли внутри legacy routes, compatibility query params или старых bot commands;
-- если Telegram checkout заявлен как interactive, идет ли он через Mini App sections и не тянет ли обратно legacy bot commands;
-- если заявлен Mini App auth bridge, валидируется ли Telegram `initData` на backend, а не принимается ли он вслепую;
-- если заявлен реальный SBP provider, есть ли provider abstraction и не ломается ли `stub/manual` fallback;
-- если заявлен worker-based provider sync, активируется ли доступ только после финального provider state;
-- если заявлен provider callback, валидируется ли callback token до изменения payment state;
-- не собирает ли code лишние персональные данные без необходимости.
-- не отправляет ли bot `WebApp` кнопку на `http` base URL, где Telegram ее все равно отвергнет.
+### Database
+- [ ] New Alembic migration for `notification_queue` table exists
+- [ ] Migration is reversible (`downgrade` implemented)
+- [ ] No raw `CREATE TABLE` in application code — migrations only
+- [ ] `Base.metadata` includes all models before `env.py` runs
 
-### C. Roles and ACL
-Проверь:
-- `admin`, `author`, `moderator` изолированы от subscriber permissions;
-- `author` не видит PII подписчиков;
-- `author` видит и редактирует только свои стратегии и рекомендации;
-- `subscriber` не получает доступ без `active/trial`;
-- web and bot ACL rules stay consistent;
-- `strategy / author / bundle` entitlements разрешаются одинаково.
+---
 
-### D. Payments and subscriptions
-Проверь:
-- checkout не выдает access;
-- confirm path делает `payment -> paid`;
-- confirm path делает `subscription -> active|trial`;
-- pending/failed/cancelled/expired не дают delivery access;
-- file-mode implementation не ломает state transitions.
-- worker payment sync не выдает access по `pending` и не ломает `stub/manual` path.
+## P2 — Standard Quality
 
-### E. Local storage contract
-Проверь:
-- attachments и legal files сохраняются в локальный `storage/`;
-- legal docs имеют local `source_path` contract и public rendering читает local source;
-- download path читает локальные файлы безопасно;
-- нет path traversal;
-- checksum/size/content-type metadata согласованы;
-- blob storage не смешан со structured data хаотично.
-- committed demo seed pack в `storage/seed/json` остается согласован с file repositories.
-- runtime writes не уходят в tracked seed files.
+### Code Style
+- [ ] No unused imports
+- [ ] No commented-out code blocks
+- [ ] No `print()` — use `logging` module
+- [ ] Functions under 50 lines (split larger ones)
+- [ ] No magic strings — use enums from `db/models/enums.py`
 
-### F. File repositories
-Проверь:
-- JSON repositories не нарушают ownership rules;
-- write path не оставляет поврежденные partial files;
-- lookup logic не расползается по routes/services/templates;
-- file repositories сохраняют достаточный минимум доменных инвариантов.
+### API Design
+- [ ] JSON API endpoints under `/api/` prefix
+- [ ] HTMX partial endpoints under `/cabinet/` or `/admin/` prefix
+- [ ] Error responses return appropriate HTTP status codes (400/401/403/404/422/500)
+- [ ] 422 body includes field-level validation errors for form submissions
 
-### G. Staff workspaces
-Проверь:
-- admin, author, moderator продолжают работать в staff contour;
-- author dashboard не уходит в subscriber area;
-- recommendation CRUD ограничен author scope;
-- moderation queue не выдает лишних powers.
+### Configuration
+- [ ] All new config values added to `core/config.py` with type annotations and defaults
+- [ ] New env vars documented in `.env.example` (if file exists) or README
+- [ ] No hardcoded URLs, ports, or secrets
 
-### H. Recommendation lifecycle
-Проверь:
-- `scheduled` требует datetime;
-- publish/rework/reject/close/cancel transitions не ломают timestamps;
-- structured legs и attachments сохраняются и рендерятся единообразно;
-- preview не обходит scope или ACL.
+### Tests
+- [ ] New route has at least one test
+- [ ] ACL test: unauthorized access returns 401/403
+- [ ] Happy path test: valid input returns expected response
 
-### I. Worker / notifications
-Проверь:
-- worker публикует только due `scheduled` items;
-- worker не публикует draft/review items;
-- notifications уходят только entitlement-based получателям;
-- file-mode не ломает scheduled publish и delivery notifications.
+---
 
-### J. Runtime / deployment
-Проверь:
-- проект можно запустить с внешним DSN через `.env`;
-- docker DB остается optional;
-- local test path без БД реален, если change заявляет file mode как готовый;
-- docs/run instructions не противоречат реальному runtime.
-- `api + bot + worker` реально стартуют в `APP_DATA_MODE=file`, а не только компилируются.
-- если change заявляет Telegram bot smoke, он должен быть подтвержден либо локальным handler smoke, либо реальным `getMe` / webhook check.
-- если change заявляет local e2e, минимум должен быть подтвержден:
-  - `staff login`
-  - `admin dashboard`
-  - `author dashboard`
-  - `checkout -> confirm -> feed`
+## P3 — Product Drift Checks
 
-## 4. Transitional areas
-Это не automatic finding само по себе, но reviewer должен отслеживать drift:
-- текущий `SQLAlchemy`-first path;
-- текущий `MinIO` adapter;
-- текущий bucket/object-key metadata shape;
-- текущий DB-only startup path;
-- partial Telegram Mini App contour.
+These check that implementation doesn't drift from approved blueprint:
 
-Если change закрепляет эти transitional parts как final architecture, это finding.
+- [ ] Author cabinet is web-only, no Telegram bot commands for authors
+- [ ] Subscriber flow is Telegram bot + Mini App only, no separate web registration
+- [ ] One Pager is HTML stored in `Strategy.full_description`, rendered server-side
+- [ ] Payment confirmation is manual (admin action) — no automatic payment API calls
+- [ ] Moderator role: enum exists, no UI, no enforcement, `requires_moderation=False`
+- [ ] MinIO: infrastructure up, but no upload routes in MVP
+- [ ] Bot mode: `USE_WEBHOOK=true` in production, `USE_WEBHOOK=false` in local dev
+- [ ] Instruments sourced from `instruments_stub.json` only — no live market API calls in MVP
 
-## 5. Что считается правильным направлением
-Reviewer должен считать хорошим признаком:
-- появление local filesystem storage backend;
-- перевод attachment routes на provider-aware branch;
-- появление явного runtime switch `APP_DATA_MODE=db|file`;
-- появление repository abstraction;
-- уменьшение зависимости service layer от `AsyncSession` хотя бы в частично мигрированных контурах;
-- появление JSON-backed file repositories для реальных доменных сущностей, а не только для toy examples;
-- появление file-mode seed/bootstrap path;
-- появление committed demo seed data и demo blob file для локального smoke-test;
-- уменьшение прямой зависимости routes/services от `AsyncSession`;
-- выравнивание attachment metadata под локальные пути;
-- сохранение Telegram-first UX при persistence refactor.
-- улучшение Telegram self-service без возврата к password-first subscriber model.
-- удаление compatibility layers после согласования нового canonical contour.
+---
 
-## 6. Что еще обязательно ждет реализации
-Reviewer должен помнить, что после текущего refactor track все еще нужны:
-- real SBP production hardening
-- full file-mode parity for demo path
-- richer subscriber notification granularity and action composition inside Mini App
-- promo/discount lifecycle `[done baseline]`
-- baseline done: admin CRUD, checkout apply path, paid-redemption counters, manual discounts, Mini App promo actions, expiry/cancel automation
-- moderation analytics/SLA UX `[partial]`
-- baseline done: queue filters, overdue SLA, resolution latency
-- lead source analytics `[partial]`
-- baseline done: normalized checkout attribution and admin source report
-- worker retries and observability
-- compose profiles should stay optional, not canonical runtime dependencies
-- deeper metrics/export path for worker and delivery ops
+## Reviewer Sign-off
 
-Если изменение делает путь к этим задачам хуже, это finding.
+| Check Area       | Reviewer | Date | Result |
+|-----------------|----------|------|--------|
+| P0 Security      |          |      | Pass / Fail |
+| P0 Data Integrity|          |      | Pass / Fail |
+| P0 Notifications |          |      | Pass / Fail |
+| P1 ACL/Roles     |          |      | Pass / Fail |
+| P1 Recommendations|         |      | Pass / Fail |
+| P1 UI/Templates  |          |      | Pass / Fail |
+| P2 Code Quality  |          |      | Pass / Fail |
+| P3 Product Drift |          |      | Pass / Fail |
 
-## 7. Tests
-Ожидаемый минимум:
-- auth/session
-- admin UI
-- author workspace
-- public commerce
-- payment activation
-- ACL delivery
-- DB/Alembic smoke
-- storage backend tests
-- file repository tests once file mode starts landing
-
-Если критичный flow изменен без тестов, это finding или testing gap по риску.
-
-## 8. Приоритеты
-- `P0`: auth bypass, ACL bypass, data leak, payment corruption, access without entitlement
-- `P1`: broken Telegram-first migration path, broken checkout/confirm, broken file-mode contract, unsafe local storage path
-- `P2`: product correctness issue, docs drift, repository/storage inconsistency
-- `P3`: robustness gap, testing gap, maintainability issue
-
-## 9. Формат ответа
-Отвечай всегда так:
-1. Findings
-2. Open Questions
-3. Residual Risks / Testing Gaps
-4. Change Summary
-
-Если findings нет, напиши это явно.
-
-## 10. Важные правила
-- Не начинай со стиля, если есть correctness issues.
-- Считать docs/code drift реальной проблемой.
-- Не путать current implementation и target architecture.
-- Проверять цепочку:
-  `Telegram identity -> payment -> subscription -> entitlement -> delivery`.
-- Проверять вторую цепочку:
-  `runtime mode -> repository -> storage path -> attachment/legal persistence`.
-
-## 11. Clean -> Review gate для следующих этапов
-Перед любым demo/release reviewer должен ожидать не только код, но и operational hygiene.
-
-Проверять:
-- очищается ли только `storage/runtime/*`, а не committed seed;
-- не предлагает ли change ручное редактирование runtime state вместо нормального flow;
-- есть ли понятный cold-start path для `file` mode;
-- не запускается ли один и тот же bot token одновременно в двух polling instances.
-
-## 12. Release readiness review
-Если change связан с запуском локально или на сервере, reviewer должен отдельно проверить:
-- есть ли актуальная локальная инструкция запуска;
-- есть ли актуальная server инструкция запуска;
-- не опирается ли инструкция на устаревший compose path, если текущий canonical путь уже другой;
-- согласованы ли `.env.example`, `README.md`, `doc/blueprint.md`, `doc/task.md`;
-- есть ли committed deploy bundle в репозитории, если server path заявлен как `git clone -> run`;
-- согласован ли server secret contract, например `.env.server`;
-- если change добавляет operator/tester asset, например PDF guide, он должен соответствовать текущему domain/runtime contour;
-- учитывает ли инструкция реальный deploy contour:
-  - `api`
-  - `bot`
-  - `worker`
-  - host nginx reverse proxy
-  - storage root
-## Deploy review note
-- Verify host nginx upstream matches compose API bind (`127.0.0.1:8110`).
+PR can merge only when all P0 and P1 items pass.

@@ -43,6 +43,16 @@ class EnvName:
     APP_STORAGE_ROOT = "APP_STORAGE_ROOT"
     LOG_LEVEL = "LOG_LEVEL"
     LOG_JSON = "LOG_JSON"
+    INTERNAL_API_SECRET = "INTERNAL_API_SECRET"
+    REDIS_URL = "REDIS_URL"
+    TELEGRAM_WEBHOOK_URL = "TELEGRAM_WEBHOOK_URL"
+    SMTP_HOST = "SMTP_HOST"
+    SMTP_PORT = "SMTP_PORT"
+    SMTP_SSL = "SMTP_SSL"
+    SMTP_USER = "SMTP_USER"
+    SMTP_PASSWORD = "SMTP_PASSWORD"
+    SMTP_FROM = "SMTP_FROM"
+    SMTP_FROM_NAME = "SMTP_FROM_NAME"
 
 
 def _normalize_secret(value: SecretStr | str) -> str:
@@ -131,6 +141,20 @@ class AuthSettings(BaseModel):
     session_cookie_name: str
 
 
+class NotificationSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    internal_api_secret: SecretStr
+    redis_url: str
+    smtp_host: str
+    smtp_port: int
+    smtp_ssl: bool
+    smtp_user: str
+    smtp_password: SecretStr
+    smtp_from: str
+    smtp_from_name: str
+
+
 class StorageSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -188,6 +212,17 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", alias=EnvName.LOG_LEVEL)
     log_json: bool = Field(default=False, alias=EnvName.LOG_JSON)
+
+    internal_api_secret: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.INTERNAL_API_SECRET)
+    redis_url: str = Field(default="redis://localhost:6379/0", alias=EnvName.REDIS_URL)
+    telegram_webhook_url: str = Field(default="", alias=EnvName.TELEGRAM_WEBHOOK_URL)
+    smtp_host: str = Field(default="relay.ptfin.kz", alias=EnvName.SMTP_HOST)
+    smtp_port: int = Field(default=465, alias=EnvName.SMTP_PORT)
+    smtp_ssl: bool = Field(default=True, alias=EnvName.SMTP_SSL)
+    smtp_user: str = Field(default="pct@ptfin.ru", alias=EnvName.SMTP_USER)
+    smtp_password: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.SMTP_PASSWORD)
+    smtp_from: str = Field(default="pct@ptfin.ru", alias=EnvName.SMTP_FROM)
+    smtp_from_name: str = Field(default="PitchCopyTrade", alias=EnvName.SMTP_FROM_NAME)
 
     @field_validator("app_env")
     @classmethod
@@ -333,6 +368,20 @@ class Settings(BaseSettings):
         return AuthSettings(
             session_ttl_seconds=self.auth_session_ttl_seconds,
             session_cookie_name=self.auth_session_cookie_name,
+        )
+
+    @property
+    def notifications(self) -> NotificationSettings:
+        return NotificationSettings(
+            internal_api_secret=self.internal_api_secret,
+            redis_url=self.redis_url,
+            smtp_host=self.smtp_host,
+            smtp_port=self.smtp_port,
+            smtp_ssl=self.smtp_ssl,
+            smtp_user=self.smtp_user,
+            smtp_password=self.smtp_password,
+            smtp_from=self.smtp_from,
+            smtp_from_name=self.smtp_from_name,
         )
 
     @property

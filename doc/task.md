@@ -1,703 +1,413 @@
-# PitchCopyTrade Task Pack
-
-Дата: 2026-03-12  
-Режим: current implementation status + migration roadmap to local storage and file mode
-
-Current review checkpoint:
-- `2026-03-12`
-- full regression suite: `165 passed`
-- no critical findings
-- current focus shifts from baseline delivery to product hardening and subscriber UX depth
-
-Process rule:
-- after each completed implementation step, run review first;
-- only after review update all current description files:
-  - [README.md](/Users/alexey/site/PitchCopyTrade/README.md)
-  - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
-  - [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
-  - [review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
-
-Статусы:
-- `[done]`
-- `[partial]`
-- `[refactor]`
-- `[todo]`
-
-## 1. Что уже сделано
-
-### 1. Foundation infrastructure `[done]`
-- project skeleton
-- `api`, `bot`, `worker`
-- Docker baseline
-- `.env.example`
-
-### 2. Config and runtime `[done]`
-- typed settings
-- runtime bootstrap
-- base logging
-- fail-fast env
-
-### 3. Database foundation `[done]`
-- domain models
-- enums
-- constraints
-- ORM relationships
-
-### 4. Alembic foundation `[done]`
-- Alembic env
-- initial migration
-- migration smoke path
-
-### 5. FastAPI baseline `[done]`
-- health
-- ready
-- meta
-- lifespan
-
-### 6. Bot baseline `[done]`
-- aiogram app
-- dispatcher
-- `/start`
-
-### 7. Worker baseline `[done]`
-- worker loop
-- job registry
-
-### 8. Storage baseline `[done]`
-- attachment storage wrapper exists
-- upload/download/delete/stat contract exists
-
-### 9. Auth foundation `[done]`
-- password hashing
-- session token
-- role mapping
-
-### 10. Compliance foundation `[done]`
-- legal docs model
-- consent-before-payment logic
-
-### 11. Staff web baseline `[done]`
-- auth UI for staff
-- admin dashboard
-- strategy CRUD
-- subscription product CRUD
-- payment review / confirm / activation
-
-### 12. Author workspace baseline `[done]`
-- author dashboard
-- recommendation CRUD
-- own-strategy scoping
-- preview
-- structured legs
-- attachments
-
-### 12.1 Author editor responsive refactor `[done]`
-Сделано:
-- `author/recommendation_form.html` переведен на responsive class-based layout без inline-grid drift
-- первая бумага всегда присутствует и обязательна
-- остальные бумаги добавляются через `+ Добавить бумагу`
-- нельзя удалить последнюю оставшуюся бумагу
-- parser form data больше не зависит от fixed ceiling
-- validation требует минимум одну заполненную бумагу с корректным инструментом и направлением
-- dynamic row ids восстанавливаются в форме после validation error
-
-Acceptance:
-- поля не наезжают друг на друга на обычном desktop width и на tablet/mobile
-- author может добавить больше 5 бумаг без изменения backend contract
-- при ошибке валидации все динамически добавленные legs восстанавливаются в форме
-- business rule `минимум 1 бумага` enforced server-side
-
-### 13. Subscriber commerce baseline `[done]`
-- public catalog
-- strategy detail
-- checkout `stub/manual`
-- Telegram subscriber baseline
-- Telegram-auth fallback for `/app/*`
-- ACL delivery in web and bot
-
-### 13.1 Telegram-only subscriber reset `[done]`
-- subscriber bot commands reduced to `/start` and `/help`
-- Mini App became the main client surface for catalog, status, payments and feed
-- subscriber-facing web pages removed `Вход` and legacy `/web` guidance
-- checkout no longer asks client for manual timezone or lead source
-- Mini App context is preserved across catalog, strategy and checkout pages
-
-### 14. Recommendation lifecycle baseline `[done]`
-- moderation queue
-- moderation history baseline
-- scheduled publish baseline
-- delivery notifications baseline
-
-## 2. Что исследование признало transitional
-
-### 15. Remote storage as primary model `[refactor]`
-Текущее состояние:
-- attachment flow ориентирован на `MinIO`
-- `docker-compose.yml` больше не делает `minio` обязательным runtime service
-- metadata по-прежнему bucket/object oriented
-
-Новая цель:
-- primary storage = локальная файловая система
-- `MinIO` максимум optional compatibility backend
-
-### 16. DB-only runtime `[refactor]`
-Текущее состояние:
-- `db` mode по-прежнему поддержан
-- `file` mode уже работает для test contour
-- remaining проблема не в отсутствии file mode, а в неполной parity
-
-Новая цель:
-- `db` mode через `PostgreSQL`
-- `file` mode без БД для тестирования
-
-### 17. Current web fallback surfaces `[partial]`
-Сделано:
-- subscriber web fallback уже зависит от Telegram-auth path
-
-Нужно:
-- не углублять fallback как primary path
-- перевести его на storage/file-mode parity
-
-## 3. Новый обязательный migration track
-
-### 18. Local filesystem storage foundation `[done]`
-Сделано:
-- общий storage contract
-- `LocalFilesystemStorage`
-- `APP_STORAGE_ROOT`
-- default runtime blob root `storage/runtime/blob`
-- local storage tests
-- attachment download path understands `storage_provider=local_fs`
-- author/document flows already use local filesystem path in file mode
-
-Acceptance:
-- attachments можно сохранять и читать без `MinIO`
-- local path становится canonical metadata source
-
-### 19. Runtime switch for persistence `[done]`
-Сделано:
-- введен `APP_DATA_MODE=db|file`
-- введен `APP_STORAGE_ROOT`
-- runtime metadata now exposes data mode and storage root
-- `file` mode не требует `DATABASE_URL`, `ALEMBIC_DATABASE_URL` и `MINIO_ROOT_PASSWORD` на уровне config/runtime
-- DB engine создается только в `db` mode
-
-Acceptance:
-- приложение стартует в двух режимах без правки application code
-
-### 20. Repository abstraction `[partial]`
-Сделано:
-- repository package introduced
-- `SqlAlchemyAuthorRepository`
-- `SqlAlchemyAccessRepository`
-- `FileAuthorRepository`
-- `FileAccessRepository`
-- `FilePublicRepository`
-- `FileAuthRepository`
-- `FileDataStore`
-- `FileDatasetGraph`
-- repository deps for FastAPI
-- author service layer detached from direct `AsyncSession` usage
-- ACL/feed service layer detached from direct `AsyncSession` usage
-- `author`, `ACL/feed`, `public`, `auth` and verified admin smoke paths now switch to file repositories in `APP_DATA_MODE=file`
-
-Сделать:
-- вынести critical persistence operations в repositories
-- подготовить dual implementation:
-  - DB repositories
-  - file repositories
-
-Минимальный scope:
-- users / roles
-- authors
-- strategies
-- products
-- legal docs / consents
-- payments / subscriptions
-- recommendations / legs / attachments
-
-Acceptance:
-- service layer не зависит напрямую от `AsyncSession`
-
-### 21. File repositories for demo path `[partial]`
-Сделано:
-- JSON-backed file datasets under `storage/runtime/json` with bootstrap from `storage/seed/json`
-- file repositories for minimal demo scope:
-  - users
-  - roles
-  - authors
-  - strategies
-  - products
-  - legal docs
-  - payments
-  - subscriptions
-  - recommendations
-  - recommendation legs
-  - recommendation attachments
-- hydration graph into ORM-like domain objects
-- author create/edit persistence can now save recommendations, legs and attachments without DB
-- ACL/feed can now read user entitlements and recommendations without DB
-- committed demo seed datasets in `storage/seed/json`
-- committed demo blob attachment in `storage/seed/blob`
-- `staff auth`, `admin dashboard` and `author dashboard` verified in `file` mode
-- `Telegram checkout -> admin confirm -> Telegram feed` verified in `file` mode on fresh temp storage root
-
-Сделать:
-- safe write hardening and concurrent-write strategy
-- expand file repo coverage to moderation flows
-- add seed/bootstrap generator and real file-mode execution path for complete local demo
-
-Acceptance:
-- можно пройти demo flow без PostgreSQL
-
-### 22. Local attachment and legal files `[partial]`
-Сделано:
-- local attachment backend exists
-- local attachment download branch exists
-- author uploads по умолчанию в `storage/runtime/blob`
-- subscriber downloads из `storage/runtime/blob`
-- legal documents now support `source_path`
-- public legal page renders markdown from local storage path
-- seed legal markdown files committed under `storage/seed/blob/legal`
-
-Сделать:
-- убрать transitional dependency from remaining MinIO-only paths
-
-Acceptance:
-- `MinIO` не нужен для локального smoke-test
-
-### 23. File-mode seed data `[done]`
-Сделано:
-- seeded staff accounts
-- seeded subscriber account
-- seeded strategies
-- seeded products for `strategy / author / bundle`
-- seeded legal docs
-- seeded payment/subscription demo records
-- seeded recommendations for feed demo
-- seeded local attachment blob
-- runtime bootstrap copies seed into local ignored runtime tree
-
-Acceptance:
-- локальный запуск больше не требует ручного наполнения через БД для demo read-path
-- file repositories имеют committed demo dataset в репозитории
-- локальные изменения тестировщика уходят в ignored runtime tree, а не в tracked seed
-
-### 24. File-mode payment/subscription demo `[done]`
-Сделано:
-- file-backed checkout artifacts
-- manual payment confirm path
-- activation path
-- verified path:
-  - `Telegram /start -> Mini App`
-  - `Mini App checkout`
-  - `payment pending`
-  - `admin confirm`
-  - `subscriber /app/feed` sees recommendation after activation
-
-Acceptance:
-- subscriber flow можно проверить локально end-to-end
-
-### 24.1 File-mode process startup `[done]`
-Сделано:
-- `api` cold-start smoke in `APP_DATA_MODE=file`
-- `bot` cold-start smoke in `APP_DATA_MODE=file`
-- real Telegram API smoke for test bot `Avt09_Bot`
-- `worker` cold-start smoke in `APP_DATA_MODE=file`
-- public catalog/legal flow works without PostgreSQL
-- bot shop handlers work with file repository path
-- worker scheduled publish runner has file-mode branch
-- seeded author login and author dashboard work in file mode
-- verified e2e on fresh temp storage root:
-  - `admin` login -> dashboard
-  - `author` login -> dashboard
-  - `Telegram checkout -> confirm -> feed`
-
-Acceptance:
-- `api + bot + worker` можно поднимать без PostgreSQL и без MinIO
-- локальный smoke path опирается на committed seed + ignored runtime tree
-- test bot token from `.env` подтвержден реальным `getMe` check
-
-## 4. Что уже реализовано и должно сохраниться в refactor
-
-### 25. Telegram-first subscriber model `[partial]`
-Сделано:
-- subscriber path moved to Telegram-first baseline
-- no subscriber password-first requirement
-- Telegram-auth fallback exists
-
-Нужно сохранить:
-- primary identity = `telegram_user_id`
-- minimum necessary data policy
-
-### 26. Staff auth and workspaces `[partial]`
-Сделано:
-- admin/author/moderator web auth
-- admin dashboard
-- author workspace
-- moderation queue
-
-Нужно сохранить:
-- staff flows должны работать и в `db`, и в `file` mode
-
-### 27. ACL and payment lifecycle `[partial]`
-Сделано:
-- checkout -> payment pending -> confirm -> subscription activation
-- ACL gating in web and bot
-
-Нужно сохранить:
-- одинаковое поведение в `db` и `file` mode
-
-### 28. Recommendation lifecycle `[partial]`
-Сделано:
-- recommendation CRUD
-- moderation
-- publish/schedule
-- notifications baseline
-
-Нужно сохранить:
-- scheduled publish
-- attachment rendering
-- scope and ACL guarantees
-
-## 5. Самый быстрый путь к локальному тестированию
-
-### 29. Fast-track order `[done]`
-Делать строго так:
-1. local storage adapter
-2. runtime switch `APP_DATA_MODE`
-3. file repositories for minimal scope
-4. seed data for file mode
-5. local attachment serving
-6. run `api + bot + worker` in file mode
-7. connect test bot and run Telegram smoke-test
-8. open local staff web and author cabinet
-
-### 30. Fast-track acceptance `[done]`
-Считать быстрый путь завершенным, когда:
-- сайт открывается локально;
-- admin login работает локально;
-- author login работает локально;
-- test bot отвечает и показывает каталог;
-- можно оформить `stub/manual` checkout;
-- можно подтвердить платеж и увидеть доступ к feed;
-- все это проходит без PostgreSQL и без `MinIO`.
-
-## 6. После этого остаются продуктовые задачи
-
-### 31. Telegram UX depth `[partial]`
-Сделано:
-- Telegram-only command surface:
-  - `/start`
-  - `/help`
-- reply keyboard reduced to Mini App + help
-- Mini App entry baseline
-- deployed `https` host now allows Telegram `Mini App` button in real bot flow
-- subscriber navigation moved into Mini App sections:
-  - каталог
-  - подписки
-  - оплаты
-  - лента
-  - помощь
-- web fallback now redirects to `/verify/telegram` instead of raw unauthorized response
-- timezone is auto-detected from client/browser
-- lead source attribution is automatic
-
-Не сделано:
-- full WebApp auth bridge
-- richer in-app actions beyond current Mini App pages
-
-### 32. Legal admin UI `[done]`
-- document CRUD
-- version publish UI
-- active version management
-
-### 33. Promo/discount lifecycle `[done baseline]`
-Сделано:
-- admin promo registry
-- promo create/edit UI
-- checkout promo apply path
-- payment-linked redemption counters
-- manual discounts
-- richer Telegram promo UX inside retry/renew flows
-- expiry/cancel flows
-
-Acceptance:
-- admin can apply a manual discount before confirming a mutable payment
-- subscriber can reuse or replace a promo code inside Mini App retry/renew flows
-- expired payments and subscriptions transition without manual DB edits
-
-### 34. Delivery admin UX `[done]`
-- notification queue
-- retry/dedup
-- delivery audit visibility
-- metrics still remain as hardening, not as baseline blocker
-
-### 35. Moderation analytics/SLA `[partial]`
-Сделано:
-- queue filters by query and status
-- overdue review visibility
-- approve/rework/reject counters
-- resolution latency metric on queue and detail
-
-Сделать:
-- richer timeline slicing
-- moderator workload breakdown
-- export/reporting
-
-### 36. Lead source analytics `[partial]`
-Сделано:
-- normalized lead source attribution on checkout
-- file/db compatible source lookup and creation
-- admin lead source analytics report
-
-Сделать:
-- richer campaign breakdown
-- time-range filtering
-- conversion slices by source
-
-### 37. Worker hardening `[partial]`
-Сделано:
-- per-job fault tolerance in worker loop
-- per-job duration logging
-- notification retries baseline
-
-Сделать:
-- broader lifecycle jobs
-- stronger metrics/export path
-
-## 8. Следующий этап после test-launch
-
-### 38. Deployment hardening `[done]`
-Сделано:
-- canonical server deploy path documented
-- dedicated docker server compose committed in repo
-- host `nginx` reverse proxy config committed in repo
-- committed deploy bundle inside repo:
-  - `deploy/docker-compose.server.yml`
-  - `deploy/nginx/pct.test.ptfin.ru.conf`
-  - `deploy/env.server.example`
-  - `deploy/README.md`
-  - `doc/guide.pdf`
-- canonical server root `/var/www/pct`
-- secret runtime file `.env.server`
-- update/restart procedure documented
-
-Сделано:
-- first server prototype validated on target host
-- `admin` login validated on deployed host
-- Telegram bot polling validated on deployed host
-- `https` enabled for `pct.test.ptfin.ru`
-
-Acceptance:
-- test version можно поднимать на одной выделенной машине без ручного старта процессов
-
-### 39. Compose cleanup `[done]`
-- `postgres` and `minio` live behind optional compose profiles
-- `api` and `worker` no longer hard depend on MinIO in file mode
-- real server path is separated from dev-only assumptions
-
-Acceptance:
-- file-mode compose path не требует MinIO по умолчанию
-
-### 40. Full file-mode parity `[partial]`
-- notifications persistence edges
-- publishing edge cases
-- remaining auth/session fallback paths
-
-Acceptance:
-- all critical test-version contours behave одинаково в `db` и `file`
-
-### 41. Legal admin UI hardening `[done]`
-- local markdown editor
-- version activation
-- active document management
-
-Acceptance:
-- legal docs можно править без ручного редактирования файлов на сервере
-
-### 42. Telegram UX phase `[done]`
-Сделано:
-- conditional WebApp button behavior for `http` vs `https` environments
-- subscriber bot surface reduced to `/start` and `/help`
-- legacy subscriber bot handlers physically removed from the codebase
-- Telegram verification page for web fallback
-- safe local `next` redirect in `/tg-auth`
-- `/app/status` as web fallback landing page after Telegram verification
-- Mini App automatic auth bridge through `/tg-webapp/auth`
-- `/miniapp` became the canonical Telegram bootstrap entry
-- canonical subscriber workspace now lives at:
-  - `/app/catalog`
-  - `/app/status`
-  - `/app/subscriptions`
-  - `/app/payments`
-  - `/app/feed`
-  - `/app/help`
-- Mini App catalog/workspace shows subscriber overview when Telegram auth cookie already exists
-- Mini App checkout now uses Telegram-linked identity and accepted legal docs
-- public site and Mini App subscriber routes are split into separate canonical surfaces without `surface=miniapp` compatibility mode
-
-Acceptance:
-- subscriber flow больше не зависит от legacy bot command interaction
-- Mini App is the canonical subscriber UI instead of a web/catalog overlay
-
-### 43. Mini App self-service detail/actions `[done]`
-Сделано:
-- subscriber payment detail page
-- subscriber subscription detail page
-- `pending` payment cancellation from Mini App
-- autorenew toggle from Mini App
-- Russian status labels for payment and subscription lifecycle
-
-Acceptance:
-- subscriber can inspect payment/subscription state without staff help
-- subscriber can cancel a pending payment request from Mini App
-- subscriber can manage autorenew inside Mini App
-- Mini App does not expose raw English enum values for payment/subscription lifecycle
-
-### 44. Mini App payment recovery and renewal `[done]`
-Сделано:
-- payment refresh action for provider-driven `pending` payments
-- payment retry flow for `failed / expired / cancelled`
-- subscription renewal flow from Mini App
-- redirect from retry/renew into the newly created payment detail page
-
-Acceptance:
-- subscriber can recover an unfinished payment scenario without staff help
-- subscriber can start renewal from the current subscription card
-- recovery flow stays inside Mini App and remains Telegram-linked
-
-### 45. Mini App payment messaging/history and reminders `[done]`
-Сделано:
-- payment result messaging inside payment detail page
-- provider state history rendering inside payment detail page
-- renewal history rendering inside subscription detail page
-- worker-driven subscriber reminders:
-  - pending payment reminder
-  - expiring subscription reminder
-- reminder dedup through audit events
-
-Acceptance:
-- subscriber sees a clear next step on payment detail page
-- subscriber can inspect payment history and renewal history inside Mini App
-- worker reminders do not repeat endlessly on each tick for the same payment/subscription
-### 46. Reminder center, notification preferences and timeline `[done]`
-Сделано:
-- страница центра напоминаний в Mini App
-- настройки напоминаний подписчика по оплатам и подпискам
-- единая страница событий по оплатам и подпискам
-- отправка напоминаний теперь учитывает сохраненные настройки подписчика
-
-Acceptance:
-- subscriber can review reminder history inside Mini App
-- subscriber can enable/disable reminder categories without staff help
-- Mini App exposes a unified event timeline for payments and subscriptions
-### 47. Full WebApp auth bridge and richer Mini App actions `[done]`
-Сделано:
-- полный WebApp auth bridge для всех Mini App страниц
-- action cards на статус-экране
-- inline действия в списках оплат и подписок
-- промокод в retry/renew flows
-- отмена подписки из subscriber card
-- staff-side manual discount для `pending` `stub_manual` платежей
-- worker expiry/cancel lifecycle для платежей и подписок
-
-Acceptance:
-- subscriber can open any Mini App page and stay inside Telegram-backed auth contour
-- subscriber can restore failed payment flow, renew access and stop a subscription without leaving Mini App
-- mutable payment discounts do not require direct DB edits
-- due payment/subscription lifecycle changes happen automatically in worker
-### 48. Release and review discipline `[todo]`
-- clean runtime checklist
-- technical review checklist
-- product smoke checklist
-- docs sync checklist
-
-Acceptance:
-- каждый новый этап проходит одинаковый `clean -> review -> docs -> deploy` контур
-
-## 9. Что делать дальше до business-complete state
-
-### 49. HTTPS enablement `[done]`
-- certificate issued for `pct.test.ptfin.ru`
-- deployed `BASE_URL` switched to `https`
-- Telegram WebApp prerequisites validated on deployed host
-
-Acceptance:
-- deployed host serves app over `https`
-- bot can safely expose `Mini App` button
-
-### 50. Real SBP payments `[partial]`
-Сделано:
-- provider-aware checkout service
-- `T-Bank` SBP adapter foundation
-- `stub/manual` kept as operator fallback
-- provider payment id is persisted in checkout records
-- worker `payment_expiry_sync` polls pending `T-Bank` payments through `GetState`
-- confirmed provider state auto-activates linked subscriptions
-- terminal failed provider state auto-cancels pending subscriptions
-- sync writes `worker.payment_state_sync` audit events
-- runtime dependency `httpx` moved to main project dependencies because live payment code imports it outside test-only scope
-- `T-Bank` callback endpoint exists at `/payments/tbank/notify`
-- callback token is validated before payment state update
-- callback path writes `payment.webhook_sync` audit events
-
-Сделать:
-- production credential rollout on target host
-- callback rollout hardening on target host
-
-Acceptance:
-- user can pay in RUB via real SBP flow
-- payment confirmation does not rely only on manual admin action
-
-### 51. Admin subscription registry `[done]`
-- full list of subscriptions
-- start/end dates
-- payment status
-- search by user / strategy / author
-- access scope visibility
-
-Acceptance:
-- admin can answer who is subscribed to what and until when
-
-### 52. Author publish UX hardening `[done]`
-- better multi-leg recommendation editor
-- attachment replace/delete flow
-- clearer draft/review/publish path
-
-Acceptance:
-- author can publish complex recommendation sets without manual operator help
-
-### 53. Legal and compliance operations `[done]`
-- legal docs admin UI
-- version activation
-- consent visibility in admin surfaces
-
-Acceptance:
-- legal lifecycle no longer requires manual file edits in runtime operations
-
-### 54. Delivery operations `[done]`
-- notification queue
-- retry / dedup visibility
-- delivery audit visibility for support
-
-Acceptance:
-- support/admin can understand whether recommendation delivery succeeded
-
-### 52. Final persistence hardening `[todo]`
-- finish remaining file-mode parity
-- compose cleanup `[done]`
-- backup/restore workflow for `storage/`
-
-Acceptance:
-- deployed prototype can be operated and recovered predictably
-
-## 7. Правила, которые нельзя ломать
-- subscriber path остается `Telegram-first`
-- `admin`, `author`, `moderator` остаются отдельным staff contour
-- pending payment не дает доступ
-- entitlement rules одинаковы в web и bot
-- новые шаги не должны усиливать remote storage dependency
-- новые шаги не должны делать БД обязательной для базового локального тестирования
-### Server deploy note
-- host nginx canonical upstream must be `127.0.0.1:8110`
+# PitchCopyTrade — MVP Implementation Task Pack
+> Version: 0.2.0
+> Updated: 2026-03-18
+> Process: implement phases sequentially; each phase must pass its acceptance criteria before next begins
+
+---
+
+## Status Legend
+- `[ ]` — pending
+- `[~]` — in progress
+- `[x]` — completed
+- `[!]` — blocked / needs decision
+
+---
+
+## Phase 0 — Foundation (completed)
+> Foundation was established in initial commit. Do not modify unless Phase regression.
+
+- [x] Project packaging (pyproject.toml, src layout)
+- [x] Docker Compose baseline (api, bot, worker, postgres, minio)
+- [x] Env-based config (pydantic-settings, .env)
+- [x] API health endpoints (`/health`, `/ready`, `/meta`)
+- [x] Bot stub entry point (aiogram 3)
+- [x] Worker stub entry point
+- [x] Initial DB schema + Alembic migration (18 tables)
+- [x] MinIO storage adapter skeleton
+- [x] Test framework (pytest-asyncio, httpx)
+
+---
+
+## Phase 1 — Reset & Clean Slate
+
+**Goal:** Service starts with zero legacy data, no instructions in UI, clean database.
+
+### Tasks
+- [ ] **1.1** Add `notification_queue` table to Alembic migration (new revision)
+  - Fields: id, recommendation_id, channel, recipient_user_id, status, attempts, last_error, scheduled_at, sent_at, created_at
+  - Add `NotificationStatus` enum: pending, sent, failed, skipped
+  - Add `NotificationChannel` enum: telegram, email
+
+- [ ] **1.2** Add instruments seeder
+  - Create `src/pitchcopytrade/db/seeders/instruments.py`
+  - Load from `doc/instruments_stub.json`
+  - Upsert on ticker (skip if already exists)
+  - Call seeder from API startup event (only if instruments table is empty)
+
+- [ ] **1.3** Add admin user seeder
+  - Create `src/pitchcopytrade/db/seeders/admin.py`
+  - Reads `ADMIN_TELEGRAM_ID` and `ADMIN_EMAIL` from env
+  - Creates User + Role(admin) if not exists
+  - Call from API startup event
+
+- [ ] **1.4** Create full reset script
+  - `scripts/reset.sh` — drops volumes, removes images, restores clean state
+  - Document in README.md § "Full Reset Procedure"
+
+### Acceptance Criteria
+- `docker-compose up --build` on clean machine produces empty tables (except instruments + admin user)
+- No sample data, no placeholder rows anywhere
+
+---
+
+## Phase 2 — Bot Webhook & Internal Broadcast API
+
+**Goal:** Bot runs in webhook mode on dedicated server; API can trigger broadcasts.
+
+### Tasks
+- [ ] **2.1** Webhook activation
+  - Add `USE_WEBHOOK` env flag (already in config)
+  - In `bot/main.py`: if `USE_WEBHOOK=true`, register webhook via `bot.set_webhook(url)`
+  - Expose bot on port `8080` internally (aiohttp webhook server)
+  - Add health check endpoint on bot: `GET /health`
+
+- [ ] **2.2** Internal broadcast endpoint
+  - In bot service: `POST /internal/broadcast`
+  - Auth: `X-Internal-Token` header (shared secret from env `INTERNAL_API_SECRET`)
+  - Payload: `{ "recommendation_id": "<uuid>" }`
+  - Handler: fetch recommendation + legs + strategy from DB
+  - Fetch all users with `Subscription.status = active` for this strategy
+  - Send formatted Telegram message to each subscriber
+  - Message format: see blueprint.md §9
+
+- [ ] **2.3** Docker Compose updates
+  - Bot service: expose port 8080 internally
+  - Add `INTERNAL_API_SECRET` to env
+  - Add reverse proxy rule (nginx or Caddy) for Telegram webhook path
+
+- [ ] **2.4** Webhook setup docs
+  - README.md § "Telegram Webhook Setup" — step-by-step for dedicated server
+
+### Acceptance Criteria
+- `curl -X POST http://localhost:8080/internal/broadcast -H "X-Internal-Token: ..." -d '{"recommendation_id":"..."}' ` sends message to test subscriber
+- Bot logs show webhook registration on startup when `USE_WEBHOOK=true`
+
+---
+
+## Phase 3 — Telegram Auth for Author Web Cabinet
+
+**Goal:** Author can authenticate in web cabinet using Telegram Login Widget.
+
+### Tasks
+- [ ] **3.1** Telegram Login Widget endpoint
+  - `GET /auth/telegram/callback` — receives Telegram auth data
+  - Verify HMAC-SHA256 signature using `BOT_TOKEN`
+  - Reject if `auth_date` older than 5 minutes
+  - Look up User by `telegram_user_id`; return 401 if not found (must be pre-created by admin)
+  - Create signed JWT (HttpOnly, Secure, SameSite=Strict, 24h expiry)
+  - Redirect to `/cabinet/`
+
+- [ ] **3.2** Session middleware
+  - `src/pitchcopytrade/api/middleware/auth.py`
+  - `get_current_user()` dependency: decode JWT, fetch User from DB
+  - `require_role(role_slug)` dependency factory
+
+- [ ] **3.3** Login page template
+  - `src/pitchcopytrade/templates/auth/login.html`
+  - Telegram Login Widget button
+  - No username/password form
+  - No instructions — just the Telegram button and logo
+
+- [ ] **3.4** Auth routes
+  - `GET /auth/login` → renders login.html
+  - `GET /auth/telegram/callback` → verify + redirect
+  - `POST /auth/logout` → clear cookie + redirect to /auth/login
+
+### Acceptance Criteria
+- Author with valid `telegram_user_id` in DB can log in
+- User not in DB gets 401 page (no registration self-service)
+- JWT verified on every protected route
+
+---
+
+## Phase 4 — Admin Cabinet
+
+**Goal:** Admin can create authors and manage basic settings.
+
+### Tasks
+- [ ] **4.1** Admin cabinet layout template
+  - `src/pitchcopytrade/templates/admin/layout.html`
+  - Left nav: Авторы | One Pager | Метрики | Выплаты
+  - No instructions, no help text anywhere
+
+- [ ] **4.2** Authors management page
+  - `GET /admin/authors` — list of authors (name, telegram_id, email, active)
+  - `POST /admin/authors` — create author
+    - Form fields: `display_name` (required), `email` (optional), `telegram_user_id` (optional)
+    - Creates: User + AuthorProfile (slug auto-generated from display_name) + user_roles(author)
+    - Sets `requires_moderation=False`
+  - `POST /admin/authors/{id}/toggle` — activate/deactivate
+
+- [ ] **4.3** One Pager editor
+  - `GET /admin/onepager/{strategy_id}` — edit One Pager
+  - `POST /admin/onepager/{strategy_id}` — save HTML content
+  - Store in `Strategy.full_description` as HTML
+  - Preview button opens `/s/{strategy_slug}` in new tab
+
+- [ ] **4.4** Metrics page
+  - `GET /admin/metrics`
+  - Cards: total subscribers, active subscriptions, new this week
+  - Table: strategy → subscriber count (aggregated, no individual names)
+
+- [ ] **4.5** Payments page (stub)
+  - `GET /admin/payments` — list of pending manual payments
+  - `POST /admin/payments/{id}/confirm` — manually confirm payment → activates subscription
+
+### Acceptance Criteria
+- Admin can create author; new author can immediately log in via Telegram
+- No PII leak: admin cannot see individual subscriber identities in metrics
+
+---
+
+## Phase 5 — Instruments & Ticker Picker
+
+**Goal:** Ticker picker popup backed by instruments_stub.json with client-side search.
+
+### Tasks
+- [ ] **5.1** Instruments API endpoint
+  - `GET /api/instruments` — returns list of active instruments
+  - Response: `[{ ticker, name, last_price, change_pct, board, currency }]`
+  - Served from DB (seeded from instruments_stub.json)
+  - Future: add `?q=` search param for live API proxy
+
+- [ ] **5.2** Ticker picker component
+  - `src/pitchcopytrade/templates/components/ticker_picker.html` (HTMX partial)
+  - Input field triggers `hx-get=/api/instruments?q=...` on keyup (debounce 300ms)
+  - Results table: ticker | name | last_price | change_pct
+  - Click row → fills parent input, closes popup
+  - Recent picks stored in `localStorage` under key `pct_recent_tickers`
+  - Recent picks shown starred at top when no search query
+
+- [ ] **5.3** Include ticker picker in recommendation inline row and popup form
+
+### Acceptance Criteria
+- Typing "SB" in ticker field shows SBER at top
+- Clicking SBER fills the ticker field and closes popup
+- Recent picks persist across page reloads
+
+---
+
+## Phase 6 — Author Cabinet & Strategy Management
+
+**Goal:** Author can create strategies and manage them.
+
+### Tasks
+- [ ] **6.1** Author cabinet layout
+  - `src/pitchcopytrade/templates/cabinet/layout.html`
+  - Left nav: Стратегии | (future: Аналитика)
+  - Header: author display_name + "Выйти" button
+  - No help text, no onboarding
+
+- [ ] **6.2** Strategies list page
+  - `GET /cabinet/strategies` — list author's strategies (title, status, subscriber count)
+  - "Создать стратегию" button
+  - `POST /cabinet/strategies` — create strategy (title required, slug auto-generated)
+  - `GET /cabinet/strategies/{id}` — opens recommendations page for this strategy
+
+- [ ] **6.3** Strategy edit
+  - `GET /cabinet/strategies/{id}/edit` — edit title, short_description, risk_level, min_capital_rub
+  - `POST /cabinet/strategies/{id}/edit` — save
+
+### Acceptance Criteria
+- Author sees only their own strategies (ACL enforced by `strategy.author_id = current_user.author_profile.id`)
+- Strategy slug is unique and URL-safe
+
+---
+
+## Phase 7 — Recommendation CRUD (Inline + Popup)
+
+**Goal:** Author can create, view, and publish recommendations with minimal required fields.
+
+### Tasks
+- [ ] **7.1** Recommendations table page
+  - `GET /cabinet/strategies/{strategy_id}/recommendations`
+  - Table columns: дата | тикер | сторона | цена | цель | стоп | статус | действия
+  - Empty state: no rows, no placeholder text, just empty table + inline add row at bottom
+  - Table starts fully empty on fresh DB
+
+- [ ] **7.2** Inline add row
+  - Last row in table is always an empty editable row
+  - Fields: `[Тикер ▼]` `[BUY ▼]` `[Цена]` `[Цель]` `[Стоп]`
+  - Clicking Тикер → opens Ticker Picker Popup (Phase 5)
+  - BUY/SELL → toggle button or small dropdown
+  - Price/Target/Stop → number inputs, nullable, no validation if empty
+  - Enter or click `[+]` → POST to create recommendation + first leg
+  - New row appears at top of table, inline row resets
+
+- [ ] **7.3** Recommendation creation API
+  - `POST /cabinet/strategies/{strategy_id}/recommendations`
+  - Body: `{ ticker, side, price?, target?, stop? }`
+  - Creates `Recommendation` (kind=new_idea, status=draft, requires_moderation=False)
+  - Creates `RecommendationLeg` (instrument_id from ticker, side, entry_from=price, tp1=target, stop_loss=stop)
+  - Returns HTMX partial with new table row (hx-swap: afterbegin on tbody)
+
+- [ ] **7.4** Full popup form
+  - "Новая рекомендация" button above table → opens modal
+  - Modal fields:
+    - Название (optional text)
+    - Тип: new_idea / update / close / cancel (radio)
+    - Legs (repeatable): Тикер + Сторона + Цена + Цель + Стоп + Заметка
+    - "Добавить ногу" link
+    - Запланировать на (optional datetime)
+  - Submit → same POST endpoint, richer body
+  - Close button (Esc or ×)
+
+- [ ] **7.5** Publish action
+  - Each draft row has "Опубликовать" button
+  - `POST /cabinet/recommendations/{id}/publish`
+  - Sets status=published, published_at=now()
+  - Calls internal broadcast (Phase 2.2) async — do not block UI response
+  - Enqueues email notification in notification_queue
+  - Returns HTMX swap updating just that row's status cell
+
+- [ ] **7.6** Row actions
+  - "Закрыть" (close) → status=closed, closed_at=now()
+  - "Отменить" (cancel) → status=cancelled, cancelled_at=now()
+  - No delete in MVP — soft close/cancel only
+
+### Acceptance Criteria
+- Author creates recommendation with only ticker + side — saves without error
+- Price, target, stop are nullable — blank fields allowed
+- Published recommendation triggers internal broadcast call (verified in API logs)
+- Table row updates in-place after publish (no full page reload)
+
+---
+
+## Phase 8 — ARQ Worker: Immediate Notifications via Redis
+
+**Goal:** On recommendation publish, both Telegram and Email notifications sent immediately via ARQ job queue backed by local Redis.
+
+### Why ARQ
+- Redis already installed locally on the server (`redis://localhost:6379`)
+- ARQ is async-native (asyncio), no polling delay — job picked up in < 1 second
+- Jobs survive worker restart (stored in Redis until processed)
+- Built-in retry with configurable backoff
+
+### Tasks
+- [ ] **8.1** Add ARQ worker entry point
+  - `src/pitchcopytrade/worker/arq_worker.py`
+  - Define `WorkerSettings` with `functions`, `redis_settings`, `max_jobs`, `job_timeout`
+  - Redis URL from `settings.redis_url` (default: `redis://localhost:6379/0`)
+  - Update `worker/main.py` to launch ARQ worker instead of sleep loop
+
+- [ ] **8.2** Define notification job function
+  - `src/pitchcopytrade/worker/jobs/notifications.py`
+  - `async def send_recommendation_notifications(ctx, recommendation_id: str)`
+  - Fetch recommendation + legs + strategy from DB
+  - Fetch all subscribers with `Subscription.status = active` for this strategy
+  - For each subscriber:
+    - If `telegram_user_id` set → POST to `http://bot:8080/internal/broadcast`
+    - If `email` set → send via SMTP (aiosmtplib)
+  - Retries: 3, retry delay: 10s, timeout: 60s
+
+- [ ] **8.3** Enqueue job at publish time
+  - In `POST /cabinet/recommendations/{id}/publish` handler:
+    ```python
+    await arq_pool.enqueue_job("send_recommendation_notifications", str(rec.id))
+    ```
+  - `arq_pool` injected via FastAPI dependency (created at startup, stored on `app.state`)
+  - Publish endpoint returns immediately after enqueue — no waiting for notifications
+
+- [ ] **8.4** Email template
+  - `src/pitchcopytrade/templates/email/recommendation.html` — Jinja2 HTML
+  - `src/pitchcopytrade/templates/email/recommendation.txt` — plain text fallback
+  - aiosmtplib sends multipart/alternative (HTML + text)
+  - SMTP settings: `relay.ptfin.kz:465 SSL`, from `pct@ptfin.ru` (from env)
+
+- [ ] **8.5** ARQ dependency in docker-compose
+  - Worker service CMD: `python -m arq pitchcopytrade.worker.arq_worker.WorkerSettings`
+  - Worker connects to Redis on host network (if Redis is on host OS, use `host.docker.internal` or host IP)
+  - OR: add Redis as Docker service if preferred later
+
+### Acceptance Criteria
+- Published recommendation → notifications sent within 2 seconds
+- Worker log shows job picked up immediately (no 30s wait)
+- Failed SMTP → job retried 3 times, then marked failed in ARQ
+- `arq info redis://localhost:6379/0` shows job history
+
+---
+
+## Phase 9 — Telegram Mini App (Subscriber)
+
+**Goal:** Subscriber can browse strategies, view One Pager, and initiate subscription.
+
+### Tasks
+- [ ] **9.1** Mini App entry point
+  - Bot `/start` command → sends "Открыть приложение" inline keyboard button (WebApp)
+  - WebApp URL: `{BASE_URL}/app/`
+
+- [ ] **9.2** Mini App pages (Jinja2, HTMX, mobile-optimised)
+  - `GET /app/` — list of published strategies (title, author, subscriber count)
+  - `GET /app/strategy/{slug}` — One Pager (HTML, full screen)
+  - `GET /app/tariffs` — subscription products with prices
+  - `GET /app/subscribe/{product_id}` — subscription checkout (stub: shows manual payment instructions)
+  - `GET /app/my` — subscriber's active subscriptions
+
+- [ ] **9.3** Subscriber identification in Mini App
+  - Telegram Mini App passes `initData` in header / JS
+  - `GET /app/auth` — verify `initData` signature, create/get User, return session token
+  - All `/app/*` routes require valid Mini App session
+
+- [ ] **9.4** Subscription checkout (stub)
+  - Shows: "Переведите {amount} руб. по реквизитам: ... и нажмите 'Я оплатил'"
+  - `POST /app/subscribe/{product_id}/claim` → creates Payment(status=pending) + Subscription(status=pending)
+  - Admin confirms manually in ЛК администратора (Phase 4.5)
+
+### Acceptance Criteria
+- Subscriber can open Mini App from bot, see strategies list, tap through to One Pager
+- Subscription claim creates records in DB visible in admin payments page
+
+---
+
+## Phase 10 — Hardening & Tests
+
+**Goal:** Core flows covered by tests. No regressions.
+
+### Tasks
+- [ ] **10.1** Auth tests
+  - Telegram HMAC verification (valid / expired / tampered)
+  - Protected routes return 401 without valid session
+  - Role checks: author cannot access `/admin/*`
+
+- [ ] **10.2** Recommendation tests
+  - Create recommendation with minimal fields (ticker + side only)
+  - Create recommendation with all fields
+  - Publish triggers notification_queue entry
+  - ACL: author A cannot publish author B's recommendations
+
+- [ ] **10.3** Broadcast mock test
+  - Internal broadcast endpoint called with valid/invalid token
+  - 401 on bad token, 200 on valid
+
+- [ ] **10.4** Worker test
+  - Email queue processing: pending → sent
+  - Retry logic on failure
+
+---
+
+## Implementation Notes
+
+### Naming Conventions
+- Routes: `/cabinet/` for author, `/admin/` for admin, `/app/` for Mini App, `/api/` for JSON endpoints, `/auth/` for auth
+- Templates: `templates/{section}/{name}.html`
+- Services: `src/pitchcopytrade/services/{domain}.py`
+
+### HTMX Patterns
+- Use `hx-target` + `hx-swap="outerHTML"` for row updates
+- Use `hx-boost` on nav links for SPA-like feel without JS framework
+- Inline add row: `hx-post` + `hx-swap="afterbegin"` on tbody
+
+### No Legacy Policy
+- Before each phase: run `git status` — no uncommitted files from previous attempts
+- Before deploy: run `scripts/reset.sh` to guarantee clean state
+- No commented-out code, no TODO left in production paths

@@ -50,3 +50,4 @@ doc/*
 !doc/blueprint.md
 !doc/task.md
 !doc/review.md
+!doc/instruments_stub.json
