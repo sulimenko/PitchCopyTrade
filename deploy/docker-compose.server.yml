@@ -48,4 +48,8 @@ services:
 
 networks:
   pct_net:
+    name: pct_net
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
