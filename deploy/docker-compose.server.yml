@@ -11,6 +11,7 @@ services:
       - "127.0.0.1:8110:8000"
     volumes:
       - ../storage:/data/storage:Z
+      - ../doc:/doc:ro
     networks:
       - pct_net
     extra_hosts:
@@ -41,6 +42,7 @@ services:
     command: python -m pitchcopytrade.worker.main
     volumes:
       - ../storage:/data/storage:Z
+      - ../doc:/doc:ro
     networks:
       - pct_net
     extra_hosts:
