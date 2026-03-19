@@ -186,6 +186,22 @@ sudo -u postgres psql pct -c "\dt"
 
 Должно быть 21 таблица.
 
+### Ручной seed staff-пользователей
+
+Если после чистой миграции нужен admin и тестовый author, можно применить готовый SQL script:
+
+```bash
+cd /var/www/pct
+set -a && source .env.server && set +a
+PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f deploy/seed_staff.sql
+```
+
+Что создается:
+- admin: `sulimenkoas@gmail.com`, `telegram_user_id=368288031`, username `Sulimenko`
+- test author: `author-test@ptfin.ru`, `telegram_user_id=999000001`, username `author_test`
+
+Для test author это заготовка. Перед реальным входом через Telegram замените `telegram_user_id` и при необходимости email/username прямо в [deploy/seed_staff.sql](/Users/alexey/site/PitchCopyTrade/deploy/seed_staff.sql), затем примените script повторно.
+
 ---
 
 ### Шаг 7. Запустить контейнеры

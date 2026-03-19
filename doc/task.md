@@ -104,6 +104,12 @@
   - умеет `--fresh-runtime` для полного сброса `storage/runtime/*`
   - вызывается из `deploy/migrate.sh --reset`
 
+- [x] **1.6** Ручной seed staff-пользователей для server/db
+  - `deploy/seed_staff.sql`
+  - создает/обновляет admin и test author
+  - назначает роли и author profile
+  - предзаполняет author watchlist всеми активными инструментами
+
 ### Критерии приёмки
 - `docker-compose up --build` на чистой машине → пустые таблицы (кроме instruments + admin)
 - Никаких примеров данных, никаких placeholder-строк нигде

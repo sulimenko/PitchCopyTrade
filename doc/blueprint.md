@@ -41,6 +41,7 @@
 - attachments, legal files, seed и runtime data живут только в локальном storage tree;
 - никакой MinIO-инфраструктуры, `MINIO_*` env и provider-ветвлений в продукте не осталось;
 - чистая миграция выполняется через `scripts/clean_storage.sh` и `deploy/migrate.sh --reset`.
+- ручной seed staff-пользователей для server/db выполняется через `deploy/seed_staff.sql`.
 
 ---
 
