@@ -44,28 +44,10 @@ async def auth_login_page(request: Request, repository: AuthRepository = Depends
 @router.get("/auth/telegram/callback", response_class=HTMLResponse, include_in_schema=False)
 async def telegram_widget_callback(
     request: Request,
-    id: str | None = None,
-    first_name: str | None = None,
-    last_name: str | None = None,
-    username: str | None = None,
-    auth_date: str | None = None,
-    hash: str | None = None,
     repository: AuthRepository = Depends(get_auth_repository),
 ) -> Response:
     settings = get_settings()
-    params: dict = {}
-    if id is not None:
-        params["id"] = id
-    if first_name is not None:
-        params["first_name"] = first_name
-    if last_name is not None:
-        params["last_name"] = last_name
-    if username is not None:
-        params["username"] = username
-    if auth_date is not None:
-        params["auth_date"] = auth_date
-    if hash is not None:
-        params["hash"] = hash
+    params = dict(request.query_params)
 
     try:
         verify_telegram_login_widget(
@@ -82,16 +64,19 @@ async def telegram_widget_callback(
         )
 
     try:
-        telegram_user_id = int(id or "0")
+        telegram_user_id = int(params.get("id", "0"))
     except ValueError:
         telegram_user_id = 0
 
-    user = await repository.get_user_by_identity(str(telegram_user_id))
+    user = await repository.get_user_by_telegram_id(telegram_user_id)
     if user is None:
         return templates.TemplateResponse(
             request,
             "auth/login.html",
-            _build_login_template_context(title="Вход", error="Пользователь не найден"),
+            _build_login_template_context(
+                title="Вход в PitchCopyTrade",
+                error="Пользователь с таким Telegram ID не найден среди сотрудников",
+            ),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
@@ -321,6 +306,8 @@ def _build_login_template_context(*, title: str, error: str | None = None, ident
         "telegram_auth_url": f"{base_url}/auth/telegram/callback",
         "telegram_login_domain": login_domain,
         "telegram_https_ready": parsed.scheme == "https",
+        "telegram_bot_username": settings.telegram.bot_username,
+        "subscriber_verify_url": "/verify/telegram",
     }
 
 

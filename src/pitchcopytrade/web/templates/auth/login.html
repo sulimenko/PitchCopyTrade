@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="surface" style="max-width:400px;margin:60px auto;padding:40px;text-align:center;">
+<section class="surface" style="max-width:460px;margin:60px auto;padding:40px;text-align:center;">
   {% if error %}
   <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;">
     {{ error }}
@@ -14,15 +14,65 @@
   {% endif %}
   <div class="brand-mark" style="margin:0 auto 24px;width:64px;height:64px;font-size:1.1rem;">PC</div>
   <h2 style="margin:0 0 28px;font-size:1.6rem;">PitchCopyTrade</h2>
-  <script async src="https://telegram.org/js/telegram-widget.js?22"
-    data-telegram-login="{{ bot_username }}"
-    data-size="large"
-    data-auth-url="{{ telegram_auth_url }}"
-    data-request-access="write">
-  </script>
+  <div style="display:flex;flex-direction:column;gap:24px;text-align:left;">
+    <section style="text-align:center;">
+      <div class="muted" style="margin-bottom:14px;line-height:1.6;font-size:0.95rem;">
+        Основной вход для сотрудников на сервере: через Telegram.
+      </div>
+      <script async src="https://telegram.org/js/telegram-widget.js?22"
+        data-telegram-login="{{ bot_username }}"
+        data-size="large"
+        data-auth-url="{{ telegram_auth_url }}"
+        data-request-access="write">
+      </script>
+      <div class="muted" style="margin-top:16px;line-height:1.65;font-size:0.95rem;">
+        Для работы входа через Telegram у бота в <strong>@BotFather</strong> должен быть установлен домен
+        <strong>{{ telegram_login_domain }}</strong> через команду <code>/setdomain</code>.
+      </div>
+    </section>
+
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="height:1px;background:rgba(24,46,120,0.12);flex:1;"></div>
+      <span class="muted" style="font-size:0.82rem;text-transform:uppercase;letter-spacing:0.12em;">или</span>
+      <div style="height:1px;background:rgba(24,46,120,0.12);flex:1;"></div>
+    </div>
+
+    <form method="post" action="/login" style="display:flex;flex-direction:column;gap:14px;text-align:left;">
+      <div class="muted" style="line-height:1.6;font-size:0.95rem;">
+        Резервный вход для локального demo-режима и тестовых пользователей с паролем.
+      </div>
+    <label style="display:flex;flex-direction:column;gap:8px;">
+      <span style="font-weight:600;">Логин или email</span>
+      <input
+        type="text"
+        name="identity"
+        value="{{ identity }}"
+        required
+        autocomplete="username"
+        placeholder="admin1 или author1"
+        style="width:100%;padding:14px 16px;border:1px solid rgba(24,46,120,0.16);border-radius:16px;background:#fff;font:inherit;"
+      >
+    </label>
+    <label style="display:flex;flex-direction:column;gap:8px;">
+      <span style="font-weight:600;">Пароль</span>
+      <input
+        type="password"
+        name="password"
+        required
+        autocomplete="current-password"
+        placeholder="Введите пароль"
+        style="width:100%;padding:14px 16px;border:1px solid rgba(24,46,120,0.16);border-radius:16px;background:#fff;font:inherit;"
+      >
+    </label>
+    <button class="action" type="submit" style="width:100%;justify-content:center;">Войти</button>
+    </form>
+  </div>
   <div class="muted" style="margin-top:24px;line-height:1.65;font-size:0.95rem;">
-    Для работы входа через Telegram у бота в <strong>@BotFather</strong> должен быть установлен домен
-    <strong>{{ telegram_login_domain }}</strong> через команду <code>/setdomain</code>.
+    Этот экран предназначен только для сотрудников: admin, author, moderator.
+  </div>
+  <div class="muted" style="margin-top:12px;line-height:1.65;font-size:0.95rem;">
+    Клиентам входить через Telegram-бота <strong>@{{ telegram_bot_username }}</strong> и Mini App.
+    Если вы открыли сайт как подписчик, используйте <a href="{{ subscriber_verify_url }}">подтверждение через Telegram</a>.
   </div>
 </section>
 {% endblock %}

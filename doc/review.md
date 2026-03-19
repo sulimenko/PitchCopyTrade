@@ -10,6 +10,7 @@
 ### Безопасность
 - [x] Нет интерполяции строк в SQL — только SQLAlchemy bound params
 - [x] HMAC-SHA256 Telegram проверяется на каждом auth callback (`auth_date` < 5 мин)
+- [x] Telegram Login Widget callback валидирует полный набор query-параметров, включая дополнительные поля вроде `photo_url`
 - [x] Подпись `initData` Telegram Mini App проверяется перед доверием identity
 - [x] Домен Telegram Login Widget задан через `@BotFather /setdomain` и совпадает с host из `BASE_URL`
 - [x] `X-Internal-Token` проверяется на `/internal/broadcast` — жёсткая блокировка без него
@@ -18,6 +19,7 @@
 - [x] Автор читает/пишет только свои стратегии и рекомендации (ACL по `author_profile.id`)
 - [x] Маршруты `/admin/*` защищены `require_role("admin")`
 - [x] Подписчик не может зайти в кабинет автора или администратора
+- [x] `/login` не превращает server/db staff login в password-only: Telegram widget остается primary path, пароль — только fallback для demo-аккаунтов
 
 ### Целостность данных
 - [x] `RecommendationLeg.instrument_id` получается по ticker — нет orphan-ног

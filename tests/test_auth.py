@@ -35,6 +35,17 @@ class TestTelegramLoginWidget:
         assert result["id"] == "123456789"
         assert "hash" not in result
 
+    def test_valid_params_with_extra_fields(self):
+        params = _make_valid_params()
+        params["photo_url"] = "https://t.me/i/userpic/320/demo.jpg"
+        data_items = {k: v for k, v in params.items() if k != "hash"}
+        data_check = "\n".join(f"{k}={v}" for k, v in sorted(data_items.items()))
+        secret = hashlib.sha256(BOT_TOKEN.encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        result = verify_telegram_login_widget(params, BOT_TOKEN, max_age_seconds=300)
+        assert result["photo_url"].startswith("https://")
+
     def test_tampered_data(self):
         params = _make_valid_params()
         params["id"] = "999999999"

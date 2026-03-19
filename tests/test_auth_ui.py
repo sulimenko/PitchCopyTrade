@@ -17,7 +17,7 @@ from pitchcopytrade.auth.session import (
     build_telegram_login_link_token,
     get_telegram_fallback_cookie_name,
 )
-from pitchcopytrade.core.config import reset_settings_cache
+from pitchcopytrade.core.config import get_settings, reset_settings_cache
 from pitchcopytrade.db.models.accounts import Role, User
 from pitchcopytrade.db.models.enums import RoleSlug
 
@@ -26,9 +26,13 @@ class FakeAuthRepository:
     def __init__(self) -> None:
         self.users_by_identity: dict[str, User] = {}
         self.users_by_id: dict[str, User] = {}
+        self.users_by_telegram_id: dict[int, User] = {}
 
     async def get_user_by_identity(self, identity: str) -> User | None:
         return self.users_by_identity.get(identity)
+
+    async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
+        return self.users_by_telegram_id.get(telegram_user_id)
 
     async def get_user_by_id(self, user_id: str) -> User | None:
         return self.users_by_id.get(user_id)
@@ -118,6 +122,8 @@ def test_login_page_renders() -> None:
 
         assert response.status_code == 200
         assert "PitchCopyTrade" in response.text
+        assert "Логин или email" in response.text
+        assert "Клиентам входить через Telegram-бота" in response.text
         assert "/setdomain" in response.text
         assert "/auth/telegram/callback" in response.text
 
@@ -138,6 +144,35 @@ def test_login_submit_sets_session_cookie() -> None:
         assert response.status_code == 303
         assert response.headers["location"] == "/cabinet/"
         assert "pitchcopytrade_session=" in response.headers["set-cookie"]
+
+
+def test_telegram_widget_callback_accepts_extra_query_fields() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    repository.users_by_telegram_id[user.telegram_user_id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": str(user.telegram_user_id),
+            "first_name": "Alex",
+            "username": "alex_author",
+            "photo_url": "https://t.me/i/userpic/320/demo.jpg",
+            "auth_date": str(auth_date),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted(params.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/cabinet/"
+
+
+def _make_author_user_with_telegram_id(*, telegram_user_id: int) -> User:
+    user = _make_user()
+    user.telegram_user_id = telegram_user_id
+    return user
 
 
 def test_login_page_redirects_authenticated_admin_to_dashboard() -> None:
