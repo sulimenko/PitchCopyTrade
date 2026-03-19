@@ -1,211 +1,78 @@
-# PitchCopyTrade — Чеклист код-ревью
-> Версия: 0.2.0
-> Обновлено: 2026-03-19
-> Использовать на каждом PR перед merge
+# PitchCopyTrade — Current Review Gate
+> Обновлено: 2026-03-20
+> Этот файл хранит только текущие findings и gate на следующий merge.
 
----
+## Общий вывод
 
-## P0 — Блокеры (исправить до любого merge)
+Базовый продукт работает, но следующий staff rollout еще не готов к выкладке как финальный operator contour.
 
-### Безопасность
-- [x] Нет интерполяции строк в SQL — только SQLAlchemy bound params
-- [x] HMAC-SHA256 Telegram проверяется на каждом auth callback (`auth_date` < 5 мин)
-- [x] Telegram Login Widget callback валидирует полный набор query-параметров, включая дополнительные поля вроде `photo_url`
-- [x] Подпись `initData` Telegram Mini App проверяется перед доверием identity
-- [x] Домен Telegram Login Widget задан через `@BotFather /setdomain` и совпадает с host из `BASE_URL`
-- [x] `X-Internal-Token` проверяется на `/internal/broadcast` — жёсткая блокировка без него
-- [x] JWT: HttpOnly + Secure + SameSite=Strict, срок ≤ 24ч
-- [x] Никаких секретов (токенов, паролей, ключей) в коммитах и логах
-- [x] Автор читает/пишет только свои стратегии и рекомендации (ACL по `author_profile.id`)
-- [x] Маршруты `/admin/*` защищены `require_role("admin")`
-- [x] Подписчик не может зайти в кабинет автора или администратора
-- [x] `/login` не превращает server/db staff login в password-only: Telegram widget остается primary path, пароль — только fallback для demo-аккаунтов
+Причина не в core backend, а в UI/governance gaps:
+- staff shell слишком похож на public UI;
+- grid layer не унифицирован;
+- existing staff rows нельзя полноценно править в одном CRUD pattern;
+- onboarding нового `admin/author` все еще слишком ручной;
+- язык интерфейса еще не везде приведен к русскому.
 
-### Целостность данных
-- [x] `RecommendationLeg.instrument_id` получается по ticker — нет orphan-ног
-- [x] Переходы `Recommendation.status` только по разрешённому пути: draft → published → closed/cancelled
-- [x] `Payment.final_amount_rub` вычисляется на сервере, не принимается от клиента
-- [x] `Subscription` создаётся только после `paid` или ручного подтверждения админом
+## Текущие findings
 
-### Уведомления
-- [x] Постановка ARQ-задания — **fire-and-forget**: публикация не блокируется если worker упал
-- [x] Ошибки broadcast логируются, не проглатываются тихо
-- [x] ARQ `enqueue_job` вызывается атомарно с обновлением статуса рекомендации
+### [P1] Staff shell не соответствует operator-first contract
 
----
+Сейчас staff UI держится на больших кнопках и разрозненных topbar actions. Для `admin`, `author`, `moderation` нужен отдельный compact shell:
+- left rail
+- breadcrumb
+- `back`
+- compact actions
+- role switch
 
-## P1 — Высокий приоритет
+### [P1] Нет единого grid language
 
-### Роли и ACL
-- [x] 3 роли в БД: admin, author, moderator (moderator не используется в MVP)
-- [x] `requires_moderation` управляется как author-permission через admin UI и не редактируется автором в форме рекомендации
-- [x] Автор создаётся только админом — нет пути саморегистрации
-- [x] Уникальность `telegram_user_id` на уровне БД и приложения
-- [x] В проекте не осталось второго параллельного author-контура `/cabinet/*`
-- [x] Strategy CRUD автора полностью живет в `/author/*`
-- [x] Если admin может создавать рекомендации, это сделано через явный operator flow с отдельным audit, а не через размывание author ACL
-- [x] Multi-role staff (`admin + author`) использует один `User` и переключает active mode через верхнее меню
-- [x] В admin-mode пользователь не может создавать рекомендации
-- [x] В author-mode пользователь видит только свои стратегии и рекомендации
-- [x] Create-author flow требует `display_name + email`
-- [x] Автор может быть создан без `telegram_user_id`, а bind Telegram проходит через invite token / first login
-- [x] Create-author flow не падает в `500` на duplicate email и делает `session.rollback()` после DB ошибки
-- [x] Переключение режима всегда редиректит на корректный home целевой роли, а не на URL предыдущего режима
-- [x] Реестр авторов показывает активных и отключенных авторов, чтобы toggle был обратимым
-- [x] Новый `admin` может быть создан из product UI без ручного SQL / server access
-- [x] Есть безопасный flow выдачи роли `admin` существующему staff user
-- [x] Ручной ввод `telegram_user_id` не активирует staff user до подтвержденного Telegram bind
-- [x] Invite links staff/author строятся как абсолютные URL и готовы к пересылке с сервера
+Списки уже частично табличные, но это разные handcrafted HTML tables. Канонический следующий слой должен быть один: `AG Grid Community`.
 
-### Логика рекомендаций
-- [x] Обязательные поля: только `ticker` + `side` при inline-создании
-- [x] Все ценовые поля (`entry_from`, `tp1`, `stop_loss`) nullable — пустое = NULL, не 0
-- [x] `RecommendationKind` по умолчанию `new_idea` при быстром inline-создании
-- [x] `published_at` — серверное UTC время, не клиентское
-- [x] Дублированная публикация предотвращена (статус должен быть `draft` для публикации)
+### [P1] Existing staff records недостаточно редактируемы
 
-### Инструменты
-- [x] Инструменты засеяны из `storage/seed/json/instruments.json` при старте (upsert по ticker)
-- [x] `GET /api/instruments` возвращает только `is_active=True`
-- [x] Поиск тикера нечувствителен к регистру
-- [x] Поля `last_price` и `change_pct` присутствуют в ответе (stub-значения OK)
+Создание `admin/author` уже есть, но existing rows нельзя полноценно править через единый CRUD flow. Особенно это критично для:
+- `admin/staff`
+- `admin/authors`
 
-### UI / Шаблоны
-- [x] Нигде нет онбординг-текста, инструкций, блоков подсказок
-- [x] Пустые таблицы показывают минимальный empty state («Нет рекомендаций»), не placeholder-строки
-- [x] Popup тикера закрывается по Esc и клику на backdrop
-- [x] Inline-строка сбрасывается после успешного сохранения
-- [x] HTMX-ответы используют правильные `HX-Trigger` или swap targets — нет полных перезагрузок страницы
-- [x] Весь пользовательский текст на русском
+### [P1] Mutability rules не собраны в единый enforceable contract
 
-### База данных
-- [x] Новая Alembic-миграция для каждого изменения схемы
-- [x] Миграция обратима (`downgrade` реализован)
-- [x] Нет `CREATE TABLE` в коде приложения — только через миграции
-- [x] `Base.metadata` включает все модели до запуска `env.py`
-- [x] Все PostgreSQL enum-поля используют `.value` (`active`, `pending`, `admin`), а не uppercase names (`ACTIVE`, `PENDING`, `ADMIN`)
-- [x] После чистой миграции server/db есть воспроизводимый ручной seed staff через `deploy/seed_staff.sql`
+Сущности уже имеют статусные переходы, но для следующего UI нужно явно enforce:
+- recommendations editable только в `draft`, `review`
+- strategies editable только в `draft`
+- payments editable/actionable только в `created`, `pending`
+- subscriptions только через допустимые actions
+- legal active version read-only
 
----
+### [P1] Staff onboarding слишком ручной
 
-## P2 — Стандартное качество
+Текущий flow требует ручной пересылки invite link оператором. Это не считается приемлемым canonical path.
 
-### Стиль кода
-- [x] Нет неиспользуемых импортов
-- [x] Нет закомментированных блоков кода
-- [x] Нет `print()` — только `logging`
-- [x] Функции до 50 строк (разбить большие)
-- [x] Нет magic strings — использовать enum из `db/models/enums.py`
+Нужен contract:
+- create `display_name + email + roles`
+- send invite email automatically
+- registry показывает `sent / failed / resent`
+- resend инвалидирует старые invite links
+- все активные admin получают контрольные письма о создании `admin/author` и о failed delivery
 
-### Дизайн API
-- [x] JSON API эндпоинты под префиксом `/api/`
-- [x] HTMX partial эндпоинты под `/cabinet/` или `/admin/`
-- [x] Ошибки возвращают правильные HTTP коды (400/401/403/404/422/500)
-- [x] Тело 422 содержит field-level ошибки валидации
+### [P2] Русский язык еще не доведен как жесткий UI contract
 
-### Конфигурация
-- [x] Все новые config-значения добавлены в `core/config.py` с типами и дефолтами
-- [x] Новые env-переменные задокументированы в README
-- [x] Нет захардкоженных URL, портов, секретов
-- [x] В проекте не осталось `MINIO_*` env variables и MinIO-specific config sections
+Все видимые labels и статусы должны быть русскими. Английские значения допустимы только в коде и БД.
 
-### Тесты
-- [x] Каждый новый маршрут имеет хотя бы один тест
-- [x] Тест ACL: неавторизованный доступ возвращает 401/403
-- [x] Happy path тест: корректные данные возвращают ожидаемый ответ
-- [x] После удаления MinIO есть regression-test, что storage contract остался только local-files-only
-- [x] Есть regression tests на db startup seeders в Docker-подобном окружении
+## Что должно считаться готовностью следующего блока
 
----
+Merge считается готовым только если одновременно выполнены все пункты:
 
-## P3 — Проверка product drift
+1. staff shell переведен на compact operator-first layout;
+2. все staff list/registry/queue screens работают через `AG Grid Community`;
+3. `admin/staff` и `admin/authors` получили полноценный CRUD/edit flow;
+4. mutability rules по статусам enforced и отражены в UI;
+5. onboarding нового `admin/author` больше не требует ручной пересылки invite link;
+6. UI статусы и labels переведены на русский.
 
-Проверяем что реализация не отходит от утверждённого blueprint:
+## Worker target
 
-- [x] Кабинет автора — только веб, никаких bot-команд для авторов
-- [x] Флоу подписчика — только Telegram bot + Mini App, без отдельной веб-регистрации
-- [x] One Pager — HTML в `Strategy.full_description`, рендерится на сервере
-- [x] Подтверждение платежа — ручное (действие админа), без автоматических вызовов платёжного API
-- [x] Роль Модератора: enum есть, UI нет, отдельный moderation contour не доведен
-- [x] В продукте не осталось MinIO-инфраструктуры, MinIO-библиотеки и legacy storage fallback
-- [x] Режим бота: `TELEGRAM_USE_WEBHOOK=true` в production, `false` в local dev
-- [x] Инструменты: только из `storage/seed/json/instruments.json` — никаких live market API вызовов в MVP
-- [x] Для каждого автора есть персональный watchlist, который предзаполняется активными инструментами и расширяется inline из author dashboard
+Следующий исполнитель должен брать как canonical source:
+- [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
+- [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 
----
-
-## Подпись ревьюера
-
-| Область | Ревьюер | Дата | Результат |
-|---------|---------|------|-----------|
-| P0 Безопасность | Claude | 2026-03-18 | Pass (исправлен timing attack в X-Internal-Token) |
-| P0 Целостность данных | Claude | 2026-03-18 | Pass |
-| P0 Уведомления | Claude | 2026-03-18 | Pass |
-| P1 ACL/Роли | Claude | 2026-03-18 | Pass |
-| P1 Рекомендации | Claude | 2026-03-18 | Pass |
-| P1 UI/Шаблоны | Claude | 2026-03-18 | Pass |
-| P2 Качество кода | Claude | 2026-03-18 | Pass |
-| P3 Product Drift | Claude | 2026-03-18 | Pass |
-
-PR может быть merged только когда все P0 и P1 — Pass.
-
----
-
-## Замечания ревью
-
-### Исправлено в ходе ревью
-
-**[P0] timing attack в `bot/main.py`**
-`bot/main.py:29` использовал `token != secret` для проверки `X-Internal-Token`.
-Заменено на `hmac.compare_digest(token, secret)`.
-Все остальные проверки HMAC в кодовой базе уже используют `compare_digest` корректно.
-
-### Следующий обязательный cleanup
-
-**[P1] Чистая миграция storage и БД**
-- перед `deploy/migrate.sh --reset` запускать `scripts/clean_storage.sh --apply --fresh-runtime`;
-- не переносить старые blob/json layout-и вручную;
-- считать `storage/seed/*` и `storage/runtime/*` единственным поддерживаемым storage tree.
-
-**[P1] Staff hardening после review 2026-03-19**
-- выполнено: role switch redirect ведет на canonical home целевой роли;
-- выполнено: `/admin/authors` показывает `active + inactive` и имеет статусный фильтр;
-- выполнено: db startup defects в `seed_instruments` и `seed_admin` закрыты regression-тестами.
-
-### Актуальные findings на 2026-03-19
-
-**[Pass] Ручной `telegram_user_id` больше не открывает staff-доступ сам по себе**
-
-Ручной `telegram_user_id` теперь трактуется только как ожидаемый идентификатор. Staff user остается `invited` до подтвержденного bind по invite token, а доступ в staff UI проверяет `UserStatus.ACTIVE`.
-
-**[Pass] Invite links в staff/author registry server-ready**
-
-Invite flow теперь отдает абсолютные URL от `BASE_URL` в `/admin/staff` и `/admin/authors`, и ссылки можно сразу копировать и пересылать сотруднику.
-
-### Author UI findings после review 2026-03-19
-
-Эти findings закрыты повторной проверкой кода и тестами.
-
-**[Pass] Полная форма рекомендации работает как modal-flow**
-
-Кнопки `Новая рекомендация` в author workspace открывают modal поверх текущего экрана, а `/author/recommendations/new` перестал быть primary UX и служит embedded-редактором.
-
-**[Pass] Быстрый inline-ввод рекомендации доведен**
-
-`/author/recommendations` работает как таблица с последней inline-строкой добавления, popup выбора тикера и keyboard-flow через `Enter`/`Esc`. Для быстрого черновика обязательны только `ticker + side`, `RecommendationKind` по умолчанию `new_idea`.
-
-**[Pass] Seed инструментов и reseed watchlist закрыты**
-
-Базовый seed инструментов расширен, а для существующих авторов есть явный reseed path в admin UI.
-
-**[Pass] `requires_moderation` перенесён в author permissions**
-
-Флаг живёт в author settings и определяется политикой автора, а не ручным вводом автора в форме рекомендации.
-
-**[Pass] Watchlist suggestions UI и tabular layer подтверждены**
-
-Пустой dropdown под поиском не рендерится визуально, а author/admin contour использует sortable/filterable tables.
-
-### Worker-ready note
-
-Следующий исполнитель не должен трактовать `Фазу 15` как завершенную. Канонический scope и file targets смотреть в [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md).
+Исторические completed phases не использовать как источник правды.

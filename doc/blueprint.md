@@ -1,400 +1,376 @@
-# PitchCopyTrade — Архитектура MVP
-> Версия: 0.2.0
-> Обновлено: 2026-03-19
-> Статус: **УТВЕРЖДЕНО к реализации**
+# PitchCopyTrade — Blueprint
+> Обновлено: 2026-03-20
+> Статус: canonical current contract
 
----
+## 1. Политика документа
 
-## Правила работы в CLI
+Этот файл не хранит историю фаз.
 
-При реализации задач в Claude Code CLI **обязательно** соблюдать:
+Он должен описывать только:
+- текущий продуктовый контракт;
+- согласованный target для следующего крупного блока;
+- правила, которые обязательны для всех следующих изменений.
 
-- Читай `doc/task.md` перед каждой задачей
-- После выполнения задачи сразу помечай `[x]` в `task.md`
-- Не переходи к следующей задаче без пометки
-- Переходи к следующей фазе автоматически — без подтверждения пользователя
-- Если задача требует решения — задай один вопрос, не пиши код до ответа
-- Пиши минимально необходимый код, без over-engineering
+Если решение уже устарело, спорная развилка закрыта или completed phase больше не влияет на следующие шаги, ее нужно удалять из этого файла, а не копить как архив.
 
----
+## 2. Границы продукта
 
-## 1. Границы MVP
+В продукт входят:
+- staff web для `admin`
+- staff web для `author`
+- staff surface для `moderation`
+- subscriber flow через Telegram bot + Mini App
+- локальный storage под `APP_STORAGE_ROOT`
 
-**Входит в MVP:**
-- Кабинет автора (веб; primary staff auth на сервере через Telegram Login Widget, пароль только для demo)
-- Кабинет администратора (веб)
-- CopyTradeBot (Telegram) — доставка рекомендаций подписчикам
-- Справочник инструментов — seed-набор бумаг ММВБ, расширяемый через API
-- Mini App для подписчиков (Telegram WebApp)
+Не входят в текущий canonical contract:
+- MinIO и любой object storage
+- отдельная subscriber web-registration
+- password-first staff auth как основной path
+- исторические UI patterns, если для них уже выбран новый canonical слой
 
-**Не входит в MVP:**
-- Отдельный контур роли Модератора как самостоятельного staff actor
-- Внешнее платёжное API (Tinkoff/T-Bank) — только ручное подтверждение
-- Промо/триал/скидки (логика в БД есть, UI нет)
-- Любая object-storage инфраструктура типа MinIO
-- Юридические документы и согласия (таблицы есть, UI нет)
+## 3. Роли и доступ
 
-## 1.1 Текущий storage contract
+### 3.1 Роли
 
-Зафиксировано как canonical:
-- единственный storage backend: локальная файловая система под `APP_STORAGE_ROOT`;
-- attachments, legal files, seed и runtime data живут только в локальном storage tree;
-- никакой MinIO-инфраструктуры, `MINIO_*` env и provider-ветвлений в продукте не осталось;
-- чистая миграция выполняется через `scripts/clean_storage.sh` и `deploy/migrate.sh --reset`.
-- ручной seed staff-пользователей для server/db выполняется через `deploy/seed_staff.sql`.
-
----
-
-## 2. Термины
-
-| В интерфейсе (RU) | В коде (EN) | Примечание |
-|-------------------|-------------|------------|
-| Рекомендация / Сделка | `Recommendation` | Одна сущность. Рекомендация может содержать 1+ ног (сделок). Обычно 1 нога. |
-| Нога сделки | `RecommendationLeg` | Один инструмент + направление + цена/цель/стоп |
-| Стратегия | `Strategy` | Контейнер рекомендаций одного автора |
-| Подписчик | Subscriber / `User` с активной `Subscription` | |
-| Автор | `AuthorProfile`, связанный с `User` | |
-| Тикер | `Instrument.ticker` | Например: SBER, GAZP |
-
-## 2.1 Контракт enum-типов БД
-
-Все `str Enum` в SQLAlchemy/PostgreSQL должны сериализоваться через `.value`, а не через имя элемента enum.
-
-Правильно:
-- `active`
-- `pending`
 - `admin`
-- `buy`
-
-Неправильно:
-- `ACTIVE`
-- `PENDING`
-- `ADMIN`
-- `BUY`
-
-Новые enum-поля в моделях добавлять только через единый helper `sql_enum(...)`. Если PostgreSQL-схема была поднята до этого правила и уже содержит uppercase labels, schema drift нужно исправлять миграцией или пересозданием enum-типов.
-
----
-
-## 3. Компоненты системы
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Docker Compose                           │
-│                                                                 │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌─────────────┐ │
-│  │   api    │   │   bot    │   │  worker  │   │  postgres   │ │
-│  │ FastAPI  │   │ aiogram3 │   │   ARQ    │   │  pg16-alpine│ │
-│  │ порт 8000│   │ webhook  │   │  задания │   │             │ │
-│  └────┬─────┘   └────┬─────┘   └────┬─────┘   └─────────────┘ │
-│       └──────────────┴──────────────┘                          │
-│                  внутренняя сеть Docker                        │
-└─────────────────────────────────────────────────────────────────┘
-
-Внешние акторы:
-  Telegram API ←→ Bot (webhook по HTTPS, выделенный IP)
-  Браузер автора ←→ API (кабинет автора, веб)
-  Браузер админа ←→ API (кабинет администратора, веб)
-  Telegram подписчика ←→ Bot + Mini App (WebApp внутри Telegram)
-  Redis (локально на сервере) ←→ Worker (очередь задач ARQ)
-```
-
----
-
-## 4. Роли
-
-| Роль | Способ входа | Как создаётся | Модерация |
-|------|-------------|---------------|-----------|
-| admin | Веб-кабинет (Telegram Login Widget на сервере, пароль только для demo) | Seed при деплое | — |
-| author | Веб-кабинет (Telegram Login Widget на сервере, пароль только для demo) | Создаётся администратором | Политика модерации задается администратором |
-| subscriber | Telegram бот + Mini App | Саморегистрация | — |
-
-Роль Модератора: enum в БД сохранён, UI и проверки отсутствуют в MVP.
-
-## 4.1 Права на стратегии и рекомендации
-
-Текущее фактическое состояние:
-- admin создает автора и тем самым выдает ему право работать как `author`;
-- admin может создавать стратегии для любого автора через `/admin/strategies` с явным `author_id`;
-- author strategy CRUD и recommendation CRUD уже живут в `/author/*`;
-- admin не имеет recommendation CRUD в `/admin/*`;
-- создание новых `admin` из product UI уже реализовано через `/admin/staff`.
-
-Целевое состояние:
-- один канонический author workspace: `/author/*`;
-- author сам создает и редактирует только свои стратегии в `/author/*`;
-- admin управляет авторами, может назначать/переназначать владельца стратегии и создавать стратегию за любого автора;
-- admin не создает рекомендации в admin-mode;
-- если один и тот же `User` имеет роли `admin + author`, он обязан переключиться в author-mode перед созданием рекомендации;
-- `/cabinet/*` удаляется как legacy-контур без обратной совместимости.
-
-## 4.2 Active role для multi-role staff
-
-Если у одного пользователя есть несколько staff-ролей:
-- это один `User`;
-- роли не создают второй аккаунт;
-- интерфейс работает в одном active mode;
-- переключение `Режим администратора / Режим автора` находится в верхнем меню staff UI;
-- переключение всегда ведет на canonical home целевого режима, а не оставляет пользователя на URL предыдущего режима;
-- в режиме `author` пользователь работает только со своими стратегиями и рекомендациями;
-- в режиме `admin` пользователь работает только с admin-функциями.
-
-## 4.3 Создание автора и bind Telegram
-
-Контракт создания автора:
-- обязательные поля: `display_name`, `email`;
-- `telegram_user_id` не обязателен при первичном создании;
-- после создания должны существовать `User + role(author) + AuthorProfile`.
-
-Контракт привязки Telegram:
-- путь 1: первая успешная Telegram-авторизация автора;
-- путь 2: invite link / invite token, который связывает Telegram account с уже созданным author user;
-- ручной ввод `telegram_user_id` допустим как operator-path, но не считается единственным или основным способом.
-- admin registry авторов обязан показывать и активных, и отключенных авторов, чтобы toggle оставался обратимым.
-
-## 4.4 Hardening server/db seeders
-
-Для `APP_DATA_MODE=db` и Docker server deploy:
-- instrument seeder должен брать seed path относительно app root или `APP_STORAGE_ROOT`, а не зависеть от хрупкого `Path(__file__).parents[...]`;
-- admin seeder не должен провоцировать async lazy-load / `greenlet_spawn` на старте;
-- startup seeder failures не считаются допустимым штатным состоянием deploy-контракта.
-
-## 4.5 Provisioning новых admin
-
-Текущее состояние:
-- первый `admin` создается через bootstrap seeder;
-- следующие `admin` создаются действующим admin из `/admin/staff`;
-- product UI для выдачи роли `admin` уже есть;
-- create/bind flow staff еще требует отдельного hardening перед следующей server-выкладкой.
-
-Целевой контракт:
-- bootstrap первого `admin` остается через deploy seeder;
-- следующий `admin` создается действующим admin из staff UI;
-- один `User` может иметь роли `admin + author`;
-- выдача роли `admin` существующему staff user должна идти через явный governance flow с audit trail;
-- ручной ввод `telegram_user_id` не должен считаться подтвержденной привязкой Telegram-аккаунта;
-- staff user без подтвержденного Telegram bind должен оставаться `invited`, даже если оператор заранее знает предполагаемый `telegram_user_id`;
-- invite link / invite token является canonical способом первичной привязки staff user к Telegram;
-- invite links в UI должны строиться как абсолютные URL от `BASE_URL`, чтобы оператор мог сразу отправить их сотруднику;
-- должны быть защиты:
-  - нельзя снять роль у последнего активного admin;
-  - нельзя неявно создать второй аккаунт вместо добавления роли существующему staff user.
-
----
-
-## 5. Авторизация staff
-
-Кабинеты администратора и автора — **только веб**.
-
-Основной server/db-контур:
-- вход через **Telegram Login Widget** по `telegram_user_id`;
-- у staff-пользователя должен быть заполнен `telegram_user_id`;
-- домен должен быть привязан через `@BotFather /setdomain`.
-
-Локальный fallback:
-- если у staff-аккаунта есть `password_hash`, допускается вход через форму логин/пароль на `/login`;
-- этот путь считается только demo/local сценарием и не является основным deploy-контрактом.
-
-```
-1. Администратор создаёт staff-пользователя в кабинете
-   → заполняет: display_name, email, telegram_user_id (опц.)
-   → система создаёт: User + AuthorProfile + user_roles(author) либо seed admin
-   → policy `requires_moderation` задаётся отдельно в author settings, а не в author form
-
-2. Staff открывает URL кабинета в браузере
-   → нажимает "Войти через Telegram"
-   → у бота заранее настроен домен через `@BotFather /setdomain`, совпадающий с `BASE_URL`
-   → Telegram Login Widget редиректит с подписанными данными
-   → API проверяет HMAC-SHA256(bot_token, payload)
-   → создаёт JWT (HttpOnly, Secure, SameSite=Strict, 24ч)
-   → пользователь попадает в свой кабинет
-```
-
-На сервере это основной путь. Парольный вход — только дополнительный demo/local fallback для staff-пользователей, у которых пароль был создан явно.
-
----
-
-## 6. Интерфейс создания рекомендаций
-
-Канонический author flow должен жить в одном рабочем экране, а не уводить автора на отдельную страницу.
-Ниже описано текущее каноническое состояние author workspace после закрытия `Фазы 15`.
-
-### 6.1 Основной экран
-- Основной экран автора — таблица рекомендаций по выбранной стратегии.
-- На этом же экране доступны:
-  - быстрый inline-ввод, как в таблицах;
-  - открытие полной формы в popup/modal;
-  - сортировка, фильтрация и переход к редактированию существующих строк.
-
-### 6.2 Быстрый inline (по умолчанию)
-- В таблице есть последняя пустая строка: `[Тикер ▼] [BUY|SELL] [Цена входа] [TP1] [Стоп] [+]`
-- Поведение ближе к Google Sheets:
-  - Tab/Shift+Tab перемещают по ячейкам;
-  - Enter сохраняет строку и создает следующую пустую;
-  - Esc отменяет редактирование текущей строки;
-  - клик по тикеру открывает popup выбора инструмента.
-- Быстрый inline создает минимальный draft:
-  - стратегия;
-  - первая бумага;
-  - направление;
-  - опциональные уровни.
-
-### 6.3 Полная форма (popup)
-- Кнопка «Новая рекомендация» не ведет на отдельную страницу, а открывает modal поверх таблицы.
-- Popup содержит полный ввод:
-  - стратегия;
-  - тип публикации;
-  - статусы workflow;
-  - заголовок, summary, thesis, market context;
-  - список бумаг;
-  - вложения;
-  - дата публикации.
-- Бумаги внутри popup:
-  - первая обязательна;
-  - дополнительные добавляются через `+ Добавить бумагу`;
-  - без искусственного лимита.
-
-### 6.4 Право `requires_moderation`
-- `requires_moderation` — это не поле автора в форме рекомендации.
-- Это author-permission на уровне профиля автора, которую задает администратор.
-- Автор не должен видеть checkbox `Требует модерации` в редакторе рекомендации.
-- При создании рекомендации флаг определяется сервером из настроек автора.
-
-### 6.5 Состояние таблицы
-- Таблица пустая на свежих данных — без демо-строк и без инструкций внутри таблицы.
-- Допускается только минимальный empty state и кнопка/строка ввода.
-- Весь текст интерфейса — русский.
-
----
-
-## 7. Popup выбора тикера
-
-```
-┌─────────────────────────────────┐
-│ 🔍 Поиск тикера...              │
-├─────────────────────────────────┤
-│ ★ SBER  Сбербанк       ▲+1.2%  │
-│ ★ GAZP  Газпром        ▼-0.5%  │
-│ ★ LKOH  ЛУКОЙЛ         ▲+0.8%  │
-│   GMKN  Норильский никель       │
-│   YNDX  Яндекс          ▲+2.1%  │
-├─────────────────────────────────┤
-│ [Отмена]                        │
-└─────────────────────────────────┘
-```
-
-- Источник: `storage/seed/json/instruments.json` (канонический seed-набор бумаг, загружаются в БД при старте)
-- Недавние выборы → `localStorage` → отображаются со звёздочкой
-- Фильтрация по тексту — клиентская, без учёта регистра
-- Пока live market API не подключен, но seed-набор должен быть полным, а не из 2 бумаг
-- Popup и suggestion dropdown не должны рендериться как второе пустое поле под поиском
-- Будущее: `/api/instruments?q=` для поиска через live API
-
----
-
-## 8. Публикация и доставка уведомлений
-
-```
-Автор нажимает «Опубликовать» на черновике
-    │
-    ▼
-API: recommendation.status → "published", published_at = now()
-    │
-    └──► arq_pool.enqueue_job("send_recommendation_notifications", rec_id)
-         Ответ UI возвращается мгновенно
-              │
-              ▼
-         ARQ Worker (Redis локально, redis://localhost:6379)
-              │
-              ├──► POST http://bot:8080/internal/broadcast
-              │    Бот → Telegram каждому активному подписчику стратегии
-              │
-              └──► SMTP relay.ptfin.kz:465 SSL
-                   От pct@ptfin.ru → каждому подписчику с email
-```
-
-**Почему ARQ + Redis:**
-- Redis уже на сервере — никаких новых зависимостей
-- Нет задержки polling — задание выполняется за < 1 сек
-- Задания выживают при рестарте worker
-- Единая политика retry (3 попытки, 10с задержка)
-
----
-
-## 9. Формат Telegram-уведомления
-
-```
-📊 Новая рекомендация — {strategy.title}
-
-{recommendation.title}
-{leg.ticker} — {leg.side} @ {leg.entry_from или "рынок"}
-🎯 Цель: {leg.tp1 или "—"}
-🛡 Стоп: {leg.stop_loss или "—"}
-
-{recommendation.summary или ""}
-
-[Открыть в приложении →]
-```
-
----
-
-## 10. Telegram Mini App (подписчики)
-
-Точка входа: бот → кнопка «Открыть приложение» (WebApp).
-
-Страницы:
-1. **Главная** — список активных стратегий
-2. **One Pager** — HTML-страница стратегии (Jinja2, полноэкранная)
-3. **Тарифы** — продукты с ценами
-4. **Оформление подписки** — stub checkout (ручное подтверждение админом)
-5. **Мои подписки** — активные подписки
-
----
-
-## 11. Кабинет администратора
-
-1. **Авторы** — список, создание и права автора
-   - создание: `display_name + email`, `telegram_user_id` опционален;
-   - invite/bind через Telegram;
-   - настройка author-permissions, включая `requires_moderation`;
-   - новый автор сразу получает персональный watchlist из всего активного seed-набора инструментов.
-2. **Стратегии** — создание стратегии за автора, смена владельца, операционные правки
-3. **One Pager** — редактор HTML-контента страницы стратегии
-4. **Метрики** — агрегированные счётчики подписчиков (без персональных данных)
-5. **Выплаты** — список ожидающих платежей, ручное подтверждение
-
-Текущий gap:
-- admin recommendation CRUD еще не реализован;
-- если бизнесу нужен emergency/manual creation рекомендаций администратором, это должно быть отдельным operator contour, а не скрытым обходом через author ACL.
-
----
-
-## 12. Соглашения по базе данных
-
-- UUID PK, `created_at`, `updated_at` на всех таблицах
-- `requires_moderation` определяется политикой автора, а не ручным вводом автора в форме рекомендации
-- Переходы статуса рекомендации: `draft → published → closed/cancelled`
-- Свежий деплой: **только admin user как seed** — все остальные таблицы пустые
-- Инструменты загружаются из `storage/seed/json/instruments.json` через seeder при старте API
-- Для каждого автора есть свой watchlist (`author_watchlist_instruments`), который предзаполняется активными инструментами и затем расширяется через author workspace
-- Канонический seed-набор инструментов должен быть широким; seed из 2 бумаг для server/db не считается приемлемым состоянием
-
----
-
-## 13. Email
-
-- Сервер: `relay.ptfin.kz`, порт `465`, SSL
-- От: `pct@ptfin.ru`
-- Пароль: только в `.env`, не коммитить никогда
-
----
-
-## 14. Принципы дизайна
-
-- **Никаких инструкций в UI** — без онбординга, туториалов, welcome-экранов
-- **Пусто = чисто** — таблицы стартуют пустыми
-- **Минимум обязательных полей** — только тикер + направление; все ценовые поля nullable
-- **Русский интерфейс** — весь пользовательский текст на русском
-- **Mobile-first** — кабинет автора работает в мобильном браузере
-- **Таблицы как primary UI** — списки стратегий, рекомендаций и watchlist должны поддерживать сортировку и фильтрацию
-- **Без drift между docs и UI** — docs должны описывать только фактически реализованный popup/modal и inline-grid, подтвержденные кодом и тестами
+- `author`
+- `moderation`
+- `subscriber`
+
+### 3.2 Staff user
+
+Staff user — это один `User`.
+
+Если у пользователя есть роли `admin + author`, это:
+- один аккаунт;
+- один staff session;
+- одно переключение active mode;
+- не два разных логина.
+
+### 3.3 Права
+
+`admin`:
+- создает staff users;
+- создает автора;
+- создает стратегию за любого автора;
+- управляет платежами, подписками, документами, delivery, moderation и staff settings.
+
+`author`:
+- работает только со своими стратегиями;
+- создает и редактирует только свои рекомендации;
+- не управляет своими author-permissions.
+
+`admin` в admin-mode:
+- не создает рекомендации.
+
+Если `admin` хочет работать как автор:
+- он переключается в `author` mode;
+- видит только свои author entities.
+
+## 4. Staff auth и onboarding
+
+### 4.1 Current contract
+
+- основной вход staff — через Telegram Login Widget;
+- password login остается только как demo/local fallback;
+- новый staff user создается как `invited`;
+- доступ в staff UI появляется только после подтвержденного bind через Telegram.
+
+### 4.2 Canonical onboarding
+
+Основной путь:
+1. admin вводит `display_name + email + roles`;
+2. система создает `invited` staff user;
+3. система отправляет email invite;
+4. сотрудник открывает invite;
+5. сотрудник завершает bind через Telegram;
+6. user получает `active`.
+
+### 4.3 Статусы staff user
+
+Для продукта и UI canonical vocabulary:
+- `invited`
+- `active`
+- `inactive`
+
+`inactive` нужен вместо отдельного `blocked` языка в product layer, чтобы не расходиться с будущим SuiteCRM contour.
+
+### 4.4 Приглашения
+
+Invite contract:
+- invite links абсолютные, от `BASE_URL`;
+- resend инвалидирует старые invite links;
+- failed invite delivery не отменяет создание staff user;
+- failed delivery создает log entry;
+- failed delivery отправляет email всем активным администраторам для контроля;
+- создание нового `admin` и нового `author` также отправляет контрольное письмо всем администраторам.
+
+### 4.5 `telegram_user_id`
+
+`telegram_user_id`:
+- не primary UX field;
+- может существовать как advanced field;
+- после bind может редактироваться администратором;
+- при ручной смене сохраняется сразу, без forced re-invite.
+
+## 5. Staff UI shell
+
+Canonical staff shell:
+- узкая левая вертикальная навигация;
+- верхняя строка:
+  - `Назад`
+  - breadcrumb
+  - быстрые действия
+  - переключение роли
+- основной рабочий контент почти всегда grid;
+- row edit открывается в right drawer;
+- сложные формы остаются modal или fullscreen modal.
+
+Навигация:
+- `back` = browser history fallback -> parent route.
+
+Приоритет:
+- desktop-first;
+- mobile fallback допустим, но не primary target для `admin` и `moderation`.
+
+## 6. Grid layer
+
+### 6.1 Canonical choice
+
+Для `admin`, `author` и `moderation` canonical table layer = `AG Grid Community`.
+
+### 6.2 Scope
+
+На `AG Grid` переводятся все staff list/registry/queue screens:
+- `/admin/staff`
+- `/admin/authors`
+- `/admin/strategies`
+- `/admin/products`
+- `/admin/promos`
+- `/admin/payments`
+- `/admin/subscriptions`
+- `/admin/legal`
+- `/admin/delivery`
+- `/admin/analytics/*` там, где есть табличный слой
+- `/author/strategies`
+- `/author/recommendations`
+- watchlist в `/author/dashboard`
+- `/moderation/queue`
+
+### 6.3 Design contract
+
+Staff grid не должен выглядеть как public UI.
+
+Требования:
+- компактная тема;
+- маленькие кнопки;
+- маленькие row/header heights;
+- слабые границы;
+- минимум теней;
+- минимум декоративных поверхностей;
+- максимум плотности и читаемости.
+
+Это professional operator UI, а не маркетинговая поверхность.
+
+### 6.4 Interaction contract
+
+Grid должен поддерживать:
+- sorting;
+- filtering;
+- quick filter;
+- keyboard navigation;
+- pinned action column;
+- row menu;
+- inline edit для простых полей;
+- right drawer для сложных полей и multi-step actions.
+
+## 7. Unified CRUD pattern
+
+### 7.1 Simple entities
+
+Для простых сущностей primary pattern:
+- grid row
+- inline edit простых полей
+- drawer для расширенного редактирования
+
+Сюда относятся:
+- staff users
+- authors
+- strategies
+- products
+- promos
+
+### 7.2 Operational entities
+
+Для operational entities primary pattern:
+- grid row
+- read-only detail drawer
+- только разрешенные row actions
+
+Сюда относятся:
+- payments
+- subscriptions
+- delivery
+- moderation items
+
+### 7.3 Complex content entities
+
+Для сложных контентных сущностей:
+- grid как primary list layer;
+- full edit через modal / fullscreen modal.
+
+Сюда относятся:
+- recommendations
+- legal document versions
+- one pager / long-form content
+
+## 8. Mutability rules
+
+### 8.1 Staff user
+
+До bind:
+- можно менять `display_name`
+- `email`
+- роли
+- `telegram_user_id`
+
+После bind:
+- можно менять `display_name`
+- `email`
+- роли
+- `telegram_user_id`
+- нельзя редактировать статус свободным inline-изменением; статус меняется только через явные actions.
+
+### 8.2 Author
+
+Editable:
+- `display_name`
+- `email`
+- roles
+- `telegram_user_id`
+- `requires_moderation`
+- `active/inactive`
+
+### 8.3 Strategy
+
+Editable:
+- только `draft`
+
+Read-only:
+- `published`
+- `archived`
+
+### 8.4 Recommendation
+
+Editable:
+- `draft`
+- `review`
+
+Read-only:
+- `approved`
+- `scheduled`
+- `published`
+- `closed`
+- `cancelled`
+- `archived`
+
+### 8.5 Payment
+
+Editable/actionable:
+- `created`
+- `pending`
+
+Read-only:
+- `paid`
+- `failed`
+- `expired`
+- `cancelled`
+- `refunded`
+
+### 8.6 Subscription
+
+Grid shows all rows.
+
+Editable free-form fields — нет.
+
+Допустимы только actions:
+- `Открыть`
+- `Отключить автопродление`
+- `Отменить`
+
+Read-only:
+- terminal states и все завершенные исторические записи.
+
+### 8.7 Legal
+
+Editable:
+- draft version
+
+Read-only:
+- active version
+
+Изменение active doc идет только через новую версию и `activate`.
+
+### 8.8 Moderation
+
+`/moderation/queue` идет в тот же grid language.
+
+Pattern:
+- queue в `AG Grid`
+- detail в right drawer
+- row actions:
+  - `approve`
+  - `rework`
+  - `reject`
+- published/archived entries read-only
+
+## 9. Recommendations editor
+
+Grid layer и editor coexist.
+
+Canonical contract:
+- список рекомендаций живет в grid;
+- create/edit сложной рекомендации открывается в modal/fullscreen modal;
+- быстрый inline add остается в рекомендациях как operator shortcut;
+- первая бумага обязательна;
+- дополнительные бумаги добавляются динамически.
+
+## 10. Watchlist
+
+Watchlist автора:
+- живет в grid language;
+- поддерживает search/filter/sort;
+- поддерживает добавление;
+- поддерживает удаление;
+- не редактирует сам инструмент как справочник.
+
+## 11. Русский язык интерфейса
+
+Весь staff и subscriber UI должен использовать русский язык:
+- статусы;
+- labels;
+- action names;
+- breadcrumbs;
+- drawer titles;
+- modal titles;
+- empty states;
+- errors;
+- help-copy.
+
+Английские enum/value имена допустимы только в коде и БД.
+
+## 12. Local-only storage
+
+Canonical storage contract:
+- только локальная файловая система;
+- attachments и legal files только локально;
+- никаких `MINIO_*`;
+- никаких fallback branches под object storage.
+
+## 13. Правило на будущее
+
+Если новый canonical contour уже согласован:
+- код меняется крупными блоками;
+- без поддержки старых UI patterns;
+- без сохранения устаревших вариантов “на всякий случай”;
+- docs должны отражать только текущее canonical решение и активный backlog.

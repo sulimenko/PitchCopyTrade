@@ -1,754 +1,298 @@
-# PitchCopyTrade — Список задач MVP
-> Версия: 0.2.0
-> Обновлено: 2026-03-19
-> Порядок выполнения: фазы последовательно; каждая фаза должна пройти acceptance criteria перед следующей
+# PitchCopyTrade — Active Tasks
+> Обновлено: 2026-03-20
+> Этот файл хранит только текущий backlog. Завершенные исторические фазы сюда не возвращаются.
 
----
+## Статусы
 
-## Обозначения
 - `[ ]` — не начато
-- `[~]` — в процессе
-- `[x]` — выполнено
-- `[!]` — заблокировано / требует решения
+- `[~]` — в работе
+- `[x]` — завершено
+- `[!]` — заблокировано
+
+## Текущий program block
+
+Следующий крупный блок состоит из трех частей:
+1. compact staff shell
+2. `AG Grid Community` как единый CRUD layer
+3. быстрый onboarding staff через email invite + Telegram bind
 
 ---
 
-## Фаза 0 — Фундамент (выполнено)
+## Блок A — Compact staff shell
 
-- [x] Структура проекта (pyproject.toml, src layout)
-- [x] Docker Compose (api, bot, worker, postgres optional local-db)
-- [x] Конфигурация через env (pydantic-settings, .env)
-- [x] API health-эндпоинты (`/health`, `/ready`, `/meta`)
-- [x] Заглушка бота (aiogram 3)
-- [x] Заглушка worker
-- [x] Начальная схема БД + Alembic миграция (18 таблиц)
-- [x] Local filesystem storage backend
-- [x] Тестовый фреймворк (pytest-asyncio, httpx)
-- [x] Единый helper `sql_enum(...)` для сериализации PostgreSQL enum через `.value`, а не через uppercase names
+**Цель:** убрать public-like visual language из staff кабинетов и сделать operator-first shell.
 
----
+- [ ] **A1** Сделать отдельный staff base layout
+  - не использовать текущий общий `base.html` как final visual language для staff
+  - выделить compact shell для `admin`, `author`, `moderation`
+  - public/subscriber design не должен протекать в staff UI
 
-## Фаза 0.1 — Полное удаление MinIO из продукта `[done]`
+- [ ] **A2** Внедрить left rail
+  - узкая вертикальная навигация
+  - группы разделов:
+    - dashboard
+    - staff
+    - authors
+    - strategies
+    - recommendations
+    - products
+    - payments
+    - subscriptions
+    - legal
+    - delivery
+    - promos
+    - analytics
+    - moderation
 
-**Цель:** Упростить продукт до единственного файлового storage на локальной системе. Никакой поддержки legacy MinIO, никаких fallback веток, никаких `MINIO_*` env.
+- [ ] **A3** Внедрить верхнюю navigation line
+  - `Назад`
+  - breadcrumb
+  - быстрые действия текущего экрана
+  - переключение роли
 
-### Задачи
-- [x] **0.1.1** Удалить MinIO из runtime-конфига
-  - убрать `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_BUCKET_UPLOADS`, `MINIO_SECURE`
-  - удалить `MinioSettings` и любые runtime checks, связанные с MinIO
-  - `APP_STORAGE_ROOT` остается единственным storage root
+- [ ] **A4** Правило `Назад`
+  - browser history fallback
+  - если history невалидна, fallback на parent route
 
-- [x] **0.1.2** Удалить MinIO backend из кода
-  - удалить `src/pitchcopytrade/storage/minio.py`
-  - убрать provider branches `minio` / `local_fs`
-  - canonical storage provider = локальная файловая система
-  - attachment/legal flows работают только через local storage paths
+- [ ] **A5** Уменьшить визуальный шум
+  - убрать большие hero blocks как primary pattern
+  - убрать крупные action buttons как основную навигацию
+  - сделать staff controls компактными
 
-- [x] **0.1.3** Удалить MinIO из зависимостей
-  - убрать библиотеку `minio` из `pyproject.toml`
-  - убрать связанные импорты и тесты
-  - оставить только local filesystem storage tests
+### Acceptance
 
-- [x] **0.1.4** Удалить MinIO из deploy/dev infrastructure
-  - убрать сервис `minio` из compose-файлов и всех deploy-шаблонов
-  - убрать инструкции по MinIO из README и env templates
-  - никаких placeholder секций “на будущее” для MinIO не оставлять
-
-- [x] **0.1.5** Упростить доменную модель storage
-  - убрать `storage_provider` как переключатель поведения, если он больше не нужен
-  - оставить metadata, достаточную для локального файла: `object_key/source_path/original_filename/content_type/size_bytes`
-  - не сохранять ничего, что нужно только для object storage bucket semantics
-
-- [x] **0.1.6** Обновить тесты и review coverage
-  - переписать тесты под single local storage contract
-  - добавить regression, что в проекте не осталось `MINIO_*` config hooks
-  - добавить regression, что attachments/legal files читаются только локально
-
-### Критерии приёмки
-- в проекте нет runtime/deploy/test зависимостей на MinIO
-- в `.env.example` и `deploy/env.server.example` отсутствуют `MINIO_*`
-- attachments и legal files работают только через локальную файловую систему
-- никакого legacy fallback к MinIO в коде не остается
-- `pytest` проходит после полного удаления библиотеки и кода MinIO
+- staff UI визуально отделен от public/subscriber UI
+- основные переходы видны в left rail и breadcrumb
+- на staff экранах есть понятный `back` contract
+- admin/author/mode switch не теряются в большом topbar noise
 
 ---
 
-## Фаза 1 — Сброс и чистый старт
-
-**Цель:** Сервис стартует без legacy-данных, без инструкций в UI, с чистой БД.
-
-### Задачи
-- [x] **1.1** Добавить Alembic-миграцию для ARQ job queue в Redis
-  - Таблица `notification_log` для аудита отправленных уведомлений (опционально)
-  - Enum `NotificationChannel`: telegram, email
-
-- [x] **1.2** Seeder инструментов
-  - Создать `src/pitchcopytrade/db/seeders/instruments.py`
-  - Загружает из `storage/seed/json/instruments.json`
-  - Upsert по ticker (пропускает если уже существует)
-  - Вызывается из события старта API (только если таблица инструментов пустая)
-
-- [x] **1.3** Seeder admin-пользователя
-  - Создать `src/pitchcopytrade/db/seeders/admin.py`
-  - Читает `ADMIN_TELEGRAM_ID` и `ADMIN_EMAIL` из env
-  - Создаёт User + Role(admin) если не существует
-  - Вызывается из события старта API
-
-- [x] **1.4** Скрипт полного сброса
-  - `scripts/reset.sh` — удаляет volumes, образы, приводит к чистому состоянию
-  - Документировать в README в разделе «Полный сброс»
-
-- [x] **1.5** Скрипт очистки storage перед чистой миграцией
-  - `scripts/clean_storage.sh`
-  - удаляет legacy-директории и stale runtime-файлы
-  - умеет `--fresh-runtime` для полного сброса `storage/runtime/*`
-  - вызывается из `deploy/migrate.sh --reset`
-
-- [x] **1.6** Ручной seed staff-пользователей для server/db
-  - `deploy/seed_staff.sql`
-  - создает/обновляет admin и test author
-  - назначает роли и author profile
-  - предзаполняет author watchlist всеми активными инструментами
-
-### Критерии приёмки
-- `docker-compose up --build` на чистой машине → пустые таблицы (кроме instruments + admin)
-- Никаких примеров данных, никаких placeholder-строк нигде
-
----
-
-## Фаза 2 — Webhook бота и внутренний broadcast API
-
-**Цель:** Бот работает в webhook-режиме на выделенном сервере; API умеет инициировать рассылку.
-
-### Задачи
-- [x] **2.1** Активация webhook
-  - Флаг `TELEGRAM_USE_WEBHOOK` уже есть в config
-  - В `bot/main.py`: если `TELEGRAM_USE_WEBHOOK=true` → регистрировать webhook через `bot.set_webhook(url)`
-  - Бот слушает порт `8080` внутренне (aiohttp webhook server)
-  - Health-check эндпоинт: `GET /health`
-
-- [x] **2.2** Internal broadcast эндпоинт
-  - В сервисе бота: `POST /internal/broadcast`
-  - Авторизация: заголовок `X-Internal-Token` (секрет из env `INTERNAL_API_SECRET`)
-  - Тело: `{ "recommendation_id": "<uuid>" }`
-  - Обработчик: получает рекомендацию + ноги + стратегию из БД
-  - Получает всех пользователей с `Subscription.status = active` для этой стратегии
-  - Отправляет форматированное Telegram-сообщение каждому подписчику
-  - Формат сообщения: см. blueprint.md §9
-
-- [x] **2.3** Обновление Docker Compose
-  - Сервис бота: открыть порт 8080 внутренне
-  - Добавить `INTERNAL_API_SECRET` в env
-  - Описать правило reverse proxy для webhook-пути (nginx на хосте)
-
-- [x] **2.4** Документация webhook
-  - README §«Настройка Telegram Webhook» — пошагово для выделенного сервера
-
-### Критерии приёмки
-- `curl -X POST http://localhost:8080/internal/broadcast -H "X-Internal-Token: ..." -d '{"recommendation_id":"..."}' ` отправляет сообщение тестовому подписчику
-- Логи бота показывают регистрацию webhook при старте если `TELEGRAM_USE_WEBHOOK=true`
-
----
-
-## Фаза 3 — Web-авторизация staff
-
-**Цель:** Администратор и автор могут войти в веб-кабинет; для server/db primary path это Telegram Login Widget, парольная форма остается только как demo fallback.
-
-### Задачи
-- [x] **3.1** Эндпоинт Telegram Login Widget
-  - `GET /auth/telegram/callback` — принимает auth data от Telegram
-  - Проверка HMAC-SHA256 подписи через `BOT_TOKEN`
-  - Отклонять если `auth_date` старше 5 минут
-  - Искать User по `telegram_user_id`; возвращать 401 если не найден
-  - Создать подписанный JWT (HttpOnly, Secure, SameSite=Strict, 24ч)
-  - Редирект на `/cabinet/`
-  - В README явно зафиксирован deploy-step `@BotFather /setdomain` для домена из `BASE_URL`
-
-- [x] **3.2** Session middleware
-  - `src/pitchcopytrade/api/middleware/auth.py`
-  - Зависимость `get_current_user()`: декодирует JWT, загружает User из БД
-  - Фабрика зависимостей `require_role(role_slug)`
-
-- [x] **3.3** Шаблон страницы входа
-  - `src/pitchcopytrade/templates/auth/login.html`
-  - Telegram Login Widget — основной путь для server/db
-  - Форма логин/пароль допустима только как local/demo fallback
-
-- [x] **3.4** Маршруты авторизации
-  - `GET /auth/login` → рендерит login.html
-  - `GET /auth/telegram/callback` → проверка + редирект
-  - `POST /auth/logout` → очистка cookie + редирект на /auth/login
-
-### Критерии приёмки
-- Staff-пользователь с корректным `telegram_user_id` в БД может войти через Telegram Login Widget
-- Дополнительные query-поля Telegram callback (`photo_url` и т.д.) не ломают HMAC-проверку
-- Password form работает только для пользователей, у которых реально есть `password_hash`
-- Пользователь не в БД получает страницу 401 (без саморегистрации)
-- JWT проверяется на каждом защищённом маршруте
-
----
-
-## Фаза 4 — Кабинет администратора
-
-**Цель:** Администратор может создавать авторов и управлять базовыми настройками.
-
-### Задачи
-- [x] **4.1** Шаблон layout кабинета администратора
-  - `src/pitchcopytrade/templates/admin/layout.html`
-  - Левый nav: Авторы | One Pager | Метрики | Выплаты
-  - Никаких инструкций, никакого help-текста
-
-- [x] **4.2** Страница управления авторами
-  - `GET /admin/authors` — список авторов (имя, telegram_id, email, активен)
-  - `POST /admin/authors` — создание автора
-    - Поля: `display_name` (обязательно), `email` (обязательно), `telegram_user_id` (опц.)
-    - Создаёт: User + AuthorProfile (slug авто) + user_roles(author)
-    - Политика `requires_moderation` должна определяться отдельной настройкой author permissions
-  - `POST /admin/authors/{id}/toggle` — включить/отключить автора
-
-- [x] **4.3** Редактор One Pager
-  - `GET /admin/onepager/{strategy_id}` — редактировать One Pager
-  - `POST /admin/onepager/{strategy_id}` — сохранить HTML-контент
-  - Хранить в `Strategy.full_description` как HTML
-  - Кнопка предпросмотра → `/s/{strategy_slug}` в новой вкладке
-
-- [x] **4.4** Страница метрик
-  - `GET /admin/metrics`
-  - Карточки: всего подписчиков, активных подписок, новых за неделю
-  - Таблица: стратегия → кол-во подписчиков (агрегированно, без персональных данных)
-
-- [x] **4.5** Страница платежей (stub)
-  - `GET /admin/payments` — список ожидающих ручных платежей
-  - `POST /admin/payments/{id}/confirm` — подтвердить вручную → активировать подписку
-
-### Критерии приёмки
-- Администратор может создать автора; новый автор сразу может войти на сервере через Telegram при заполненном `telegram_user_id`
-- Нет утечки персональных данных: администратор не видит имён подписчиков в метриках
-
-### Текущее замечание по реализации
-- create-author duplicate-email crash уже исправлен;
-- следующий блок hardening теперь в другом месте: role switch redirect, reversible author toggle, db seeders.
-
----
-
-## Фаза 5 — Инструменты и Popup выбора тикера
-
-**Цель:** Popup тикера на основе канонического seed-набора инструментов с клиентским поиском.
-
-### Задачи
-- [x] **5.1** API эндпоинт инструментов
-  - `GET /api/instruments` — список активных инструментов
-  - Ответ: `[{ ticker, name, last_price, change_pct, board, currency }]`
-  - Из БД (засеяно из `storage/seed/json/instruments.json`)
-  - Будущее: параметр `?q=` для живого API
-
-- [x] **5.2** Компонент Popup тикера
-  - `src/pitchcopytrade/templates/components/ticker_picker.html` (HTMX partial)
-  - Поле ввода → `hx-get=/api/instruments?q=...` по keyup (debounce 300мс)
-  - Таблица результатов: тикер | название | цена | изменение%
-  - Клик по строке → заполняет родительское поле, закрывает popup
-  - Недавние выборы → `localStorage` (ключ `pct_recent_tickers`)
-  - Недавние отображаются со звёздочкой при пустом запросе
-
-- [x] **5.3** Подключить popup в inline-строку и полную форму (Фаза 7)
-
-### Критерии приёмки
-- Ввод «SB» → SBER первым в списке
-- Клик по SBER → заполняет поле, popup закрывается
-- Недавние выборы сохраняются между загрузками страницы
-
----
-
-## Фаза 6 — Кабинет автора и управление стратегиями
-
-**Цель:** Автор может создавать стратегии и управлять ими.
-
-### Задачи
-- [x] **6.1** Layout кабинета автора
-  - `src/pitchcopytrade/templates/cabinet/layout.html`
-  - Левый nav: Стратегии | (будущее: Аналитика)
-  - Шапка: display_name автора + кнопка «Выйти»
-  - Никакого help-текста, никакого онбординга
-
-- [x] **6.2** Страница списка стратегий
-  - `GET /cabinet/strategies` — список стратегий автора (название, статус, кол-во подписчиков)
-  - Кнопка «Создать стратегию»
-  - `POST /cabinet/strategies` — создать стратегию (название обязательно, slug авто)
-  - `GET /cabinet/strategies/{id}` → страница рекомендаций этой стратегии
-
-- [x] **6.3** Редактирование стратегии
-  - `GET /cabinet/strategies/{id}/edit` — изменить название, описание, уровень риска, min_capital_rub
-  - `POST /cabinet/strategies/{id}/edit` — сохранить
-
-- [x] **6.4** Watchlist автора
-  - Для каждого автора есть персональный watchlist наблюдения бумаг
-  - При создании автора watchlist предзаполняется активными инструментами
-  - В author dashboard есть inline-поле фильтрации и добавления бумаг
-  - Когда отфильтрованный локальный список сужается до 2 результатов, включается stub-ветка внешнего поиска
-  - Сейчас поддержано только добавление новых бумаг, без удаления
-
-### Критерии приёмки
-- Автор видит только свои стратегии (ACL: `strategy.author_id = current_user.author_profile.id`)
-- Slug уникален и URL-безопасен
-
-### Текущее замечание по реализации
-- canonical strategy/recommendation CRUD автора уже переведен в `/author/*`;
-- legacy `/cabinet/*` больше не должен возвращаться в продукт.
-
----
-
-## Фаза 7 — CRUD рекомендаций (Inline + Popup)
-
-**Цель:** Автор может создавать, просматривать и публиковать рекомендации.
-
-### Задачи
-- [x] **7.1** Страница таблицы рекомендаций
-  - `GET /cabinet/strategies/{strategy_id}/recommendations`
-  - Колонки: дата | тикер | сторона | цена | цель | стоп | статус | действия
-  - Пустое состояние: только «Нет рекомендаций» + строка ввода внизу
-  - Таблица полностью пустая на свежей БД
-
-- [x] **7.2** Inline-строка добавления
-  - Последняя строка таблицы — пустая редактируемая строка
-  - Поля: `[Тикер ▼]` `[BUY ▼]` `[Цена]` `[Цель]` `[Стоп]`
-  - Клик «Тикер» → Popup тикера (Фаза 5)
-  - BUY/SELL → toggle-кнопка
-  - Цена/Цель/Стоп → числовые поля, nullable, без валидации пустых
-  - Enter или `[+]` → POST создать рекомендацию + первую ногу
-  - Новая строка появляется вверху таблицы, строка ввода сбрасывается
-
-- [x] **7.3** API создания рекомендации
-  - `POST /cabinet/strategies/{strategy_id}/recommendations`
-  - Тело: `{ ticker, side, price?, target?, stop? }`
-  - Создаёт `Recommendation` (kind=new_idea, status=draft; политика модерации должна определяться author permissions)
-  - Создаёт `RecommendationLeg` (instrument_id по ticker, side, entry_from=price, tp1=target, stop_loss=stop)
-  - Возвращает HTMX partial с новой строкой таблицы
-
-- [x] **7.4** Полная форма (popup)
-  - Кнопка «Новая рекомендация» → модальное окно
-  - Поля: название (опц.), тип (radio), ноги (повторяемый блок), дата публикации (опц.)
-  - Ссылка «Добавить ногу»
-  - Закрытие по Esc или ×
-
-- [x] **7.5** Публикация
-  - Кнопка «Опубликовать» на каждой черновой строке
-  - `POST /cabinet/recommendations/{id}/publish`
-  - Устанавливает status=published, published_at=now()
-  - Ставит задание ARQ `send_recommendation_notifications` (async, не блокирует UI)
-  - Возвращает HTMX swap — обновляет только ячейку статуса
-
-- [x] **7.6** Действия со строкой
-  - «Закрыть» → status=closed, closed_at=now()
-  - «Отменить» → status=cancelled, cancelled_at=now()
-  - Удаления нет в MVP — только soft close/cancel
-
-### Критерии приёмки
-- Создание рекомендации с только тикер + сторона → сохраняется без ошибки
-- Цена, цель, стоп nullable — пустые поля допустимы
-- Публикация → ARQ job в очереди (видно в логах API)
-- Строка таблицы обновляется на месте без перезагрузки страницы
-
-### Текущее замечание по реализации
-- recommendation CRUD доступен автору;
-- admin recommendation CRUD в `/admin/*` отсутствует;
-- если администратор должен создавать рекомендации в стратегии автора, это должен быть отдельный operator flow, а не нарушение author ACL.
-- исторические чекбоксы этой фазы не означают, что текущий delivered UI соответствует каноническому popup/inline-grid; corrective rebuild вынесен в `Фаза 15`.
-
----
-
-## Межфазный блок — Рефактор ownership и operator access (выполнено)
-
-**Цель:** Убрать размазанную модель прав между `/author/*` и `/cabinet/*`, закрепить один author contour и явно добавить admin operator capabilities там, где они нужны бизнесу.
-
-### Задачи
-- [x] **11.1** Удалить legacy `/cabinet/*`
-  - перенести создание и редактирование стратегий в canonical `/author/*`
-  - убрать дублирующий strategy/recommendation flow из `/cabinet/*`
-  - не сохранять backward compatibility
-
-- [x] **11.2** Довести `/author/*` до полного strategy ownership flow
-  - `GET /author/strategies`
-  - `GET /author/strategies/new`
-  - `POST /author/strategies`
-  - `GET /author/strategies/{id}/edit`
-  - `POST /author/strategies/{id}`
-  - author видит и редактирует только свои стратегии
-
-- [x] **11.3** Явно описать и реализовать admin strategy delegation
-  - admin создает автора
-  - admin может создать стратегию за автора
-  - admin может переназначить владельца стратегии
-  - это должно быть видно в admin UI, а не подразумеваться только через `author_id`
-
-- [x] **11.4** Зафиксировать явный запрет recommendation create в admin-mode
-  - admin может открыть стратегию автора и управлять ownership стратегий
-  - admin в admin-mode не создает recommendation
-  - recommendation create остается только в author-mode
-  - multi-role staff должен переключиться в author-mode перед созданием рекомендации
-
-- [x] **11.5** Обновить review coverage
-  - regression: `/cabinet/*` больше не существует
-  - regression: author strategy CRUD полностью живет в `/author/*`
-  - regression: admin-mode не создает рекомендации, а author-mode сохраняет ownership ACL
-
-### Критерии приёмки
-- в проекте остается только один author contour: `/author/*`
-- администратор явно может дать автору рабочий доступ к стратегиям без скрытых legacy-маршрутов
-- администратор либо явно умеет создавать рекомендации как оператор, либо это явно запрещено продуктовым контрактом
-- ACL и audit trail различают действия автора и действия администратора
-
----
-
-## Фаза 8 — ARQ Worker: мгновенные уведомления через Redis
-
-**Цель:** При публикации рекомендации Telegram и Email уведомления отправляются мгновенно.
-
-### Задачи
-- [x] **8.1** ARQ worker entry point
-  - `src/pitchcopytrade/worker/arq_worker.py`
-  - `WorkerSettings` с functions, redis_settings, max_jobs, job_timeout
-  - Redis URL из `settings.redis_url` (по умолчанию `redis://localhost:6379/0`)
-  - Обновить `worker/main.py` для запуска ARQ вместо sleep-цикла
-
-- [x] **8.2** Функция задания уведомлений
-  - `src/pitchcopytrade/worker/jobs/notifications.py`
-  - `async def send_recommendation_notifications(ctx, recommendation_id: str)`
-  - Получает рекомендацию + ноги + стратегию из БД
-  - Для каждого подписчика с `Subscription.status = active`:
-    - Если есть `telegram_user_id` → POST на `http://bot:8080/internal/broadcast`
-    - Если есть `email` → отправить через aiosmtplib
-  - Retry: 3 раза, задержка 10с, timeout 60с
-
-- [x] **8.3** Постановка задания при публикации
-  - В обработчике `POST /cabinet/recommendations/{id}/publish`:
-    ```python
-    await arq_pool.enqueue_job("send_recommendation_notifications", str(rec.id))
-    ```
-  - `arq_pool` через FastAPI dependency (создаётся при старте, хранится в `app.state`)
-
-- [x] **8.4** Email шаблон
-  - `src/pitchcopytrade/templates/email/recommendation.html` — Jinja2 HTML
-  - `src/pitchcopytrade/templates/email/recommendation.txt` — plain text fallback
-  - aiosmtplib отправляет multipart/alternative (HTML + text)
-  - SMTP: `relay.ptfin.kz:465 SSL`, от `pct@ptfin.ru`
-
-- [x] **8.5** CMD для сервиса worker в docker-compose
-  - `python -m arq pitchcopytrade.worker.arq_worker.WorkerSettings`
-  - Worker подключается к Redis на хосте через `host.docker.internal`
-
-### Критерии приёмки
-- Публикация рекомендации → уведомления отправлены за < 2 сек
-- Логи worker показывают мгновенный подхват задания (без 30с ожидания)
-- Сбой SMTP → задание retry 3 раза, потом failed
-
----
-
-## Фаза 9 — Telegram Mini App (подписчики)
-
-**Цель:** Подписчик может просматривать стратегии, One Pager и оформить подписку.
-
-### Задачи
-- [x] **9.1** Точка входа Mini App
-  - Команда бота `/start` → кнопка «Открыть приложение» (WebApp)
-  - WebApp URL: `{BASE_URL}/app/`
-
-- [x] **9.2** Страницы Mini App (Jinja2, HTMX, mobile)
-  - `GET /app/` — список опубликованных стратегий
-  - `GET /app/strategy/{slug}` — One Pager (HTML, полноэкранный)
-  - `GET /app/tariffs` — продукты подписки с ценами
-  - `GET /app/subscribe/{product_id}` — checkout (stub: инструкции по ручной оплате)
-  - `GET /app/my` — активные подписки пользователя
-
-- [x] **9.3** Идентификация подписчика в Mini App
-  - Mini App передаёт `initData` в заголовке
-  - `GET /app/auth` — проверить подпись `initData`, создать/найти User, вернуть токен сессии
-  - Все маршруты `/app/*` требуют валидной Mini App сессии
-
-- [x] **9.4** Checkout подписки (stub)
-  - Показывает: «Переведите {amount} руб. по реквизитам: ... и нажмите "Я оплатил"»
-  - `POST /app/subscribe/{product_id}/claim` → создаёт Payment(status=pending) + Subscription(status=pending)
-  - Администратор подтверждает вручную в кабинете (Фаза 4.5)
-
-### Критерии приёмки
-- Подписчик открывает Mini App из бота, видит список стратегий, переходит на One Pager
-- Claim подписки создаёт записи в БД, видимые в кабинете администратора
-
----
-
-## Фаза 10 — Тесты и закалка
-
-**Цель:** Основные флоу покрыты тестами. Регрессий нет.
-
-### Задачи
-- [x] **10.1** Тесты авторизации
-  - Проверка Telegram HMAC (корректный / просроченный / подделанный)
-  - Защищённые маршруты возвращают 401 без сессии
-  - Проверка ролей: автор не может зайти на `/admin/*`
-
-- [x] **10.2** Тесты рекомендаций
-  - Создание с минимальными полями (только тикер + сторона)
-  - Создание со всеми полями
-  - Публикация → запись в ARQ очереди
-  - ACL: автор А не может публиковать рекомендации автора Б
-
-- [x] **10.3** Тест broadcast
-  - Internal broadcast эндпоинт с корректным/некорректным токеном
-  - 401 на плохом токене, 200 на корректном
-
-- [x] **10.4** Тест Worker
-  - Обработка ARQ задания: успех / retry при сбое
-
-- [x] **10.5** Hotfix: timing attack в X-Internal-Token
-  - `bot/main.py`: заменено `token != secret` на `hmac.compare_digest(token, secret)`
-  - Исправлено в ходе код-ревью 2026-03-18
-
----
-
-## Фаза 11 — Staff role switch и onboarding автора
-
-**Цель:** Сделать явный и безопасный путь: admin создает автора, author привязывает Telegram, multi-role staff переключает active mode через UI.
-
-### Задачи
-- [x] **11.1** Сделать явный вход в управление авторами из admin UI
-  - добавить пункт `Авторы` в верхнее меню admin dashboard
-  - добавить быстрый CTA на создание автора
-  - исключить ситуацию, когда create-author screen существует, но спрятан
-
-- [x] **11.2** Исправить create-author flow
-  - обязательные поля: `display_name + email`
-  - `telegram_user_id` сделать необязательным
-  - duplicate email должен возвращать понятную бизнес-ошибку, а не `500`
-  - после `IntegrityError` обязательно делать `session.rollback()`
-  - запретить неявный конфликт create-author с уже существующим пользователем
-
-- [x] **11.3** Добавить invite link / invite token для автора
-  - admin создает автора без `telegram_user_id`
-  - система генерирует invite token
-  - admin может скопировать invite link и отправить автору
-  - первый успешный Telegram вход по invite link привязывает Telegram account к author user
-
-- [x] **11.4** Добавить bind через первую Telegram-авторизацию
-  - если у автора еще нет `telegram_user_id`, Telegram login может завершить bind по invite token
-  - после bind `telegram_user_id` сохраняется у существующего `User`
-  - повторная привязка без operator action запрещена
-
-- [x] **11.5** Реализовать active role switch в staff UI
-  - верхнее меню показывает `Режим администратора` / `Режим автора`
-  - переключатель доступен только пользователю с двумя ролями
-  - active mode не создает второй аккаунт и не меняет ownership
-  - в author-mode пользователь работает только со своими стратегиями и рекомендациями
-
-- [x] **11.6** Зафиксировать admin/operator contract
-  - admin может создавать стратегию за любого автора
-  - admin в admin-mode не может создавать рекомендации
-  - чтобы подать рекомендацию, пользователь с ролями `admin + author` обязан переключиться в author-mode
-  - review и ACL tests должны это явно проверять
-
-### Критерии приёмки
-- администратор всегда видит, где создать автора
-- создание автора с уже занятым email не приводит к `500`
-- автор может быть создан без `telegram_user_id`
-- Telegram bind работает через invite token и через первую успешную Telegram-авторизацию
-- multi-role staff-пользователь переключает active mode через верхнее меню
-- рекомендации создаются только в author-mode
-
----
-
-## Фаза 12 — Staff hardening после review 2026-03-19
-
-**Цель:** Закрыть дефекты, найденные после завершения текущего большого блока.
-
-- [x] **12.1** Починить role switch redirect
-  - кнопки `Режим администратора / Режим автора` не должны отправлять на URL предыдущего режима
-  - при переключении mode redirect должен идти на canonical home целевой роли:
-    - admin → `/admin/dashboard`
-    - author → `/author/dashboard`
-  - добавить regression test на switch c admin page в author-mode и обратно
-
-- [x] **12.2** Сделать author registry двусторонним
-  - `GET /admin/authors` должен показывать и `active`, и `inactive`
-  - toggle автора должен быть обратимым: после `Отключить` автор остается виден и может быть включен обратно
-  - добавить статусный фильтр `все / активные / отключенные`
-
-- [x] **12.3** Починить instrument seeder для Docker/db deploy
-  - убрать хрупкий путь через `Path(__file__).parents[...]`
-  - читать `storage/seed/json/instruments.json` от app root или через `APP_STORAGE_ROOT`
-  - добавить test / smoke-check для container-like path
-
-- [x] **12.4** Починить admin seeder startup path
-  - убрать `greenlet_spawn` на старте API
-  - не делать relationship append таким образом, который провоцирует async lazy-load после `flush()`
-  - добавить regression на успешный `seed_admin(...)` в db mode
-
-### Критерии приёмки
-- role switch из topbar не приводит к `403` на смене режима
-- отключенного автора можно включить обратно из того же UI
-- в Docker/db старте нет `Instrument seeder failed`
-- в Docker/db старте нет `Admin seeder failed: greenlet_spawn ...`
-
----
-
-## Фаза 13 — Управление администраторами
-
-**Цель:** убрать зависимость от ручного SQL для создания новых `admin` и сделать staff governance управляемым из продукта.
-
-- [x] **13.1** Добавить staff registry
-  - единый список staff users и их ролей
-  - фильтры: `admin`, `author`, `moderator`, `multi-role`
-  - entry point из admin dashboard
-
-- [x] **13.2** Реализовать создание нового admin из UI
-  - форма создания staff-пользователя с ролью `admin`
-  - обязательные поля: `display_name + email`
-  - `telegram_user_id` опционально
-  - duplicate email / duplicate telegram id возвращают business error, не `500`
-
-- [x] **13.3** Добавить invite/bind flow для admin
-  - если `telegram_user_id` не задан, admin получает invite link / invite token
-  - первый Telegram login по invite token привязывает аккаунт
-  - после bind user активируется
-
-- [x] **13.4** Реализовать role assignment для существующего staff user
-  - действующий admin может добавить роль `admin` существующему `author`
-  - действующий admin может добавить роль `author` существующему `admin`
-  - один `User`, без дублирования аккаунтов
-
-- [x] **13.5** Защитить governance-операции
-  - запрет self-demotion последнего активного admin
-  - запрет снятия роли у последнего admin
-  - audit trail на выдачу и снятие роли `admin`
-
-- [x] **13.6** Обновить deploy contract
-  - `seed_admin` остается только для bootstrap первого администратора
-  - README явно отделяет bootstrap-admin от product-admin-management
-
-### Критерии приёмки
-- новый `admin` создается без ручного SQL
-- bootstrap первого `admin` по-прежнему возможен через deploy seeder
-- существующий admin может выдать роль `admin` другому staff user
-- роли `admin + author` могут сочетаться в одном `User`
-
----
-
-## Фаза 14 — Staff Binding Hardening
-
-**Цель:** убрать риск преждевременной staff-активации по ручному `telegram_user_id` и сделать invite flow готовым к пересылке с тестового сервера.
-
-- [x] **14.1** Убрать мгновенную активацию staff по ручному `telegram_user_id`
-  - `create_admin_staff_user(...)` и `create_admin_author(...)` не должны переводить user в `active` только из-за заполненного `telegram_user_id`
-  - ручной `telegram_user_id` трактуется как предварительно известный идентификатор, но не как подтвержденный bind
-  - до bind staff user остается `invited`
-
-- [x] **14.2** Сделать Telegram bind единственным activation gate
-  - первая успешная Telegram-авторизация по invite token активирует staff user
-  - если у user заранее заполнен ожидаемый `telegram_user_id`, bind обязан проверять совпадение
-  - доступ в staff UI не должен открываться до успешного bind
-
-- [x] **14.3** Нормализовать invite links для server use
-  - в `/admin/staff` и `/admin/authors` invite links должны строиться как абсолютные URL от `BASE_URL`
-  - invite link должен быть кликабельным и удобным для copy/share
-  - нельзя оставлять относительный `/login?invite_token=...` как единственный UI-вариант
-
-- [x] **14.4** Добавить regression coverage для server rollout
-  - regression: staff user с вручную указанным `telegram_user_id` не активируется до bind
-  - regression: invite link рендерится как абсолютный `https://...` URL
-  - regression: после bind user получает корректный active mode и canonical redirect
-
-### Критерии приёмки
-- ручной ввод `telegram_user_id` больше не выдает staff-доступ сам по себе
-- activation staff user происходит только через подтвержденный Telegram bind
-- invite links готовы к отправке сотруднику прямо из UI без ручной сборки URL
-- ветка безопасна для следующей выкладки на тестовый сервер
-
----
-
-## Фаза 15 — Author Workspace Rebuild
-
-**Цель:** убрать UI drift в кабинете автора и привести рекомендации/watchlist к канонической модели: modal + inline table + права автора из admin.
-
-Статус фазы после повторной проверки: **закрыта**. Scope ниже реализован в коде, покрыт тестами и синхронизирован с `doc/review.md`.
-
-### Задачи
-- [x] **15.1** Заменить отдельную страницу создания рекомендации на modal flow
-  - кнопка `Новая рекомендация` в `/author/dashboard` и `/author/recommendations` открывает popup/modal
-  - отдельный route `/author/recommendations/new` перестает быть primary UX
-  - полный ввод рекомендации выполняется поверх текущего экрана без ухода со списка
-
-- [x] **15.2** Реализовать быстрый inline-ввод рекомендации в табличном стиле
-  - основным экраном рекомендаций становится таблица, а не карточки
-  - последняя строка таблицы — пустая inline-строка добавления
-  - поведение в стиле spreadsheet: `Tab`, `Shift+Tab`, `Enter`, `Esc`
-  - выбор тикера открывает popup выбора инструмента
-
-- [x] **15.3** Расширить канонический набор инструментов и пересев watchlist
-  - `storage/seed/json/instruments.json` должен содержать нормальный базовый набор бумаг, а не только `SBER + GAZP`
-  - admin/author watchlist должен строиться из полного seed-набора
-  - для server/db нужен явный reseed path, чтобы существующие авторы получили расширенный watchlist
-
-- [x] **15.4** Убрать `requires_moderation` из author form и перенести в author permissions
-  - checkbox `Требует модерации` убрать из `/author/recommendations/*`
-  - настройку вынести в `/admin/authors`
-  - при создании/редактировании рекомендации сервер сам применяет author-level policy
-
-- [x] **15.5** Починить watchlist search UI
-  - suggestion dropdown не должен рендериться как второе пустое поле под поиском
-  - оставить один search input
-  - dropdown должен появляться только когда реально есть подсказки
-  - после этого добавить regression на hidden state / empty suggestions
-
-- [x] **15.6** Внедрить canonical tables с сортировкой и фильтрацией
-  - `/author/recommendations`
-  - `/author/strategies`
-  - блок watchlist автора
-  - `/admin/authors`
+## Блок B — AG Grid Community
+
+**Цель:** все staff list/registry/queue surfaces переводятся на единый `AG Grid Community`.
+
+- [ ] **B1** Подключить `AG Grid Community` локально
+  - без CDN как canonical path
+  - shared JS/CSS слой внутри проекта
+  - один reusable bootstrap для Jinja templates
+
+- [ ] **B2** Сделать compact staff grid theme
+  - row height `28-32px`
+  - header height `30-34px`
+  - слабые borders
+  - минимальные paddings
+  - мелкие controls
+  - нейтральный фон
+  - минимум карточности
+
+- [ ] **B3** Перевести admin surfaces
   - `/admin/staff`
+  - `/admin/authors`
   - `/admin/strategies`
-  - минимум: сортировка по колонкам + client/server filters
+  - `/admin/products`
+  - `/admin/promos`
+  - `/admin/payments`
+  - `/admin/subscriptions`
+  - `/admin/legal`
+  - `/admin/delivery`
+  - табличные части `/admin/analytics/*`
 
-- [x] **15.7** Обновить docs и guide после rebuild
-  - синхронизировать `README.md`, `doc/blueprint.md`, `doc/task.md`, `doc/review.md`
-  - обновить `doc/guide.html` и `doc/guide.pdf`
-  - удалить из docs утверждения, что inline/popup уже были завершены, если это не подтверждено реальным UI
+- [ ] **B4** Перевести author surfaces
+  - `/author/strategies`
+  - `/author/recommendations`
+  - watchlist в `/author/dashboard`
 
-### Критерии приёмки
-- создание рекомендации не уводит автора на отдельную страницу
-- быстрый inline-ввод работает в одной таблице с существующими рекомендациями
-- watchlist автора показывает расширенный набор бумаг
-- автор не видит и не управляет `requires_moderation` напрямую
-- пустой блок подсказок под watchlist search больше не рендерится
-- таблицы поддерживают сортировку и фильтрацию
+- [ ] **B5** Перевести moderation surface
+  - `/moderation/queue`
+  - detail как right drawer
+  - approve/rework/reject как row actions
+
+- [ ] **B6** Сделать один CRUD language
+  - grid row
+  - inline edit простых полей
+  - right drawer для расширенного редактирования
+  - row menu для actions
+  - modal/fullscreen modal для сложных форм
+
+- [ ] **B7** Сохранить recommendation editor contract
+  - grid остается primary list layer
+  - full recommendation edit остается modal/fullscreen modal
+  - быстрый inline add остается operator shortcut
+
+### Acceptance
+
+- `workspace-table` перестает быть primary pattern
+- все list/registry/queue screens работают через `AG Grid Community`
+- admin, author и moderation используют один visual/interaction language
+- grid выглядит как professional operator tool, а не как public marketing UI
 
 ---
 
-## Worker handoff — Фаза 15
+## Блок C — Unified mutability rules
 
-Фаза завершена. Этот блок сохранён только как историческая справка по scope corrective rebuild.
+**Цель:** все grids и drawers obey explicit editability rules по статусам.
+
+- [ ] **C1** Staff users
+  - до bind editable: `display_name`, `email`, `roles`, `telegram_user_id`
+  - после bind editable: `display_name`, `email`, `roles`, `telegram_user_id`
+  - статус меняется только через явные actions
+  - vocabulary: `invited`, `active`, `inactive`
+
+- [ ] **C2** Authors
+  - editable:
+    - `display_name`
+    - `email`
+    - `roles`
+    - `telegram_user_id`
+    - `requires_moderation`
+    - `active/inactive`
+
+- [ ] **C3** Strategies
+  - editable только `draft`
+  - `published`, `archived` read-only
+
+- [ ] **C4** Recommendations
+  - editable только `draft`, `review`
+  - `approved`, `scheduled`, `published`, `closed`, `cancelled`, `archived` read-only
+
+- [ ] **C5** Payments
+  - editable/actionable только `created`, `pending`
+  - `paid`, `failed`, `expired`, `cancelled`, `refunded` read-only
+  - row actions minimum:
+    - `Открыть`
+    - `Подтвердить`
+    - `Применить скидку`
+
+- [ ] **C6** Subscriptions
+  - free-form row edit не допускается
+  - row actions minimum:
+    - `Открыть`
+    - `Отключить автопродление`
+    - `Отменить`
+  - terminal states read-only
+
+- [ ] **C7** Legal
+  - draft editable
+  - active version read-only
+  - смена active документа только через новую версию и `activate`
+
+- [ ] **C8** Watchlist
+  - добавить сортировку/фильтрацию
+  - добавить удаление
+  - не редактировать instrument master-data из watchlist
+
+### Acceptance
+
+- пользователь не может редактировать terminal rows
+- доступные actions совпадают со статусом сущности
+- drawer и row menu не показывают недопустимые операции
 
 ---
 
-## Итог MVP
+## Блок D — Staff onboarding
 
-**Review snapshot: 2026-03-19**
-Базовый MVP, Telegram-first/staff контуры и `Фаза 15` завершены.
-Актуальный checklist и статус смотреть в `doc/review.md`.
+**Цель:** убрать ручную пересылку invite URL и сделать onboarding новым `admin/author` быстрым и естественным.
+
+- [ ] **D1** Упростить create flow
+  - primary fields:
+    - `display_name`
+    - `email`
+    - `roles`
+  - `telegram_user_id` увести в advanced field
+
+- [ ] **D2** Автоматически отправлять invite email
+  - новый `admin`
+  - новый `author`
+  - письмо с CTA:
+    - `Открыть приглашение`
+    - `Войти через Telegram`
+
+- [ ] **D3** Делать admin oversight mail
+  - при каждом создании `admin`
+  - при каждом создании `author`
+  - при failure отправки invite
+  - отправлять уведомление всем активным администраторам
+
+- [ ] **D4** Хранить invite delivery state
+  - `sent`
+  - `failed`
+  - `resent`
+  - `last_sent_at`
+  - `last_error`
+  - log entry для каждой отправки
+
+- [ ] **D5** Добавить registry actions
+  - `Отправить повторно`
+  - `Скопировать ссылку`
+  - `Открыть Telegram invite`
+
+- [ ] **D6** Инвалидировать старые invite links при resend
+  - старый invite token больше не работает
+  - новый становится canonical
+
+- [ ] **D7** Упростить invite state на `/login`
+  - отдельное состояние staff invite
+  - минимум текста
+  - одна primary CTA
+  - без необходимости понимать `invite_token`
+
+### Acceptance
+
+- администратор не пересылает invite вручную как основной сценарий
+- новый `admin/author` получает письмо автоматически
+- resend работает из registry
+- failed delivery видна в UI и в log
+- старые invite links невалидны после resend
 
 ---
 
-## Соглашения по реализации
+## Блок E — Русский язык интерфейса
 
-### Именование маршрутов
-- `/author/` — кабинет автора (HTMX/web)
-- `/admin/` — кабинет администратора (HTMX)
-- `/app/` — Mini App подписчиков
-- `/api/` — JSON API (инструменты и т.д.)
-- `/auth/` — авторизация
+**Цель:** весь видимый UI перевести на русский и убрать английские статусы/подписи из staff и subscriber layers.
 
-### HTMX паттерны
-- `hx-target` + `hx-swap="outerHTML"` для обновления строк таблицы
-- `hx-boost` на nav-ссылках для SPA-ощущения
-- Inline-строка: `hx-post` + `hx-swap="afterbegin"` на tbody
+- [ ] **E1** Локализовать staff shell
+- [ ] **E2** Локализовать grid headers
+- [ ] **E3** Локализовать row actions и drawer labels
+- [ ] **E4** Локализовать статусы и badge text
+- [ ] **E5** Локализовать moderation, payments, subscriptions, legal и analytics surfaces
 
-### Политика «без legacy»
-- Перед каждой фазой: `git status` — никаких незакоммиченных файлов
-- Перед деплоем: `scripts/reset.sh` для гарантии чистого состояния
-- Никакого закомментированного кода, никаких TODO в production-путях
+### Acceptance
+
+- пользователь не видит англоязычных labels и статусов в интерфейсе
+- английский остается только в коде/enum values
+
+---
+
+## Worker handoff
+
+### Основные файлы-кандидаты
+
+- `src/pitchcopytrade/web/templates/base.html`
+- `src/pitchcopytrade/web/templates/partials/staff_mode_switch.html`
+- `src/pitchcopytrade/web/templates/admin/*`
+- `src/pitchcopytrade/web/templates/author/*`
+- `src/pitchcopytrade/web/templates/moderation/*`
+- `src/pitchcopytrade/api/routes/admin.py`
+- `src/pitchcopytrade/api/routes/author.py`
+- `src/pitchcopytrade/api/routes/moderation.py`
+- `src/pitchcopytrade/services/admin.py`
+- `src/pitchcopytrade/services/author.py`
+- `src/pitchcopytrade/auth/*`
+- новый shared слой для `AG Grid Community`
+
+### Не делать
+
+- не сохранять старые handcrafted tables как параллельный UI
+- не поддерживать старый большой public-like shell для staff
+- не оставлять onboarding через ручную пересылку URL как canonical path
+- не добавлять второй CRUD language рядом с grid
+
+### Порядок
+
+1. staff shell
+2. `AG Grid Community`
+3. mutability gates
+4. onboarding + invite delivery
+5. localization pass
+6. docs sync
