@@ -1,63 +1,282 @@
 {% extends "base.html" %}
 
+{% macro sort_href(column) -%}
+  /author/recommendations?q={{ q | urlencode }}&status_filter={{ status_filter | urlencode }}&sort_by={{ column }}&direction={% if sort_by == column and direction == "asc" %}desc{% else %}asc{% endif %}
+{%- endmacro %}
+
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action" href="/author/recommendations/new">Новая рекомендация</a>
+  <button class="action" type="button" data-open-recommendation-modal>Новая рекомендация</button>
   <a class="action ghost" href="/author/dashboard">Сводка</a>
+  <a class="action ghost" href="/author/strategies">Стратегии</a>
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
 {% endblock %}
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">author recommendations</div>
+  <div class="eyebrow">рабочий стол рекомендаций</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">Рекомендации автора</h1>
       <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Автор видит только свои публикации и управляет жизненным циклом идеи в рамках своих стратегий.
+        Канонический экран автора: таблица публикаций, быстрый inline-ввод и полный редактор в modal-окне.
       </p>
     </div>
-    <div class="pill">{{ recommendations|length }} total</div>
+    <div class="pill">{{ recommendations|length }} строк в текущем срезе</div>
   </div>
 </section>
 
-<section style="display:grid;gap:14px;margin-top:18px;">
-  {% for recommendation in recommendations %}
-  <a class="surface" href="/author/recommendations/{{ recommendation.id }}/edit" style="padding:22px;display:block;">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="max-width:860px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <strong style="font-size:1.15rem;">{{ recommendation.title or recommendation.strategy.title }}</strong>
-          <span class="pill">{{ recommendation.kind.value }}</span>
-          <span class="pill">{{ recommendation.status.value }}</span>
-          {% if recommendation.requires_moderation %}
-          <span class="pill">moderation</span>
-          {% endif %}
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ recommendation.summary or recommendation.thesis or "Описание пока не заполнено" }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">{{ recommendation.strategy.title }}</span>
-          <span class="pill">{{ recommendation.legs|length }} legs</span>
-          <span class="pill">{{ recommendation.attachments|length }} attachments</span>
-          {% if recommendation.scheduled_for %}
-          <span class="pill">scheduled {{ recommendation.scheduled_for }}</span>
-          {% endif %}
-          {% if recommendation.published_at %}
-          <span class="pill">published {{ recommendation.published_at }}</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="muted">Редактировать</div>
-    </div>
-  </a>
-  {% else %}
-  <article class="surface" style="padding:24px;">
-    <strong>Публикаций пока нет</strong>
-    <p class="muted" style="margin:10px 0 0;line-height:1.65;">
-      Создайте первую рекомендацию из dashboard или кнопкой выше.
-    </p>
-  </article>
-  {% endfor %}
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <form method="get" action="/author/recommendations" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+    <label style="display:grid;gap:6px;min-width:240px;">
+      <span class="muted">Фильтр</span>
+      <input type="text" name="q" value="{{ q }}" placeholder="Тикер, заголовок, стратегия" style="padding:12px 14px;border-radius:14px;border:1px solid var(--line);font:inherit;background:#fff;" />
+    </label>
+    <label style="display:grid;gap:6px;min-width:180px;">
+      <span class="muted">Статус</span>
+      <select name="status_filter" style="padding:12px 14px;border-radius:14px;border:1px solid var(--line);font:inherit;background:#fff;">
+        <option value="all" {% if status_filter == "all" %}selected{% endif %}>Все</option>
+        <option value="draft" {% if status_filter == "draft" %}selected{% endif %}>Draft</option>
+        <option value="review" {% if status_filter == "review" %}selected{% endif %}>Review</option>
+        <option value="scheduled" {% if status_filter == "scheduled" %}selected{% endif %}>Scheduled</option>
+        <option value="published" {% if status_filter == "published" %}selected{% endif %}>Published</option>
+        <option value="closed" {% if status_filter == "closed" %}selected{% endif %}>Closed</option>
+        <option value="cancelled" {% if status_filter == "cancelled" %}selected{% endif %}>Cancelled</option>
+      </select>
+    </label>
+    <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+    <input type="hidden" name="direction" value="{{ direction }}" />
+    <button class="action" type="submit">Применить</button>
+    <a class="action ghost" href="/author/recommendations">Сбросить</a>
+  </form>
+
+  <div style="overflow:auto;margin-top:18px;">
+    <table class="workspace-table">
+      <thead>
+        <tr>
+          <th><a href="{{ sort_href('strategy') }}">Стратегия</a></th>
+          <th><a href="{{ sort_href('title') }}">Идея / тикер</a></th>
+          <th>Направление</th>
+          <th>Вход</th>
+          <th>TP1</th>
+          <th>Стоп</th>
+          <th><a href="{{ sort_href('status') }}">Статус</a></th>
+          <th><a href="{{ sort_href('updated_at') }}">Обновлено</a></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for recommendation in recommendations %}
+        {% set primary_leg = recommendation.legs[0] if recommendation.legs else None %}
+        <tr>
+          <td>{{ recommendation.strategy.title }}</td>
+          <td>
+            <strong>{{ recommendation.title or (primary_leg.instrument.ticker if primary_leg and primary_leg.instrument else recommendation.strategy.title) }}</strong>
+            <div class="muted" style="margin-top:4px;">
+              {% if primary_leg and primary_leg.instrument %}{{ primary_leg.instrument.ticker }} · {{ primary_leg.instrument.name }}{% else %}Без бумаги{% endif %}
+            </div>
+          </td>
+          <td>{% if primary_leg and primary_leg.side %}{{ primary_leg.side.value|upper }}{% else %}—{% endif %}</td>
+          <td>{{ primary_leg.entry_from if primary_leg and primary_leg.entry_from is not none else "—" }}</td>
+          <td>{{ primary_leg.take_profit_1 if primary_leg and primary_leg.take_profit_1 is not none else "—" }}</td>
+          <td>{{ primary_leg.stop_loss if primary_leg and primary_leg.stop_loss is not none else "—" }}</td>
+          <td><span class="pill">{{ recommendation.status.value }}</span></td>
+          <td class="muted">{{ recommendation.updated_at or recommendation.created_at }}</td>
+          <td><a class="action ghost" href="/author/recommendations/{{ recommendation.id }}/edit" style="padding:8px 12px;">Открыть</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="muted" style="padding:18px 12px;">Нет рекомендаций.</td></tr>
+        {% endfor %}
+        <tr class="workspace-inline-row">
+          <form method="post" action="/author/recommendations" id="inline-recommendation-form">
+            <input type="hidden" name="inline_mode" value="1" />
+            <td>
+              <select name="strategy_id" class="workspace-inline-input" required>
+                <option value="">Стратегия</option>
+                {% for strategy in strategies %}
+                <option value="{{ strategy.id }}">{{ strategy.title }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td style="position:relative;">
+              <input type="hidden" name="kind" value="new_idea" />
+              <input type="hidden" name="status" value="draft" />
+              <input type="hidden" name="summary" value="" />
+              <input type="hidden" name="thesis" value="" />
+              <input type="hidden" name="market_context" value="" />
+              <input type="hidden" name="scheduled_for" value="" />
+              <input type="hidden" name="next_path" value="/author/recommendations" />
+              <input type="hidden" name="leg_1_instrument_id" id="inline-instrument-id" />
+              <input type="text" name="title" class="workspace-inline-input" placeholder="Заголовок или идея" />
+              <input type="text" id="inline-ticker-input" class="workspace-inline-input" placeholder="Тикер" autocomplete="off" style="margin-top:8px;" />
+              <div id="inline-ticker-popup" class="workspace-inline-popup" hidden></div>
+            </td>
+            <td>
+              <select name="leg_1_side" class="workspace-inline-input" required>
+                <option value="">BUY/SELL</option>
+                <option value="buy">BUY</option>
+                <option value="sell">SELL</option>
+              </select>
+            </td>
+            <td><input type="text" name="leg_1_entry_from" class="workspace-inline-input" placeholder="Цена входа" /></td>
+            <td><input type="text" name="leg_1_take_profit_1" class="workspace-inline-input" placeholder="TP1" /></td>
+            <td><input type="text" name="leg_1_stop_loss" class="workspace-inline-input" placeholder="Стоп" /></td>
+            <td><span class="pill">draft</span></td>
+            <td class="muted">новая строка</td>
+            <td><button class="action" type="submit" style="padding:10px 12px;">+</button></td>
+          </form>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
+
+<div id="inline-ticker-backdrop" class="workspace-inline-backdrop" hidden></div>
+
+<dialog id="recommendation-modal" class="workspace-modal">
+  <div class="workspace-modal-shell surface">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+      <div>
+        <div class="eyebrow">modal editor</div>
+        <strong>Новая рекомендация</strong>
+      </div>
+      <button class="action ghost" type="button" data-close-recommendation-modal>Закрыть</button>
+    </div>
+    <iframe src="{{ recommendation_modal_url }}" title="Создание рекомендации" class="workspace-modal-frame"></iframe>
+  </div>
+</dialog>
+
+<style>
+  .workspace-table { width: 100%; border-collapse: collapse; }
+  .workspace-table th, .workspace-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  .workspace-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+  .workspace-inline-input { width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff; font: inherit; }
+  .workspace-inline-row form { display: contents; }
+  .workspace-inline-popup[hidden] { display: none !important; }
+  .workspace-inline-popup { position: absolute; left: 12px; right: 12px; top: calc(100% - 12px); z-index: 20; padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,0.98); box-shadow: 0 18px 42px rgba(11,33,91,0.12); display: grid; gap: 6px; }
+  .workspace-inline-popup button { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; text-align: left; font: inherit; }
+  .workspace-inline-backdrop[hidden] { display: none !important; }
+  .workspace-inline-backdrop { position: fixed; inset: 0; background: transparent; z-index: 15; }
+  .workspace-modal { border: 0; padding: 0; background: transparent; width: min(1220px, calc(100% - 24px)); }
+  .workspace-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
+  .workspace-modal-shell { padding: 18px; border-radius: 26px; }
+  .workspace-modal-frame { width: 100%; height: min(84vh, 980px); border: 0; border-radius: 20px; margin-top: 14px; background: #fff; }
+  @media (max-width: 980px) {
+    .workspace-table { min-width: 980px; }
+  }
+</style>
+
+<script>
+  (function () {
+    const modal = document.getElementById("recommendation-modal");
+    const openButtons = document.querySelectorAll("[data-open-recommendation-modal]");
+    const closeButtons = document.querySelectorAll("[data-close-recommendation-modal]");
+    const inlineForm = document.getElementById("inline-recommendation-form");
+    const tickerInput = document.getElementById("inline-ticker-input");
+    const tickerPopup = document.getElementById("inline-ticker-popup");
+    const tickerBackdrop = document.getElementById("inline-ticker-backdrop");
+    const instrumentIdInput = document.getElementById("inline-instrument-id");
+    const instruments = {{ instrument_items | tojson }};
+
+    function openModal() {
+      if (modal && typeof modal.showModal === "function") {
+        modal.showModal();
+      }
+    }
+
+    function closeModal() {
+      if (modal && modal.open) {
+        modal.close();
+      }
+    }
+
+    openButtons.forEach(function (button) {
+      button.addEventListener("click", openModal);
+    });
+    closeButtons.forEach(function (button) {
+      button.addEventListener("click", closeModal);
+    });
+    if (modal) {
+      modal.addEventListener("click", function (event) {
+        if (event.target === modal) {
+          closeModal();
+        }
+      });
+    }
+
+    if (!inlineForm || !tickerInput || !tickerPopup || !instrumentIdInput) {
+      return;
+    }
+
+    function resetInlineRow() {
+      inlineForm.reset();
+      instrumentIdInput.value = "";
+      hideTickerPopup();
+    }
+
+    function hideTickerPopup() {
+      tickerPopup.hidden = true;
+      tickerPopup.innerHTML = "";
+      if (tickerBackdrop) {
+        tickerBackdrop.hidden = true;
+      }
+    }
+
+    function renderSuggestions(query) {
+      const normalized = query.trim().toLowerCase();
+      if (normalized.length < 1) {
+        hideTickerPopup();
+        return;
+      }
+      const matches = instruments.filter(function (item) {
+        return item.ticker.toLowerCase().includes(normalized) || item.name.toLowerCase().includes(normalized);
+      }).slice(0, 8);
+      if (!matches.length) {
+        hideTickerPopup();
+        return;
+      }
+      tickerPopup.innerHTML = "";
+      matches.forEach(function (item) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.innerHTML = "<strong>" + item.ticker + "</strong><small>" + item.name + "</small>";
+        button.addEventListener("click", function () {
+          tickerInput.value = item.ticker;
+          instrumentIdInput.value = item.id;
+          hideTickerPopup();
+        });
+        tickerPopup.appendChild(button);
+      });
+      tickerPopup.hidden = false;
+      if (tickerBackdrop) {
+        tickerBackdrop.hidden = false;
+      }
+    }
+
+    tickerInput.addEventListener("input", function () {
+      instrumentIdInput.value = "";
+      renderSuggestions(tickerInput.value);
+    });
+
+    inlineForm.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (!tickerPopup.hidden) {
+          hideTickerPopup();
+          return;
+        }
+        resetInlineRow();
+      }
+      if (event.key === "Enter" && event.target.tagName !== "BUTTON") {
+        event.preventDefault();
+        inlineForm.requestSubmit();
+      }
+    });
+
+    if (tickerBackdrop) {
+      tickerBackdrop.addEventListener("click", hideTickerPopup);
+    }
+  }());
+</script>
 {% endblock %}

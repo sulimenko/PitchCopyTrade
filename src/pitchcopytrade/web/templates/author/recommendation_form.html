@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block topbar_actions %}
+{% if not embedded %}
 <div class="author-editor-topbar">
   <a class="action ghost" href="/author/recommendations">Назад к списку</a>
   <a class="action ghost" href="/author/dashboard">Сводка</a>
@@ -9,9 +10,16 @@
   {% endif %}
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block content %}
+{% if embedded %}
+<style>
+  .topbar { display: none; }
+  .page-shell { width: min(1180px, calc(100% - 12px)); padding-top: 8px; }
+</style>
+{% endif %}
 <section class="surface author-editor-hero">
   <div class="eyebrow">редактор рекомендации</div>
   <div class="author-editor-hero-head">
@@ -33,6 +41,8 @@
 
 <section class="author-editor-shell">
   <form class="surface author-editor-form" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="embedded" value="{% if embedded %}1{% else %}0{% endif %}" />
+    <input type="hidden" name="next_path" value="{{ next_path }}" />
     {% if error %}
     <div class="author-editor-error">{{ error }}</div>
     {% endif %}
@@ -90,13 +100,16 @@
         <span class="author-editor-field-title">Дата публикации</span>
         <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" />
       </label>
-      <label class="author-editor-check">
-        <input type="checkbox" name="requires_moderation" {% if form_values.requires_moderation %}checked{% endif %} />
-        <span>
-          <strong>Требует модерации</strong>
-          <small class="muted">Отправьте идею в review перед публикацией, если это необходимо по правам автора.</small>
-        </span>
-      </label>
+      <div class="surface" style="padding:14px 16px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">
+        <strong>Политика модерации</strong>
+        <div class="muted" style="margin-top:6px;line-height:1.55;">
+          {% if author.requires_moderation %}
+          Для этого автора публикации автоматически идут через review.
+          {% else %}
+          Для этого автора дополнительная модерация не требуется.
+          {% endif %}
+        </div>
+      </div>
     </div>
 
     <section class="surface author-editor-section author-editor-section--legs">
@@ -233,6 +246,7 @@
     </div>
   </form>
 
+  {% if not embedded %}
   <aside class="surface author-editor-aside">
     <div class="eyebrow">подсказки редактора</div>
     <h2>Что уже поддержано</h2>
@@ -255,6 +269,7 @@
       </div>
     </div>
   </aside>
+  {% endif %}
 </section>
 
 <template id="leg-row-template">

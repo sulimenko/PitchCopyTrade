@@ -132,6 +132,7 @@ def test_author_dashboard_renders(monkeypatch) -> None:
         "pitchcopytrade.api.routes.author.list_author_watchlist",
         lambda _session, _author: _async_return([_make_instrument()]),
     )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([_make_instrument()]))
 
     with _build_client(author_user) as client:
         response = client.get("/author/dashboard")
@@ -142,6 +143,7 @@ def test_author_dashboard_renders(monkeypatch) -> None:
         assert "Покупка SBER" in response.text
         assert "Наблюдение за бумагами" in response.text
         assert "Поиск и добавление" in response.text
+        assert "data-open-recommendation-modal" in response.text
 
 
 def test_author_strategy_list_renders(monkeypatch) -> None:
@@ -155,7 +157,7 @@ def test_author_strategy_list_renders(monkeypatch) -> None:
         response = client.get("/author/strategies")
 
         assert response.status_code == 200
-        assert "Мои стратегии" in response.text
+        assert "Табличный реестр собственных стратегий" in response.text
         assert "Momentum RU" in response.text
 
 
@@ -202,12 +204,15 @@ def test_author_strategy_edit_page_renders(monkeypatch) -> None:
 def test_author_recommendation_list_renders(monkeypatch) -> None:
     author_user = _make_author_user()
     recommendation = _make_recommendation()
+    instrument = _make_instrument()
 
     monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.author.list_author_recommendations",
         lambda _session, _author: _async_return([recommendation]),
     )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([_make_strategy()]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
 
     with _build_client(author_user) as client:
         response = client.get("/author/recommendations")
@@ -215,6 +220,11 @@ def test_author_recommendation_list_renders(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Рекомендации автора" in response.text
         assert "Покупка SBER" in response.text
+        assert "inline-recommendation-form" in response.text
+        assert 'name="kind" value="new_idea"' in response.text
+        assert 'name="inline_mode" value="1"' in response.text
+        assert "inline-ticker-backdrop" in response.text
+        assert "workspace-modal-frame" in response.text
 
 
 def test_author_watchlist_search_returns_json(monkeypatch) -> None:
@@ -258,7 +268,17 @@ def test_author_watchlist_add_returns_updated_list(monkeypatch) -> None:
         assert payload["watchlist"][0]["id"] == "instrument-1"
 
 
-def test_author_recommendation_create_page_renders(monkeypatch) -> None:
+def test_author_recommendation_create_page_redirects_to_modal_flow(monkeypatch) -> None:
+    author_user = _make_author_user()
+
+    with _build_client(author_user) as client:
+        response = client.get("/author/recommendations/new", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/recommendations?modal=new"
+
+
+def test_author_recommendation_embedded_create_page_renders(monkeypatch) -> None:
     author_user = _make_author_user()
     strategy = _make_strategy()
 
@@ -267,13 +287,13 @@ def test_author_recommendation_create_page_renders(monkeypatch) -> None:
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([_make_instrument()]))
 
     with _build_client(author_user) as client:
-        response = client.get("/author/recommendations/new")
+        response = client.get("/author/recommendations/new?embedded=1&next=/author/recommendations")
 
         assert response.status_code == 200
         assert "Новая рекомендация" in response.text
         assert "Momentum RU" in response.text
         assert "+ Добавить бумагу" in response.text
-        assert "Обязательная бумага для публикации" in response.text
+        assert "Политика модерации" in response.text
 
 
 def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
@@ -298,6 +318,7 @@ def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
                 "strategy_id": "strategy-1",
                 "kind": "new_idea",
                 "status": "draft",
+                "next_path": "/author/recommendations",
                 "title": "Покупка SBER",
                 "summary": "Кратко",
                 "thesis": "Тезис",
@@ -312,7 +333,48 @@ def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/author/recommendations/rec-1/edit"
+        assert response.headers["location"] == "/author/recommendations"
+
+
+def test_author_recommendation_inline_create_allows_minimal_fields(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+    recommendation = _make_recommendation()
+    instrument = _make_instrument()
+    captured = {}
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
+
+    async def _create(_session, _author, data, uploaded_by_user_id=None):
+        captured["kind"] = data.kind.value
+        captured["entry_from"] = data.legs[0].entry_from
+        return recommendation
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.create_author_recommendation", _create)
+
+    with _build_client(author_user) as client:
+        response = client.post(
+            "/author/recommendations",
+            data={
+                "inline_mode": "1",
+                "strategy_id": "strategy-1",
+                "kind": "new_idea",
+                "status": "draft",
+                "next_path": "/author/recommendations",
+                "title": "",
+                "leg_1_instrument_id": "instrument-1",
+                "leg_1_side": "buy",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/recommendations"
+        assert captured["kind"] == "new_idea"
+        assert captured["entry_from"] is None
 
 
 def test_author_recommendation_create_validation_error(monkeypatch) -> None:

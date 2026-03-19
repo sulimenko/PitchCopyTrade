@@ -23,11 +23,13 @@ from pitchcopytrade.services.admin import (
     get_admin_strategy_for_onepager,
     grant_staff_role,
     list_admin_staff,
+    reseed_author_watchlists,
     revoke_staff_role,
     save_strategy_onepager,
     toggle_admin_author,
     StaffCreateData,
     StrategyFormData,
+    update_admin_author_permissions,
     create_product,
     create_strategy,
     get_admin_subscription,
@@ -108,10 +110,15 @@ async def admin_dashboard(
 @router.get("/strategies", response_class=HTMLResponse)
 async def strategy_list_page(
     request: Request,
+    q: str = "",
+    sort_by: str = "title",
+    direction: str = "asc",
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     strategies = await list_admin_strategies(session)
+    strategies = _filter_admin_strategies(strategies, q=q)
+    strategies = _sort_admin_strategies(strategies, sort_by=sort_by, direction=direction)
     return templates.TemplateResponse(
         request,
         "admin/strategies_list.html",
@@ -119,6 +126,9 @@ async def strategy_list_page(
             "title": "Стратегии",
             "user": user,
             "strategies": strategies,
+            "q": q,
+            "sort_by": sort_by,
+            "direction": direction,
         },
     )
 
@@ -1348,15 +1358,20 @@ def _form_values_from_legal_document(document) -> dict[str, object]:
 async def admin_authors_list(
     request: Request,
     status_filter: str = "all",
+    q: str = "",
+    sort_by: str = "display_name",
+    direction: str = "asc",
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     authors = await list_admin_authors(session, status_filter=status_filter)
+    authors = _filter_admin_author_rows(authors, q=q)
+    authors = _sort_admin_author_rows(authors, sort_by=sort_by, direction=direction)
     author_rows = [_author_row(author) for author in authors]
     return templates.TemplateResponse(
         request,
         "admin/authors_list.html",
-        {"title": "Авторы", "user": user, "authors": author_rows, "status_filter": status_filter},
+        {"title": "Авторы", "user": user, "authors": author_rows, "status_filter": status_filter, "q": q, "sort_by": sort_by, "direction": direction},
     )
 
 
@@ -1383,7 +1398,7 @@ async def admin_author_create(
         return templates.TemplateResponse(
             request,
             "admin/authors_list.html",
-            {"title": "Авторы", "user": user, "authors": author_rows, "error": str(exc), "status_filter": "all"},
+            {"title": "Авторы", "user": user, "authors": author_rows, "error": str(exc), "status_filter": "all", "q": "", "sort_by": "display_name", "direction": "asc"},
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
@@ -1393,10 +1408,15 @@ async def admin_author_create(
 async def admin_staff_list(
     request: Request,
     role_filter: str = "all",
+    q: str = "",
+    sort_by: str = "display_name",
+    direction: str = "asc",
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     staff = await list_admin_staff(session, role_filter=role_filter)
+    staff = _filter_admin_staff_rows(staff, q=q)
+    staff = _sort_admin_staff_rows(staff, sort_by=sort_by, direction=direction)
     staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
     return templates.TemplateResponse(
         request,
@@ -1406,6 +1426,9 @@ async def admin_staff_list(
             "user": user,
             "staff": staff_rows,
             "role_filter": role_filter,
+            "q": q,
+            "sort_by": sort_by,
+            "direction": direction,
         },
     )
 
@@ -1442,6 +1465,9 @@ async def admin_staff_create_admin(
                 "staff": staff_rows,
                 "error": str(exc),
                 "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
@@ -1475,6 +1501,9 @@ async def admin_staff_grant_role(
                 "staff": staff_rows,
                 "error": str(exc),
                 "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
@@ -1508,10 +1537,42 @@ async def admin_staff_revoke_role(
                 "staff": staff_rows,
                 "error": str(exc),
                 "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/authors/{author_id}/permissions", response_class=HTMLResponse)
+async def admin_author_permissions_update(
+    author_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    requires_moderation: str | None = Form(default=None),
+) -> Response:
+    try:
+        await update_admin_author_permissions(
+            session,
+            author_id,
+            requires_moderation=requires_moderation is not None,
+        )
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Автор не найден")
+    return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/authors/reseed-watchlist", response_class=HTMLResponse)
+async def admin_authors_reseed_watchlist(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    updated = await reseed_author_watchlists(session)
+    return RedirectResponse(url=f"/admin/authors?reseed={updated}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/authors/{author_id}/toggle", response_class=HTMLResponse)
@@ -1584,6 +1645,7 @@ def _author_row(author) -> dict[str, object]:
         "is_active": author.is_active,
         "user": author.user,
         "invite_link": invite_link,
+        "requires_moderation": author.requires_moderation,
     }
 
 
@@ -1607,3 +1669,92 @@ def _staff_row(user: User, *, current_user_id: str) -> dict[str, object]:
         "can_revoke_admin": "admin" in role_slugs,
         "is_current_user": user.id == current_user_id,
     }
+
+
+def _filter_admin_author_rows(authors, *, q: str):
+    normalized = q.strip().lower()
+    if not normalized:
+        return authors
+    return [
+        item for item in authors
+        if normalized in " ".join(
+            part.lower() for part in [item.display_name, item.slug, item.user.email if item.user is not None and item.user.email else ""] if part
+        )
+    ]
+
+
+def _sort_admin_author_rows(authors, *, sort_by: str, direction: str):
+    reverse = direction == "desc"
+    if sort_by == "status":
+        key = lambda item: "active" if item.is_active else "inactive"
+    elif sort_by == "moderation":
+        key = lambda item: "review" if item.requires_moderation else "direct"
+    else:
+        key = lambda item: item.display_name.lower()
+    return sorted(authors, key=key, reverse=reverse)
+
+
+def _filter_admin_staff_rows(users, *, q: str):
+    normalized = q.strip().lower()
+    if not normalized:
+        return users
+    return [
+        item for item in users
+        if normalized in " ".join(
+            part.lower()
+            for part in [
+                item.full_name or "",
+                item.email or "",
+                item.username or "",
+                item.author_profile.display_name if item.author_profile is not None else "",
+                " ".join(role.slug.value for role in item.roles),
+            ]
+            if part
+        )
+    ]
+
+
+def _sort_admin_staff_rows(users, *, sort_by: str, direction: str):
+    reverse = direction == "desc"
+    if sort_by == "status":
+        key = lambda item: item.status.value if item.status is not None else "active"
+    elif sort_by == "roles":
+        key = lambda item: ",".join(sorted(role.slug.value for role in item.roles))
+    else:
+        key = lambda item: (item.author_profile.display_name if item.author_profile is not None else (item.full_name or item.email or item.username or "")).lower()
+    return sorted(users, key=key, reverse=reverse)
+
+
+def _filter_admin_strategies(strategies, *, q: str):
+    normalized = q.strip().lower()
+    if not normalized:
+        return strategies
+    return [
+        item
+        for item in strategies
+        if normalized in " ".join(
+            part.lower()
+            for part in [
+                item.title,
+                item.slug,
+                item.short_description or "",
+                item.author.display_name if item.author is not None else "",
+                item.status.value,
+                item.risk_level.value,
+            ]
+            if part
+        )
+    ]
+
+
+def _sort_admin_strategies(strategies, *, sort_by: str, direction: str):
+    reverse = direction == "desc"
+    if sort_by == "status":
+        key = lambda item: item.status.value
+    elif sort_by == "risk":
+        key = lambda item: item.risk_level.value
+    elif sort_by == "author":
+        key = lambda item: item.author.display_name.lower() if item.author is not None else ""
+    else:
+        key = lambda item: item.title.lower()
+    return sorted(strategies, key=key, reverse=reverse)

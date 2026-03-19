@@ -38,7 +38,7 @@
 
 ### Роли и ACL
 - [x] 3 роли в БД: admin, author, moderator (moderator не используется в MVP)
-- [x] `requires_moderation=False` на всех AuthorProfile MVP — никакой маршрут не проверяет статус модерации
+- [x] `requires_moderation` управляется как author-permission через admin UI и не редактируется автором в форме рекомендации
 - [x] Автор создаётся только админом — нет пути саморегистрации
 - [x] Уникальность `telegram_user_id` на уровне БД и приложения
 - [x] В проекте не осталось второго параллельного author-контура `/cabinet/*`
@@ -126,7 +126,7 @@
 - [x] Флоу подписчика — только Telegram bot + Mini App, без отдельной веб-регистрации
 - [x] One Pager — HTML в `Strategy.full_description`, рендерится на сервере
 - [x] Подтверждение платежа — ручное (действие админа), без автоматических вызовов платёжного API
-- [x] Роль Модератора: enum есть, UI нет, проверок нет, `requires_moderation=False`
+- [x] Роль Модератора: enum есть, UI нет, отдельный moderation contour не доведен
 - [x] В продукте не осталось MinIO-инфраструктуры, MinIO-библиотеки и legacy storage fallback
 - [x] Режим бота: `TELEGRAM_USE_WEBHOOK=true` в production, `false` в local dev
 - [x] Инструменты: только из `storage/seed/json/instruments.json` — никаких live market API вызовов в MVP
@@ -181,3 +181,31 @@ PR может быть merged только когда все P0 и P1 — Pass.
 **[Pass] Invite links в staff/author registry server-ready**
 
 Invite flow теперь отдает абсолютные URL от `BASE_URL` в `/admin/staff` и `/admin/authors`, и ссылки можно сразу копировать и пересылать сотруднику.
+
+### Author UI findings после review 2026-03-19
+
+Эти findings закрыты повторной проверкой кода и тестами.
+
+**[Pass] Полная форма рекомендации работает как modal-flow**
+
+Кнопки `Новая рекомендация` в author workspace открывают modal поверх текущего экрана, а `/author/recommendations/new` перестал быть primary UX и служит embedded-редактором.
+
+**[Pass] Быстрый inline-ввод рекомендации доведен**
+
+`/author/recommendations` работает как таблица с последней inline-строкой добавления, popup выбора тикера и keyboard-flow через `Enter`/`Esc`. Для быстрого черновика обязательны только `ticker + side`, `RecommendationKind` по умолчанию `new_idea`.
+
+**[Pass] Seed инструментов и reseed watchlist закрыты**
+
+Базовый seed инструментов расширен, а для существующих авторов есть явный reseed path в admin UI.
+
+**[Pass] `requires_moderation` перенесён в author permissions**
+
+Флаг живёт в author settings и определяется политикой автора, а не ручным вводом автора в форме рекомендации.
+
+**[Pass] Watchlist suggestions UI и tabular layer подтверждены**
+
+Пустой dropdown под поиском не рендерится визуально, а author/admin contour использует sortable/filterable tables.
+
+### Worker-ready note
+
+Следующий исполнитель не должен трактовать `Фазу 15` как завершенную. Канонический scope и file targets смотреть в [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md).

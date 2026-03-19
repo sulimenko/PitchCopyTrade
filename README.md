@@ -58,6 +58,17 @@ Telegram-first платформа для продажи подписок на и
 Открытые замечания:
 - открытых замечаний по staff binding hardening сейчас нет.
 
+### Текущий Author UI contract на 2026-03-19
+
+Подтверждено кодом и тестами:
+- кнопки `Новая рекомендация` открывают modal, а не уводят автора на отдельную create-page;
+- `/author/recommendations` является канонической таблицей с последней inline-строкой быстрого ввода;
+- быстрый inline-flow создает минимальный draft, где обязательны только `ticker + side`, а `RecommendationKind` по умолчанию равен `new_idea`;
+- watchlist автора строится из расширенного seed-набора инструментов, а для существующих авторов есть явный reseed path через `/admin/authors`;
+- `requires_moderation` управляется как author-permission из admin UI, а не через author form;
+- watchlist search dropdown не рендерится как пустое второе поле;
+- `/author/strategies`, `/author/recommendations`, `/admin/authors`, `/admin/staff` и `/admin/strategies` поддерживают сортировку и фильтрацию.
+
 ### Как сейчас создать нового admin
 
 Сейчас это реализовано как штатный продуктовый сценарий через `/admin/staff`.
@@ -305,9 +316,9 @@ curl -s http://127.0.0.1:8110/health
 При первом старте в db-режиме API создаёт администратора из `ADMIN_TELEGRAM_ID` и `ADMIN_EMAIL` (если заданы в `.env.server`). Для такого администратора основной вход на сервере идет через Telegram Login Widget на странице `/login`, а Telegram account должен совпадать с `ADMIN_TELEGRAM_ID`. Парольная форма на `/login` используется только для local/demo пользователей или ручных staff-аккаунтов, которым явно задан `password_hash`.
 
 **Что сделать сразу после входа:**
-1. Перейти в раздел **Авторы** → создать первого автора (имя + Telegram User ID).
+1. Перейти в раздел **Авторы** → создать первого автора (`display_name + email`, `telegram_user_id` можно оставить пустым).
    Для нового автора автоматически создаётся персональный watchlist на базе `storage/seed/json/instruments.json`.
-2. Передать автору адрес кабинета — на сервере он входит через Telegram Login Widget по сохраненному `telegram_user_id`.
+2. Передать автору invite link из `/admin/authors` или дождаться первого Telegram bind через invite/login flow.
 3. В Telegram открыть бота → `/start` → проверить, что кнопка Mini App появляется.
 
 ---

@@ -203,7 +203,7 @@
   - `POST /admin/authors` — создание автора
     - Поля: `display_name` (обязательно), `email` (обязательно), `telegram_user_id` (опц.)
     - Создаёт: User + AuthorProfile (slug авто) + user_roles(author)
-    - Устанавливает `requires_moderation=False`
+    - Политика `requires_moderation` должна определяться отдельной настройкой author permissions
   - `POST /admin/authors/{id}/toggle` — включить/отключить автора
 
 - [x] **4.3** Редактор One Pager
@@ -320,7 +320,7 @@
 - [x] **7.3** API создания рекомендации
   - `POST /cabinet/strategies/{strategy_id}/recommendations`
   - Тело: `{ ticker, side, price?, target?, stop? }`
-  - Создаёт `Recommendation` (kind=new_idea, status=draft, requires_moderation=False)
+  - Создаёт `Recommendation` (kind=new_idea, status=draft; политика модерации должна определяться author permissions)
   - Создаёт `RecommendationLeg` (instrument_id по ticker, side, entry_from=price, tp1=target, stop_loss=stop)
   - Возвращает HTMX partial с новой строкой таблицы
 
@@ -352,6 +352,7 @@
 - recommendation CRUD доступен автору;
 - admin recommendation CRUD в `/admin/*` отсутствует;
 - если администратор должен создавать рекомендации в стратегии автора, это должен быть отдельный operator flow, а не нарушение author ACL.
+- исторические чекбоксы этой фазы не означают, что текущий delivered UI соответствует каноническому popup/inline-grid; corrective rebuild вынесен в `Фаза 15`.
 
 ---
 
@@ -661,10 +662,74 @@
 
 ---
 
+## Фаза 15 — Author Workspace Rebuild
+
+**Цель:** убрать UI drift в кабинете автора и привести рекомендации/watchlist к канонической модели: modal + inline table + права автора из admin.
+
+Статус фазы после повторной проверки: **закрыта**. Scope ниже реализован в коде, покрыт тестами и синхронизирован с `doc/review.md`.
+
+### Задачи
+- [x] **15.1** Заменить отдельную страницу создания рекомендации на modal flow
+  - кнопка `Новая рекомендация` в `/author/dashboard` и `/author/recommendations` открывает popup/modal
+  - отдельный route `/author/recommendations/new` перестает быть primary UX
+  - полный ввод рекомендации выполняется поверх текущего экрана без ухода со списка
+
+- [x] **15.2** Реализовать быстрый inline-ввод рекомендации в табличном стиле
+  - основным экраном рекомендаций становится таблица, а не карточки
+  - последняя строка таблицы — пустая inline-строка добавления
+  - поведение в стиле spreadsheet: `Tab`, `Shift+Tab`, `Enter`, `Esc`
+  - выбор тикера открывает popup выбора инструмента
+
+- [x] **15.3** Расширить канонический набор инструментов и пересев watchlist
+  - `storage/seed/json/instruments.json` должен содержать нормальный базовый набор бумаг, а не только `SBER + GAZP`
+  - admin/author watchlist должен строиться из полного seed-набора
+  - для server/db нужен явный reseed path, чтобы существующие авторы получили расширенный watchlist
+
+- [x] **15.4** Убрать `requires_moderation` из author form и перенести в author permissions
+  - checkbox `Требует модерации` убрать из `/author/recommendations/*`
+  - настройку вынести в `/admin/authors`
+  - при создании/редактировании рекомендации сервер сам применяет author-level policy
+
+- [x] **15.5** Починить watchlist search UI
+  - suggestion dropdown не должен рендериться как второе пустое поле под поиском
+  - оставить один search input
+  - dropdown должен появляться только когда реально есть подсказки
+  - после этого добавить regression на hidden state / empty suggestions
+
+- [x] **15.6** Внедрить canonical tables с сортировкой и фильтрацией
+  - `/author/recommendations`
+  - `/author/strategies`
+  - блок watchlist автора
+  - `/admin/authors`
+  - `/admin/staff`
+  - `/admin/strategies`
+  - минимум: сортировка по колонкам + client/server filters
+
+- [x] **15.7** Обновить docs и guide после rebuild
+  - синхронизировать `README.md`, `doc/blueprint.md`, `doc/task.md`, `doc/review.md`
+  - обновить `doc/guide.html` и `doc/guide.pdf`
+  - удалить из docs утверждения, что inline/popup уже были завершены, если это не подтверждено реальным UI
+
+### Критерии приёмки
+- создание рекомендации не уводит автора на отдельную страницу
+- быстрый inline-ввод работает в одной таблице с существующими рекомендациями
+- watchlist автора показывает расширенный набор бумаг
+- автор не видит и не управляет `requires_moderation` напрямую
+- пустой блок подсказок под watchlist search больше не рендерится
+- таблицы поддерживают сортировку и фильтрацию
+
+---
+
+## Worker handoff — Фаза 15
+
+Фаза завершена. Этот блок сохранён только как историческая справка по scope corrective rebuild.
+
+---
+
 ## Итог MVP
 
 **Review snapshot: 2026-03-19**
-Базовый MVP, Telegram-first/staff контуры и `Фаза 14` завершены.
+Базовый MVP, Telegram-first/staff контуры и `Фаза 15` завершены.
 Актуальный checklist и статус смотреть в `doc/review.md`.
 
 ---

@@ -51,7 +51,7 @@ def test_build_recommendation_form_data_parses_structured_leg() -> None:
         summary="summary",
         thesis="thesis",
         market_context="context",
-        requires_moderation=None,
+        author_requires_moderation=False,
         scheduled_for="",
         allowed_strategy_ids={"strategy-1"},
         allowed_instrument_ids={"instrument-1"},
@@ -75,6 +75,42 @@ def test_build_recommendation_form_data_parses_structured_leg() -> None:
     assert len(payload.legs) == 1
     assert payload.legs[0].instrument_id == "instrument-1"
     assert str(payload.legs[0].entry_from) == "101.5"
+
+
+def test_build_recommendation_form_data_allows_minimal_inline_leg() -> None:
+    payload = build_recommendation_form_data(
+        strategy_id="strategy-1",
+        kind_value="new_idea",
+        status_value="draft",
+        title="",
+        summary="",
+        thesis="",
+        market_context="",
+        author_requires_moderation=False,
+        scheduled_for="",
+        allowed_strategy_ids={"strategy-1"},
+        allowed_instrument_ids={"instrument-1"},
+        leg_rows=[
+            {
+                "instrument_id": "instrument-1",
+                "side": "buy",
+                "entry_from": "",
+                "entry_to": "",
+                "stop_loss": "",
+                "take_profit_1": "",
+                "take_profit_2": "",
+                "take_profit_3": "",
+                "time_horizon": "",
+                "note": "",
+            }
+        ],
+        attachments=[],
+    )
+
+    assert payload.kind.value == "new_idea"
+    assert payload.legs[0].instrument_id == "instrument-1"
+    assert payload.legs[0].entry_from is None
+    assert payload.legs[0].take_profit_1 is None
 
 
 def test_build_leg_rows_from_form_preserves_dynamic_indexes() -> None:
@@ -106,7 +142,7 @@ def test_build_recommendation_form_data_requires_at_least_one_leg() -> None:
             summary="summary",
             thesis="thesis",
             market_context="context",
-            requires_moderation=None,
+                author_requires_moderation=False,
             scheduled_for="",
             allowed_strategy_ids={"strategy-1"},
             allowed_instrument_ids={"instrument-1"},
@@ -125,7 +161,7 @@ def test_build_recommendation_form_data_rejects_unknown_instrument() -> None:
             summary="summary",
             thesis="thesis",
             market_context="context",
-            requires_moderation=None,
+                author_requires_moderation=False,
             scheduled_for="",
             allowed_strategy_ids={"strategy-1"},
             allowed_instrument_ids={"instrument-1"},
@@ -208,6 +244,11 @@ async def test_search_author_watchlist_candidates_excludes_existing_watchlist() 
 
         async def list_active_instruments(self):
             return [existing, candidate]
+
+        async def add_author_watchlist_instrument(self, author_id: str, instrument_id: str):
+            assert author_id == "author-1"
+            assert instrument_id == "instrument-2"
+            return candidate
 
     items = await search_author_watchlist_candidates(DummyRepository(), author, "gaz")
 

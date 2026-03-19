@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 
+{% macro sort_href(column) -%}
+  /author/strategies?q={{ q | urlencode }}&sort_by={{ column }}&direction={% if sort_by == column and direction == "asc" %}desc{% else %}asc{% endif %}
+{%- endmacro %}
+
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a class="action" href="/author/strategies/new">Новая стратегия</a>
@@ -12,31 +16,65 @@
 {% block content %}
 <section class="surface" style="padding:28px;">
   <div class="eyebrow">стратегии автора</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.96;letter-spacing:-0.05em;">{{ author.display_name }}</h1>
+  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.96;letter-spacing:-0.05em;">{{ author.display_name }}</h1>
+      <p class="muted" style="margin:14px 0 0;max-width:720px;line-height:1.65;">
+        Табличный реестр собственных стратегий с быстрым поиском и сортировкой по ключевым колонкам.
+      </p>
+    </div>
+    <div class="pill">{{ strategies|length }} строк в текущем срезе</div>
+  </div>
 </section>
 
 <section class="surface" style="padding:24px;margin-top:18px;">
-  <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-    <h2 style="margin:0;">Мои стратегии</h2>
-    <a class="action" href="/author/strategies/new">Создать стратегию</a>
-  </div>
-  <div style="display:grid;gap:14px;margin-top:18px;">
-    {% for strategy in strategies %}
-    <a class="surface" href="/author/strategies/{{ strategy.id }}/edit" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
-      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
-        <div>
-          <strong>{{ strategy.title }}</strong>
-          <div class="muted" style="margin-top:8px;">{{ strategy.short_description or strategy.slug }}</div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <span class="pill">{{ strategy.status.value }}</span>
-          <span class="pill">{{ strategy.risk_level.value }}</span>
-        </div>
-      </div>
-    </a>
-    {% else %}
-    <div class="muted">Стратегий пока нет.</div>
-    {% endfor %}
+  <form method="get" action="/author/strategies" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+    <label style="display:grid;gap:6px;min-width:260px;">
+      <span class="muted">Фильтр</span>
+      <input type="text" name="q" value="{{ q }}" placeholder="Название, slug, описание" style="padding:12px 14px;border-radius:14px;border:1px solid var(--line);font:inherit;background:#fff;" />
+    </label>
+    <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+    <input type="hidden" name="direction" value="{{ direction }}" />
+    <button class="action" type="submit">Применить</button>
+    <a class="action ghost" href="/author/strategies">Сбросить</a>
+  </form>
+
+  <div style="overflow:auto;margin-top:18px;">
+    <table class="workspace-table">
+      <thead>
+        <tr>
+          <th><a href="{{ sort_href('title') }}">Стратегия</a></th>
+          <th>Описание</th>
+          <th><a href="{{ sort_href('risk') }}">Риск</a></th>
+          <th><a href="{{ sort_href('status') }}">Статус</a></th>
+          <th>Мин. капитал</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for strategy in strategies %}
+        <tr>
+          <td>
+            <strong>{{ strategy.title }}</strong>
+            <div class="muted" style="margin-top:4px;">{{ strategy.slug }}</div>
+          </td>
+          <td>{{ strategy.short_description or "—" }}</td>
+          <td><span class="pill">{{ strategy.risk_level.value }}</span></td>
+          <td><span class="pill">{{ strategy.status.value }}</span></td>
+          <td>{{ strategy.min_capital_rub or "—" }}</td>
+          <td><a class="action ghost" href="/author/strategies/{{ strategy.id }}/edit" style="padding:8px 12px;">Открыть</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted" style="padding:18px 12px;">Стратегий пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </section>
+
+<style>
+  .workspace-table { width: 100%; border-collapse: collapse; }
+  .workspace-table th, .workspace-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  .workspace-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+</style>
 {% endblock %}

@@ -166,6 +166,7 @@ async def list_active_instruments(repository: AuthorRepository) -> list[Instrume
 
 
 async def list_author_watchlist(repository: AuthorRepository, author: AuthorProfile) -> list[Instrument]:
+    await ensure_author_watchlist_seed(repository, author)
     return await repository.list_author_watchlist(author.id)
 
 
@@ -180,6 +181,17 @@ async def add_author_watchlist_instrument(
     return instrument
 
 
+async def ensure_author_watchlist_seed(repository: AuthorRepository, author: AuthorProfile) -> list[Instrument]:
+    watchlist = await repository.list_author_watchlist(author.id)
+    watchlist_ids = {item.id for item in watchlist}
+    instruments = await repository.list_active_instruments()
+    for instrument in instruments:
+        if instrument.id in watchlist_ids:
+            continue
+        await repository.add_author_watchlist_instrument(author.id, instrument.id)
+    return await repository.list_author_watchlist(author.id)
+
+
 async def search_author_watchlist_candidates(
     repository: AuthorRepository,
     author: AuthorProfile,
@@ -189,7 +201,7 @@ async def search_author_watchlist_candidates(
     if len(normalized) < 2:
         return []
 
-    watchlist = await repository.list_author_watchlist(author.id)
+    watchlist = await ensure_author_watchlist_seed(repository, author)
     watchlist_ids = {item.id for item in watchlist}
     instruments = await repository.list_active_instruments()
     local_candidates = [
@@ -334,7 +346,7 @@ def build_recommendation_form_data(
     summary: str,
     thesis: str,
     market_context: str,
-    requires_moderation: str | None,
+    author_requires_moderation: bool,
     scheduled_for: str,
     allowed_strategy_ids: set[str],
     allowed_instrument_ids: set[str],
@@ -370,7 +382,7 @@ def build_recommendation_form_data(
         summary=summary.strip() or None,
         thesis=thesis.strip() or None,
         market_context=market_context.strip() or None,
-        requires_moderation=requires_moderation is not None,
+        requires_moderation=author_requires_moderation,
         scheduled_for=scheduled_for_value,
         legs=legs,
         attachments=parsed_attachments,
@@ -586,9 +598,6 @@ def _build_leg_rows(rows: Iterable[dict[str, str]], allowed_instrument_ids: set[
         take_profit_1 = _parse_decimal(row.get("take_profit_1", ""), f"Leg {index}: некорректный take_profit_1.")
         take_profit_2 = _parse_decimal(row.get("take_profit_2", ""), f"Leg {index}: некорректный take_profit_2.")
         take_profit_3 = _parse_decimal(row.get("take_profit_3", ""), f"Leg {index}: некорректный take_profit_3.")
-
-        if entry_from is None and entry_to is None and stop_loss is None and take_profit_1 is None:
-            raise ValueError(f"Leg {index}: заполните хотя бы entry/stop/take.")
 
         if entry_from is not None and entry_to is not None and entry_to < entry_from:
             raise ValueError(f"Leg {index}: entry_to не может быть меньше entry_from.")

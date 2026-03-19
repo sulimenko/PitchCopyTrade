@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 
+{% macro sort_href(column) -%}
+  /admin/authors?status_filter={{ status_filter | urlencode }}&q={{ q | urlencode }}&sort_by={{ column }}&direction={% if sort_by == column and direction == "asc" %}desc{% else %}asc{% endif %}
+{%- endmacro %}
+
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a href="/admin/dashboard" class="action ghost">Дашборд</a>
@@ -16,10 +20,21 @@
   {% if error %}
   <div style="padding:14px 16px;border-radius:16px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;">{{ error }}</div>
   {% endif %}
+  {% if request.query_params.get("reseed") %}
+  <div style="padding:14px 16px;border-radius:16px;background:rgba(20,85,216,0.08);color:var(--blue-700);font-weight:600;">Watchlist пересобран для {{ request.query_params.get("reseed") }} авторов.</div>
+  {% endif %}
 
   <section class="surface" style="padding:24px;border-radius:24px;">
-    <h3 style="margin:0 0 16px;">Добавить автора</h3>
-    <form method="post" action="/admin/authors" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div>
+        <h3 style="margin:0 0 16px;">Добавить автора</h3>
+        <p class="muted" style="margin:0;max-width:720px;line-height:1.6;">Политика `requires_moderation` теперь живёт на уровне автора. Новые и существующие watchlist можно пересевать отсюда после расширения instrument seed.</p>
+      </div>
+      <form method="post" action="/admin/authors/reseed-watchlist">
+        <button type="submit" class="action ghost">Пересев watchlist</button>
+      </form>
+    </div>
+    <form method="post" action="/admin/authors" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-top:18px;">
       <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
         Имя <input name="display_name" required style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
       </label>
@@ -34,53 +49,77 @@
   </section>
 
   <section class="surface" style="padding:24px;border-radius:24px;">
-    <form method="get" action="/admin/authors" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;">
+    <form method="get" action="/admin/authors" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:18px;">
+      <label style="display:grid;gap:6px;min-width:240px;">
+        <span class="muted">Поиск</span>
+        <input type="text" name="q" value="{{ q }}" placeholder="Имя, slug, email" style="padding:12px 14px;border-radius:14px;border:1px solid var(--line);font:inherit;background:#fff;" />
+      </label>
+      <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+      <input type="hidden" name="direction" value="{{ direction }}" />
       <span class="muted">Показать:</span>
       <button class="action {% if status_filter != 'all' %}ghost{% endif %}" type="submit" name="status_filter" value="all" style="padding:8px 14px;">все</button>
       <button class="action {% if status_filter != 'active' %}ghost{% endif %}" type="submit" name="status_filter" value="active" style="padding:8px 14px;">активные</button>
       <button class="action {% if status_filter != 'inactive' %}ghost{% endif %}" type="submit" name="status_filter" value="inactive" style="padding:8px 14px;">отключенные</button>
+      <button class="action" type="submit">Применить</button>
     </form>
-    <table style="width:100%;border-collapse:collapse;">
-      <thead>
-        <tr style="border-bottom:2px solid var(--line);">
-          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Имя</th>
-          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Telegram ID</th>
-          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Email</th>
-          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Статус</th>
-          <th style="padding:8px 12px;"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for author in authors %}
-        <tr style="border-bottom:1px solid var(--line);">
-          <td style="padding:12px;">
-            <div>{{ author.display_name }}</div>
-            {% if author.invite_link %}
-            <div class="muted" style="margin-top:6px;font-size:0.82rem;word-break:break-all;"><a href="{{ author.invite_link }}">{{ author.invite_link }}</a></div>
-            {% endif %}
-          </td>
-          <td style="padding:12px;font-family:monospace;">{{ author.user.telegram_user_id or "—" }}</td>
-          <td style="padding:12px;">{{ author.user.email or "—" }}</td>
-          <td style="padding:12px;">
-            {% if author.is_active %}
-            <span class="pill" style="background:rgba(0,160,80,0.1);color:#007a3d;">активен</span>
-            {% else %}
-            <span class="pill" style="background:rgba(191,23,54,0.08);color:var(--red-600);">отключён</span>
-            {% endif %}
-          </td>
-          <td style="padding:12px;">
-            <form method="post" action="/admin/authors/{{ author.id }}/toggle" style="display:inline;">
-              <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">
-                {% if author.is_active %}Отключить{% else %}Включить{% endif %}
-              </button>
-            </form>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--muted);">Нет авторов</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div style="overflow:auto;">
+      <table class="workspace-table">
+        <thead>
+          <tr>
+            <th><a href="{{ sort_href('display_name') }}">Имя</a></th>
+            <th>Telegram ID</th>
+            <th>Email</th>
+            <th><a href="{{ sort_href('moderation') }}">Модерация</a></th>
+            <th><a href="{{ sort_href('status') }}">Статус</a></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for author in authors %}
+          <tr>
+            <td style="min-width:260px;">
+              <div>{{ author.display_name }}</div>
+              {% if author.invite_link %}
+              <div class="muted" style="margin-top:6px;font-size:0.82rem;word-break:break-all;"><a href="{{ author.invite_link }}">{{ author.invite_link }}</a></div>
+              {% endif %}
+            </td>
+            <td style="font-family:monospace;">{{ author.user.telegram_user_id or "—" }}</td>
+            <td>{{ author.user.email or "—" }}</td>
+            <td>
+              <form method="post" action="/admin/authors/{{ author.id }}/permissions">
+                <label style="display:flex;gap:8px;align-items:center;">
+                  <input type="checkbox" name="requires_moderation" {% if author.requires_moderation %}checked{% endif %} onchange="this.form.submit()" />
+                  <span class="muted">{% if author.requires_moderation %}review{% else %}direct{% endif %}</span>
+                </label>
+              </form>
+            </td>
+            <td>
+              {% if author.is_active %}
+              <span class="pill" style="background:rgba(0,160,80,0.1);color:#007a3d;">активен</span>
+              {% else %}
+              <span class="pill" style="background:rgba(191,23,54,0.08);color:var(--red-600);">отключён</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="/admin/authors/{{ author.id }}/toggle" style="display:inline;">
+                <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">
+                  {% if author.is_active %}Отключить{% else %}Включить{% endif %}
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--muted);">Нет авторов</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 </div>
+
+<style>
+  .workspace-table { width: 100%; border-collapse: collapse; }
+  .workspace-table th, .workspace-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  .workspace-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+</style>
 {% endblock %}

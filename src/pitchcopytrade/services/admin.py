@@ -1016,6 +1016,71 @@ async def toggle_admin_author(session: AsyncSession | None, author_id: str) -> A
     return profile
 
 
+async def update_admin_author_permissions(
+    session: AsyncSession | None,
+    author_id: str,
+    *,
+    requires_moderation: bool,
+) -> AuthorProfile:
+    if session is None:
+        graph, store = _file_admin_graph()
+        profile = graph.authors.get(author_id)
+        if profile is None:
+            raise ValueError("Author not found")
+        profile.requires_moderation = requires_moderation
+        graph.save(store)
+        return profile
+
+    result = await session.execute(
+        select(AuthorProfile).options(selectinload(AuthorProfile.user)).where(AuthorProfile.id == author_id)
+    )
+    profile = result.scalar_one_or_none()
+    if profile is None:
+        raise ValueError("Author not found")
+    profile.requires_moderation = requires_moderation
+    await session.commit()
+    await session.refresh(profile)
+    return profile
+
+
+async def reseed_author_watchlists(session: AsyncSession | None) -> int:
+    if session is None:
+        graph, store = _file_admin_graph()
+        instruments = [item for item in graph.instruments.values() if item.is_active]
+        updated = 0
+        for author in graph.authors.values():
+            known_ids = {item.id for item in author.watchlist_instruments}
+            missing = [item for item in instruments if item.id not in known_ids]
+            if not missing:
+                continue
+            author.watchlist_instruments.extend(missing)
+            for instrument in missing:
+                if author not in instrument.watchlist_authors:
+                    instrument.watchlist_authors.append(author)
+            updated += 1
+        if updated:
+            graph.save(store)
+        return updated
+
+    instruments_result = await session.execute(select(Instrument).where(Instrument.is_active.is_(True)).order_by(Instrument.ticker.asc()))
+    instruments = list(instruments_result.scalars().all())
+    authors_result = await session.execute(
+        select(AuthorProfile).options(selectinload(AuthorProfile.watchlist_instruments)).order_by(AuthorProfile.display_name.asc())
+    )
+    authors = list(authors_result.scalars().all())
+    updated = 0
+    for author in authors:
+        known_ids = {item.id for item in author.watchlist_instruments}
+        missing = [item for item in instruments if item.id not in known_ids]
+        if not missing:
+            continue
+        author.watchlist_instruments.extend(missing)
+        updated += 1
+    if updated:
+        await session.commit()
+    return updated
+
+
 async def get_admin_metrics(session: AsyncSession | None) -> dict:
     if session is None:
         graph, _store = _file_admin_graph()

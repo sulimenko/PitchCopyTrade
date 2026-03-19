@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 
+{% macro sort_href(column) -%}
+  /admin/strategies?q={{ q | urlencode }}&sort_by={{ column }}&direction={% if sort_by == column and direction == "asc" %}desc{% else %}asc{% endif %}
+{%- endmacro %}
+
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a class="action ghost" href="/admin/dashboard">Сводка</a>
@@ -20,43 +24,64 @@
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Каталог стратегий</h1>
       <p class="muted" style="margin:14px 0 0;max-width:720px;line-height:1.65;">
-        Управление описанием, риском, публикацией и базовой коммерческой пригодностью карточек.
+        Табличный реестр карточек стратегий с фильтрацией по автору, статусу и содержимому.
       </p>
     </div>
-    <div class="pill">{{ strategies|length }} strategy</div>
+    <div class="pill">{{ strategies|length }} строк в текущем срезе</div>
   </div>
 </section>
 
-<section style="display:grid;gap:14px;margin-top:18px;">
-  {% for strategy in strategies %}
-  <a class="surface" href="/admin/strategies/{{ strategy.id }}/edit" style="padding:22px;display:block;">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="max-width:780px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <strong style="font-size:1.15rem;">{{ strategy.title }}</strong>
-          <span class="pill">{{ strategy.status.value }}</span>
-          <span class="pill">{{ strategy.risk_level.value }}</span>
-          {% if strategy.is_public %}
-          <span class="pill">public</span>
-          {% endif %}
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ strategy.short_description }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">{{ strategy.slug }}</span>
-          <span class="pill">{{ strategy.author.display_name }}</span>
-          {% if strategy.min_capital_rub %}
-          <span class="pill">от {{ strategy.min_capital_rub }} RUB</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="muted">Открыть</div>
-    </div>
-  </a>
-  {% else %}
-  <article class="surface" style="padding:24px;">
-    <strong>Стратегий пока нет</strong>
-    <p class="muted" style="line-height:1.6;margin:10px 0 0;">Создайте первую карточку и подготовьте ее к публикации на витрине.</p>
-  </article>
-  {% endfor %}
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <form method="get" action="/admin/strategies" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+    <label style="display:grid;gap:6px;min-width:260px;">
+      <span class="muted">Фильтр</span>
+      <input type="text" name="q" value="{{ q }}" placeholder="Стратегия, slug, автор" style="padding:12px 14px;border-radius:14px;border:1px solid var(--line);font:inherit;background:#fff;" />
+    </label>
+    <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+    <input type="hidden" name="direction" value="{{ direction }}" />
+    <button class="action" type="submit">Применить</button>
+    <a class="action ghost" href="/admin/strategies">Сбросить</a>
+  </form>
+
+  <div style="overflow:auto;margin-top:18px;">
+    <table class="workspace-table">
+      <thead>
+        <tr>
+          <th><a href="{{ sort_href('title') }}">Стратегия</a></th>
+          <th><a href="{{ sort_href('author') }}">Автор</a></th>
+          <th><a href="{{ sort_href('risk') }}">Риск</a></th>
+          <th><a href="{{ sort_href('status') }}">Статус</a></th>
+          <th>Публичность</th>
+          <th>Мин. капитал</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for strategy in strategies %}
+        <tr>
+          <td>
+            <strong>{{ strategy.title }}</strong>
+            <div class="muted" style="margin-top:4px;">{{ strategy.slug }}</div>
+            <div class="muted" style="margin-top:4px;">{{ strategy.short_description }}</div>
+          </td>
+          <td>{{ strategy.author.display_name }}</td>
+          <td><span class="pill">{{ strategy.risk_level.value }}</span></td>
+          <td><span class="pill">{{ strategy.status.value }}</span></td>
+          <td>{% if strategy.is_public %}public{% else %}private{% endif %}</td>
+          <td>{{ strategy.min_capital_rub or "—" }}</td>
+          <td><a class="action ghost" href="/admin/strategies/{{ strategy.id }}/edit" style="padding:8px 12px;">Открыть</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="padding:20px;text-align:center;color:var(--muted);">Стратегий пока нет</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
+
+<style>
+  .workspace-table { width: 100%; border-collapse: collapse; }
+  .workspace-table th, .workspace-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  .workspace-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+</style>
 {% endblock %}

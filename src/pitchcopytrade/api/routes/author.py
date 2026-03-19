@@ -53,6 +53,7 @@ async def author_dashboard(
     strategies = await list_author_strategies(repository, author)
     recommendations = await list_author_recommendations(repository, author)
     watchlist = await list_author_watchlist(repository, author)
+    instruments = await list_active_instruments(repository)
     return templates.TemplateResponse(
         request,
         "author/dashboard.html",
@@ -65,6 +66,9 @@ async def author_dashboard(
             "recommendations": recommendations[:6],
             "watchlist": watchlist,
             "watchlist_items": [_instrument_payload(item) for item in watchlist],
+            "strategies_all": strategies,
+            "instruments": instruments,
+            "recommendation_modal_url": "/author/recommendations/new?embedded=1&next=/author/dashboard",
         },
     )
 
@@ -72,11 +76,16 @@ async def author_dashboard(
 @router.get("/strategies", response_class=HTMLResponse)
 async def author_strategy_list_page(
     request: Request,
+    q: str = "",
+    sort_by: str = "title",
+    direction: str = "asc",
     user: User = Depends(require_author),
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     strategies = await list_author_strategies(repository, author)
+    strategies = _filter_author_strategies(strategies, q=q)
+    strategies = _sort_author_strategies(strategies, sort_by=sort_by, direction=direction)
     return templates.TemplateResponse(
         request,
         "author/strategies_list.html",
@@ -85,6 +94,9 @@ async def author_strategy_list_page(
             "user": user,
             "author": author,
             "strategies": strategies,
+            "q": q,
+            "sort_by": sort_by,
+            "direction": direction,
         },
     )
 
@@ -280,11 +292,19 @@ async def author_watchlist_add_item(
 @router.get("/recommendations", response_class=HTMLResponse)
 async def recommendation_list_page(
     request: Request,
+    q: str = "",
+    status_filter: str = "all",
+    sort_by: str = "updated_at",
+    direction: str = "desc",
     user: User = Depends(require_author),
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     recommendations = await list_author_recommendations(repository, author)
+    recommendations = _filter_author_recommendations(recommendations, q=q, status_filter=status_filter)
+    recommendations = _sort_author_recommendations(recommendations, sort_by=sort_by, direction=direction)
+    strategies = await list_author_strategies(repository, author)
+    instruments = await list_active_instruments(repository)
     return templates.TemplateResponse(
         request,
         "author/recommendations_list.html",
@@ -293,6 +313,14 @@ async def recommendation_list_page(
             "user": user,
             "author": author,
             "recommendations": recommendations,
+            "strategies": strategies,
+            "instruments": instruments,
+            "instrument_items": [_instrument_payload(item) for item in instruments],
+            "q": q,
+            "status_filter": status_filter,
+            "sort_by": sort_by,
+            "direction": direction,
+            "recommendation_modal_url": "/author/recommendations/new?embedded=1&next=/author/recommendations",
         },
     )
 
@@ -300,9 +328,13 @@ async def recommendation_list_page(
 @router.get("/recommendations/new", response_class=HTMLResponse)
 async def recommendation_create_page(
     request: Request,
+    embedded: int = 0,
+    next: str = "/author/recommendations",
     user: User = Depends(require_author),
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
+    if embedded != 1:
+        return RedirectResponse(url="/author/recommendations?modal=new", status_code=status.HTTP_303_SEE_OTHER)
     author = await _get_author_or_403(repository, user)
     return await _render_recommendation_form(
         request=request,
@@ -312,6 +344,8 @@ async def recommendation_create_page(
         recommendation=None,
         error=None,
         form_values=None,
+        embedded=True,
+        next_path=next,
     )
 
 
@@ -340,7 +374,7 @@ async def recommendation_create_submit(
             summary=str(form.get("summary", "") or ""),
             thesis=str(form.get("thesis", "") or ""),
             market_context=str(form.get("market_context", "") or ""),
-            requires_moderation=str(form.get("requires_moderation")) if form.get("requires_moderation") else None,
+            author_requires_moderation=author.requires_moderation,
             scheduled_for=str(form.get("scheduled_for", "") or ""),
             allowed_strategy_ids={item.id for item in strategies},
             allowed_instrument_ids={item.id for item in instruments},
@@ -369,16 +403,16 @@ async def recommendation_create_submit(
                 "summary": str(form.get("summary", "") or ""),
                 "thesis": str(form.get("thesis", "") or ""),
                 "market_context": str(form.get("market_context", "") or ""),
-                "requires_moderation": form.get("requires_moderation") is not None,
+                "requires_moderation": author.requires_moderation,
                 "scheduled_for": str(form.get("scheduled_for", "") or ""),
                 "legs": leg_form_values_from_rows(leg_rows),
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            embedded=str(form.get("embedded", "") or "") == "1",
+            next_path=str(form.get("next_path", "") or ""),
         )
-    return RedirectResponse(
-        url=f"/author/recommendations/{recommendation.id}/edit",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+    next_path = _safe_author_next_path(str(form.get("next_path", "") or ""))
+    return RedirectResponse(url=next_path or f"/author/recommendations/{recommendation.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/recommendations/{recommendation_id}/edit", response_class=HTMLResponse)
@@ -458,7 +492,7 @@ async def recommendation_edit_submit(
             summary=str(form.get("summary", "") or ""),
             thesis=str(form.get("thesis", "") or ""),
             market_context=str(form.get("market_context", "") or ""),
-            requires_moderation=str(form.get("requires_moderation")) if form.get("requires_moderation") else None,
+            author_requires_moderation=author.requires_moderation,
             scheduled_for=str(form.get("scheduled_for", "") or ""),
             allowed_strategy_ids={item.id for item in strategies},
             allowed_instrument_ids={item.id for item in instruments},
@@ -488,11 +522,13 @@ async def recommendation_edit_submit(
                 "summary": str(form.get("summary", "") or ""),
                 "thesis": str(form.get("thesis", "") or ""),
                 "market_context": str(form.get("market_context", "") or ""),
-                "requires_moderation": form.get("requires_moderation") is not None,
+                "requires_moderation": author.requires_moderation,
                 "scheduled_for": str(form.get("scheduled_for", "") or ""),
                 "legs": leg_form_values_from_rows(leg_rows),
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            embedded=str(form.get("embedded", "") or "") == "1",
+            next_path=str(form.get("next_path", "") or ""),
         )
 
     return RedirectResponse(
@@ -511,6 +547,8 @@ async def _render_recommendation_form(
     error: str | None,
     form_values: dict[str, object] | None,
     status_code: int = status.HTTP_200_OK,
+    embedded: bool = False,
+    next_path: str = "",
 ) -> Response:
     strategies = await list_author_strategies(repository, author)
     effective_form_values = form_values or recommendation_form_values(recommendation)
@@ -539,6 +577,8 @@ async def _render_recommendation_form(
             "error": error,
             "form_values": effective_form_values,
             "next_leg_index": _next_leg_index(effective_form_values),
+            "embedded": embedded,
+            "next_path": _safe_author_next_path(next_path) or "/author/recommendations",
         },
         status_code=status_code,
     )
@@ -599,3 +639,74 @@ def _watchlist_candidate_payload(candidate: WatchlistCandidate) -> dict[str, str
         "board": candidate.board,
         "source": candidate.source,
     }
+
+
+def _safe_author_next_path(next_path: str) -> str:
+    normalized = next_path.strip()
+    if not normalized.startswith("/author/"):
+        return ""
+    return normalized
+
+
+def _filter_author_recommendations(recommendations, *, q: str, status_filter: str):
+    normalized = q.strip().lower()
+    items = recommendations
+    if status_filter != "all":
+        items = [item for item in items if item.status.value == status_filter]
+    if not normalized:
+        return items
+    return [
+        item
+        for item in items
+        if normalized in " ".join(
+            part.lower()
+            for part in [
+                item.title or "",
+                item.summary or "",
+                item.strategy.title if item.strategy is not None else "",
+                item.status.value,
+                item.kind.value,
+                " ".join((leg.instrument.ticker if leg.instrument is not None else "") for leg in item.legs),
+            ]
+            if part
+        )
+    ]
+
+
+def _sort_author_recommendations(recommendations, *, sort_by: str, direction: str):
+    reverse = direction == "desc"
+    if sort_by == "title":
+        key = lambda item: (item.title or item.strategy.title if item.strategy is not None else "").lower()
+    elif sort_by == "strategy":
+        key = lambda item: (item.strategy.title if item.strategy is not None else "").lower()
+    elif sort_by == "status":
+        key = lambda item: item.status.value
+    else:
+        key = lambda item: (item.updated_at, item.created_at)
+    return sorted(recommendations, key=key, reverse=reverse)
+
+
+def _filter_author_strategies(strategies, *, q: str):
+    normalized = q.strip().lower()
+    if not normalized:
+        return strategies
+    return [
+        item
+        for item in strategies
+        if normalized in " ".join(
+            part.lower()
+            for part in [item.title, item.slug, item.short_description or "", item.status.value, item.risk_level.value]
+            if part
+        )
+    ]
+
+
+def _sort_author_strategies(strategies, *, sort_by: str, direction: str):
+    reverse = direction == "desc"
+    if sort_by == "status":
+        key = lambda item: item.status.value
+    elif sort_by == "risk":
+        key = lambda item: item.risk_level.value
+    else:
+        key = lambda item: item.title.lower()
+    return sorted(strategies, key=key, reverse=reverse)
