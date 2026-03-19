@@ -7,20 +7,26 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import require_admin
+from pitchcopytrade.auth.session import build_staff_invite_link
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
-from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, ProductType, RiskLevel, StrategyStatus
+from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, ProductType, RiskLevel, RoleSlug, StrategyStatus
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.services.admin import (
     ProductFormData,
     apply_manual_discount_to_payment,
     confirm_payment_and_activate_subscription,
     create_admin_author,
+    create_admin_staff_user,
     get_admin_metrics,
     get_admin_strategy_for_onepager,
+    grant_staff_role,
+    list_admin_staff,
+    revoke_staff_role,
     save_strategy_onepager,
     toggle_admin_author,
+    StaffCreateData,
     StrategyFormData,
     create_product,
     create_strategy,
@@ -94,6 +100,7 @@ async def admin_dashboard(
             "recent_products": products[:5],
             "recent_payments": payments[:5],
             "recent_subscriptions": subscriptions[:5],
+            "authors_url": "/admin/authors",
         },
     )
 
@@ -1340,14 +1347,16 @@ def _form_values_from_legal_document(document) -> dict[str, object]:
 @router.get("/authors", response_class=HTMLResponse)
 async def admin_authors_list(
     request: Request,
+    status_filter: str = "all",
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
-    authors = await list_admin_authors(session)
+    authors = await list_admin_authors(session, status_filter=status_filter)
+    author_rows = [_author_row(author) for author in authors]
     return templates.TemplateResponse(
         request,
         "admin/authors_list.html",
-        {"title": "Авторы", "user": user, "authors": authors},
+        {"title": "Авторы", "user": user, "authors": author_rows, "status_filter": status_filter},
     )
 
 
@@ -1368,15 +1377,141 @@ async def admin_author_create(
             email=email.strip() or None,
             telegram_user_id=tg_id,
         )
-    except Exception as exc:
+    except ValueError as exc:
         authors = await list_admin_authors(session)
+        author_rows = [_author_row(author) for author in authors]
         return templates.TemplateResponse(
             request,
             "admin/authors_list.html",
-            {"title": "Авторы", "user": user, "authors": authors, "error": str(exc)},
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            {"title": "Авторы", "user": user, "authors": author_rows, "error": str(exc), "status_filter": "all"},
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/staff", response_class=HTMLResponse)
+async def admin_staff_list(
+    request: Request,
+    role_filter: str = "all",
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    staff = await list_admin_staff(session, role_filter=role_filter)
+    staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+    return templates.TemplateResponse(
+        request,
+        "admin/staff_list.html",
+        {
+            "title": "Команда",
+            "user": user,
+            "staff": staff_rows,
+            "role_filter": role_filter,
+        },
+    )
+
+
+@router.post("/staff/admins", response_class=HTMLResponse)
+async def admin_staff_create_admin(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    telegram_user_id: str = Form(""),
+) -> Response:
+    try:
+        tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
+        await create_admin_staff_user(
+            session,
+            StaffCreateData(
+                display_name=display_name.strip(),
+                email=email.strip() or None,
+                telegram_user_id=tg_id,
+                role_slugs=(RoleSlug.ADMIN,),
+            ),
+        )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/roles", response_class=HTMLResponse)
+async def admin_staff_grant_role(
+    target_user_id: str,
+    request: Request,
+    role_slug: str = Form(...),
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    try:
+        await grant_staff_role(
+            session,
+            actor_user_id=user.id,
+            target_user_id=target_user_id,
+            role_slug=RoleSlug(role_slug),
+        )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/roles/{role_slug}/remove", response_class=HTMLResponse)
+async def admin_staff_revoke_role(
+    target_user_id: str,
+    role_slug: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    try:
+        await revoke_staff_role(
+            session,
+            actor_user_id=user.id,
+            target_user_id=target_user_id,
+            role_slug=RoleSlug(role_slug),
+        )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/authors/{author_id}/toggle", response_class=HTMLResponse)
@@ -1437,3 +1572,38 @@ async def admin_metrics(
         "admin/metrics.html",
         {"title": "Метрики", "user": user, "metrics": metrics},
     )
+
+
+def _author_row(author) -> dict[str, object]:
+    invite_link = None
+    if author.user is not None and author.user.telegram_user_id is None:
+        invite_link = build_staff_invite_link(author.user)
+    return {
+        "id": author.id,
+        "display_name": author.display_name,
+        "is_active": author.is_active,
+        "user": author.user,
+        "invite_link": invite_link,
+    }
+
+
+def _staff_row(user: User, *, current_user_id: str) -> dict[str, object]:
+    role_slugs = sorted((item.slug.value for item in user.roles), key=lambda item: ["admin", "author", "moderator"].index(item))
+    invite_link = None
+    if user.telegram_user_id is None:
+        invite_link = build_staff_invite_link(user)
+    status_value = user.status.value if getattr(user, "status", None) is not None else "active"
+    return {
+        "id": user.id,
+        "display_name": user.author_profile.display_name if user.author_profile is not None else (user.full_name or user.email or user.username),
+        "email": user.email,
+        "telegram_user_id": user.telegram_user_id,
+        "status": status_value,
+        "invite_link": invite_link,
+        "roles": role_slugs,
+        "is_multi_role": len(role_slugs) > 1,
+        "can_grant_admin": "admin" not in role_slugs,
+        "can_grant_author": "author" not in role_slugs,
+        "can_revoke_admin": "admin" in role_slugs,
+        "is_current_user": user.id == current_user_id,
+    }

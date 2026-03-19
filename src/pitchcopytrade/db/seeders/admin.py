@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.db.models.accounts import Role, User, user_roles
@@ -47,7 +47,7 @@ async def seed_admin(session: AsyncSession, *, telegram_id: int | None, email: s
     session.add(user)
     await session.flush()
 
-    user.roles.append(admin_role)
+    await session.execute(insert(user_roles).values(user_id=user.id, role_id=admin_role.id))
     await session.commit()
 
     logger.info("Admin user created (id=%s, telegram_id=%s, email=%s)", user.id, telegram_id, email)

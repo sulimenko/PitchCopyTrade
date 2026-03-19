@@ -10,11 +10,14 @@ from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.services.author import (
     WatchlistCandidate,
     add_author_watchlist_instrument,
+    build_author_strategy_form_data,
     build_leg_rows_from_form,
     build_recommendation_form_data,
     create_author_recommendation,
+    create_author_strategy,
     get_author_by_user,
     get_author_recommendation,
+    get_author_strategy,
     get_author_workspace_stats,
     leg_form_values_from_rows,
     list_active_instruments,
@@ -26,6 +29,7 @@ from pitchcopytrade.services.author import (
     recommendation_form_values,
     search_author_watchlist_candidates,
     update_author_recommendation,
+    update_author_strategy,
 )
 from pitchcopytrade.web.templates import templates
 
@@ -63,6 +67,177 @@ async def author_dashboard(
             "watchlist_items": [_instrument_payload(item) for item in watchlist],
         },
     )
+
+
+@router.get("/strategies", response_class=HTMLResponse)
+async def author_strategy_list_page(
+    request: Request,
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> Response:
+    author = await _get_author_or_403(repository, user)
+    strategies = await list_author_strategies(repository, author)
+    return templates.TemplateResponse(
+        request,
+        "author/strategies_list.html",
+        {
+            "title": "Стратегии автора",
+            "user": user,
+            "author": author,
+            "strategies": strategies,
+        },
+    )
+
+
+@router.get("/strategies/new", response_class=HTMLResponse)
+async def author_strategy_create_page(
+    request: Request,
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> Response:
+    author = await _get_author_or_403(repository, user)
+    return templates.TemplateResponse(
+        request,
+        "author/strategy_form.html",
+        {
+            "title": "Новая стратегия",
+            "user": user,
+            "author": author,
+            "strategy": None,
+            "error": None,
+            "risk_levels": ["low", "medium", "high"],
+            "form_values": {
+                "title": "",
+                "slug": "",
+                "short_description": "",
+                "risk_level": "medium",
+                "min_capital_rub": "",
+            },
+        },
+    )
+
+
+@router.post("/strategies", response_class=HTMLResponse)
+async def author_strategy_create_submit(
+    request: Request,
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> Response:
+    author = await _get_author_or_403(repository, user)
+    strategies = await list_author_strategies(repository, author)
+    form = await request.form()
+    try:
+        data = build_author_strategy_form_data(
+            title=str(form.get("title", "") or ""),
+            slug=str(form.get("slug", "") or ""),
+            short_description=str(form.get("short_description", "") or ""),
+            risk_level_value=str(form.get("risk_level", "") or "medium"),
+            min_capital_rub=str(form.get("min_capital_rub", "") or ""),
+            existing_strategies=strategies,
+        )
+        strategy = await create_author_strategy(repository, author, data)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "author/strategy_form.html",
+            {
+                "title": "Новая стратегия",
+                "user": user,
+                "author": author,
+                "strategy": None,
+                "error": str(exc),
+                "risk_levels": ["low", "medium", "high"],
+                "form_values": {
+                    "title": str(form.get("title", "") or ""),
+                    "slug": str(form.get("slug", "") or ""),
+                    "short_description": str(form.get("short_description", "") or ""),
+                    "risk_level": str(form.get("risk_level", "") or "medium"),
+                    "min_capital_rub": str(form.get("min_capital_rub", "") or ""),
+                },
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/author/strategies/{strategy.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/strategies/{strategy_id}/edit", response_class=HTMLResponse)
+async def author_strategy_edit_page(
+    strategy_id: str,
+    request: Request,
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> Response:
+    author = await _get_author_or_403(repository, user)
+    strategy = await get_author_strategy(repository, author, strategy_id)
+    if strategy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    return templates.TemplateResponse(
+        request,
+        "author/strategy_form.html",
+        {
+            "title": strategy.title,
+            "user": user,
+            "author": author,
+            "strategy": strategy,
+            "error": None,
+            "risk_levels": ["low", "medium", "high"],
+            "form_values": {
+                "title": strategy.title,
+                "slug": strategy.slug,
+                "short_description": strategy.short_description,
+                "risk_level": strategy.risk_level.value,
+                "min_capital_rub": strategy.min_capital_rub or "",
+            },
+        },
+    )
+
+
+@router.post("/strategies/{strategy_id}", response_class=HTMLResponse)
+async def author_strategy_edit_submit(
+    strategy_id: str,
+    request: Request,
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> Response:
+    author = await _get_author_or_403(repository, user)
+    strategy = await get_author_strategy(repository, author, strategy_id)
+    if strategy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    strategies = await list_author_strategies(repository, author)
+    form = await request.form()
+    try:
+        data = build_author_strategy_form_data(
+            title=str(form.get("title", "") or ""),
+            slug=str(form.get("slug", "") or ""),
+            short_description=str(form.get("short_description", "") or ""),
+            risk_level_value=str(form.get("risk_level", "") or "medium"),
+            min_capital_rub=str(form.get("min_capital_rub", "") or ""),
+            existing_strategies=strategies,
+            current_strategy_id=strategy.id,
+        )
+        await update_author_strategy(repository, strategy, data)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "author/strategy_form.html",
+            {
+                "title": strategy.title,
+                "user": user,
+                "author": author,
+                "strategy": strategy,
+                "error": str(exc),
+                "risk_levels": ["low", "medium", "high"],
+                "form_values": {
+                    "title": str(form.get("title", "") or ""),
+                    "slug": str(form.get("slug", "") or ""),
+                    "short_description": str(form.get("short_description", "") or ""),
+                    "risk_level": str(form.get("risk_level", "") or "medium"),
+                    "min_capital_rub": str(form.get("min_capital_rub", "") or ""),
+                },
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/author/strategies/{strategy.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/watchlist/search")

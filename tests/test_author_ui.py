@@ -144,6 +144,61 @@ def test_author_dashboard_renders(monkeypatch) -> None:
         assert "Поиск и добавление" in response.text
 
 
+def test_author_strategy_list_renders(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+
+    with _build_client(author_user) as client:
+        response = client.get("/author/strategies")
+
+        assert response.status_code == 200
+        assert "Мои стратегии" in response.text
+        assert "Momentum RU" in response.text
+
+
+def test_author_strategy_create_redirects(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.create_author_strategy", lambda _repository, _author, _data: _async_return(strategy))
+
+    with _build_client(author_user) as client:
+        response = client.post(
+            "/author/strategies",
+            data={
+                "title": "Momentum RU",
+                "slug": "momentum-ru",
+                "short_description": "desc",
+                "risk_level": "medium",
+                "min_capital_rub": "150000",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/strategies/strategy-1/edit"
+
+
+def test_author_strategy_edit_page_renders(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_strategy", lambda _repository, _author, _strategy_id: _async_return(strategy))
+
+    with _build_client(author_user) as client:
+        response = client.get("/author/strategies/strategy-1/edit")
+
+        assert response.status_code == 200
+        assert "Редактирование стратегии" in response.text
+        assert "Momentum RU" in response.text
+
+
 def test_author_recommendation_list_renders(monkeypatch) -> None:
     author_user = _make_author_user()
     recommendation = _make_recommendation()

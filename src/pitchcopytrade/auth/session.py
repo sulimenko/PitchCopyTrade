@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from pitchcopytrade.auth.roles import get_user_role_slugs
 from pitchcopytrade.auth.tokens import (
     AuthTokenError,
+    create_staff_invite_token,
     create_session_token,
     create_telegram_login_token,
+    decode_staff_invite_token,
     decode_session_token,
     decode_telegram_login_token,
 )
@@ -55,6 +59,26 @@ def decode_telegram_login_link_token(token: str):
     return decode_telegram_login_token(token, secret_key=settings.app.secret_key.get_secret_value())
 
 
+def build_staff_invite_token(user: User) -> str:
+    settings = get_settings()
+    return create_staff_invite_token(
+        user_id=user.id,
+        secret_key=settings.app.secret_key.get_secret_value(),
+    )
+
+
+def build_staff_invite_link(user: User) -> str:
+    settings = get_settings()
+    base_url = settings.app.base_url.rstrip("/")
+    query = urlencode({"invite_token": build_staff_invite_token(user)})
+    return f"{base_url}/login?{query}"
+
+
+def decode_staff_invite_link_token(token: str):
+    settings = get_settings()
+    return decode_staff_invite_token(token, secret_key=settings.app.secret_key.get_secret_value())
+
+
 async def get_user_from_session_token(repository: AuthRepository, token: str) -> User | None:
     try:
         payload = decode_session_cookie_value(token)
@@ -66,6 +90,14 @@ async def get_user_from_session_token(repository: AuthRepository, token: str) ->
 async def get_user_from_telegram_login_token(repository: AuthRepository, token: str) -> User | None:
     try:
         payload = decode_telegram_login_link_token(token)
+    except AuthTokenError:
+        return None
+    return await repository.get_user_by_id(payload.subject)
+
+
+async def get_user_from_staff_invite_token(repository: AuthRepository, token: str) -> User | None:
+    try:
+        payload = decode_staff_invite_link_token(token)
     except AuthTokenError:
         return None
     return await repository.get_user_by_id(payload.subject)

@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 
 {% block topbar_actions %}
-<a href="/admin/dashboard" class="action ghost">Дашборд</a>
-<a href="/logout" class="action ghost">Выйти</a>
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a href="/admin/dashboard" class="action ghost">Дашборд</a>
+  <a href="/admin/staff" class="action ghost">Команда</a>
+  <a href="/admin/strategies" class="action ghost">Стратегии</a>
+  <a href="/logout" class="action ghost">Выйти</a>
+</div>
 {% endblock %}
 
 {% block content %}
@@ -20,7 +24,7 @@
         Имя <input name="display_name" required style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
       </label>
       <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
-        Email <input name="email" type="email" style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+        Email <input name="email" type="email" required style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
       </label>
       <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
         Telegram ID <input name="telegram_user_id" type="number" style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
@@ -30,6 +34,12 @@
   </section>
 
   <section class="surface" style="padding:24px;border-radius:24px;">
+    <form method="get" action="/admin/authors" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;">
+      <span class="muted">Показать:</span>
+      <button class="action {% if status_filter != 'all' %}ghost{% endif %}" type="submit" name="status_filter" value="all" style="padding:8px 14px;">все</button>
+      <button class="action {% if status_filter != 'active' %}ghost{% endif %}" type="submit" name="status_filter" value="active" style="padding:8px 14px;">активные</button>
+      <button class="action {% if status_filter != 'inactive' %}ghost{% endif %}" type="submit" name="status_filter" value="inactive" style="padding:8px 14px;">отключенные</button>
+    </form>
     <table style="width:100%;border-collapse:collapse;">
       <thead>
         <tr style="border-bottom:2px solid var(--line);">
@@ -43,7 +53,12 @@
       <tbody>
         {% for author in authors %}
         <tr style="border-bottom:1px solid var(--line);">
-          <td style="padding:12px;">{{ author.display_name }}</td>
+          <td style="padding:12px;">
+            <div>{{ author.display_name }}</div>
+            {% if author.invite_link %}
+            <div class="muted" style="margin-top:6px;font-size:0.82rem;word-break:break-all;"><a href="{{ author.invite_link }}">{{ author.invite_link }}</a></div>
+            {% endif %}
+          </td>
           <td style="padding:12px;font-family:monospace;">{{ author.user.telegram_user_id or "—" }}</td>
           <td style="padding:12px;">{{ author.user.email or "—" }}</td>
           <td style="padding:12px;">

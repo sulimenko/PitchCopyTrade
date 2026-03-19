@@ -17,16 +17,18 @@ from pitchcopytrade.auth.telegram_webapp import (
 )
 from pitchcopytrade.auth.roles import get_user_role_slugs
 from pitchcopytrade.auth.service import authenticate_user
+from pitchcopytrade.auth.staff_mode import get_staff_mode_cookie_name, resolve_staff_mode
 from pitchcopytrade.auth.session import (
     build_session_cookie_value,
     build_telegram_fallback_cookie_value,
     get_telegram_fallback_cookie_name,
+    get_user_from_staff_invite_token,
     get_user_from_session_token,
     get_user_from_telegram_fallback_cookie,
     get_user_from_telegram_login_token,
 )
 from pitchcopytrade.core.config import get_settings
-from pitchcopytrade.db.models.enums import RoleSlug
+from pitchcopytrade.db.models.enums import RoleSlug, UserStatus
 from pitchcopytrade.repositories.contracts import AuthRepository
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
@@ -48,10 +50,12 @@ async def telegram_widget_callback(
 ) -> Response:
     settings = get_settings()
     params = dict(request.query_params)
+    invite_token = str(request.query_params.get("invite_token", "") or "")
+    auth_params = {key: value for key, value in params.items() if key != "invite_token"}
 
     try:
         verify_telegram_login_widget(
-            params,
+            auth_params,
             bot_token=settings.telegram.bot_token.get_secret_value(),
             max_age_seconds=300,
         )
@@ -69,6 +73,12 @@ async def telegram_widget_callback(
         telegram_user_id = 0
 
     user = await repository.get_user_by_telegram_id(telegram_user_id)
+    if user is not None and user.status != UserStatus.ACTIVE:
+        user = None
+    if invite_token:
+        bound_user = await _bind_staff_user_by_invite_token(repository, invite_token, telegram_user_id)
+        if bound_user is not None:
+            user = bound_user
     if user is None:
         return templates.TemplateResponse(
             request,
@@ -76,21 +86,14 @@ async def telegram_widget_callback(
             _build_login_template_context(
                 title="Вход в PitchCopyTrade",
                 error="Пользователь с таким Telegram ID не найден среди сотрудников",
+                invite_token=invite_token,
             ),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
-    redirect_url = _resolve_role_redirect(user)
+    redirect_url, staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
     response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-    response.set_cookie(
-        key=settings.auth.session_cookie_name,
-        value=build_session_cookie_value(user),
-        httponly=True,
-        max_age=settings.auth.session_ttl_seconds,
-        samesite="strict",
-        secure=settings.app.base_url.startswith("https://"),
-        path="/",
-    )
+    _set_staff_session_cookies(response, user, staff_mode)
     return response
 
 
@@ -98,8 +101,9 @@ async def telegram_widget_callback(
 async def login_page(request: Request, repository: AuthRepository = Depends(get_auth_repository)) -> Response:
     token = request.cookies.get(get_settings().auth.session_cookie_name)
     user = await get_user_from_session_token(repository, token) if token else None
-    if user is not None:
-        return RedirectResponse(url=_resolve_role_redirect(user), status_code=status.HTTP_303_SEE_OTHER)
+    if user is not None and user.status == UserStatus.ACTIVE:
+        redirect_url, _staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
+        return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
     tg_user = await get_user_from_telegram_fallback_cookie(repository, tg_token) if tg_token else None
     if tg_user is not None:
@@ -108,7 +112,10 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
     return templates.TemplateResponse(
         request,
         "auth/login.html",
-        _build_login_template_context(title="Вход в PitchCopyTrade"),
+        _build_login_template_context(
+            title="Вход в PitchCopyTrade",
+            invite_token=str(request.query_params.get("invite_token", "") or ""),
+        ),
     )
 
 
@@ -128,21 +135,26 @@ async def login_submit(
                 title="Вход в PitchCopyTrade",
                 error="Неверный логин или пароль",
                 identity=identity.strip(),
+                invite_token=str(request.query_params.get("invite_token", "") or ""),
             ),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
+    if user.status != UserStatus.ACTIVE:
+        return templates.TemplateResponse(
+            request,
+            "auth/login.html",
+            _build_login_template_context(
+                title="Вход в PitchCopyTrade",
+                error="Staff-аккаунт ещё не активирован. Завершите вход через Telegram invite link.",
+                identity=identity.strip(),
+                invite_token=str(request.query_params.get("invite_token", "") or ""),
+            ),
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
 
-    settings = get_settings()
-    response = RedirectResponse(url=_resolve_role_redirect(user), status_code=status.HTTP_303_SEE_OTHER)
-    response.set_cookie(
-        key=settings.auth.session_cookie_name,
-        value=build_session_cookie_value(user),
-        httponly=True,
-        max_age=settings.auth.session_ttl_seconds,
-        samesite="strict",
-        secure=settings.app.base_url.startswith("https://"),
-        path="/",
-    )
+    redirect_url, staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
+    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    _set_staff_session_cookies(response, user, staff_mode)
     return response
 
 
@@ -151,7 +163,24 @@ async def logout() -> Response:
     settings = get_settings()
     response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(settings.auth.session_cookie_name, path="/")
+    response.delete_cookie(get_staff_mode_cookie_name(), path="/")
     response.delete_cookie(get_telegram_fallback_cookie_name(), path="/")
+    return response
+
+
+@router.post("/auth/mode", include_in_schema=False)
+async def switch_staff_mode(
+    request: Request,
+    mode: str = Form(...),
+    next: str = Form("/workspace"),
+    repository: AuthRepository = Depends(get_auth_repository),
+) -> Response:
+    user = await _require_authenticated_user(request, repository)
+    staff_mode = resolve_staff_mode(user, mode)
+    if staff_mode != mode.strip().lower():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недопустимый режим")
+    response = RedirectResponse(url=_canonical_staff_home(staff_mode), status_code=status.HTTP_303_SEE_OTHER)
+    _set_staff_session_cookies(response, user, staff_mode)
     return response
 
 
@@ -239,7 +268,7 @@ async def app_home(request: Request, repository: AuthRepository = Depends(get_au
         response.delete_cookie(get_telegram_fallback_cookie_name(), path="/")
         return response
 
-    redirect_url = _resolve_role_redirect(user)
+    redirect_url, _staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -274,15 +303,18 @@ def _resolve_role_home(role_labels: list[str]) -> str:
     return "Author workspace"
 
 
-def _resolve_role_redirect(user) -> str:
+def _resolve_role_redirect(user, requested_mode: str | None = None) -> tuple[str, str]:
     role_labels = {role.value for role in get_user_role_slugs(user)}
-    if RoleSlug.ADMIN.value in role_labels:
-        return "/admin/dashboard"
+    staff_mode = resolve_staff_mode(user, requested_mode)
+    if RoleSlug.ADMIN.value in role_labels and staff_mode == "admin":
+        return "/admin/dashboard", staff_mode
+    if RoleSlug.AUTHOR.value in role_labels and staff_mode == "author":
+        return "/author/dashboard", staff_mode
     if RoleSlug.AUTHOR.value in role_labels:
-        return "/cabinet/"
+        return "/author/dashboard", staff_mode
     if RoleSlug.MODERATOR.value in role_labels:
-        return "/moderation/queue"
-    return "/login"
+        return "/moderation/queue", staff_mode
+    return "/login", staff_mode
 
 
 def _sanitize_subscriber_next_path(next_path: str | None) -> str:
@@ -293,17 +325,27 @@ def _sanitize_subscriber_next_path(next_path: str | None) -> str:
     return next_path
 
 
-def _build_login_template_context(*, title: str, error: str | None = None, identity: str = "") -> dict[str, object]:
+def _build_login_template_context(
+    *,
+    title: str,
+    error: str | None = None,
+    identity: str = "",
+    invite_token: str = "",
+) -> dict[str, object]:
     settings = get_settings()
     base_url = settings.app.base_url.rstrip("/")
     parsed = urlparse(base_url)
     login_domain = parsed.hostname or ""
+    telegram_auth_url = f"{base_url}/auth/telegram/callback"
+    if invite_token:
+        telegram_auth_url = f"{telegram_auth_url}?invite_token={invite_token}"
     return {
         "title": title,
         "error": error,
         "identity": identity,
+        "invite_token": invite_token,
         "bot_username": settings.telegram.bot_username,
-        "telegram_auth_url": f"{base_url}/auth/telegram/callback",
+        "telegram_auth_url": telegram_auth_url,
         "telegram_login_domain": login_domain,
         "telegram_https_ready": parsed.scheme == "https",
         "telegram_bot_username": settings.telegram.bot_username,
@@ -320,4 +362,55 @@ async def _require_authenticated_user(request: Request, repository: AuthReposito
     user = await get_user_from_session_token(repository, token)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+    if user.status != UserStatus.ACTIVE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Staff account is not activated")
     return user
+
+
+async def _bind_staff_user_by_invite_token(
+    repository: AuthRepository,
+    invite_token: str,
+    telegram_user_id: int,
+):
+    invited_user = await get_user_from_staff_invite_token(repository, invite_token)
+    if invited_user is None:
+        return None
+    if invited_user.telegram_user_id not in (None, telegram_user_id):
+        return None
+    invited_user.telegram_user_id = telegram_user_id
+    invited_user.status = UserStatus.ACTIVE
+    await repository.commit()
+    return invited_user
+
+
+def _set_staff_session_cookies(response: Response, user, staff_mode: str) -> None:
+    settings = get_settings()
+    secure = settings.app.base_url.startswith("https://")
+    response.set_cookie(
+        key=settings.auth.session_cookie_name,
+        value=build_session_cookie_value(user),
+        httponly=True,
+        max_age=settings.auth.session_ttl_seconds,
+        samesite="strict",
+        secure=secure,
+        path="/",
+    )
+    response.set_cookie(
+        key=get_staff_mode_cookie_name(),
+        value=staff_mode,
+        httponly=True,
+        max_age=settings.auth.session_ttl_seconds,
+        samesite="strict",
+        secure=secure,
+        path="/",
+    )
+
+
+def _canonical_staff_home(staff_mode: str) -> str:
+    if staff_mode == "admin":
+        return "/admin/dashboard"
+    if staff_mode == "author":
+        return "/author/dashboard"
+    if staff_mode == "moderator":
+        return "/moderation/queue"
+    return "/workspace"

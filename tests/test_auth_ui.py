@@ -12,14 +12,16 @@ from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.deps.repositories import get_auth_repository
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.auth.passwords import hash_password
+from pitchcopytrade.auth.staff_mode import resolve_staff_mode
 from pitchcopytrade.auth.session import (
+    build_staff_invite_token,
     build_session_cookie_value,
     build_telegram_login_link_token,
     get_telegram_fallback_cookie_name,
 )
 from pitchcopytrade.core.config import get_settings, reset_settings_cache
-from pitchcopytrade.db.models.accounts import Role, User
-from pitchcopytrade.db.models.enums import RoleSlug
+from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
+from pitchcopytrade.db.models.enums import RoleSlug, UserStatus
 
 
 class FakeAuthRepository:
@@ -36,6 +38,9 @@ class FakeAuthRepository:
 
     async def get_user_by_id(self, user_id: str) -> User | None:
         return self.users_by_id.get(user_id)
+
+    async def commit(self) -> None:
+        return None
 
 
 class FakePublicRepository:
@@ -84,6 +89,7 @@ def _make_user() -> User:
         full_name="Alex",
         password_hash=hash_password("test-pass"),
         timezone="Europe/Moscow",
+        status=UserStatus.ACTIVE,
     )
     user.roles = [Role(slug=RoleSlug.AUTHOR, title="Author")]
     return user
@@ -92,6 +98,16 @@ def _make_user() -> User:
 def _make_admin_user() -> User:
     user = _make_user()
     user.roles = [Role(slug=RoleSlug.ADMIN, title="Admin")]
+    return user
+
+
+def _make_dual_role_user() -> User:
+    user = _make_user()
+    user.roles = [
+        Role(slug=RoleSlug.ADMIN, title="Admin"),
+        Role(slug=RoleSlug.AUTHOR, title="Author"),
+    ]
+    user.author_profile = AuthorProfile(id="author-1", user_id=user.id, display_name="Alex", slug="alex")
     return user
 
 
@@ -142,7 +158,7 @@ def test_login_submit_sets_session_cookie() -> None:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/cabinet/"
+        assert response.headers["location"] == "/author/dashboard"
         assert "pitchcopytrade_session=" in response.headers["set-cookie"]
 
 
@@ -166,7 +182,31 @@ def test_telegram_widget_callback_accepts_extra_query_fields() -> None:
         response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/cabinet/"
+        assert response.headers["location"] == "/author/dashboard"
+
+
+def test_telegram_widget_callback_rejects_invited_user_without_invite_token() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    user.status = UserStatus.INVITED
+    repository.users_by_telegram_id[user.telegram_user_id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": str(user.telegram_user_id),
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted(params.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params)
+
+        assert response.status_code == 401
+        assert "не найден среди сотрудников" in response.text
 
 
 def _make_author_user_with_telegram_id(*, telegram_user_id: int) -> User:
@@ -200,6 +240,19 @@ def test_login_submit_rejects_invalid_credentials() -> None:
         assert "Неверный логин или пароль" in response.text
 
 
+def test_login_submit_rejects_invited_staff_user() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_identity[user.username] = user
+
+    with _build_client(repository) as client:
+        response = client.post("/login", data={"identity": "alex", "password": "test-pass"})
+
+        assert response.status_code == 403
+        assert "ещё не активирован" in response.text
+
+
 def test_app_requires_session_cookie() -> None:
     repository = FakeAuthRepository()
     with _build_client(repository) as client:
@@ -219,7 +272,7 @@ def test_app_home_renders_for_valid_session() -> None:
         response = client.get("/app", follow_redirects=False)
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/cabinet/"
+        assert response.headers["location"] == "/author/dashboard"
 
 
 def test_app_redirects_admin_to_dashboard() -> None:
@@ -233,6 +286,138 @@ def test_app_redirects_admin_to_dashboard() -> None:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/admin/dashboard"
+
+
+def test_telegram_invite_token_binds_author_account() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "777001",
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        assert user.telegram_user_id == 777001
+
+
+def test_telegram_invite_token_binds_prefilled_author_account() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    user.status = UserStatus.INVITED
+    repository.users_by_id[user.id] = user
+    repository.users_by_telegram_id[user.telegram_user_id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "777001",
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        assert user.status == UserStatus.ACTIVE
+
+
+def test_telegram_invite_token_binds_admin_account() -> None:
+    repository = FakeAuthRepository()
+    user = _make_admin_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "888002",
+            "first_name": "Ops",
+            "username": "ops_admin",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/dashboard"
+        assert user.telegram_user_id == 888002
+        assert user.status == UserStatus.ACTIVE
+
+
+def test_dual_role_login_defaults_to_admin_mode() -> None:
+    repository = FakeAuthRepository()
+    user = _make_dual_role_user()
+    repository.users_by_identity[user.username] = user
+
+    with _build_client(repository) as client:
+        response = client.post("/login", data={"identity": "alex", "password": "test-pass"}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/dashboard"
+        assert "pitchcopytrade_session_staff_mode=admin" in response.headers["set-cookie"]
+
+
+def test_dual_role_can_switch_to_author_mode() -> None:
+    repository = FakeAuthRepository()
+    user = _make_dual_role_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.post("/auth/mode", data={"mode": "author", "next": "/admin/authors"}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        assert "pitchcopytrade_session_staff_mode=author" in response.headers["set-cookie"]
+
+
+def test_dual_role_can_switch_back_to_admin_mode() -> None:
+    repository = FakeAuthRepository()
+    user = _make_dual_role_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        client.cookies.set("pitchcopytrade_session_staff_mode", "author")
+        response = client.post("/auth/mode", data={"mode": "admin", "next": "/author/recommendations"}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/dashboard"
+        assert "pitchcopytrade_session_staff_mode=admin" in response.headers["set-cookie"]
+
+
+def test_dual_role_mode_resolution_defaults_to_admin() -> None:
+    user = _make_dual_role_user()
+    assert resolve_staff_mode(user, None) == "admin"
+
+
+def test_dual_role_mode_resolution_accepts_author() -> None:
+    user = _make_dual_role_user()
+    assert resolve_staff_mode(user, "author") == "author"
 
 
 def test_login_page_redirects_moderator_to_queue() -> None:

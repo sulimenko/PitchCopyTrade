@@ -201,7 +201,7 @@
 - [x] **4.2** Страница управления авторами
   - `GET /admin/authors` — список авторов (имя, telegram_id, email, активен)
   - `POST /admin/authors` — создание автора
-    - Поля: `display_name` (обязательно), `email` (опц.), `telegram_user_id` (опц.)
+    - Поля: `display_name` (обязательно), `email` (обязательно), `telegram_user_id` (опц.)
     - Создаёт: User + AuthorProfile (slug авто) + user_roles(author)
     - Устанавливает `requires_moderation=False`
   - `POST /admin/authors/{id}/toggle` — включить/отключить автора
@@ -224,6 +224,10 @@
 ### Критерии приёмки
 - Администратор может создать автора; новый автор сразу может войти на сервере через Telegram при заполненном `telegram_user_id`
 - Нет утечки персональных данных: администратор не видит имён подписчиков в метриках
+
+### Текущее замечание по реализации
+- create-author duplicate-email crash уже исправлен;
+- следующий блок hardening теперь в другом месте: role switch redirect, reversible author toggle, db seeders.
 
 ---
 
@@ -287,6 +291,10 @@
 - Автор видит только свои стратегии (ACL: `strategy.author_id = current_user.author_profile.id`)
 - Slug уникален и URL-безопасен
 
+### Текущее замечание по реализации
+- canonical strategy/recommendation CRUD автора уже переведен в `/author/*`;
+- legacy `/cabinet/*` больше не должен возвращаться в продукт.
+
 ---
 
 ## Фаза 7 — CRUD рекомендаций (Inline + Popup)
@@ -339,6 +347,54 @@
 - Цена, цель, стоп nullable — пустые поля допустимы
 - Публикация → ARQ job в очереди (видно в логах API)
 - Строка таблицы обновляется на месте без перезагрузки страницы
+
+### Текущее замечание по реализации
+- recommendation CRUD доступен автору;
+- admin recommendation CRUD в `/admin/*` отсутствует;
+- если администратор должен создавать рекомендации в стратегии автора, это должен быть отдельный operator flow, а не нарушение author ACL.
+
+---
+
+## Межфазный блок — Рефактор ownership и operator access (выполнено)
+
+**Цель:** Убрать размазанную модель прав между `/author/*` и `/cabinet/*`, закрепить один author contour и явно добавить admin operator capabilities там, где они нужны бизнесу.
+
+### Задачи
+- [x] **11.1** Удалить legacy `/cabinet/*`
+  - перенести создание и редактирование стратегий в canonical `/author/*`
+  - убрать дублирующий strategy/recommendation flow из `/cabinet/*`
+  - не сохранять backward compatibility
+
+- [x] **11.2** Довести `/author/*` до полного strategy ownership flow
+  - `GET /author/strategies`
+  - `GET /author/strategies/new`
+  - `POST /author/strategies`
+  - `GET /author/strategies/{id}/edit`
+  - `POST /author/strategies/{id}`
+  - author видит и редактирует только свои стратегии
+
+- [x] **11.3** Явно описать и реализовать admin strategy delegation
+  - admin создает автора
+  - admin может создать стратегию за автора
+  - admin может переназначить владельца стратегии
+  - это должно быть видно в admin UI, а не подразумеваться только через `author_id`
+
+- [x] **11.4** Зафиксировать явный запрет recommendation create в admin-mode
+  - admin может открыть стратегию автора и управлять ownership стратегий
+  - admin в admin-mode не создает recommendation
+  - recommendation create остается только в author-mode
+  - multi-role staff должен переключиться в author-mode перед созданием рекомендации
+
+- [x] **11.5** Обновить review coverage
+  - regression: `/cabinet/*` больше не существует
+  - regression: author strategy CRUD полностью живет в `/author/*`
+  - regression: admin-mode не создает рекомендации, а author-mode сохраняет ownership ACL
+
+### Критерии приёмки
+- в проекте остается только один author contour: `/author/*`
+- администратор явно может дать автору рабочий доступ к стратегиям без скрытых legacy-маршрутов
+- администратор либо явно умеет создавать рекомендации как оператор, либо это явно запрещено продуктовым контрактом
+- ACL и audit trail различают действия автора и действия администратора
 
 ---
 
@@ -447,18 +503,176 @@
 
 ---
 
+## Фаза 11 — Staff role switch и onboarding автора
+
+**Цель:** Сделать явный и безопасный путь: admin создает автора, author привязывает Telegram, multi-role staff переключает active mode через UI.
+
+### Задачи
+- [x] **11.1** Сделать явный вход в управление авторами из admin UI
+  - добавить пункт `Авторы` в верхнее меню admin dashboard
+  - добавить быстрый CTA на создание автора
+  - исключить ситуацию, когда create-author screen существует, но спрятан
+
+- [x] **11.2** Исправить create-author flow
+  - обязательные поля: `display_name + email`
+  - `telegram_user_id` сделать необязательным
+  - duplicate email должен возвращать понятную бизнес-ошибку, а не `500`
+  - после `IntegrityError` обязательно делать `session.rollback()`
+  - запретить неявный конфликт create-author с уже существующим пользователем
+
+- [x] **11.3** Добавить invite link / invite token для автора
+  - admin создает автора без `telegram_user_id`
+  - система генерирует invite token
+  - admin может скопировать invite link и отправить автору
+  - первый успешный Telegram вход по invite link привязывает Telegram account к author user
+
+- [x] **11.4** Добавить bind через первую Telegram-авторизацию
+  - если у автора еще нет `telegram_user_id`, Telegram login может завершить bind по invite token
+  - после bind `telegram_user_id` сохраняется у существующего `User`
+  - повторная привязка без operator action запрещена
+
+- [x] **11.5** Реализовать active role switch в staff UI
+  - верхнее меню показывает `Режим администратора` / `Режим автора`
+  - переключатель доступен только пользователю с двумя ролями
+  - active mode не создает второй аккаунт и не меняет ownership
+  - в author-mode пользователь работает только со своими стратегиями и рекомендациями
+
+- [x] **11.6** Зафиксировать admin/operator contract
+  - admin может создавать стратегию за любого автора
+  - admin в admin-mode не может создавать рекомендации
+  - чтобы подать рекомендацию, пользователь с ролями `admin + author` обязан переключиться в author-mode
+  - review и ACL tests должны это явно проверять
+
+### Критерии приёмки
+- администратор всегда видит, где создать автора
+- создание автора с уже занятым email не приводит к `500`
+- автор может быть создан без `telegram_user_id`
+- Telegram bind работает через invite token и через первую успешную Telegram-авторизацию
+- multi-role staff-пользователь переключает active mode через верхнее меню
+- рекомендации создаются только в author-mode
+
+---
+
+## Фаза 12 — Staff hardening после review 2026-03-19
+
+**Цель:** Закрыть дефекты, найденные после завершения текущего большого блока.
+
+- [x] **12.1** Починить role switch redirect
+  - кнопки `Режим администратора / Режим автора` не должны отправлять на URL предыдущего режима
+  - при переключении mode redirect должен идти на canonical home целевой роли:
+    - admin → `/admin/dashboard`
+    - author → `/author/dashboard`
+  - добавить regression test на switch c admin page в author-mode и обратно
+
+- [x] **12.2** Сделать author registry двусторонним
+  - `GET /admin/authors` должен показывать и `active`, и `inactive`
+  - toggle автора должен быть обратимым: после `Отключить` автор остается виден и может быть включен обратно
+  - добавить статусный фильтр `все / активные / отключенные`
+
+- [x] **12.3** Починить instrument seeder для Docker/db deploy
+  - убрать хрупкий путь через `Path(__file__).parents[...]`
+  - читать `storage/seed/json/instruments.json` от app root или через `APP_STORAGE_ROOT`
+  - добавить test / smoke-check для container-like path
+
+- [x] **12.4** Починить admin seeder startup path
+  - убрать `greenlet_spawn` на старте API
+  - не делать relationship append таким образом, который провоцирует async lazy-load после `flush()`
+  - добавить regression на успешный `seed_admin(...)` в db mode
+
+### Критерии приёмки
+- role switch из topbar не приводит к `403` на смене режима
+- отключенного автора можно включить обратно из того же UI
+- в Docker/db старте нет `Instrument seeder failed`
+- в Docker/db старте нет `Admin seeder failed: greenlet_spawn ...`
+
+---
+
+## Фаза 13 — Управление администраторами
+
+**Цель:** убрать зависимость от ручного SQL для создания новых `admin` и сделать staff governance управляемым из продукта.
+
+- [x] **13.1** Добавить staff registry
+  - единый список staff users и их ролей
+  - фильтры: `admin`, `author`, `moderator`, `multi-role`
+  - entry point из admin dashboard
+
+- [x] **13.2** Реализовать создание нового admin из UI
+  - форма создания staff-пользователя с ролью `admin`
+  - обязательные поля: `display_name + email`
+  - `telegram_user_id` опционально
+  - duplicate email / duplicate telegram id возвращают business error, не `500`
+
+- [x] **13.3** Добавить invite/bind flow для admin
+  - если `telegram_user_id` не задан, admin получает invite link / invite token
+  - первый Telegram login по invite token привязывает аккаунт
+  - после bind user активируется
+
+- [x] **13.4** Реализовать role assignment для существующего staff user
+  - действующий admin может добавить роль `admin` существующему `author`
+  - действующий admin может добавить роль `author` существующему `admin`
+  - один `User`, без дублирования аккаунтов
+
+- [x] **13.5** Защитить governance-операции
+  - запрет self-demotion последнего активного admin
+  - запрет снятия роли у последнего admin
+  - audit trail на выдачу и снятие роли `admin`
+
+- [x] **13.6** Обновить deploy contract
+  - `seed_admin` остается только для bootstrap первого администратора
+  - README явно отделяет bootstrap-admin от product-admin-management
+
+### Критерии приёмки
+- новый `admin` создается без ручного SQL
+- bootstrap первого `admin` по-прежнему возможен через deploy seeder
+- существующий admin может выдать роль `admin` другому staff user
+- роли `admin + author` могут сочетаться в одном `User`
+
+---
+
+## Фаза 14 — Staff Binding Hardening
+
+**Цель:** убрать риск преждевременной staff-активации по ручному `telegram_user_id` и сделать invite flow готовым к пересылке с тестового сервера.
+
+- [x] **14.1** Убрать мгновенную активацию staff по ручному `telegram_user_id`
+  - `create_admin_staff_user(...)` и `create_admin_author(...)` не должны переводить user в `active` только из-за заполненного `telegram_user_id`
+  - ручной `telegram_user_id` трактуется как предварительно известный идентификатор, но не как подтвержденный bind
+  - до bind staff user остается `invited`
+
+- [x] **14.2** Сделать Telegram bind единственным activation gate
+  - первая успешная Telegram-авторизация по invite token активирует staff user
+  - если у user заранее заполнен ожидаемый `telegram_user_id`, bind обязан проверять совпадение
+  - доступ в staff UI не должен открываться до успешного bind
+
+- [x] **14.3** Нормализовать invite links для server use
+  - в `/admin/staff` и `/admin/authors` invite links должны строиться как абсолютные URL от `BASE_URL`
+  - invite link должен быть кликабельным и удобным для copy/share
+  - нельзя оставлять относительный `/login?invite_token=...` как единственный UI-вариант
+
+- [x] **14.4** Добавить regression coverage для server rollout
+  - regression: staff user с вручную указанным `telegram_user_id` не активируется до bind
+  - regression: invite link рендерится как абсолютный `https://...` URL
+  - regression: после bind user получает корректный active mode и canonical redirect
+
+### Критерии приёмки
+- ручной ввод `telegram_user_id` больше не выдает staff-доступ сам по себе
+- activation staff user происходит только через подтвержденный Telegram bind
+- invite links готовы к отправке сотруднику прямо из UI без ручной сборки URL
+- ветка безопасна для следующей выкладки на тестовый сервер
+
+---
+
 ## Итог MVP
 
-**Ревью завершено: 2026-03-18**
-Все фазы (0–10) выполнены. Все P0 и P1 пункты чеклиста — Pass.
-Подробности: `doc/review.md`
+**Review snapshot: 2026-03-19**
+Базовый MVP, Telegram-first/staff контуры и `Фаза 14` завершены.
+Актуальный checklist и статус смотреть в `doc/review.md`.
 
 ---
 
 ## Соглашения по реализации
 
 ### Именование маршрутов
-- `/cabinet/` — кабинет автора (HTMX)
+- `/author/` — кабинет автора (HTMX/web)
 - `/admin/` — кабинет администратора (HTMX)
 - `/app/` — Mini App подписчиков
 - `/api/` — JSON API (инструменты и т.д.)

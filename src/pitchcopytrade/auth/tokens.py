@@ -59,7 +59,7 @@ def decode_session_token(token: str, *, secret_key: str, now: datetime | None = 
     current_time = int((now or datetime.now(timezone.utc)).timestamp())
     if payload["exp"] < current_time:
         raise AuthTokenError("Token expired")
-    if payload.get("typ") not in {"session", "telegram_login"}:
+    if payload.get("typ") not in {"session", "telegram_login", "staff_invite"}:
         raise AuthTokenError("Unsupported token type")
 
     return SessionTokenPayload(
@@ -92,9 +92,37 @@ def create_telegram_login_token(
     return f"{body}.{signature}"
 
 
+def create_staff_invite_token(
+    *,
+    user_id: str,
+    secret_key: str,
+    ttl_seconds: int = 7 * 24 * 60 * 60,
+    now: datetime | None = None,
+) -> str:
+    issued_at = now or datetime.now(timezone.utc)
+    expires_at = issued_at + timedelta(seconds=ttl_seconds)
+    payload = {
+        "sub": user_id,
+        "iat": int(issued_at.timestamp()),
+        "exp": int(expires_at.timestamp()),
+        "roles": [],
+        "typ": "staff_invite",
+    }
+    body = _b64encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    signature = _sign(body, secret_key)
+    return f"{body}.{signature}"
+
+
 def decode_telegram_login_token(token: str, *, secret_key: str, now: datetime | None = None) -> SessionTokenPayload:
     payload = decode_session_token(token, secret_key=secret_key, now=now)
     if payload.token_type != "telegram_login":
+        raise AuthTokenError("Unsupported token type")
+    return payload
+
+
+def decode_staff_invite_token(token: str, *, secret_key: str, now: datetime | None = None) -> SessionTokenPayload:
+    payload = decode_session_token(token, secret_key=secret_key, now=now)
+    if payload.token_type != "staff_invite":
         raise AuthTokenError("Unsupported token type")
     return payload
 

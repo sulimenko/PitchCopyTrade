@@ -13,7 +13,7 @@ from starlette.datastructures import UploadFile
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
-from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, TradeSide
+from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, RiskLevel, StrategyStatus, TradeSide
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.storage.base import StorageBackend
 from pitchcopytrade.storage.local import LocalFilesystemStorage
@@ -81,6 +81,15 @@ class RecommendationFormData:
     attachments: list[IncomingAttachment]
 
 
+@dataclass(slots=True)
+class AuthorStrategyFormData:
+    slug: str
+    title: str
+    short_description: str
+    risk_level: RiskLevel
+    min_capital_rub: int | None
+
+
 async def get_author_workspace_stats(repository: AuthorRepository, author: AuthorProfile) -> AuthorWorkspaceStats:
     strategies_total = await repository.count_author_strategies(author.id)
     recommendations_total = await repository.count_author_recommendations(author.id)
@@ -106,6 +115,50 @@ async def get_author_workspace_stats(repository: AuthorRepository, author: Autho
 
 async def list_author_strategies(repository: AuthorRepository, author: AuthorProfile) -> list[Strategy]:
     return await repository.list_author_strategies(author.id)
+
+
+async def get_author_strategy(
+    repository: AuthorRepository,
+    author: AuthorProfile,
+    strategy_id: str,
+) -> Strategy | None:
+    return await repository.get_author_strategy(author.id, strategy_id)
+
+
+async def create_author_strategy(
+    repository: AuthorRepository,
+    author: AuthorProfile,
+    data: AuthorStrategyFormData,
+) -> Strategy:
+    strategy = Strategy(
+        author_id=author.id,
+        slug=data.slug,
+        title=data.title,
+        short_description=data.short_description,
+        risk_level=data.risk_level,
+        min_capital_rub=data.min_capital_rub,
+        status=StrategyStatus.DRAFT,
+        is_public=False,
+    )
+    repository.add(strategy)
+    await repository.commit()
+    await repository.refresh(strategy)
+    return strategy
+
+
+async def update_author_strategy(
+    repository: AuthorRepository,
+    strategy: Strategy,
+    data: AuthorStrategyFormData,
+) -> Strategy:
+    strategy.slug = data.slug
+    strategy.title = data.title
+    strategy.short_description = data.short_description
+    strategy.risk_level = data.risk_level
+    strategy.min_capital_rub = data.min_capital_rub
+    await repository.commit()
+    await repository.refresh(strategy)
+    return strategy
 
 
 async def list_active_instruments(repository: AuthorRepository) -> list[Instrument]:
@@ -321,6 +374,43 @@ def build_recommendation_form_data(
         scheduled_for=scheduled_for_value,
         legs=legs,
         attachments=parsed_attachments,
+    )
+
+
+def build_author_strategy_form_data(
+    *,
+    title: str,
+    slug: str,
+    short_description: str,
+    risk_level_value: str,
+    min_capital_rub: str,
+    existing_strategies: list[Strategy],
+    current_strategy_id: str | None = None,
+) -> AuthorStrategyFormData:
+    normalized_title = title.strip()
+    if not normalized_title:
+        raise ValueError("Название стратегии обязательно.")
+
+    normalized_slug = _slugify(slug or normalized_title)
+    if not normalized_slug:
+        raise ValueError("Слаг стратегии обязателен.")
+
+    if any(item.slug == normalized_slug and item.id != current_strategy_id for item in existing_strategies):
+        raise ValueError("Стратегия с таким slug уже существует.")
+
+    try:
+        risk_level = RiskLevel(risk_level_value)
+    except ValueError as exc:
+        raise ValueError("Некорректный уровень риска.") from exc
+
+    min_capital_value = int(min_capital_rub) if min_capital_rub.strip() else None
+
+    return AuthorStrategyFormData(
+        slug=normalized_slug,
+        title=normalized_title,
+        short_description=short_description.strip(),
+        risk_level=risk_level,
+        min_capital_rub=min_capital_value,
     )
 
 
@@ -632,3 +722,10 @@ async def _search_external_instruments_stub(query: str, excluded_ids: set[str]) 
     _ = query
     _ = excluded_ids
     return []
+
+
+def _slugify(text: str) -> str:
+    normalized = text.lower().strip()
+    normalized = re.sub(r"[^\w\s-]", "", normalized)
+    normalized = re.sub(r"[\s_-]+", "-", normalized)
+    return normalized.strip("-")[:120]

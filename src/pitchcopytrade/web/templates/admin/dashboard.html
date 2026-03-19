@@ -2,6 +2,8 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="action ghost" href="/admin/staff">Команда</a>
+  <a class="action ghost" href="/admin/authors">Авторы</a>
   <a class="action ghost" href="/admin/strategies">Каталог стратегий</a>
   <a class="action ghost" href="/admin/products">Продукты подписки</a>
   <a class="action ghost" href="/admin/promos">Промокоды</a>
@@ -28,6 +30,11 @@
       <div class="eyebrow">оператор</div>
       <strong style="display:block;margin-top:8px;font-size:1.15rem;">{{ user.full_name or user.username or user.email }}</strong>
       <div class="muted" style="margin-top:8px;">{{ user.email or "email не задан" }}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+        <a class="action" href="/admin/staff">Управлять staff</a>
+        <a class="action" href="/admin/authors">Создать автора</a>
+        <a class="action ghost" href="/admin/strategies/new">Создать стратегию</a>
+      </div>
     </div>
   </div>
 </section>

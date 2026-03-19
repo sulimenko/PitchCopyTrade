@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.api.deps.auth import require_admin
+from pitchcopytrade.core.config import reset_settings_cache
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
@@ -27,6 +28,7 @@ from pitchcopytrade.db.models.enums import (
     RoleSlug,
     StrategyStatus,
     SubscriptionStatus,
+    UserStatus,
 )
 
 
@@ -59,6 +61,7 @@ def _make_admin_user() -> User:
         full_name="Admin User",
         password_hash=hash_password("test-pass"),
         timezone="Europe/Moscow",
+        status=UserStatus.ACTIVE,
     )
     user.roles = [Role(slug=RoleSlug.ADMIN, title="Admin")]
     return user
@@ -647,6 +650,10 @@ async def _async_return(value):
     return value
 
 
+async def _async_raise(exc: Exception):
+    raise exc
+
+
 def test_product_list_renders(monkeypatch) -> None:
     session = FakeAsyncSession()
     admin = _make_admin_user()
@@ -874,6 +881,227 @@ def test_product_edit_submit_redirects_after_update(monkeypatch) -> None:
         assert updated["product"] is product
         assert updated["data"].billing_period == BillingPeriod.QUARTER
         assert updated["data"].price_rub == 12900
+
+
+def test_author_registry_renders_active_and_inactive(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    active_author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    inactive_author = _make_author("author-2", "author-user-2", "Beta Desk")
+    inactive_author.is_active = False
+    session.users_by_id[admin.id] = admin
+
+    async def fake_list_authors(_session, status_filter="all"):
+        items = [active_author, inactive_author]
+        if status_filter == "active":
+            return [active_author]
+        if status_filter == "inactive":
+            return [inactive_author]
+        return items
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_authors", fake_list_authors)
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/authors?status_filter=all")
+
+        assert response.status_code == 200
+        assert "Alpha Desk" in response.text
+        assert "Beta Desk" in response.text
+        assert "отключён" in response.text
+
+
+def test_author_registry_filters_inactive(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    inactive_author = _make_author("author-2", "author-user-2", "Beta Desk")
+    inactive_author.is_active = False
+    session.users_by_id[admin.id] = admin
+
+    async def fake_list_authors(_session, status_filter="all"):
+        assert status_filter == "inactive"
+        return [inactive_author]
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_authors", fake_list_authors)
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/authors?status_filter=inactive")
+
+        assert response.status_code == 200
+        assert "Beta Desk" in response.text
+        assert "Alpha Desk" not in response.text
+
+
+def test_author_registry_invite_link_is_absolute(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    author.user.telegram_user_id = None
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setenv("BASE_URL", "https://pct.test.ptfin.ru")
+    reset_settings_cache()
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_authors", lambda _session, status_filter="all": _async_return([author]))
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/authors?status_filter=all")
+
+        assert response.status_code == 200
+        assert "https://pct.test.ptfin.ru/login?invite_token=" in response.text
+    reset_settings_cache()
+
+
+def test_staff_registry_renders_filters_and_actions(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    dual_role = _make_admin_user()
+    dual_role.id = "staff-2"
+    dual_role.email = "dual@example.com"
+    dual_role.full_name = "Dual Role"
+    dual_role.roles = [
+        Role(slug=RoleSlug.ADMIN, title="Admin"),
+        Role(slug=RoleSlug.AUTHOR, title="Author"),
+    ]
+    dual_role.author_profile = AuthorProfile(
+        id="author-dual",
+        user_id=dual_role.id,
+        display_name="Dual Role",
+        slug="dual-role",
+        is_active=True,
+    )
+    dual_role.status = UserStatus.ACTIVE
+    dual_role.telegram_user_id = None
+    session.users_by_id[admin.id] = admin
+
+    async def fake_list_staff(_session, role_filter="all"):
+        assert role_filter == "multi-role"
+        return [dual_role]
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_staff", fake_list_staff)
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/staff?role_filter=multi-role")
+
+        assert response.status_code == 200
+        assert "Команда и роли" in response.text
+        assert "Dual Role" in response.text
+        assert "multi-role" in response.text
+        assert "Снять admin" in response.text
+        assert "invite_token=" in response.text
+
+
+def test_staff_registry_invite_link_is_absolute(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    invited_admin = _make_admin_user()
+    invited_admin.id = "staff-2"
+    invited_admin.email = "ops@example.com"
+    invited_admin.full_name = "Ops Admin"
+    invited_admin.telegram_user_id = None
+    invited_admin.status = UserStatus.INVITED
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setenv("BASE_URL", "https://pct.test.ptfin.ru")
+    reset_settings_cache()
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_staff", lambda _session, role_filter="all": _async_return([invited_admin]))
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/staff")
+
+        assert response.status_code == 200
+        assert "https://pct.test.ptfin.ru/login?invite_token=" in response.text
+    reset_settings_cache()
+
+
+def test_staff_create_admin_redirects_to_registry(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+    created: dict[str, object] = {}
+
+    async def fake_create_admin(_session, data):
+        created["data"] = data
+        return _make_admin_user()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.create_admin_staff_user", fake_create_admin)
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/staff/admins",
+            data={"display_name": "Ops Admin", "email": "ops@example.com", "telegram_user_id": ""},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/staff"
+        assert created["data"].role_slugs == (RoleSlug.ADMIN,)
+
+
+def test_staff_create_admin_renders_business_error(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.create_admin_staff_user",
+        lambda _session, _data: _async_raise(ValueError("Пользователь с таким email уже существует.")),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_staff", lambda _session, role_filter="all": _async_return([]))
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/staff/admins",
+            data={"display_name": "Ops Admin", "email": "ops@example.com", "telegram_user_id": ""},
+        )
+
+        assert response.status_code == 422
+        assert "Пользователь с таким email уже существует." in response.text
+
+
+def test_staff_grant_admin_role_redirects(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    session.users_by_id[admin.id] = admin
+    captured: dict[str, object] = {}
+
+    async def fake_grant_role(_session, *, actor_user_id, target_user_id, role_slug):
+        captured["actor_user_id"] = actor_user_id
+        captured["target_user_id"] = target_user_id
+        captured["role_slug"] = role_slug
+        return author.user
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.grant_staff_role", fake_grant_role)
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            f"/admin/staff/{author.user.id}/roles",
+            data={"role_slug": "admin"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/staff"
+        assert captured["actor_user_id"] == admin.id
+        assert captured["target_user_id"] == author.user.id
+        assert captured["role_slug"] == RoleSlug.ADMIN
+
+
+def test_staff_revoke_admin_role_renders_governance_error(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.revoke_staff_role",
+        lambda _session, **_kwargs: _async_raise(ValueError("Нельзя снять у себя роль последнего активного администратора.")),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_staff", lambda _session, role_filter="all": _async_return([admin]))
+
+    with _build_client(session, admin) as client:
+        response = client.post(f"/admin/staff/{admin.id}/roles/admin/remove")
+
+        assert response.status_code == 422
+        assert "Нельзя снять у себя роль последнего активного администратора." in response.text
 
 
 def test_product_create_shows_validation_error_for_missing_target(monkeypatch) -> None:

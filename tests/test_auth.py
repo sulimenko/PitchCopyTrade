@@ -78,12 +78,17 @@ class TestProtectedRoutes:
             response = client.get("/admin/dashboard", follow_redirects=False)
             assert response.status_code in (401, 403, 307, 302)
 
-    def test_cabinet_requires_auth(self):
+    def test_author_requires_auth(self):
         with self._make_client() as client:
-            response = client.get("/cabinet/strategies", follow_redirects=False)
+            response = client.get("/author/strategies", follow_redirects=False)
             assert response.status_code in (401, 403, 307, 302)
 
     def test_login_page_accessible(self):
         with self._make_client() as client:
             response = client.get("/login")
             assert response.status_code == 200
+
+    def test_cabinet_routes_removed(self):
+        with self._make_client() as client:
+            response = client.get("/cabinet/strategies", follow_redirects=False)
+            assert response.status_code == 404

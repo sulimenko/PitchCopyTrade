@@ -38,6 +38,15 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def get_author_strategy(self, author_id: str, strategy_id: str) -> Strategy | None:
+        query = (
+            select(Strategy)
+            .options(selectinload(Strategy.author))
+            .where(Strategy.id == strategy_id, Strategy.author_id == author_id)
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def list_active_instruments(self) -> list[Instrument]:
         query = select(Instrument).where(Instrument.is_active.is_(True)).order_by(Instrument.ticker.asc())
         result = await self.session.execute(query)
@@ -155,6 +164,12 @@ class FileAuthorRepository(AuthorRepository):
             [item for item in self.graph.strategies.values() if item.author_id == author_id],
             key=lambda item: item.title.lower(),
         )
+
+    async def get_author_strategy(self, author_id: str, strategy_id: str) -> Strategy | None:
+        strategy = self.graph.strategies.get(strategy_id)
+        if strategy is None or strategy.author_id != author_id:
+            return None
+        return strategy
 
     async def list_active_instruments(self) -> list[Instrument]:
         return sorted(

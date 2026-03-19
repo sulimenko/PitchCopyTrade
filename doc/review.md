@@ -41,6 +41,21 @@
 - [x] `requires_moderation=False` на всех AuthorProfile MVP — никакой маршрут не проверяет статус модерации
 - [x] Автор создаётся только админом — нет пути саморегистрации
 - [x] Уникальность `telegram_user_id` на уровне БД и приложения
+- [x] В проекте не осталось второго параллельного author-контура `/cabinet/*`
+- [x] Strategy CRUD автора полностью живет в `/author/*`
+- [x] Если admin может создавать рекомендации, это сделано через явный operator flow с отдельным audit, а не через размывание author ACL
+- [x] Multi-role staff (`admin + author`) использует один `User` и переключает active mode через верхнее меню
+- [x] В admin-mode пользователь не может создавать рекомендации
+- [x] В author-mode пользователь видит только свои стратегии и рекомендации
+- [x] Create-author flow требует `display_name + email`
+- [x] Автор может быть создан без `telegram_user_id`, а bind Telegram проходит через invite token / first login
+- [x] Create-author flow не падает в `500` на duplicate email и делает `session.rollback()` после DB ошибки
+- [x] Переключение режима всегда редиректит на корректный home целевой роли, а не на URL предыдущего режима
+- [x] Реестр авторов показывает активных и отключенных авторов, чтобы toggle был обратимым
+- [x] Новый `admin` может быть создан из product UI без ручного SQL / server access
+- [x] Есть безопасный flow выдачи роли `admin` существующему staff user
+- [x] Ручной ввод `telegram_user_id` не активирует staff user до подтвержденного Telegram bind
+- [x] Invite links staff/author строятся как абсолютные URL и готовы к пересылке с сервера
 
 ### Логика рекомендаций
 - [x] Обязательные поля: только `ticker` + `side` при inline-создании
@@ -99,6 +114,7 @@
 - [x] Тест ACL: неавторизованный доступ возвращает 401/403
 - [x] Happy path тест: корректные данные возвращают ожидаемый ответ
 - [x] После удаления MinIO есть regression-test, что storage contract остался только local-files-only
+- [x] Есть regression tests на db startup seeders в Docker-подобном окружении
 
 ---
 
@@ -150,3 +166,18 @@ PR может быть merged только когда все P0 и P1 — Pass.
 - перед `deploy/migrate.sh --reset` запускать `scripts/clean_storage.sh --apply --fresh-runtime`;
 - не переносить старые blob/json layout-и вручную;
 - считать `storage/seed/*` и `storage/runtime/*` единственным поддерживаемым storage tree.
+
+**[P1] Staff hardening после review 2026-03-19**
+- выполнено: role switch redirect ведет на canonical home целевой роли;
+- выполнено: `/admin/authors` показывает `active + inactive` и имеет статусный фильтр;
+- выполнено: db startup defects в `seed_instruments` и `seed_admin` закрыты regression-тестами.
+
+### Актуальные findings на 2026-03-19
+
+**[Pass] Ручной `telegram_user_id` больше не открывает staff-доступ сам по себе**
+
+Ручной `telegram_user_id` теперь трактуется только как ожидаемый идентификатор. Staff user остается `invited` до подтвержденного bind по invite token, а доступ в staff UI проверяет `UserStatus.ACTIVE`.
+
+**[Pass] Invite links в staff/author registry server-ready**
+
+Invite flow теперь отдает абсолютные URL от `BASE_URL` в `/admin/staff` и `/admin/authors`, и ссылки можно сразу копировать и пересылать сотруднику.

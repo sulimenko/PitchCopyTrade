@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a href="/admin/dashboard" class="action ghost">Дашборд</a>
+  <a href="/admin/authors" class="action ghost">Авторы</a>
+  <a href="/admin/strategies" class="action ghost">Стратегии</a>
+  <a href="/logout" class="action ghost">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid;gap:24px;">
+  <h2 style="margin:0;">Команда и роли</h2>
+
+  {% if error %}
+  <div style="padding:14px 16px;border-radius:16px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;">{{ error }}</div>
+  {% endif %}
+
+  <section class="surface" style="padding:24px;border-radius:24px;">
+    <h3 style="margin:0 0 8px;">Создать администратора</h3>
+    <p class="muted" style="margin:0 0 16px;line-height:1.6;">Bootstrap нужен только для первого admin. Все следующие admin создаются отсюда, без SQL и доступа к серверу.</p>
+    <form method="post" action="/admin/staff/admins" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;">
+      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
+        Имя <input name="display_name" required style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+      </label>
+      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
+        Email <input name="email" type="email" required style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+      </label>
+      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
+        Telegram ID <input name="telegram_user_id" type="number" style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+      </label>
+      <button type="submit" class="action" style="height:42px;">Создать admin</button>
+    </form>
+  </section>
+
+  <section class="surface" style="padding:24px;border-radius:24px;">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px;">
+      <form method="get" action="/admin/staff" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <span class="muted">Показать:</span>
+        <button class="action {% if role_filter != 'all' %}ghost{% endif %}" type="submit" name="role_filter" value="all" style="padding:8px 14px;">все</button>
+        <button class="action {% if role_filter != 'admin' %}ghost{% endif %}" type="submit" name="role_filter" value="admin" style="padding:8px 14px;">admin</button>
+        <button class="action {% if role_filter != 'author' %}ghost{% endif %}" type="submit" name="role_filter" value="author" style="padding:8px 14px;">author</button>
+        <button class="action {% if role_filter != 'moderator' %}ghost{% endif %}" type="submit" name="role_filter" value="moderator" style="padding:8px 14px;">moderator</button>
+        <button class="action {% if role_filter != 'multi-role' %}ghost{% endif %}" type="submit" name="role_filter" value="multi-role" style="padding:8px 14px;">multi-role</button>
+      </form>
+      <a href="/admin/authors" class="action ghost">Реестр авторов</a>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--line);">
+          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Сотрудник</th>
+          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Telegram ID</th>
+          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Роли</th>
+          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Статус</th>
+          <th style="padding:8px 12px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in staff %}
+        <tr style="border-bottom:1px solid var(--line);vertical-align:top;">
+          <td style="padding:12px;">
+            <div>{{ item.display_name }}</div>
+            <div class="muted" style="margin-top:6px;">{{ item.email or "email не задан" }}</div>
+            {% if item.invite_link %}
+            <div class="muted" style="margin-top:6px;font-size:0.82rem;word-break:break-all;"><a href="{{ item.invite_link }}">{{ item.invite_link }}</a></div>
+            {% endif %}
+            {% if item.is_current_user %}
+            <div class="pill" style="margin-top:8px;">это вы</div>
+            {% endif %}
+          </td>
+          <td style="padding:12px;font-family:monospace;">{{ item.telegram_user_id or "—" }}</td>
+          <td style="padding:12px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              {% for role in item.roles %}
+              <span class="pill">{{ role }}</span>
+              {% endfor %}
+            </div>
+          </td>
+          <td style="padding:12px;">
+            {% if item.status == "active" %}
+            <span class="pill" style="background:rgba(0,160,80,0.1);color:#007a3d;">active</span>
+            {% else %}
+            <span class="pill" style="background:rgba(250,180,60,0.14);color:#9a6b00;">{{ item.status }}</span>
+            {% endif %}
+          </td>
+          <td style="padding:12px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+              {% if item.can_grant_admin %}
+              <form method="post" action="/admin/staff/{{ item.id }}/roles" style="display:inline;">
+                <input type="hidden" name="role_slug" value="admin" />
+                <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">Выдать admin</button>
+              </form>
+              {% endif %}
+              {% if item.can_grant_author %}
+              <form method="post" action="/admin/staff/{{ item.id }}/roles" style="display:inline;">
+                <input type="hidden" name="role_slug" value="author" />
+                <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">Выдать author</button>
+              </form>
+              {% endif %}
+              {% if item.can_revoke_admin %}
+              <form method="post" action="/admin/staff/{{ item.id }}/roles/admin/remove" style="display:inline;">
+                <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">Снять admin</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--muted);">Нет staff-пользователей</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

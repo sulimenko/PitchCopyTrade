@@ -4,11 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
+from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User, user_roles
+from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import Bundle, Instrument, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
 from pitchcopytrade.db.models.content import Recommendation
@@ -71,6 +73,14 @@ class PaymentReviewStats:
     paid_payments: int
     pending_subscriptions: int
     active_subscriptions: int
+
+
+@dataclass(slots=True)
+class StaffCreateData:
+    display_name: str
+    email: str | None
+    telegram_user_id: int | None
+    role_slugs: tuple[RoleSlug, ...]
 
 
 async def list_admin_subscriptions(
@@ -175,20 +185,44 @@ async def list_admin_strategies(session: AsyncSession | None) -> list[Strategy]:
     return list(result.scalars().all())
 
 
-async def list_admin_authors(session: AsyncSession | None) -> list[AuthorProfile]:
+async def list_admin_authors(session: AsyncSession | None, *, status_filter: str = "all") -> list[AuthorProfile]:
     if session is None:
         graph, _store = _file_admin_graph()
-        items = [item for item in graph.authors.values() if item.is_active]
+        items = list(graph.authors.values())
+        if status_filter == "active":
+            items = [item for item in items if item.is_active]
+        elif status_filter == "inactive":
+            items = [item for item in items if not item.is_active]
         items.sort(key=lambda item: item.display_name.lower())
         return items
     query = (
         select(AuthorProfile)
         .options(selectinload(AuthorProfile.user))
-        .where(AuthorProfile.is_active.is_(True))
         .order_by(AuthorProfile.display_name.asc())
     )
+    if status_filter == "active":
+        query = query.where(AuthorProfile.is_active.is_(True))
+    elif status_filter == "inactive":
+        query = query.where(AuthorProfile.is_active.is_(False))
     result = await session.execute(query)
     return list(result.scalars().all())
+
+
+async def list_admin_staff(session: AsyncSession | None, *, role_filter: str = "all") -> list[User]:
+    if session is None:
+        graph, _store = _file_admin_graph()
+        items = [item for item in graph.users.values() if _is_staff_user(item)]
+        filtered = [item for item in items if _matches_staff_role_filter(item, role_filter)]
+        filtered.sort(key=_staff_sort_key)
+        return filtered
+    query = (
+        select(User)
+        .options(selectinload(User.roles), selectinload(User.author_profile))
+        .order_by(User.created_at.desc(), User.full_name.asc(), User.email.asc())
+    )
+    result = await session.execute(query)
+    items = [item for item in result.scalars().all() if _is_staff_user(item)]
+    return [item for item in items if _matches_staff_role_filter(item, role_filter)]
 
 
 async def get_admin_strategy(session: AsyncSession | None, strategy_id: str) -> Strategy | None:
@@ -608,80 +642,289 @@ def _slugify(text: str) -> str:
     return text.strip("-")[:120]
 
 
-async def create_admin_author(
+def _staff_role_slugs(user: User) -> set[RoleSlug]:
+    return {item.slug for item in getattr(user, "roles", []) if item.slug in {RoleSlug.ADMIN, RoleSlug.AUTHOR, RoleSlug.MODERATOR}}
+
+
+def _is_staff_user(user: User) -> bool:
+    return bool(_staff_role_slugs(user))
+
+
+def _matches_staff_role_filter(user: User, role_filter: str) -> bool:
+    role_slugs = _staff_role_slugs(user)
+    if role_filter == "all":
+        return True
+    if role_filter == "multi-role":
+        return len(role_slugs) > 1
+    try:
+        target_role = RoleSlug(role_filter)
+    except ValueError:
+        return True
+    return target_role in role_slugs
+
+
+def _staff_sort_key(user: User) -> tuple[str, str]:
+    primary = (user.full_name or user.email or user.username or user.id).lower()
+    secondary = (user.email or user.username or "").lower()
+    return primary, secondary
+
+
+def _build_default_staff_display_name(user: User) -> str:
+    if user.author_profile is not None and user.author_profile.display_name:
+        return user.author_profile.display_name.strip()
+    if user.full_name:
+        return user.full_name.strip()
+    if user.email and "@" in user.email:
+        return user.email.split("@", 1)[0].replace(".", " ").replace("_", " ").strip() or f"staff-{user.id[:8]}"
+    if user.username:
+        return user.username.strip()
+    return f"staff-{user.id[:8]}"
+
+
+async def create_admin_staff_user(session: AsyncSession | None, data: StaffCreateData) -> User:
+    return await _create_staff_user(session, data)
+
+
+async def grant_staff_role(
     session: AsyncSession | None,
     *,
-    display_name: str,
-    email: str | None,
-    telegram_user_id: int | None,
-) -> AuthorProfile:
+    actor_user_id: str,
+    target_user_id: str,
+    role_slug: RoleSlug,
+) -> User:
     if session is None:
         graph, store = _file_admin_graph()
-        author_role = next((item for item in graph.roles.values() if item.slug == RoleSlug.AUTHOR), None)
-        if author_role is None:
-            author_role = Role(slug=RoleSlug.AUTHOR, title="Автор")
-            graph.add(author_role)
+        user = graph.users.get(target_user_id)
+        actor = graph.users.get(actor_user_id)
+        if user is None:
+            raise ValueError("Сотрудник не найден.")
+        if role_slug in _staff_role_slugs(user):
+            raise ValueError("Роль уже назначена.")
+        role = _ensure_graph_role(graph, role_slug)
+        user.roles.append(role)
+        if role_slug == RoleSlug.AUTHOR and user.author_profile is None:
+            _create_file_author_profile(graph, user, _build_default_staff_display_name(user))
+        if role_slug == RoleSlug.ADMIN:
+            graph.add(
+                AuditEvent(
+                    actor_user=actor,
+                    actor_user_id=actor.id if actor is not None else None,
+                    entity_type="staff_user",
+                    entity_id=user.id,
+                    action="staff.admin_role_granted",
+                    payload={"target_user_id": user.id, "role": role_slug.value},
+                )
+            )
+        graph.save(store)
+        return user
+
+    user = await _get_staff_user_by_id(session, target_user_id)
+    if user is None:
+        raise ValueError("Сотрудник не найден.")
+    if role_slug in _staff_role_slugs(user):
+        raise ValueError("Роль уже назначена.")
+
+    role = await _ensure_sql_role(session, role_slug)
+    await session.execute(insert(user_roles).values(user_id=user.id, role_id=role.id))
+    if role_slug == RoleSlug.AUTHOR and user.author_profile is None:
+        await _create_sql_author_profile(session, user, _build_default_staff_display_name(user))
+    if role_slug == RoleSlug.ADMIN:
+        session.add(
+            AuditEvent(
+                actor_user_id=actor_user_id,
+                entity_type="staff_user",
+                entity_id=user.id,
+                action="staff.admin_role_granted",
+                payload={"target_user_id": user.id, "role": role_slug.value},
+            )
+        )
+    await session.commit()
+    return await _require_staff_user(session, user.id)
+
+
+async def revoke_staff_role(
+    session: AsyncSession | None,
+    *,
+    actor_user_id: str,
+    target_user_id: str,
+    role_slug: RoleSlug,
+) -> User:
+    if role_slug != RoleSlug.ADMIN:
+        raise ValueError("Снятие этой роли пока не поддерживается.")
+
+    if session is None:
+        graph, store = _file_admin_graph()
+        user = graph.users.get(target_user_id)
+        actor = graph.users.get(actor_user_id)
+        if user is None:
+            raise ValueError("Сотрудник не найден.")
+        if role_slug not in _staff_role_slugs(user):
+            raise ValueError("Роль не назначена.")
+        active_admins = _count_active_admins_file(graph)
+        if user.status == UserStatus.ACTIVE and active_admins <= 1:
+            if user.id == actor_user_id:
+                raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
+            raise ValueError("Нельзя снять роль у последнего активного администратора.")
+        user.roles = [item for item in user.roles if item.slug != role_slug]
+        graph.add(
+            AuditEvent(
+                actor_user=actor,
+                actor_user_id=actor.id if actor is not None else None,
+                entity_type="staff_user",
+                entity_id=user.id,
+                action="staff.admin_role_revoked",
+                payload={"target_user_id": user.id, "role": role_slug.value},
+            )
+        )
+        graph.save(store)
+        return user
+
+    user = await _require_staff_user(session, target_user_id)
+    if role_slug not in _staff_role_slugs(user):
+        raise ValueError("Роль не назначена.")
+    active_admins = await _count_active_admins_sql(session)
+    if user.status == UserStatus.ACTIVE and active_admins <= 1:
+        if user.id == actor_user_id:
+            raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
+        raise ValueError("Нельзя снять роль у последнего активного администратора.")
+
+    role = await _ensure_sql_role(session, role_slug)
+    await session.execute(delete(user_roles).where(user_roles.c.user_id == user.id, user_roles.c.role_id == role.id))
+    session.add(
+        AuditEvent(
+            actor_user_id=actor_user_id,
+            entity_type="staff_user",
+            entity_id=user.id,
+            action="staff.admin_role_revoked",
+            payload={"target_user_id": user.id, "role": role_slug.value},
+        )
+    )
+    await session.commit()
+    return await _require_staff_user(session, user.id)
+
+
+async def _create_staff_user(session: AsyncSession | None, data: StaffCreateData) -> User:
+    normalized_display_name = data.display_name.strip()
+    normalized_email = (data.email or "").strip().lower()
+    role_slugs = tuple(dict.fromkeys(data.role_slugs))
+    if not normalized_display_name:
+        raise ValueError("Поле display_name обязательно.")
+    if not normalized_email:
+        raise ValueError("Поле email обязательно.")
+    if not role_slugs:
+        raise ValueError("Нужно указать хотя бы одну роль.")
+
+    if session is None:
+        graph, store = _file_admin_graph()
+        if any((item.email or "").lower() == normalized_email for item in graph.users.values()):
+            raise ValueError("Пользователь с таким email уже существует.")
+        if data.telegram_user_id is not None and any(item.telegram_user_id == data.telegram_user_id for item in graph.users.values()):
+            raise ValueError("Пользователь с таким Telegram ID уже существует.")
 
         user = User(
-            email=email or None,
-            telegram_user_id=telegram_user_id or None,
-            full_name=display_name,
-            status=UserStatus.ACTIVE,
+            email=normalized_email,
+            telegram_user_id=data.telegram_user_id or None,
+            full_name=normalized_display_name,
+            status=UserStatus.INVITED,
         )
-        user.roles = [author_role]
+        user.roles = [_ensure_graph_role(graph, role_slug) for role_slug in role_slugs]
         graph.add(user)
-
-        slug = _slugify(display_name)
-        if any(item.slug == slug for item in graph.authors.values()):
-            import uuid
-            slug = f"{slug}-{str(uuid.uuid4())[:8]}"
-
-        profile = AuthorProfile(
-            user_id=user.id,
-            display_name=display_name,
-            slug=slug,
-            requires_moderation=False,
-            is_active=True,
-        )
-        profile.user = user
-        profile.watchlist_instruments = sorted(
-            [item for item in graph.instruments.values() if item.is_active],
-            key=lambda item: item.ticker.lower(),
-        )
-        graph.add(profile)
-        for instrument in profile.watchlist_instruments:
-            if profile not in instrument.watchlist_authors:
-                instrument.watchlist_authors.append(profile)
+        if RoleSlug.AUTHOR in role_slugs:
+            _create_file_author_profile(graph, user, normalized_display_name)
         graph.save(store)
-        return profile
+        return user
 
-    author_role_result = await session.execute(select(Role).where(Role.slug == RoleSlug.AUTHOR))
-    author_role = author_role_result.scalar_one_or_none()
-    if author_role is None:
-        author_role = Role(slug=RoleSlug.AUTHOR, title="Автор")
-        session.add(author_role)
+    existing_user_by_email = await session.execute(select(User).where(func.lower(User.email) == normalized_email))
+    if existing_user_by_email.scalar_one_or_none() is not None:
+        raise ValueError("Пользователь с таким email уже существует.")
+    if data.telegram_user_id is not None:
+        existing_user_by_tg = await session.execute(select(User).where(User.telegram_user_id == data.telegram_user_id))
+        if existing_user_by_tg.scalar_one_or_none() is not None:
+            raise ValueError("Пользователь с таким Telegram ID уже существует.")
+
+    try:
+        user = User(
+            email=normalized_email,
+            telegram_user_id=data.telegram_user_id or None,
+            full_name=normalized_display_name,
+            status=UserStatus.INVITED,
+        )
+        session.add(user)
         await session.flush()
+        for role_slug in role_slugs:
+            role = await _ensure_sql_role(session, role_slug)
+            await session.execute(insert(user_roles).values(user_id=user.id, role_id=role.id))
+        if RoleSlug.AUTHOR in role_slugs:
+            await _create_sql_author_profile(session, user, normalized_display_name)
+        await session.commit()
+        return await _require_staff_user(session, user.id)
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ValueError("Не удалось создать сотрудника из-за конфликта уникальности.") from exc
 
-    user = User(
-        email=email or None,
-        telegram_user_id=telegram_user_id or None,
-        full_name=display_name,
-        status=UserStatus.ACTIVE,
-    )
-    session.add(user)
+
+def _ensure_graph_role(graph: FileDatasetGraph, role_slug: RoleSlug) -> Role:
+    role = next((item for item in graph.roles.values() if item.slug == role_slug), None)
+    if role is not None:
+        return role
+    titles = {
+        RoleSlug.ADMIN: "Администратор",
+        RoleSlug.AUTHOR: "Автор",
+        RoleSlug.MODERATOR: "Модератор",
+    }
+    role = Role(slug=role_slug, title=titles[role_slug])
+    graph.add(role)
+    return role
+
+
+async def _ensure_sql_role(session: AsyncSession, role_slug: RoleSlug) -> Role:
+    result = await session.execute(select(Role).where(Role.slug == role_slug))
+    role = result.scalar_one_or_none()
+    if role is not None:
+        return role
+    titles = {
+        RoleSlug.ADMIN: "Администратор",
+        RoleSlug.AUTHOR: "Автор",
+        RoleSlug.MODERATOR: "Модератор",
+    }
+    role = Role(slug=role_slug, title=titles[role_slug])
+    session.add(role)
     await session.flush()
+    return role
 
-    user.roles.append(author_role)
 
+def _create_file_author_profile(graph: FileDatasetGraph, user: User, display_name: str) -> AuthorProfile:
     slug = _slugify(display_name)
-    # Ensure unique slug
-    existing = await session.execute(
-        select(AuthorProfile).where(AuthorProfile.slug == slug)
+    if any(item.slug == slug for item in graph.authors.values()):
+        import uuid
+
+        slug = f"{slug}-{str(uuid.uuid4())[:8]}"
+    profile = AuthorProfile(
+        user_id=user.id,
+        display_name=display_name,
+        slug=slug,
+        requires_moderation=False,
+        is_active=True,
     )
+    profile.user = user
+    profile.watchlist_instruments = sorted(
+        [item for item in graph.instruments.values() if item.is_active],
+        key=lambda item: item.ticker.lower(),
+    )
+    graph.add(profile)
+    for instrument in profile.watchlist_instruments:
+        if profile not in instrument.watchlist_authors:
+            instrument.watchlist_authors.append(profile)
+    return profile
+
+
+async def _create_sql_author_profile(session: AsyncSession, user: User, display_name: str) -> AuthorProfile:
+    slug = _slugify(display_name)
+    existing = await session.execute(select(AuthorProfile).where(AuthorProfile.slug == slug))
     if existing.scalar_one_or_none() is not None:
         import uuid
-        slug = f"{slug}-{str(uuid.uuid4())[:8]}"
 
+        slug = f"{slug}-{str(uuid.uuid4())[:8]}"
     profile = AuthorProfile(
         user_id=user.id,
         display_name=display_name,
@@ -694,9 +937,61 @@ async def create_admin_author(
     )
     profile.watchlist_instruments = list(instruments_result.scalars().all())
     session.add(profile)
-    await session.commit()
-    await session.refresh(profile)
+    await session.flush()
+    user.author_profile = profile
     return profile
+
+
+async def _get_staff_user_by_id(session: AsyncSession, user_id: str) -> User | None:
+    result = await session.execute(
+        select(User)
+        .options(selectinload(User.roles), selectinload(User.author_profile))
+        .where(User.id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _require_staff_user(session: AsyncSession, user_id: str) -> User:
+    user = await _get_staff_user_by_id(session, user_id)
+    if user is None:
+        raise ValueError("Сотрудник не найден.")
+    return user
+
+
+def _count_active_admins_file(graph: FileDatasetGraph) -> int:
+    return sum(1 for user in graph.users.values() if user.status == UserStatus.ACTIVE and RoleSlug.ADMIN in _staff_role_slugs(user))
+
+
+async def _count_active_admins_sql(session: AsyncSession) -> int:
+    result = await session.execute(
+        select(func.count(func.distinct(User.id)))
+        .select_from(User)
+        .join(user_roles, User.id == user_roles.c.user_id)
+        .join(Role, Role.id == user_roles.c.role_id)
+        .where(User.status == UserStatus.ACTIVE, Role.slug == RoleSlug.ADMIN)
+    )
+    return int(result.scalar_one())
+
+
+async def create_admin_author(
+    session: AsyncSession | None,
+    *,
+    display_name: str,
+    email: str | None,
+    telegram_user_id: int | None,
+) -> AuthorProfile:
+    user = await _create_staff_user(
+        session,
+        StaffCreateData(
+            display_name=display_name,
+            email=email,
+            telegram_user_id=telegram_user_id,
+            role_slugs=(RoleSlug.AUTHOR,),
+        ),
+    )
+    if user.author_profile is None:
+        raise ValueError("Не удалось создать профиль автора.")
+    return user.author_profile
 
 
 async def toggle_admin_author(session: AsyncSession | None, author_id: str) -> AuthorProfile:

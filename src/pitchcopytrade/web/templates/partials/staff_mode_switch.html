@@ -1,0 +1,20 @@
+{% if user and user.roles %}
+  {% set role_values = user.roles | map(attribute="slug.value") | list %}
+  {% if "admin" in role_values and "author" in role_values %}
+  {% set active_mode = request.cookies.get("pitchcopytrade_session_staff_mode", "admin") %}
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <form method="post" action="/auth/mode" style="margin:0;">
+      <input type="hidden" name="mode" value="admin" />
+      <button class="action {% if active_mode != 'admin' %}ghost{% endif %}" type="submit" style="padding:10px 14px;font-size:0.88rem;">
+        Режим администратора
+      </button>
+    </form>
+    <form method="post" action="/auth/mode" style="margin:0;">
+      <input type="hidden" name="mode" value="author" />
+      <button class="action {% if active_mode != 'author' %}ghost{% endif %}" type="submit" style="padding:10px 14px;font-size:0.88rem;">
+        Режим автора
+      </button>
+    </form>
+  </div>
+  {% endif %}
+{% endif %}
