@@ -1,6 +1,6 @@
 # PitchCopyTrade — Список задач MVP
 > Версия: 0.2.0
-> Обновлено: 2026-03-18
+> Обновлено: 2026-03-19
 > Порядок выполнения: фазы последовательно; каждая фаза должна пройти acceptance criteria перед следующей
 
 ---
@@ -16,15 +16,60 @@
 ## Фаза 0 — Фундамент (выполнено)
 
 - [x] Структура проекта (pyproject.toml, src layout)
-- [x] Docker Compose (api, bot, worker, postgres, minio)
+- [x] Docker Compose (api, bot, worker, postgres optional local-db)
 - [x] Конфигурация через env (pydantic-settings, .env)
 - [x] API health-эндпоинты (`/health`, `/ready`, `/meta`)
 - [x] Заглушка бота (aiogram 3)
 - [x] Заглушка worker
 - [x] Начальная схема БД + Alembic миграция (18 таблиц)
-- [x] MinIO storage adapter
+- [x] Local filesystem storage backend
 - [x] Тестовый фреймворк (pytest-asyncio, httpx)
 - [x] Единый helper `sql_enum(...)` для сериализации PostgreSQL enum через `.value`, а не через uppercase names
+
+---
+
+## Фаза 0.1 — Полное удаление MinIO из продукта `[done]`
+
+**Цель:** Упростить продукт до единственного файлового storage на локальной системе. Никакой поддержки legacy MinIO, никаких fallback веток, никаких `MINIO_*` env.
+
+### Задачи
+- [x] **0.1.1** Удалить MinIO из runtime-конфига
+  - убрать `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_BUCKET_UPLOADS`, `MINIO_SECURE`
+  - удалить `MinioSettings` и любые runtime checks, связанные с MinIO
+  - `APP_STORAGE_ROOT` остается единственным storage root
+
+- [x] **0.1.2** Удалить MinIO backend из кода
+  - удалить `src/pitchcopytrade/storage/minio.py`
+  - убрать provider branches `minio` / `local_fs`
+  - canonical storage provider = локальная файловая система
+  - attachment/legal flows работают только через local storage paths
+
+- [x] **0.1.3** Удалить MinIO из зависимостей
+  - убрать библиотеку `minio` из `pyproject.toml`
+  - убрать связанные импорты и тесты
+  - оставить только local filesystem storage tests
+
+- [x] **0.1.4** Удалить MinIO из deploy/dev infrastructure
+  - убрать сервис `minio` из compose-файлов и всех deploy-шаблонов
+  - убрать инструкции по MinIO из README и env templates
+  - никаких placeholder секций “на будущее” для MinIO не оставлять
+
+- [x] **0.1.5** Упростить доменную модель storage
+  - убрать `storage_provider` как переключатель поведения, если он больше не нужен
+  - оставить metadata, достаточную для локального файла: `object_key/source_path/original_filename/content_type/size_bytes`
+  - не сохранять ничего, что нужно только для object storage bucket semantics
+
+- [x] **0.1.6** Обновить тесты и review coverage
+  - переписать тесты под single local storage contract
+  - добавить regression, что в проекте не осталось `MINIO_*` config hooks
+  - добавить regression, что attachments/legal files читаются только локально
+
+### Критерии приёмки
+- в проекте нет runtime/deploy/test зависимостей на MinIO
+- в `.env.example` и `deploy/env.server.example` отсутствуют `MINIO_*`
+- attachments и legal files работают только через локальную файловую систему
+- никакого legacy fallback к MinIO в коде не остается
+- `pytest` проходит после полного удаления библиотеки и кода MinIO
 
 ---
 
@@ -39,7 +84,7 @@
 
 - [x] **1.2** Seeder инструментов
   - Создать `src/pitchcopytrade/db/seeders/instruments.py`
-  - Загружает из `doc/instruments_stub.json`
+  - Загружает из `storage/seed/json/instruments.json`
   - Upsert по ticker (пропускает если уже существует)
   - Вызывается из события старта API (только если таблица инструментов пустая)
 
@@ -52,6 +97,12 @@
 - [x] **1.4** Скрипт полного сброса
   - `scripts/reset.sh` — удаляет volumes, образы, приводит к чистому состоянию
   - Документировать в README в разделе «Полный сброс»
+
+- [x] **1.5** Скрипт очистки storage перед чистой миграцией
+  - `scripts/clean_storage.sh`
+  - удаляет legacy-директории и stale runtime-файлы
+  - умеет `--fresh-runtime` для полного сброса `storage/runtime/*`
+  - вызывается из `deploy/migrate.sh --reset`
 
 ### Критерии приёмки
 - `docker-compose up --build` на чистой машине → пустые таблицы (кроме instruments + admin)
@@ -105,6 +156,7 @@
   - Искать User по `telegram_user_id`; возвращать 401 если не найден
   - Создать подписанный JWT (HttpOnly, Secure, SameSite=Strict, 24ч)
   - Редирект на `/cabinet/`
+  - В README явно зафиксирован deploy-step `@BotFather /setdomain` для домена из `BASE_URL`
 
 - [x] **3.2** Session middleware
   - `src/pitchcopytrade/api/middleware/auth.py`
@@ -169,13 +221,13 @@
 
 ## Фаза 5 — Инструменты и Popup выбора тикера
 
-**Цель:** Popup тикера на основе instruments_stub.json с клиентским поиском.
+**Цель:** Popup тикера на основе канонического seed-набора инструментов с клиентским поиском.
 
 ### Задачи
 - [x] **5.1** API эндпоинт инструментов
   - `GET /api/instruments` — список активных инструментов
   - Ответ: `[{ ticker, name, last_price, change_pct, board, currency }]`
-  - Из БД (засеяно из instruments_stub.json)
+  - Из БД (засеяно из `storage/seed/json/instruments.json`)
   - Будущее: параметр `?q=` для живого API
 
 - [x] **5.2** Компонент Popup тикера
@@ -215,6 +267,13 @@
 - [x] **6.3** Редактирование стратегии
   - `GET /cabinet/strategies/{id}/edit` — изменить название, описание, уровень риска, min_capital_rub
   - `POST /cabinet/strategies/{id}/edit` — сохранить
+
+- [x] **6.4** Watchlist автора
+  - Для каждого автора есть персональный watchlist наблюдения бумаг
+  - При создании автора watchlist предзаполняется активными инструментами
+  - В author dashboard есть inline-поле фильтрации и добавления бумаг
+  - Когда отфильтрованный локальный список сужается до 2 результатов, включается stub-ветка внешнего поиска
+  - Сейчас поддержано только добавление новых бумаг, без удаления
 
 ### Критерии приёмки
 - Автор видит только свои стратегии (ACL: `strategy.author_id = current_user.author_profile.id`)

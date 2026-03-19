@@ -18,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$PROJECT_DIR/.env.server"
 SCHEMA_FILE="$SCRIPT_DIR/schema.sql"
-STORAGE_RUNTIME="$PROJECT_DIR/storage/runtime"
+CLEAN_STORAGE_SCRIPT="$PROJECT_DIR/scripts/clean_storage.sh"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Ошибка: файл $ENV_FILE не найден"
@@ -49,25 +49,12 @@ SQL
   echo "   Готово."
   echo ""
 
-  echo "2. Очищаем storage/runtime/json/ ..."
-  if [ -d "$STORAGE_RUNTIME/json" ]; then
-    rm -f "$STORAGE_RUNTIME"/json/*.json
-    echo "   Удалены JSON-файлы."
-  else
-    echo "   Директория не найдена, пропускаем."
-  fi
+  echo "2. Очищаем storage перед чистой миграцией..."
+  bash "$CLEAN_STORAGE_SCRIPT" --apply --fresh-runtime --root "$PROJECT_DIR/storage"
+  echo "   Готово."
   echo ""
 
-  echo "3. Очищаем storage/runtime/blob/ ..."
-  if [ -d "$STORAGE_RUNTIME/blob" ]; then
-    find "$STORAGE_RUNTIME/blob" -type f -delete
-    echo "   Удалены blob-файлы."
-  else
-    echo "   Директория не найдена, пропускаем."
-  fi
-  echo ""
-
-  echo "4. Применяем схему..."
+  echo "3. Применяем схему..."
 fi
 
 # sudo -u postgres psql -d "$PG_DB" -f "$SCHEMA_FILE"

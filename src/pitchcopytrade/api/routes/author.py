@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from pitchcopytrade.api.deps.auth import require_author
 from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.services.author import (
+    WatchlistCandidate,
+    add_author_watchlist_instrument,
     build_leg_rows_from_form,
     build_recommendation_form_data,
     create_author_recommendation,
@@ -18,9 +20,11 @@ from pitchcopytrade.services.author import (
     list_active_instruments,
     list_author_recommendations,
     list_author_strategies,
+    list_author_watchlist,
     normalize_attachment_uploads,
     remove_recommendation_attachments,
     recommendation_form_values,
+    search_author_watchlist_candidates,
     update_author_recommendation,
 )
 from pitchcopytrade.web.templates import templates
@@ -44,6 +48,7 @@ async def author_dashboard(
     stats = await get_author_workspace_stats(repository, author)
     strategies = await list_author_strategies(repository, author)
     recommendations = await list_author_recommendations(repository, author)
+    watchlist = await list_author_watchlist(repository, author)
     return templates.TemplateResponse(
         request,
         "author/dashboard.html",
@@ -54,7 +59,46 @@ async def author_dashboard(
             "stats": stats,
             "strategies": strategies[:5],
             "recommendations": recommendations[:6],
+            "watchlist": watchlist,
+            "watchlist_items": [_instrument_payload(item) for item in watchlist],
         },
+    )
+
+
+@router.get("/watchlist/search")
+async def author_watchlist_search(
+    q: str = "",
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> Response:
+    author = await _get_author_or_403(repository, user)
+    candidates = await search_author_watchlist_candidates(repository, author, q)
+    return JSONResponse(
+        {
+            "query": q,
+            "items": [_watchlist_candidate_payload(item) for item in candidates],
+        }
+    )
+
+
+@router.post("/watchlist/items")
+async def author_watchlist_add_item(
+    instrument_id: str = Form(...),
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> Response:
+    author = await _get_author_or_403(repository, user)
+    try:
+        instrument = await add_author_watchlist_instrument(repository, author, instrument_id.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    watchlist = await list_author_watchlist(repository, author)
+    return JSONResponse(
+        {
+            "added": _instrument_payload(instrument),
+            "watchlist": [_instrument_payload(item) for item in watchlist],
+        }
     )
 
 
@@ -360,3 +404,23 @@ def _next_leg_index(form_values: dict[str, object]) -> int:
         except ValueError:
             continue
     return (max(indexes) + 1) if indexes else len(legs)
+
+
+def _instrument_payload(instrument) -> dict[str, str]:
+    return {
+        "id": instrument.id,
+        "ticker": instrument.ticker,
+        "name": instrument.name,
+        "board": instrument.board,
+        "currency": instrument.currency,
+    }
+
+
+def _watchlist_candidate_payload(candidate: WatchlistCandidate) -> dict[str, str]:
+    return {
+        "id": candidate.id,
+        "ticker": candidate.ticker,
+        "name": candidate.name,
+        "board": candidate.board,
+        "source": candidate.source,
+    }

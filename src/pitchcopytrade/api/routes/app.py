@@ -44,7 +44,6 @@ from pitchcopytrade.services.subscriber import (
     update_notification_preferences,
 )
 from pitchcopytrade.storage.local import LocalFilesystemStorage
-from pitchcopytrade.storage.minio import MinioStorage
 from pitchcopytrade.web.templates import templates
 
 
@@ -646,13 +645,10 @@ async def recommendation_attachment_download(
     if attachment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
 
-    storage_provider = attachment.storage_provider or "local_fs"
-    if storage_provider == "local_fs":
-        payload = LocalFilesystemStorage(bucket_name=attachment.bucket_name).download_bytes(attachment.object_key)
-    elif storage_provider == "minio":
-        payload = MinioStorage(bucket_name=attachment.bucket_name).download_bytes(attachment.object_key)
-    else:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unsupported storage provider")
+    try:
+        payload = LocalFilesystemStorage().download_bytes(attachment.object_key)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment file not found") from exc
     headers = {"Content-Disposition": f'attachment; filename="{attachment.original_filename}"'}
     return StreamingResponse(iter([payload]), media_type=attachment.content_type, headers=headers)
 

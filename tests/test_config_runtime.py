@@ -26,12 +26,6 @@ def _base_env() -> dict[str, str]:
         "POSTGRES_PASSWORD": "pitchcopytrade",
         "DATABASE_URL": "postgresql+asyncpg://pitchcopytrade:pitchcopytrade@postgres:5432/pitchcopytrade",
         "ALEMBIC_DATABASE_URL": "postgresql+asyncpg://pitchcopytrade:pitchcopytrade@postgres:5432/pitchcopytrade",
-        "MINIO_ENDPOINT": "minio:9000",
-        "MINIO_PUBLIC_URL": "http://localhost:9000",
-        "MINIO_ROOT_USER": "minioadmin",
-        "MINIO_ROOT_PASSWORD": "minio-secret",
-        "MINIO_BUCKET_UPLOADS": "pitchcopytrade-uploads",
-        "MINIO_SECURE": "false",
         "SBP_PROVIDER": "stub_manual",
         "SBP_STUB_CONFIRMATION_MODE": "manual",
         "TINKOFF_TERMINAL_KEY": "__FILL_ME__",
@@ -60,7 +54,6 @@ def test_settings_expose_typed_sections(monkeypatch: pytest.MonkeyPatch) -> None
 
     assert settings.app.name == "PitchCopyTrade"
     assert settings.database.url.startswith("postgresql+asyncpg://")
-    assert settings.minio.bucket_uploads == "pitchcopytrade-uploads"
     assert settings.payments.provider == "stub_manual"
     assert settings.auth.session_ttl_seconds == 86400
     assert settings.auth.session_cookie_name == "pitchcopytrade_session"
@@ -95,13 +88,12 @@ def test_settings_validate_database_scheme(monkeypatch: pytest.MonkeyPatch) -> N
         _make_settings(monkeypatch, DATABASE_URL="postgresql://localhost/db")
 
 
-def test_file_mode_allows_missing_database_and_minio_password(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_file_mode_allows_missing_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _make_settings(
         monkeypatch,
         APP_DATA_MODE="file",
         DATABASE_URL="",
         ALEMBIC_DATABASE_URL="",
-        MINIO_ROOT_PASSWORD="__FILL_ME__",
     )
 
     validate_runtime_settings(settings, "api")

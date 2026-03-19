@@ -6,12 +6,16 @@ import pytest
 from starlette.datastructures import FormData, Headers, UploadFile
 
 from pitchcopytrade.services.author import (
+    add_author_watchlist_instrument,
     build_leg_rows_from_form,
     build_recommendation_form_data,
     normalize_attachment_uploads,
     remove_recommendation_attachments,
+    search_author_watchlist_candidates,
 )
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment
+from pitchcopytrade.db.models.catalog import Instrument
+from pitchcopytrade.db.models.enums import InstrumentType
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 
 
@@ -157,7 +161,6 @@ async def test_remove_recommendation_attachments_deletes_local_blob(tmp_path) ->
     attachment = RecommendationAttachment(
         id="att-1",
         recommendation_id="rec-1",
-        bucket_name="blob",
         object_key="recommendations/rec-1/file.pdf",
         original_filename="idea.pdf",
         content_type="application/pdf",
@@ -172,3 +175,54 @@ async def test_remove_recommendation_attachments_deletes_local_blob(tmp_path) ->
     assert recommendation.attachments == []
     assert repository.deleted == [attachment]
     assert not (tmp_path / "storage" / "blob" / "recommendations" / "rec-1" / "file.pdf").exists()
+
+
+@pytest.mark.asyncio
+async def test_search_author_watchlist_candidates_excludes_existing_watchlist() -> None:
+    author = type("Author", (), {"id": "author-1"})()
+    existing = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    candidate = Instrument(
+        id="instrument-2",
+        ticker="GAZP",
+        name="Gazprom",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+
+    class DummyRepository:
+        async def list_author_watchlist(self, author_id: str):
+            assert author_id == "author-1"
+            return [existing]
+
+        async def list_active_instruments(self):
+            return [existing, candidate]
+
+    items = await search_author_watchlist_candidates(DummyRepository(), author, "gaz")
+
+    assert [item.id for item in items] == ["instrument-2"]
+
+
+@pytest.mark.asyncio
+async def test_add_author_watchlist_instrument_raises_for_unknown_instrument() -> None:
+    author = type("Author", (), {"id": "author-1"})()
+
+    class DummyRepository:
+        async def add_author_watchlist_instrument(self, author_id: str, instrument_id: str):
+            assert author_id == "author-1"
+            assert instrument_id == "unknown"
+            return None
+
+    with pytest.raises(ValueError, match="Инструмент не найден"):
+        await add_author_watchlist_instrument(DummyRepository(), author, "unknown")

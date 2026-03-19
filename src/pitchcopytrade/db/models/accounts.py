@@ -10,7 +10,7 @@ from pitchcopytrade.db.models.enums import RoleSlug, UserStatus, sql_enum
 
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.audit import AuditEvent
-    from pitchcopytrade.db.models.catalog import LeadSource, Strategy, SubscriptionProduct
+    from pitchcopytrade.db.models.catalog import Instrument, LeadSource, Strategy, SubscriptionProduct
     from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
     from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment
 
@@ -19,6 +19,13 @@ user_roles = Table(
     Base.metadata,
     Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
     Column("role_id", ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+)
+
+author_watchlist_instruments = Table(
+    "author_watchlist_instruments",
+    Base.metadata,
+    Column("author_id", ForeignKey("author_profiles.id", ondelete="CASCADE"), primary_key=True),
+    Column("instrument_id", ForeignKey("instruments.id", ondelete="CASCADE"), primary_key=True),
 )
 
 
@@ -76,3 +83,7 @@ class AuthorProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     strategies: Mapped[list["Strategy"]] = relationship(back_populates="author")
     subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="author")
     recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="author")
+    watchlist_instruments: Mapped[list["Instrument"]] = relationship(
+        secondary=author_watchlist_instruments,
+        back_populates="watchlist_authors",
+    )

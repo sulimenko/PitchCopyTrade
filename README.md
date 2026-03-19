@@ -6,6 +6,12 @@ Telegram-first платформа для продажи подписок на и
 
 Три сервиса в Docker: **api** (FastAPI, веб-кабинеты), **bot** (aiogram 3, Telegram), **worker** (ARQ, фоновые задачи и уведомления). PostgreSQL и Redis — установлены на хосте сервера, не в Docker.
 
+Текущее направление упрощения:
+- storage должен остаться только локальным;
+- все attachments и legal files должны жить под `APP_STORAGE_ROOT`;
+- MinIO и любые `MINIO_*` настройки удалены из runtime/deploy-контракта;
+- watchlist автора хранится как локальная связь `author ↔ instruments` и предзаполняется базовым набором из `storage/seed/json/instruments.json`.
+
 ---
 
 ## Запуск на сервере
@@ -103,6 +109,19 @@ cp deploy/nginx/pct.test.ptfin.ru.conf /etc/nginx/conf.d/ваш-домен.conf
 certbot --nginx -d ваш-домен.ru
 ```
 
+После выпуска сертификата обязательно привязать тот же домен к боту:
+
+1. открыть [@BotFather](https://t.me/BotFather)
+2. выполнить `/setdomain`
+3. выбрать нужного бота
+4. отправить домен **без** `https://` и без пути
+
+Пример:
+
+```text
+pct.test.ptfin.ru
+```
+
 Проверить и применить конфиг:
 
 ```bash
@@ -111,6 +130,11 @@ nginx -t && systemctl reload nginx
 
 nginx проксирует входящий трафик на `127.0.0.1:8110` — там слушает контейнер api.
 Webhook Telegram принимается по пути `/webhook/` → пробрасывается в контейнер api.
+
+Если на `/login` видите `Bot domain invalid`, значит:
+- домен не привязан к боту через `/setdomain`;
+- либо в `BASE_URL` и в BotFather указаны разные хосты;
+- либо страница открыта не по тому же HTTPS-домену, который задан у бота.
 
 ---
 
@@ -133,6 +157,13 @@ bash deploy/migrate.sh
 
 Скрипт читает `POSTGRES_USER` и `POSTGRES_DB` из `.env.server` и выполняет `deploy/schema.sql` через локальный psql.
 
+Для полностью чистой миграции с удалением legacy-файлов storage:
+
+```bash
+bash scripts/clean_storage.sh --apply --fresh-runtime
+bash deploy/migrate.sh --reset
+```
+
 Ожидаемый вывод в конце:
 
 ```
@@ -141,9 +172,10 @@ bash deploy/migrate.sh
 --------+-----------------------+-------+-------
  public | audit_events          | table | pct
  public | author_profiles       | table | pct
+ public | author_watchlist_instruments | table | pct
  ...
  public | users                 | table | pct
-(20 rows)
+(21 rows)
 ```
 
 Проверить вручную:
@@ -152,7 +184,7 @@ bash deploy/migrate.sh
 sudo -u postgres psql pct -c "\dt"
 ```
 
-Должно быть 19 таблиц.
+Должно быть 21 таблица.
 
 ---
 
@@ -191,6 +223,7 @@ curl -s http://127.0.0.1:8110/health
 
 **Что сделать сразу после входа:**
 1. Перейти в раздел **Авторы** → создать первого автора (имя + Telegram User ID).
+   Для нового автора автоматически создаётся персональный watchlist на базе `storage/seed/json/instruments.json`.
 2. Передать автору адрес кабинета — он входит через Telegram Login Widget.
 3. В Telegram открыть бота → `/start` → проверить, что кнопка Mini App появляется.
 
@@ -215,6 +248,7 @@ curl -s http://127.0.0.1:8110/health
 | `user_roles` | Связь пользователей с ролями (M2M) |
 | `roles` | Справочник ролей: admin, author, moderator |
 | `author_profiles` | Профили авторов стратегий |
+| `author_watchlist_instruments` | Персональные watchlist-наборы инструментов авторов |
 | `lead_sources` | Источники привлечения подписчиков |
 | `instruments` | Торговые инструменты (тикеры ММВБ) |
 | `strategies` | Стратегии авторов |

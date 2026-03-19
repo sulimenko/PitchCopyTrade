@@ -54,6 +54,10 @@ class Instrument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(default=True)
 
     recommendation_legs: Mapped[list["RecommendationLeg"]] = relationship(back_populates="instrument")
+    watchlist_authors: Mapped[list["AuthorProfile"]] = relationship(
+        secondary="author_watchlist_instruments",
+        back_populates="watchlist_instruments",
+    )
 
 
 class Strategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):

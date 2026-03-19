@@ -24,7 +24,6 @@ def test_upload_and_stat_object_metadata(tmp_path: Path) -> None:
     stat = storage.stat_object("signals/test.pdf")
 
     assert isinstance(uploaded, StorageObject)
-    assert uploaded.bucket_name == "blob"
     assert uploaded.object_key == "signals/test.pdf"
     assert uploaded.size_bytes == 7
     assert uploaded.local_path is not None

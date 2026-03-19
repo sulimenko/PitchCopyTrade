@@ -23,12 +23,6 @@ class EnvName:
     POSTGRES_DB = "POSTGRES_DB"
     POSTGRES_USER = "POSTGRES_USER"
     POSTGRES_PASSWORD = "POSTGRES_PASSWORD"
-    MINIO_ENDPOINT = "MINIO_ENDPOINT"
-    MINIO_PUBLIC_URL = "MINIO_PUBLIC_URL"
-    MINIO_ROOT_USER = "MINIO_ROOT_USER"
-    MINIO_ROOT_PASSWORD = "MINIO_ROOT_PASSWORD"
-    MINIO_BUCKET_UPLOADS = "MINIO_BUCKET_UPLOADS"
-    MINIO_SECURE = "MINIO_SECURE"
     SBP_PROVIDER = "SBP_PROVIDER"
     SBP_STUB_CONFIRMATION_MODE = "SBP_STUB_CONFIRMATION_MODE"
     TINKOFF_TERMINAL_KEY = "TINKOFF_TERMINAL_KEY"
@@ -97,17 +91,6 @@ class DatabaseSettings(BaseModel):
     db_name: str
     user: str
     password: SecretStr
-
-
-class MinioSettings(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    endpoint: str
-    public_url: str
-    root_user: str
-    root_password: SecretStr
-    bucket_uploads: str
-    secure: bool
 
 
 class PaymentSettings(BaseModel):
@@ -189,13 +172,6 @@ class Settings(BaseSettings):
     postgres_user: str = Field(default="pitchcopytrade", alias=EnvName.POSTGRES_USER)
     postgres_password: SecretStr = Field(default=SecretStr("pitchcopytrade"), alias=EnvName.POSTGRES_PASSWORD)
 
-    minio_endpoint: str = Field(default="minio:9000", alias=EnvName.MINIO_ENDPOINT)
-    minio_public_url: str = Field(default="http://localhost:9000", alias=EnvName.MINIO_PUBLIC_URL)
-    minio_root_user: str = Field(default="minioadmin", alias=EnvName.MINIO_ROOT_USER)
-    minio_root_password: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.MINIO_ROOT_PASSWORD)
-    minio_bucket_uploads: str = Field(default="pitchcopytrade-uploads", alias=EnvName.MINIO_BUCKET_UPLOADS)
-    minio_secure: bool = Field(default=False, alias=EnvName.MINIO_SECURE)
-
     sbp_provider: str = Field(default="stub_manual", alias=EnvName.SBP_PROVIDER)
     sbp_stub_confirmation_mode: str = Field(default="manual", alias=EnvName.SBP_STUB_CONFIRMATION_MODE)
     tinkoff_terminal_key: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.TINKOFF_TERMINAL_KEY)
@@ -243,7 +219,7 @@ class Settings(BaseSettings):
             raise ValueError(f"APP_DATA_MODE must be one of {sorted(allowed)}")
         return normalized
 
-    @field_validator("base_url", "admin_base_url", "minio_public_url")
+    @field_validator("base_url", "admin_base_url")
     @classmethod
     def validate_http_url(cls, value: str) -> str:
         if not value.startswith(("http://", "https://")):
@@ -258,14 +234,6 @@ class Settings(BaseSettings):
             return normalized
         if not normalized.startswith("postgresql+asyncpg://"):
             raise ValueError("Database URL must use postgresql+asyncpg://")
-        return normalized
-
-    @field_validator("minio_bucket_uploads")
-    @classmethod
-    def validate_bucket_name(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if len(normalized) < 3:
-            raise ValueError("MINIO_BUCKET_UPLOADS must be at least 3 chars")
         return normalized
 
     @field_validator("log_level")
@@ -329,17 +297,6 @@ class Settings(BaseSettings):
             db_name=self.postgres_db,
             user=self.postgres_user,
             password=self.postgres_password,
-        )
-
-    @property
-    def minio(self) -> MinioSettings:
-        return MinioSettings(
-            endpoint=self.minio_endpoint,
-            public_url=self.minio_public_url,
-            root_user=self.minio_root_user,
-            root_password=self.minio_root_password,
-            bucket_uploads=self.minio_bucket_uploads,
-            secure=self.minio_secure,
         )
 
     @property

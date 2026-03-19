@@ -73,6 +73,12 @@ def _seed_demo_json(store: FileDataStore) -> None:
                     "updated_at": now,
                 }
             ],
+            "author_watchlist_instruments": [
+                {
+                    "author_id": "author-1",
+                    "instrument_id": "instrument-1",
+                }
+            ],
             "lead_sources": [],
             "instruments": [
                 {
@@ -236,8 +242,6 @@ def _seed_demo_json(store: FileDataStore) -> None:
                     "id": "att-1",
                     "recommendation_id": "rec-1",
                     "uploaded_by_user_id": "user-author",
-                    "storage_provider": "local_fs",
-                    "bucket_name": "blob",
                     "object_key": "recommendations/rec-1/file.pdf",
                     "original_filename": "idea.pdf",
                     "content_type": "application/pdf",
@@ -263,6 +267,7 @@ def test_file_data_store_bootstraps_runtime_from_seed(tmp_path) -> None:
 
     assert len(users) == 2
     assert (tmp_path / "storage" / "runtime" / "json" / "users.json").exists()
+    assert runtime_store.load_dataset("author_watchlist_instruments")[0]["instrument_id"] == "instrument-1"
 
 
 @pytest.mark.asyncio
@@ -276,11 +281,13 @@ async def test_file_author_repository_reads_seeded_entities(tmp_path) -> None:
 
     strategies = await repo.list_author_strategies(author.id)
     recommendations = await repo.list_author_recommendations(author.id)
+    watchlist = await repo.list_author_watchlist(author.id)
 
     assert len(strategies) == 1
     assert strategies[0].title == "Momentum RU"
     assert len(recommendations) == 1
-    assert recommendations[0].attachments[0].storage_provider == "local_fs"
+    assert recommendations[0].attachments[0].object_key == "recommendations/rec-1/file.pdf"
+    assert [item.id for item in watchlist] == ["instrument-1"]
 
 
 @pytest.mark.asyncio
@@ -337,7 +344,8 @@ async def test_file_author_repository_persists_new_recommendation_and_attachment
     assert persisted.title == "Новая идея"
     assert len(persisted.legs) == 1
     assert len(persisted.attachments) == 1
-    assert persisted.attachments[0].storage_provider == "local_fs"
+    assert persisted.attachments[0].object_key.startswith(f"recommendations/{recommendation.id}/")
+    assert persisted.attachments[0].object_key.endswith("new-idea.pdf")
     assert (tmp_path / "storage" / "blob" / persisted.attachments[0].object_key).exists()
 
 

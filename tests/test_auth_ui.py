@@ -118,6 +118,8 @@ def test_login_page_renders() -> None:
 
         assert response.status_code == 200
         assert "PitchCopyTrade" in response.text
+        assert "/setdomain" in response.text
+        assert "/auth/telegram/callback" in response.text
 
 
 def test_login_submit_sets_session_cookie() -> None:

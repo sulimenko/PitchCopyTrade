@@ -64,7 +64,6 @@ def test_build_recommendation_notification_text_includes_leg_and_attachments() -
         RecommendationAttachment(
             id="att-1",
             recommendation_id="rec-1",
-            bucket_name="uploads",
             object_key="recommendations/rec-1/file.pdf",
             original_filename="idea.pdf",
             content_type="application/pdf",

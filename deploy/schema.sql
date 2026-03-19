@@ -103,6 +103,12 @@ CREATE TABLE instruments (
     CONSTRAINT uq_instruments_ticker UNIQUE (ticker)
 );
 
+CREATE TABLE author_watchlist_instruments (
+    author_id     UUID NOT NULL REFERENCES author_profiles (id) ON DELETE CASCADE,
+    instrument_id UUID NOT NULL REFERENCES instruments (id) ON DELETE CASCADE,
+    CONSTRAINT pk_author_watchlist_instruments PRIMARY KEY (author_id, instrument_id)
+);
+
 CREATE TABLE strategies (
     id                UUID PRIMARY KEY,
     author_id         UUID NOT NULL REFERENCES author_profiles (id) ON DELETE CASCADE,
@@ -303,8 +309,6 @@ CREATE TABLE recommendation_attachments (
     id                  UUID PRIMARY KEY,
     recommendation_id   UUID NOT NULL REFERENCES recommendations (id) ON DELETE CASCADE,
     uploaded_by_user_id UUID REFERENCES users (id) ON DELETE SET NULL,
-    storage_provider    VARCHAR(32) NOT NULL,
-    bucket_name         VARCHAR(120) NOT NULL,
     object_key          VARCHAR(500) NOT NULL,
     original_filename   VARCHAR(255) NOT NULL,
     content_type        VARCHAR(120) NOT NULL,
@@ -337,4 +341,3 @@ CREATE TABLE notification_log (
     created_at        TIMESTAMPTZ NOT NULL,
     updated_at        TIMESTAMPTZ NOT NULL
 );
-

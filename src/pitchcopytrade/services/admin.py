@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
-from pitchcopytrade.db.models.catalog import Bundle, Strategy, SubscriptionProduct
+from pitchcopytrade.db.models.catalog import Bundle, Instrument, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
 from pitchcopytrade.db.models.content import Recommendation
 from pitchcopytrade.db.models.enums import (
@@ -616,7 +616,44 @@ async def create_admin_author(
     telegram_user_id: int | None,
 ) -> AuthorProfile:
     if session is None:
-        raise NotImplementedError("create_admin_author not supported in file mode")
+        graph, store = _file_admin_graph()
+        author_role = next((item for item in graph.roles.values() if item.slug == RoleSlug.AUTHOR), None)
+        if author_role is None:
+            author_role = Role(slug=RoleSlug.AUTHOR, title="Автор")
+            graph.add(author_role)
+
+        user = User(
+            email=email or None,
+            telegram_user_id=telegram_user_id or None,
+            full_name=display_name,
+            status=UserStatus.ACTIVE,
+        )
+        user.roles = [author_role]
+        graph.add(user)
+
+        slug = _slugify(display_name)
+        if any(item.slug == slug for item in graph.authors.values()):
+            import uuid
+            slug = f"{slug}-{str(uuid.uuid4())[:8]}"
+
+        profile = AuthorProfile(
+            user_id=user.id,
+            display_name=display_name,
+            slug=slug,
+            requires_moderation=False,
+            is_active=True,
+        )
+        profile.user = user
+        profile.watchlist_instruments = sorted(
+            [item for item in graph.instruments.values() if item.is_active],
+            key=lambda item: item.ticker.lower(),
+        )
+        graph.add(profile)
+        for instrument in profile.watchlist_instruments:
+            if profile not in instrument.watchlist_authors:
+                instrument.watchlist_authors.append(profile)
+        graph.save(store)
+        return profile
 
     author_role_result = await session.execute(select(Role).where(Role.slug == RoleSlug.AUTHOR))
     author_role = author_role_result.scalar_one_or_none()
@@ -652,6 +689,10 @@ async def create_admin_author(
         requires_moderation=False,
         is_active=True,
     )
+    instruments_result = await session.execute(
+        select(Instrument).where(Instrument.is_active.is_(True)).order_by(Instrument.ticker.asc())
+    )
+    profile.watchlist_instruments = list(instruments_result.scalars().all())
     session.add(profile)
     await session.commit()
     await session.refresh(profile)

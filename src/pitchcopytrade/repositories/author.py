@@ -43,6 +43,28 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def get_instrument(self, instrument_id: str) -> Instrument | None:
+        query = select(Instrument).where(Instrument.id == instrument_id, Instrument.is_active.is_(True))
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def list_author_watchlist(self, author_id: str) -> list[Instrument]:
+        author = await self.get_author_by_user_id_or_author_id(author_id)
+        if author is None:
+            return []
+        return sorted(list(author.watchlist_instruments), key=lambda item: item.ticker.lower())
+
+    async def add_author_watchlist_instrument(self, author_id: str, instrument_id: str) -> Instrument | None:
+        author = await self.get_author_by_user_id_or_author_id(author_id)
+        instrument = await self.get_instrument(instrument_id)
+        if author is None or instrument is None:
+            return None
+        if instrument not in author.watchlist_instruments:
+            author.watchlist_instruments.append(instrument)
+            await self.session.commit()
+            await self.session.refresh(author)
+        return instrument
+
     async def list_author_recommendations(self, author_id: str) -> list[Recommendation]:
         query = (
             select(Recommendation)
@@ -73,8 +95,17 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
     async def get_author_by_user_id(self, user_id: str) -> AuthorProfile | None:
         query = (
             select(AuthorProfile)
-            .options(selectinload(AuthorProfile.user))
+            .options(selectinload(AuthorProfile.user), selectinload(AuthorProfile.watchlist_instruments))
             .where(AuthorProfile.user_id == user_id)
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def get_author_by_user_id_or_author_id(self, author_id: str) -> AuthorProfile | None:
+        query = (
+            select(AuthorProfile)
+            .options(selectinload(AuthorProfile.user), selectinload(AuthorProfile.watchlist_instruments))
+            .where(AuthorProfile.id == author_id)
         )
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
@@ -130,6 +161,30 @@ class FileAuthorRepository(AuthorRepository):
             [item for item in self.graph.instruments.values() if item.is_active],
             key=lambda item: item.ticker.lower(),
         )
+
+    async def get_instrument(self, instrument_id: str) -> Instrument | None:
+        instrument = self.graph.instruments.get(instrument_id)
+        if instrument is None or not instrument.is_active:
+            return None
+        return instrument
+
+    async def list_author_watchlist(self, author_id: str) -> list[Instrument]:
+        author = self.graph.authors.get(author_id)
+        if author is None:
+            return []
+        return sorted(list(author.watchlist_instruments), key=lambda item: item.ticker.lower())
+
+    async def add_author_watchlist_instrument(self, author_id: str, instrument_id: str) -> Instrument | None:
+        author = self.graph.authors.get(author_id)
+        instrument = await self.get_instrument(instrument_id)
+        if author is None or instrument is None:
+            return None
+        if instrument not in author.watchlist_instruments:
+            author.watchlist_instruments.append(instrument)
+            if author not in instrument.watchlist_authors:
+                instrument.watchlist_authors.append(author)
+            self.graph.save(self.store)
+        return instrument
 
     async def list_author_recommendations(self, author_id: str) -> list[Recommendation]:
         return sorted(

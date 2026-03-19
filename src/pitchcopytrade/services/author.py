@@ -37,6 +37,15 @@ class AuthorWorkspaceStats:
 
 
 @dataclass(slots=True)
+class WatchlistCandidate:
+    id: str
+    ticker: str
+    name: str
+    board: str
+    source: str = "catalog"
+
+
+@dataclass(slots=True)
 class StructuredLegFormData:
     instrument_id: str
     side: TradeSide
@@ -101,6 +110,58 @@ async def list_author_strategies(repository: AuthorRepository, author: AuthorPro
 
 async def list_active_instruments(repository: AuthorRepository) -> list[Instrument]:
     return await repository.list_active_instruments()
+
+
+async def list_author_watchlist(repository: AuthorRepository, author: AuthorProfile) -> list[Instrument]:
+    return await repository.list_author_watchlist(author.id)
+
+
+async def add_author_watchlist_instrument(
+    repository: AuthorRepository,
+    author: AuthorProfile,
+    instrument_id: str,
+) -> Instrument:
+    instrument = await repository.add_author_watchlist_instrument(author.id, instrument_id)
+    if instrument is None:
+        raise ValueError("Инструмент не найден.")
+    return instrument
+
+
+async def search_author_watchlist_candidates(
+    repository: AuthorRepository,
+    author: AuthorProfile,
+    query: str,
+) -> list[WatchlistCandidate]:
+    normalized = query.strip().lower()
+    if len(normalized) < 2:
+        return []
+
+    watchlist = await repository.list_author_watchlist(author.id)
+    watchlist_ids = {item.id for item in watchlist}
+    instruments = await repository.list_active_instruments()
+    local_candidates = [
+        WatchlistCandidate(
+            id=item.id,
+            ticker=item.ticker,
+            name=item.name,
+            board=item.board,
+        )
+        for item in instruments
+        if item.id not in watchlist_ids and _matches_instrument_query(item, normalized)
+    ]
+
+    if len(local_candidates) <= 2:
+        external_candidates = await _search_external_instruments_stub(normalized, watchlist_ids | {item.id for item in instruments})
+        local_candidates.extend(external_candidates)
+
+    seen: set[str] = set()
+    deduped: list[WatchlistCandidate] = []
+    for item in sorted(local_candidates, key=lambda candidate: (candidate.source, candidate.ticker.lower(), candidate.name.lower())):
+        if item.id in seen:
+            continue
+        seen.add(item.id)
+        deduped.append(item)
+    return deduped
 
 
 async def list_author_recommendations(repository: AuthorRepository, author: AuthorProfile) -> list[Recommendation]:
@@ -390,6 +451,8 @@ def leg_form_values_from_rows(rows: list[dict[str, str]]) -> list[dict[str, str]
         }
         for index, row in enumerate(rows)
     ]
+
+
 def build_attachment_object_key(recommendation_id: str, filename: str) -> str:
     safe_name = Path(filename).name.replace(" ", "_")
     return f"recommendations/{recommendation_id}/{uuid4().hex}_{safe_name}"
@@ -506,8 +569,6 @@ async def _store_attachments(
             RecommendationAttachment(
                 recommendation_id=recommendation.id,
                 uploaded_by_user_id=uploaded_by_user_id,
-                storage_provider=storage.provider_name,
-                bucket_name=stored.bucket_name,
                 object_key=stored.object_key,
                 original_filename=item.filename,
                 content_type=stored.content_type,
@@ -554,3 +615,20 @@ def _blank_leg_value(row_id: str | int) -> dict[str, str]:
         "time_horizon": "",
         "note": "",
     }
+
+
+def _matches_instrument_query(instrument: Instrument, query: str) -> bool:
+    haystack = " ".join(
+        [
+            instrument.ticker.lower(),
+            instrument.name.lower(),
+            instrument.board.lower(),
+        ]
+    )
+    return query in haystack
+
+
+async def _search_external_instruments_stub(query: str, excluded_ids: set[str]) -> list[WatchlistCandidate]:
+    _ = query
+    _ = excluded_ids
+    return []

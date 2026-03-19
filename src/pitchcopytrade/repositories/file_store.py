@@ -13,6 +13,7 @@ class FileDataStore:
         "roles",
         "users",
         "authors",
+        "author_watchlist_instruments",
         "lead_sources",
         "instruments",
         "strategies",

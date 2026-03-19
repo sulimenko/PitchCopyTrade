@@ -128,6 +128,10 @@ def test_author_dashboard_renders(monkeypatch) -> None:
         "pitchcopytrade.api.routes.author.list_author_recommendations",
         lambda _session, _author: _async_return([recommendation]),
     )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.list_author_watchlist",
+        lambda _session, _author: _async_return([_make_instrument()]),
+    )
 
     with _build_client(author_user) as client:
         response = client.get("/author/dashboard")
@@ -136,6 +140,8 @@ def test_author_dashboard_renders(monkeypatch) -> None:
         assert "Author One" in response.text
         assert "Momentum RU" in response.text
         assert "Покупка SBER" in response.text
+        assert "Наблюдение за бумагами" in response.text
+        assert "Поиск и добавление" in response.text
 
 
 def test_author_recommendation_list_renders(monkeypatch) -> None:
@@ -154,6 +160,47 @@ def test_author_recommendation_list_renders(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Рекомендации автора" in response.text
         assert "Покупка SBER" in response.text
+
+
+def test_author_watchlist_search_returns_json(monkeypatch) -> None:
+    author_user = _make_author_user()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.search_author_watchlist_candidates",
+        lambda _repository, _author, query: _async_return(
+            [SimpleNamespace(id="instrument-2", ticker="GAZP", name="Gazprom", board="TQBR", source="catalog")]
+        ),
+    )
+
+    with _build_client(author_user) as client:
+        response = client.get("/author/watchlist/search?q=gaz")
+
+        assert response.status_code == 200
+        assert response.json()["items"][0]["ticker"] == "GAZP"
+
+
+def test_author_watchlist_add_returns_updated_list(monkeypatch) -> None:
+    author_user = _make_author_user()
+    instrument = _make_instrument()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.add_author_watchlist_instrument",
+        lambda _repository, _author, _instrument_id: _async_return(instrument),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.list_author_watchlist",
+        lambda _repository, _author: _async_return([instrument]),
+    )
+
+    with _build_client(author_user) as client:
+        response = client.post("/author/watchlist/items", data={"instrument_id": "instrument-1"})
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["added"]["ticker"] == "SBER"
+        assert payload["watchlist"][0]["id"] == "instrument-1"
 
 
 def test_author_recommendation_create_page_renders(monkeypatch) -> None:
@@ -317,7 +364,6 @@ def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
         RecommendationAttachment(
             id="att-1",
             recommendation_id="rec-1",
-            bucket_name="blob",
             object_key="recommendations/rec-1/file.pdf",
             original_filename="idea.pdf",
             content_type="application/pdf",

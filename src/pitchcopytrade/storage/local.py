@@ -12,18 +12,16 @@ from pitchcopytrade.storage.base import StorageObject
 
 
 class LocalFilesystemStorage:
-    provider_name = "local_fs"
+    provider_name = "local"
 
     def __init__(
         self,
         root_dir: str | Path | None = None,
         seed_root_dir: str | Path | None = None,
-        bucket_name: str = "blob",
     ) -> None:
         settings = get_settings()
         self.root_dir = Path(root_dir or settings.storage.blob_root)
         self.seed_root_dir = Path(seed_root_dir or settings.storage.seed_blob_root)
-        self.bucket_name = bucket_name
 
     def bootstrap(self) -> None:
         if not self.root_dir.exists() and self.seed_root_dir.exists() and self.seed_root_dir != self.root_dir:
@@ -91,7 +89,6 @@ class LocalFilesystemStorage:
         stat = target.stat()
         content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         return StorageObject(
-            bucket_name=self.bucket_name,
             object_key=self._normalize_object_key(object_key),
             content_type=content_type,
             size_bytes=stat.st_size,
@@ -109,7 +106,6 @@ class LocalFilesystemStorage:
     ) -> StorageObject:
         target = self._resolve_path(object_key)
         return StorageObject(
-            bucket_name=self.bucket_name,
             object_key=self._normalize_object_key(object_key),
             content_type=content_type,
             size_bytes=size_bytes,

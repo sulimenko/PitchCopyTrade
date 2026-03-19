@@ -173,6 +173,7 @@ class FileDatasetGraph:
             author.strategies = []
             author.subscription_products = []
             author.recommendations = []
+            author.watchlist_instruments = []
 
         instruments = {
             item["id"]: Instrument(
@@ -191,6 +192,17 @@ class FileDatasetGraph:
         }
         for instrument in instruments.values():
             instrument.recommendation_legs = []
+            instrument.watchlist_authors = []
+
+        for item in raw.get("author_watchlist_instruments", []):
+            author = authors.get(item.get("author_id"))
+            instrument = instruments.get(item.get("instrument_id"))
+            if author is None or instrument is None:
+                continue
+            if instrument not in author.watchlist_instruments:
+                author.watchlist_instruments.append(instrument)
+            if author not in instrument.watchlist_authors:
+                instrument.watchlist_authors.append(author)
 
         strategies = {
             item["id"]: Strategy(
@@ -505,8 +517,6 @@ class FileDatasetGraph:
                 id=item["id"],
                 recommendation_id=item["recommendation_id"],
                 uploaded_by_user_id=item.get("uploaded_by_user_id"),
-                storage_provider=item.get("storage_provider", "local_fs"),
-                bucket_name=item["bucket_name"],
                 object_key=item["object_key"],
                 original_filename=item["original_filename"],
                 content_type=item["content_type"],
@@ -560,6 +570,7 @@ class FileDatasetGraph:
         elif isinstance(entity, LeadSource):
             self.lead_sources[entity.id] = entity
         elif isinstance(entity, AuthorProfile):
+            entity.watchlist_instruments = list(getattr(entity, "watchlist_instruments", []) or [])
             self.authors[entity.id] = entity
         elif isinstance(entity, Strategy):
             self.strategies[entity.id] = entity
@@ -637,6 +648,7 @@ class FileDatasetGraph:
                 "roles": [self._role_record(item) for item in self.roles.values()],
                 "users": [self._user_record(item) for item in self.users.values()],
                 "authors": [self._author_record(item) for item in self.authors.values()],
+                "author_watchlist_instruments": self._author_watchlist_records(),
                 "lead_sources": [self._lead_source_record(item) for item in self.lead_sources.values()],
                 "instruments": [self._instrument_record(item) for item in self.instruments.values()],
                 "strategies": [self._strategy_record(item) for item in self.strategies.values()],
@@ -733,6 +745,21 @@ class FileDatasetGraph:
             "utm_campaign": entity.utm_campaign,
             "utm_content": entity.utm_content,
         }
+
+    def _author_watchlist_records(self) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for author in self.authors.values():
+            for instrument in sorted(
+                getattr(author, "watchlist_instruments", []) or [],
+                key=lambda item: item.ticker.lower(),
+            ):
+                records.append(
+                    {
+                        "author_id": author.id,
+                        "instrument_id": instrument.id,
+                    }
+                )
+        return records
 
     def _instrument_record(self, entity: Instrument) -> dict[str, Any]:
         return self._base_record(entity) | {
@@ -909,8 +936,6 @@ class FileDatasetGraph:
         return self._base_record(entity) | {
             "recommendation_id": entity.recommendation_id,
             "uploaded_by_user_id": entity.uploaded_by_user_id,
-            "storage_provider": entity.storage_provider,
-            "bucket_name": entity.bucket_name,
             "object_key": entity.object_key,
             "original_filename": entity.original_filename,
             "content_type": entity.content_type,

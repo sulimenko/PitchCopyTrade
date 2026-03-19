@@ -7,13 +7,22 @@
     {{ error }}
   </div>
   {% endif %}
+  {% if not telegram_https_ready %}
+  <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;line-height:1.5;">
+    Telegram Login Widget работает только через HTTPS. Проверьте `BASE_URL` и серверный TLS.
+  </div>
+  {% endif %}
   <div class="brand-mark" style="margin:0 auto 24px;width:64px;height:64px;font-size:1.1rem;">PC</div>
   <h2 style="margin:0 0 28px;font-size:1.6rem;">PitchCopyTrade</h2>
   <script async src="https://telegram.org/js/telegram-widget.js?22"
     data-telegram-login="{{ bot_username }}"
     data-size="large"
-    data-auth-url="/auth/telegram/callback"
+    data-auth-url="{{ telegram_auth_url }}"
     data-request-access="write">
   </script>
+  <div class="muted" style="margin-top:24px;line-height:1.65;font-size:0.95rem;">
+    Для работы входа через Telegram у бота в <strong>@BotFather</strong> должен быть установлен домен
+    <strong>{{ telegram_login_domain }}</strong> через команду <code>/setdomain</code>.
+  </div>
 </section>
 {% endblock %}

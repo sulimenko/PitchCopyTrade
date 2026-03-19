@@ -78,8 +78,6 @@ class RecommendationAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     recommendation_id: Mapped[str] = mapped_column(ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False)
     uploaded_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    storage_provider: Mapped[str] = mapped_column(String(32), default="minio")
-    bucket_name: Mapped[str] = mapped_column(String(120), nullable=False)
     object_key: Mapped[str] = mapped_column(String(500), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)

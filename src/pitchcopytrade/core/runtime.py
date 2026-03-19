@@ -31,11 +31,8 @@ def validate_runtime_settings(settings: Settings, service_name: str) -> None:
         if _is_placeholder(settings.tinkoff_secret_key):
             missing.append("TINKOFF_SECRET_KEY")
 
-    if settings.app_data_mode == "db":
-        if not settings.database_url:
-            missing.append("DATABASE_URL")
-        if _is_placeholder(settings.minio_root_password):
-            missing.append("MINIO_ROOT_PASSWORD")
+    if settings.app_data_mode == "db" and not settings.database_url:
+        missing.append("DATABASE_URL")
 
     if missing:
         vars_joined = ", ".join(sorted(set(missing)))

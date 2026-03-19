@@ -1,6 +1,6 @@
 # PitchCopyTrade — Чеклист код-ревью
 > Версия: 0.2.0
-> Обновлено: 2026-03-18
+> Обновлено: 2026-03-19
 > Использовать на каждом PR перед merge
 
 ---
@@ -11,6 +11,7 @@
 - [x] Нет интерполяции строк в SQL — только SQLAlchemy bound params
 - [x] HMAC-SHA256 Telegram проверяется на каждом auth callback (`auth_date` < 5 мин)
 - [x] Подпись `initData` Telegram Mini App проверяется перед доверием identity
+- [x] Домен Telegram Login Widget задан через `@BotFather /setdomain` и совпадает с host из `BASE_URL`
 - [x] `X-Internal-Token` проверяется на `/internal/broadcast` — жёсткая блокировка без него
 - [x] JWT: HttpOnly + Secure + SameSite=Strict, срок ≤ 24ч
 - [x] Никаких секретов (токенов, паролей, ключей) в коммитах и логах
@@ -47,7 +48,7 @@
 - [x] Дублированная публикация предотвращена (статус должен быть `draft` для публикации)
 
 ### Инструменты
-- [x] Инструменты засеяны из `doc/instruments_stub.json` при старте (upsert по ticker)
+- [x] Инструменты засеяны из `storage/seed/json/instruments.json` при старте (upsert по ticker)
 - [x] `GET /api/instruments` возвращает только `is_active=True`
 - [x] Поиск тикера нечувствителен к регистру
 - [x] Поля `last_price` и `change_pct` присутствуют в ответе (stub-значения OK)
@@ -88,11 +89,13 @@
 - [x] Все новые config-значения добавлены в `core/config.py` с типами и дефолтами
 - [x] Новые env-переменные задокументированы в README
 - [x] Нет захардкоженных URL, портов, секретов
+- [x] В проекте не осталось `MINIO_*` env variables и MinIO-specific config sections
 
 ### Тесты
 - [x] Каждый новый маршрут имеет хотя бы один тест
 - [x] Тест ACL: неавторизованный доступ возвращает 401/403
 - [x] Happy path тест: корректные данные возвращают ожидаемый ответ
+- [x] После удаления MinIO есть regression-test, что storage contract остался только local-files-only
 
 ---
 
@@ -105,9 +108,10 @@
 - [x] One Pager — HTML в `Strategy.full_description`, рендерится на сервере
 - [x] Подтверждение платежа — ручное (действие админа), без автоматических вызовов платёжного API
 - [x] Роль Модератора: enum есть, UI нет, проверок нет, `requires_moderation=False`
-- [x] MinIO: инфраструктура поднята, маршруты загрузки не реализованы в MVP
+- [x] В продукте не осталось MinIO-инфраструктуры, MinIO-библиотеки и legacy storage fallback
 - [x] Режим бота: `TELEGRAM_USE_WEBHOOK=true` в production, `false` в local dev
-- [x] Инструменты: только из `instruments_stub.json` — никаких live market API вызовов в MVP
+- [x] Инструменты: только из `storage/seed/json/instruments.json` — никаких live market API вызовов в MVP
+- [x] Для каждого автора есть персональный watchlist, который предзаполняется активными инструментами и расширяется inline из author dashboard
 
 ---
 
@@ -136,3 +140,10 @@ PR может быть merged только когда все P0 и P1 — Pass.
 `bot/main.py:29` использовал `token != secret` для проверки `X-Internal-Token`.
 Заменено на `hmac.compare_digest(token, secret)`.
 Все остальные проверки HMAC в кодовой базе уже используют `compare_digest` корректно.
+
+### Следующий обязательный cleanup
+
+**[P1] Чистая миграция storage и БД**
+- перед `deploy/migrate.sh --reset` запускать `scripts/clean_storage.sh --apply --fresh-runtime`;
+- не переносить старые blob/json layout-и вручную;
+- считать `storage/seed/*` и `storage/runtime/*` единственным поддерживаемым storage tree.

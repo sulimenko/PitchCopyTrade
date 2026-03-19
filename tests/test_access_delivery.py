@@ -232,8 +232,6 @@ def _make_recommendation() -> Recommendation:
     attachment = RecommendationAttachment(
         id="att-1",
         recommendation_id="rec-1",
-        storage_provider="minio",
-        bucket_name="uploads",
         object_key="recommendations/rec-1/file.pdf",
         original_filename="idea.pdf",
         content_type="application/pdf",
@@ -344,9 +342,6 @@ def test_recommendation_attachment_download(monkeypatch) -> None:
     recommendation = _make_recommendation()
 
     class DummyStorage:
-        def __init__(self, bucket_name=None):
-            self.bucket_name = bucket_name
-
         def download_bytes(self, object_key: str) -> bytes:
             assert object_key == "recommendations/rec-1/file.pdf"
             return b"%PDF-1.4"
@@ -355,7 +350,7 @@ def test_recommendation_attachment_download(monkeypatch) -> None:
         "pitchcopytrade.api.routes.app.get_user_visible_recommendation",
         lambda _repository, user_id, recommendation_id: _async_return(recommendation),
     )
-    monkeypatch.setattr("pitchcopytrade.api.routes.app.MinioStorage", DummyStorage)
+    monkeypatch.setattr("pitchcopytrade.api.routes.app.LocalFilesystemStorage", DummyStorage)
 
     with _build_client(user) as client:
         response = client.get("/app/recommendations/rec-1/attachments/att-1")
@@ -363,6 +358,27 @@ def test_recommendation_attachment_download(monkeypatch) -> None:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("application/pdf")
         assert "idea.pdf" in response.headers["content-disposition"]
+
+
+def test_recommendation_attachment_download_returns_404_for_missing_local_file(monkeypatch) -> None:
+    user = _make_user()
+    recommendation = _make_recommendation()
+
+    class DummyStorage:
+        def download_bytes(self, object_key: str) -> bytes:
+            raise FileNotFoundError(object_key)
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_user_visible_recommendation",
+        lambda _repository, user_id, recommendation_id: _async_return(recommendation),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.app.LocalFilesystemStorage", DummyStorage)
+
+    with _build_client(user) as client:
+        response = client.get("/app/recommendations/rec-1/attachments/att-1")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Attachment file not found"
 
 
 def test_app_payment_detail_renders_actions(monkeypatch) -> None:
@@ -620,13 +636,8 @@ def test_app_timeline_renders_items(monkeypatch) -> None:
 def test_recommendation_attachment_download_from_local_storage(monkeypatch) -> None:
     user = _make_user()
     recommendation = _make_recommendation()
-    recommendation.attachments[0].storage_provider = "local_fs"
-    recommendation.attachments[0].bucket_name = "blob"
 
     class DummyLocalStorage:
-        def __init__(self, bucket_name=None):
-            self.bucket_name = bucket_name
-
         def download_bytes(self, object_key: str) -> bytes:
             assert object_key == "recommendations/rec-1/file.pdf"
             return b"%PDF-local"

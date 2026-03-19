@@ -13,7 +13,7 @@ from pitchcopytrade.db.models.enums import InstrumentType
 
 logger = logging.getLogger(__name__)
 
-_STUB_PATH = Path(__file__).parents[5] / "doc" / "instruments_stub.json"
+_SEED_PATH = Path(__file__).parents[5] / "storage" / "seed" / "json" / "instruments.json"
 
 
 async def seed_instruments(session: AsyncSession) -> int:
@@ -23,8 +23,7 @@ async def seed_instruments(session: AsyncSession) -> int:
         logger.info("Instruments already seeded (%d rows), skipping", existing_count)
         return 0
 
-    data = json.loads(_STUB_PATH.read_text(encoding="utf-8"))
-    instruments = data.get("instruments", [])
+    instruments = json.loads(_SEED_PATH.read_text(encoding="utf-8"))
 
     seeded = 0
     for item in instruments:

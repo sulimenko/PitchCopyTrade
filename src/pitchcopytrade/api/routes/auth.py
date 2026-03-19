@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
+from urllib.parse import urlparse
 
 from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.deps.repositories import get_auth_repository
@@ -76,7 +77,7 @@ async def telegram_widget_callback(
         return templates.TemplateResponse(
             request,
             "auth/login.html",
-            {"title": "Вход", "error": "Ошибка авторизации Telegram"},
+            _build_login_template_context(title="Вход", error="Ошибка авторизации Telegram"),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
@@ -90,7 +91,7 @@ async def telegram_widget_callback(
         return templates.TemplateResponse(
             request,
             "auth/login.html",
-            {"title": "Вход", "error": "Пользователь не найден"},
+            _build_login_template_context(title="Вход", error="Пользователь не найден"),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
@@ -122,12 +123,7 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
     return templates.TemplateResponse(
         request,
         "auth/login.html",
-        {
-            "title": "Вход в PitchCopyTrade",
-            "error": None,
-            "identity": "",
-            "bot_username": get_settings().telegram.bot_username,
-        },
+        _build_login_template_context(title="Вход в PitchCopyTrade"),
     )
 
 
@@ -143,12 +139,11 @@ async def login_submit(
         return templates.TemplateResponse(
             request,
             "auth/login.html",
-            {
-                "title": "Вход в PitchCopyTrade",
-                "error": "Неверный логин или пароль",
-                "identity": identity.strip(),
-                "bot_username": get_settings().telegram.bot_username,
-            },
+            _build_login_template_context(
+                title="Вход в PitchCopyTrade",
+                error="Неверный логин или пароль",
+                identity=identity.strip(),
+            ),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
@@ -311,6 +306,22 @@ def _sanitize_subscriber_next_path(next_path: str | None) -> str:
     if not next_path.startswith("/") or next_path.startswith("//"):
         return "/app/status"
     return next_path
+
+
+def _build_login_template_context(*, title: str, error: str | None = None, identity: str = "") -> dict[str, object]:
+    settings = get_settings()
+    base_url = settings.app.base_url.rstrip("/")
+    parsed = urlparse(base_url)
+    login_domain = parsed.hostname or ""
+    return {
+        "title": title,
+        "error": error,
+        "identity": identity,
+        "bot_username": settings.telegram.bot_username,
+        "telegram_auth_url": f"{base_url}/auth/telegram/callback",
+        "telegram_login_domain": login_domain,
+        "telegram_https_ready": parsed.scheme == "https",
+    }
 
 
 async def _require_authenticated_user(request: Request, repository: AuthRepository):
