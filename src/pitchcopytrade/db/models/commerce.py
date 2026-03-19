@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, Enum as SqlEnum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from pitchcopytrade.db.models.enums import LegalDocumentType, PaymentProvider, PaymentStatus, SubscriptionStatus
+from pitchcopytrade.db.models.enums import LegalDocumentType, PaymentProvider, PaymentStatus, SubscriptionStatus, sql_enum
 
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.accounts import User
@@ -47,12 +47,12 @@ class Payment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     product_id: Mapped[str] = mapped_column(ForeignKey("subscription_products.id", ondelete="RESTRICT"), nullable=False)
     promo_code_id: Mapped[str | None] = mapped_column(ForeignKey("promo_codes.id", ondelete="SET NULL"), nullable=True)
     provider: Mapped[PaymentProvider] = mapped_column(
-        SqlEnum(PaymentProvider, name="payment_provider"),
+        sql_enum(PaymentProvider, name="payment_provider"),
         default=PaymentProvider.STUB_MANUAL,
         nullable=False,
     )
     status: Mapped[PaymentStatus] = mapped_column(
-        SqlEnum(PaymentStatus, name="payment_status"),
+        sql_enum(PaymentStatus, name="payment_status"),
         default=PaymentStatus.CREATED,
         nullable=False,
     )
@@ -86,7 +86,7 @@ class Subscription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     lead_source_id: Mapped[str | None] = mapped_column(ForeignKey("lead_sources.id", ondelete="SET NULL"), nullable=True)
     applied_promo_code_id: Mapped[str | None] = mapped_column(ForeignKey("promo_codes.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[SubscriptionStatus] = mapped_column(
-        SqlEnum(SubscriptionStatus, name="subscription_status"),
+        sql_enum(SubscriptionStatus, name="subscription_status"),
         default=SubscriptionStatus.PENDING,
         nullable=False,
     )
@@ -108,7 +108,7 @@ class LegalDocument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (UniqueConstraint("document_type", "version", name="uq_legal_documents_document_type_version"),)
 
     document_type: Mapped[LegalDocumentType] = mapped_column(
-        SqlEnum(LegalDocumentType, name="legal_document_type"),
+        sql_enum(LegalDocumentType, name="legal_document_type"),
         nullable=False,
     )
     version: Mapped[str] = mapped_column(String(50), nullable=False)

@@ -47,6 +47,24 @@
 | Автор | `AuthorProfile`, связанный с `User` | |
 | Тикер | `Instrument.ticker` | Например: SBER, GAZP |
 
+## 2.1 Контракт enum-типов БД
+
+Все `str Enum` в SQLAlchemy/PostgreSQL должны сериализоваться через `.value`, а не через имя элемента enum.
+
+Правильно:
+- `active`
+- `pending`
+- `admin`
+- `buy`
+
+Неправильно:
+- `ACTIVE`
+- `PENDING`
+- `ADMIN`
+- `BUY`
+
+Новые enum-поля в моделях добавлять только через единый helper `sql_enum(...)`. Если PostgreSQL-схема была поднята до этого правила и уже содержит uppercase labels, schema drift нужно исправлять миграцией или пересозданием enum-типов.
+
 ---
 
 ## 3. Компоненты системы

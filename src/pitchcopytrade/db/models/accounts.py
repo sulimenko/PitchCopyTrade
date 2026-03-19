@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Column, Enum as SqlEnum, ForeignKey, String, Table, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Column, ForeignKey, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from pitchcopytrade.db.models.enums import RoleSlug, UserStatus
+from pitchcopytrade.db.models.enums import RoleSlug, UserStatus, sql_enum
 
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.audit import AuditEvent
@@ -34,7 +34,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[UserStatus] = mapped_column(SqlEnum(UserStatus, name="user_status"), default=UserStatus.ACTIVE)
+    status: Mapped[UserStatus] = mapped_column(sql_enum(UserStatus, name="user_status"), default=UserStatus.ACTIVE)
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Moscow")
     lead_source_id: Mapped[str | None] = mapped_column(ForeignKey("lead_sources.id", ondelete="SET NULL"), nullable=True)
 
@@ -52,7 +52,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class Role(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "roles"
 
-    slug: Mapped[RoleSlug] = mapped_column(SqlEnum(RoleSlug, name="role_slug"), unique=True, nullable=False)
+    slug: Mapped[RoleSlug] = mapped_column(sql_enum(RoleSlug, name="role_slug"), unique=True, nullable=False)
     title: Mapped[str] = mapped_column(String(120), nullable=False)
 
     users: Mapped[list[User]] = relationship(secondary=user_roles, back_populates="roles")

@@ -1,5 +1,7 @@
 from enum import Enum
 
+from sqlalchemy import Enum as SqlEnum
+
 
 class RoleSlug(str, Enum):
     ADMIN = "admin"
@@ -101,3 +103,15 @@ class LegalDocumentType(str, Enum):
 
 class InstrumentType(str, Enum):
     EQUITY = "equity"
+
+
+def enum_values(enum_cls: type[Enum]) -> list[str]:
+    return [str(item.value) for item in enum_cls]
+
+
+def sql_enum(enum_cls: type[Enum], *, name: str) -> SqlEnum:
+    return SqlEnum(
+        enum_cls,
+        name=name,
+        values_callable=enum_values,
+    )

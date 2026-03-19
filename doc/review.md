@@ -65,6 +65,7 @@
 - [x] Миграция обратима (`downgrade` реализован)
 - [x] Нет `CREATE TABLE` в коде приложения — только через миграции
 - [x] `Base.metadata` включает все модели до запуска `env.py`
+- [x] Все PostgreSQL enum-поля используют `.value` (`active`, `pending`, `admin`), а не uppercase names (`ACTIVE`, `PENDING`, `ADMIN`)
 
 ---
 

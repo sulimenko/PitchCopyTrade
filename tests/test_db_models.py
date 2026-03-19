@@ -4,10 +4,11 @@ from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import configure_mappers
 
 from pitchcopytrade.db.models import Base
-from pitchcopytrade.db.models.accounts import AuthorProfile, User
+from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Bundle, LeadSource, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
+from pitchcopytrade.db.models.notification_log import NotificationLog
 
 
 def test_metadata_contains_required_foundation_tables() -> None:
@@ -80,3 +81,28 @@ def test_relationships_support_acl_and_multi_author_content() -> None:
     assert SubscriptionProduct.bundle.property.mapper.class_ is Bundle
     assert Recommendation.author.property.mapper.class_ is AuthorProfile
     assert RecommendationLeg.recommendation.property.mapper.class_ is Recommendation
+
+
+def test_sqlalchemy_enums_persist_enum_values_not_names() -> None:
+    assert User.__table__.c.status.type.enums == ["invited", "active", "blocked"]
+    assert Role.__table__.c.slug.type.enums == ["admin", "author", "moderator"]
+    assert Payment.__table__.c.status.type.enums == [
+        "created",
+        "pending",
+        "paid",
+        "failed",
+        "expired",
+        "cancelled",
+        "refunded",
+    ]
+    assert Subscription.__table__.c.status.type.enums == [
+        "pending",
+        "trial",
+        "active",
+        "expired",
+        "cancelled",
+        "blocked",
+    ]
+    assert Recommendation.__table__.c.kind.type.enums == ["new_idea", "update", "close", "cancel"]
+    assert RecommendationLeg.__table__.c.side.type.enums == ["buy", "sell"]
+    assert NotificationLog.__table__.c.channel.type.enums == ["telegram", "email"]

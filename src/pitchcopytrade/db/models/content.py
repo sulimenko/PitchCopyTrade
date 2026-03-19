@@ -4,11 +4,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Enum as SqlEnum, ForeignKey, Numeric, String, Text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, TradeSide
+from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, TradeSide, sql_enum
 
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.accounts import AuthorProfile, User
@@ -22,11 +22,11 @@ class Recommendation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     author_id: Mapped[str] = mapped_column(ForeignKey("author_profiles.id", ondelete="CASCADE"), nullable=False)
     moderated_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     kind: Mapped[RecommendationKind] = mapped_column(
-        SqlEnum(RecommendationKind, name="recommendation_kind"),
+        sql_enum(RecommendationKind, name="recommendation_kind"),
         nullable=False,
     )
     status: Mapped[RecommendationStatus] = mapped_column(
-        SqlEnum(RecommendationStatus, name="recommendation_status"),
+        sql_enum(RecommendationStatus, name="recommendation_status"),
         default=RecommendationStatus.DRAFT,
         nullable=False,
     )
@@ -56,7 +56,7 @@ class RecommendationLeg(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     recommendation_id: Mapped[str] = mapped_column(ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False)
     instrument_id: Mapped[str | None] = mapped_column(ForeignKey("instruments.id", ondelete="SET NULL"), nullable=True)
-    side: Mapped[TradeSide | None] = mapped_column(SqlEnum(TradeSide, name="trade_side"), nullable=True)
+    side: Mapped[TradeSide | None] = mapped_column(sql_enum(TradeSide, name="trade_side"), nullable=True)
     entry_from: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     entry_to: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     stop_loss: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)

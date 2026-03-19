@@ -24,6 +24,7 @@
 - [x] Начальная схема БД + Alembic миграция (18 таблиц)
 - [x] MinIO storage adapter
 - [x] Тестовый фреймворк (pytest-asyncio, httpx)
+- [x] Единый helper `sql_enum(...)` для сериализации PostgreSQL enum через `.value`, а не через uppercase names
 
 ---
 

@@ -4,10 +4,11 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, ForeignKey, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from pitchcopytrade.db.models.enums import sql_enum
 
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.accounts import User
@@ -29,7 +30,7 @@ class NotificationLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     channel: Mapped[NotificationChannelEnum] = mapped_column(
-        SqlEnum(NotificationChannelEnum, name="notification_channel"), nullable=False
+        sql_enum(NotificationChannelEnum, name="notification_channel"), nullable=False
     )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=False)

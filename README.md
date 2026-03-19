@@ -250,6 +250,11 @@ legal_document_type     — disclaimer | offer | privacy_policy | payment_consen
 notification_channel    — telegram | email
 ```
 
+Важно:
+- SQLAlchemy enum-поля обязаны писать в PostgreSQL именно `.value`, а не uppercase имена enum-элементов;
+- допустимые значения в БД: `active`, `pending`, `admin`, `buy`, а не `ACTIVE`, `PENDING`, `ADMIN`, `BUY`;
+- если PostgreSQL-схема была создана до этого фикса и enum-типы уже содержат uppercase labels, их нужно пересоздать или мигрировать до текущего контракта.
+
 ---
 
 ### Проверить состояние БД
