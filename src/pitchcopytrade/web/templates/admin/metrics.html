@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <a href="/admin/dashboard" class="action ghost">Дашборд</a>
@@ -27,7 +27,7 @@
   {% if metrics.strategy_stats %}
   <section class="surface" style="padding:24px;border-radius:24px;">
     <h3 style="margin:0 0 16px;">Подписчики по стратегиям</h3>
-    <table style="width:100%;border-collapse:collapse;">
+    <table class="staff-grid" data-ag-grid-auto="true" style="width:100%;border-collapse:collapse;">
       <thead>
         <tr style="border-bottom:2px solid var(--line);">
           <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Стратегия</th>

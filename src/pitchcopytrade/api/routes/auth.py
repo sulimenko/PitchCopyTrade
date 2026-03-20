@@ -76,7 +76,19 @@ async def telegram_widget_callback(
     if user is not None and user.status != UserStatus.ACTIVE:
         user = None
     if invite_token:
-        bound_user = await _bind_staff_user_by_invite_token(repository, invite_token, telegram_user_id)
+        try:
+            bound_user = await _bind_staff_user_by_invite_token(repository, invite_token, telegram_user_id)
+        except ValueError as exc:
+            return templates.TemplateResponse(
+                request,
+                "auth/login.html",
+                _build_login_template_context(
+                    title="Вход в PitchCopyTrade",
+                    error=str(exc),
+                    invite_token=invite_token,
+                ),
+                status_code=status.HTTP_409_CONFLICT,
+            )
         if bound_user is not None:
             user = bound_user
     if user is None:
@@ -344,6 +356,7 @@ def _build_login_template_context(
         "error": error,
         "identity": identity,
         "invite_token": invite_token,
+        "is_staff_invite": bool(invite_token),
         "bot_username": settings.telegram.bot_username,
         "telegram_auth_url": telegram_auth_url,
         "telegram_login_domain": login_domain,
@@ -375,6 +388,9 @@ async def _bind_staff_user_by_invite_token(
     invited_user = await get_user_from_staff_invite_token(repository, invite_token)
     if invited_user is None:
         return None
+    existing_user = await repository.get_user_by_telegram_id(telegram_user_id)
+    if existing_user is not None and existing_user.id != invited_user.id:
+        raise ValueError("Этот Telegram-аккаунт уже привязан к другому сотруднику.")
     if invited_user.telegram_user_id not in (None, telegram_user_id):
         return None
     invited_user.telegram_user_id = telegram_user_id

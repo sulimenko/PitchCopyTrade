@@ -20,6 +20,7 @@ from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode,
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
+    InviteDeliveryStatus,
     InstrumentType,
     LegalDocumentType,
     LeadSourceType,
@@ -133,6 +134,10 @@ class FileDatasetGraph:
                 full_name=item.get("full_name"),
                 password_hash=item.get("password_hash"),
                 status=_enum(UserStatus, item.get("status"), UserStatus.ACTIVE),
+                invite_token_version=item.get("invite_token_version", 1),
+                invite_delivery_status=_enum(InviteDeliveryStatus, item.get("invite_delivery_status"), None),
+                invite_delivery_error=item.get("invite_delivery_error"),
+                invite_delivery_updated_at=_parse_datetime(item.get("invite_delivery_updated_at")),
                 timezone=item.get("timezone", "Europe/Moscow"),
                 lead_source_id=item.get("lead_source_id"),
                 created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
@@ -718,6 +723,10 @@ class FileDatasetGraph:
             "full_name": entity.full_name,
             "password_hash": entity.password_hash,
             "status": entity.status.value,
+            "invite_token_version": entity.invite_token_version,
+            "invite_delivery_status": entity.invite_delivery_status.value if entity.invite_delivery_status is not None else None,
+            "invite_delivery_error": entity.invite_delivery_error,
+            "invite_delivery_updated_at": _serialize_datetime(entity.invite_delivery_updated_at),
             "timezone": entity.timezone,
             "lead_source_id": entity.lead_source_id or (
                 entity.lead_source.id if getattr(entity, "lead_source", None) is not None else None

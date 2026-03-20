@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -9,14 +9,14 @@
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">moderation detail</div>
+  <div class="eyebrow">детали модерации</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
     <div style="max-width:820px;">
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">{{ recommendation.title or recommendation.strategy.title }}</h1>
-      <p class="muted" style="margin:16px 0 0;line-height:1.7;">{{ recommendation.summary or recommendation.thesis or "Без summary" }}</p>
+      <p class="muted" style="margin:16px 0 0;line-height:1.7;">{{ recommendation.summary or recommendation.thesis or "Без краткого описания" }}</p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ recommendation.status.value }}</span>
+      <span class="pill">{% if recommendation.status.value == "review" %}на модерации{% elif recommendation.status.value == "scheduled" %}запланировано{% elif recommendation.status.value == "published" %}опубликовано{% else %}{{ recommendation.status.value }}{% endif %}</span>
       <span class="pill">{{ recommendation.kind.value }}</span>
       <span class="pill">{{ recommendation.author.display_name }}</span>
     </div>
@@ -25,18 +25,18 @@
 
 <section style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,0.9fr);gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">content</div>
+    <div class="eyebrow">контент</div>
     <h2 style="margin:10px 0 14px;font-size:1.5rem;">Что увидит подписчик</h2>
     <div class="muted" style="line-height:1.7;">{{ recommendation.thesis or recommendation.market_context or "Дополнительного контекста пока нет." }}</div>
     {% if recommendation.legs %}
-    <div class="eyebrow" style="margin-top:24px;">legs</div>
+    <div class="eyebrow" style="margin-top:24px;">позиции</div>
     <div style="display:grid;gap:12px;margin-top:12px;">
       {% for leg in recommendation.legs %}
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>{{ leg.instrument.ticker if leg.instrument else "Инструмент" }}</strong>
         <div class="muted" style="margin-top:8px;line-height:1.6;">
-          {{ leg.side.value if leg.side else "n/a" }} · entry {{ leg.entry_from or "n/a" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %}
-          · stop {{ leg.stop_loss or "n/a" }}
+          {{ leg.side.value if leg.side else "не указано" }} · вход {{ leg.entry_from or "не указано" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %}
+          · стоп {{ leg.stop_loss or "не указано" }}
           {% if leg.take_profit_1 %} · tp1 {{ leg.take_profit_1 }}{% endif %}
           {% if leg.take_profit_2 %} · tp2 {{ leg.take_profit_2 }}{% endif %}
           {% if leg.take_profit_3 %} · tp3 {{ leg.take_profit_3 }}{% endif %}
@@ -48,30 +48,30 @@
   </article>
 
   <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">decision</div>
+    <div class="eyebrow">решение</div>
     <div style="display:grid;gap:14px;margin-top:12px;">
       <form method="post" action="/moderation/recommendations/{{ recommendation.id }}/approve" style="display:grid;gap:10px;">
-        <textarea name="comment" rows="3" placeholder="Комментарий к approve (опционально)" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;"></textarea>
-        <button class="action" type="submit">Approve</button>
+        <textarea name="comment" rows="3" placeholder="Комментарий к одобрению (необязательно)" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;"></textarea>
+        <button class="action" type="submit">Одобрить</button>
       </form>
       <form method="post" action="/moderation/recommendations/{{ recommendation.id }}/rework" style="display:grid;gap:10px;">
         <textarea name="comment" rows="3" placeholder="Что нужно доработать" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;" required></textarea>
-        <button class="action ghost" type="submit">Send to rework</button>
+        <button class="action ghost" type="submit">Вернуть на доработку</button>
       </form>
       <form method="post" action="/moderation/recommendations/{{ recommendation.id }}/reject" style="display:grid;gap:10px;">
         <textarea name="comment" rows="3" placeholder="Причина отклонения" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;" required></textarea>
-        <button class="action ghost" type="submit" style="border-color:rgba(191,23,54,0.25);color:var(--red-600);">Reject</button>
+        <button class="action ghost" type="submit" style="border-color:rgba(191,23,54,0.25);color:var(--red-600);">Отклонить</button>
       </form>
     </div>
     <div style="display:grid;gap:10px;margin-top:20px;">
       <div><strong>Стратегия:</strong> <span class="muted">{{ recommendation.strategy.title }}</span></div>
       <div><strong>Вложений:</strong> <span class="muted">{{ recommendation.attachments|length }}</span></div>
       <div><strong>Комментарий модерации:</strong> <span class="muted">{{ recommendation.moderation_comment or "пока нет" }}</span></div>
-      <div><strong>SLA:</strong> <span class="muted">{{ metrics.sla_state }}</span></div>
-      <div><strong>Latency:</strong> <span class="muted">{{ metrics.resolution_hours if metrics.resolution_hours is not none else "n/a" }} h</span></div>
+      <div><strong>Контроль SLA:</strong> <span class="muted">{{ metrics.sla_state }}</span></div>
+      <div><strong>Задержка:</strong> <span class="muted">{{ metrics.resolution_hours if metrics.resolution_hours is not none else "не указана" }} ч</span></div>
     </div>
 
-    <div class="eyebrow" style="margin-top:22px;">history</div>
+    <div class="eyebrow" style="margin-top:22px;">история</div>
     <div style="display:grid;gap:10px;margin-top:12px;">
       {% for event in history %}
       <div class="surface" style="padding:14px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">

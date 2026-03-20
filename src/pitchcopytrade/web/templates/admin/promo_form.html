@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -10,7 +10,7 @@
 
 {% block content %}
 <section class="surface" style="padding:28px 28px 22px;">
-  <div class="eyebrow">promo editor</div>
+  <div class="eyebrow">редактор промокода</div>
   <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.95;letter-spacing:-0.05em;">
     {{ "Карточка промокода" if promo_code else "Новый промокод" }}
   </h1>
@@ -42,15 +42,15 @@
     </label>
     <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;">
       <label style="display:grid;gap:8px;">
-        <strong>Discount %</strong>
+        <strong>Скидка, %</strong>
         <input type="number" name="discount_percent" min="1" max="100" value="{{ form_values.discount_percent or '' }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
       <label style="display:grid;gap:8px;">
-        <strong>Discount RUB</strong>
+        <strong>Скидка, руб</strong>
         <input type="number" name="discount_amount_rub" min="0" value="{{ form_values.discount_amount_rub or '' }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
       <label style="display:grid;gap:8px;">
-        <strong>Expires at</strong>
+        <strong>Истекает</strong>
         <input type="datetime-local" name="expires_at" value="{{ form_values.expires_at or '' }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
     </div>
@@ -65,7 +65,7 @@
   </form>
 
   <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">promo summary</div>
+    <div class="eyebrow">сводка промокода</div>
     <h2 style="margin:10px 0 14px;font-size:1.45rem;">Текущая карточка</h2>
     {% if promo_code %}
     <div style="display:grid;gap:12px;">

@@ -1,0 +1,52 @@
+.pct-ag-grid-shell {
+  border: 1px solid var(--staff-line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--staff-surface);
+  box-shadow: var(--staff-shadow);
+}
+
+.pct-ag-theme.ag-theme-quartz {
+  --ag-font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --ag-font-size: 13px;
+  --ag-grid-size: 6px;
+  --ag-list-item-height: 28px;
+  --ag-row-height: 30px;
+  --ag-header-height: 32px;
+  --ag-border-color: #d7dee7;
+  --ag-secondary-border-color: #e6ebf1;
+  --ag-background-color: #ffffff;
+  --ag-odd-row-background-color: #fcfdff;
+  --ag-header-background-color: #f7f9fb;
+  --ag-header-foreground-color: #667487;
+  --ag-foreground-color: #18212b;
+  --ag-data-color: #18212b;
+  --ag-selected-row-background-color: #e9f1fb;
+  --ag-range-selection-border-color: #224a7a;
+  --ag-accent-color: #224a7a;
+  --ag-input-focus-border-color: #224a7a;
+  --ag-checkbox-checked-color: #224a7a;
+  --ag-wrapper-border-radius: 0;
+  --ag-cell-horizontal-padding: 10px;
+  --ag-header-column-resize-handle-color: #c7d0db;
+}
+
+.pct-ag-theme .ag-root-wrapper {
+  border: 0;
+  border-radius: 0;
+}
+
+.pct-ag-theme .ag-header-cell,
+.pct-ag-theme .ag-cell {
+  align-content: center;
+}
+
+.pct-ag-theme .ag-header-cell-text {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pct-ag-theme .ag-row:hover .ag-cell {
+  background: #fbfdff;
+}

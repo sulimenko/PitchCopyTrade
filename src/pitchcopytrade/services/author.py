@@ -151,6 +151,8 @@ async def update_author_strategy(
     strategy: Strategy,
     data: AuthorStrategyFormData,
 ) -> Strategy:
+    if strategy.status is not StrategyStatus.DRAFT:
+        raise ValueError("Редактировать можно только draft-стратегии.")
     strategy.slug = data.slug
     strategy.title = data.title
     strategy.short_description = data.short_description
@@ -181,13 +183,22 @@ async def add_author_watchlist_instrument(
     return instrument
 
 
+async def remove_author_watchlist_instrument(
+    repository: AuthorRepository,
+    author: AuthorProfile,
+    instrument_id: str,
+) -> None:
+    removed = await repository.remove_author_watchlist_instrument(author.id, instrument_id)
+    if not removed:
+        raise ValueError("Инструмент не найден в watchlist.")
+
+
 async def ensure_author_watchlist_seed(repository: AuthorRepository, author: AuthorProfile) -> list[Instrument]:
     watchlist = await repository.list_author_watchlist(author.id)
-    watchlist_ids = {item.id for item in watchlist}
+    if watchlist:
+        return watchlist
     instruments = await repository.list_active_instruments()
-    for instrument in instruments:
-        if instrument.id in watchlist_ids:
-            continue
+    for instrument in instruments[:12]:
         await repository.add_author_watchlist_instrument(author.id, instrument.id)
     return await repository.list_author_watchlist(author.id)
 
@@ -286,6 +297,8 @@ async def update_author_recommendation(
     uploaded_by_user_id: str | None = None,
     storage: StorageBackend | None = None,
 ) -> Recommendation:
+    if recommendation.status not in {RecommendationStatus.DRAFT, RecommendationStatus.REVIEW}:
+        raise ValueError("Редактировать можно только рекомендации в статусах draft или review.")
     recommendation.strategy_id = data.strategy_id
     recommendation.kind = data.kind
     recommendation.status = data.status

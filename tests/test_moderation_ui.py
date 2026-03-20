@@ -154,7 +154,7 @@ def test_moderation_detail_renders(monkeypatch) -> None:
         response = client.get("/moderation/recommendations/rec-1")
 
         assert response.status_code == 200
-        assert "Approve" in response.text
+        assert "Одобрить" in response.text
         assert "Momentum RU" in response.text
         assert "moderation.approve" in response.text
         assert "SLA:" in response.text

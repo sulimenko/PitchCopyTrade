@@ -100,10 +100,12 @@ Staff user — это один `User`.
 Invite contract:
 - invite links абсолютные, от `BASE_URL`;
 - resend инвалидирует старые invite links;
+- это должно быть реализовано не только на уровне UI, а на уровне token/bind contract;
 - failed invite delivery не отменяет создание staff user;
 - failed delivery создает log entry;
 - failed delivery отправляет email всем активным администраторам для контроля;
 - создание нового `admin` и нового `author` также отправляет контрольное письмо всем администраторам.
+- поведение по control emails должно совпадать в `db` и `file` mode.
 
 ### 4.5 `telegram_user_id`
 
@@ -112,6 +114,17 @@ Invite contract:
 - может существовать как advanced field;
 - после bind может редактироваться администратором;
 - при ручной смене сохраняется сразу, без forced re-invite.
+
+### 4.6 Hardening rules
+
+Bind по invite обязан:
+- до commit проверять, не привязан ли этот `telegram_user_id` к другому staff user;
+- завершаться контролируемой бизнес-ошибкой, а не DB `500`;
+- одинаково корректно работать в `db` и `file` mode.
+
+Invite token обязан:
+- иметь механизм отзыва старых токенов после resend;
+- не оставаться валидным просто до `exp`, если уже был выпущен новый invite.
 
 ## 5. Staff UI shell
 
@@ -138,6 +151,8 @@ Canonical staff shell:
 ### 6.1 Canonical choice
 
 Для `admin`, `author` и `moderation` canonical table layer = `AG Grid Community`.
+
+Primary staff registries не должны оставаться на handcrafted HTML tables как final contract.
 
 ### 6.2 Scope
 
@@ -183,6 +198,13 @@ Grid должен поддерживать:
 - row menu;
 - inline edit для простых полей;
 - right drawer для сложных полей и multi-step actions.
+
+Для `admin/staff` и `admin/authors` canonical CRUD contract дополнительно требует:
+- редактирование existing rows, а не только create/action forms;
+- правку `display_name`, `email`, `telegram_user_id`, ролей и статусных actions;
+- отсутствие второго параллельного handcrafted registry как fallback.
+- status column не может быть только информативной; для `staff user` нужен рабочий action flow `active/inactive`.
+- row edit не может обходить governance-ограничения отдельных actions; любые изменения ролей и статуса обязаны уважать правило последнего активного администратора.
 
 ## 7. Unified CRUD pattern
 
@@ -240,6 +262,26 @@ Grid должен поддерживать:
 - роли
 - `telegram_user_id`
 - нельзя редактировать статус свободным inline-изменением; статус меняется только через явные actions.
+
+Governance rule:
+- нельзя снять роль `admin` у последнего активного администратора ни через отдельный row action, ни через drawer edit, ни через bulk update path.
+
+### 8.1.2 Staff status actions
+
+Для `staff user` должен существовать явный operator flow:
+- `Активировать`
+- `Деактивировать`
+
+`inactive` не может оставаться только badge в grid без action path.
+
+### 8.1.1 Staff status vocabulary
+
+Product/UI vocabulary:
+- `invited`
+- `active`
+- `inactive`
+
+`blocked` не должен оставаться в canonical staff contract.
 
 ### 8.2 Author
 
@@ -318,6 +360,14 @@ Read-only:
 Pattern:
 - queue в `AG Grid`
 - detail в right drawer
+- approve/rework/reject как row actions
+
+## 9. Runtime consistency
+
+Обязательные правила текущего блока:
+- `db` и `file` mode должны одинаково поддерживать agreed onboarding/governance contract;
+- control emails администраторам не должны зависеть от выбранного storage mode;
+- review всегда проверяет не только UI, но и parity между `db` и `file` path.
 - row actions:
   - `approve`
   - `rework`

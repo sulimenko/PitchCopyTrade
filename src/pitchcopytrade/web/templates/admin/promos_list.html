@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -14,7 +14,7 @@
 <section class="surface" style="padding:28px 28px 22px;">
   <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-end;flex-wrap:wrap;">
     <div>
-      <div class="eyebrow">promo lifecycle</div>
+      <div class="eyebrow">жизненный цикл промокодов</div>
       <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.95;letter-spacing:-0.05em;">Промокоды и скидки</h1>
       <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
         Управление скидками для checkout и Mini App. Здесь админ контролирует коды, лимиты использований и срок действия.
@@ -26,57 +26,66 @@
 
 <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">active</div>
+    <div class="eyebrow">активные</div>
     <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.active }}</div>
     <div class="muted" style="margin-top:8px;">доступны для checkout</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">inactive</div>
+    <div class="eyebrow">выключенные</div>
     <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.inactive }}</div>
     <div class="muted" style="margin-top:8px;">выключены вручную</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">redemptions</div>
+    <div class="eyebrow">использования</div>
     <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.redeemed }}</div>
     <div class="muted" style="margin-top:8px;">подтвержденных использований</div>
   </article>
 </section>
 
 <section class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">promo registry</div>
+  <div class="eyebrow">реестр промокодов</div>
   <h2 style="margin:10px 0 0;font-size:1.5rem;">Реестр кодов</h2>
-  {% if promo_codes %}
-  <div style="display:grid;gap:14px;margin-top:18px;">
-    {% for promo_code in promo_codes %}
-    <a class="surface" href="/admin/promos/{{ promo_code.id }}/edit" style="padding:18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;display:block;">
-      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
-        <div>
-          <strong style="font-size:1.05rem;">{{ promo_code.code }}</strong>
-          <div class="muted" style="margin-top:8px;">{{ promo_code.description or "Описание пока не заполнено" }}</div>
-        </div>
-        <span class="pill">{{ "active" if promo_code.is_active else "inactive" }}</span>
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-        {% if promo_code.discount_percent is not none %}
-        <span class="pill">{{ promo_code.discount_percent }}%</span>
-        {% endif %}
-        {% if promo_code.discount_amount_rub is not none %}
-        <span class="pill">{{ promo_code.discount_amount_rub }} RUB</span>
-        {% endif %}
-        <span class="pill">{{ promo_code.current_redemptions }} redeemed</span>
-        {% if promo_code.max_redemptions is not none %}
-        <span class="pill">limit {{ promo_code.max_redemptions }}</span>
-        {% endif %}
-        {% if promo_code.expires_at %}
-        <span class="pill">до {{ promo_code.expires_at.strftime("%Y-%m-%d %H:%M") }}</span>
-        {% endif %}
-      </div>
-    </a>
-    {% endfor %}
+  <div class="staff-grid-shell" style="margin-top:18px;">
+    <table class="staff-grid" data-ag-grid-auto="true">
+      <thead>
+        <tr>
+          <th>Код</th>
+          <th>Статус</th>
+          <th>Скидка</th>
+          <th>Использовано</th>
+          <th>Лимит</th>
+          <th>Истекает</th>
+          <th>Открыть</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for promo_code in promo_codes %}
+        <tr>
+          <td>
+            <strong>{{ promo_code.code }}</strong>
+            <div class="muted">{{ promo_code.description or "Описание пока не заполнено" }}</div>
+          </td>
+          <td><span class="staff-badge {% if promo_code.is_active %}ok{% else %}danger{% endif %}">{{ "активен" if promo_code.is_active else "выключен" }}</span></td>
+          <td>
+            {% if promo_code.discount_percent is not none %}
+            {{ promo_code.discount_percent }}%
+            {% elif promo_code.discount_amount_rub is not none %}
+            {{ promo_code.discount_amount_rub }} руб
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td>{{ promo_code.current_redemptions }}</td>
+          <td>{{ promo_code.max_redemptions if promo_code.max_redemptions is not none else "—" }}</td>
+          <td>{{ promo_code.expires_at.strftime("%Y-%m-%d %H:%M") if promo_code.expires_at else "—" }}</td>
+          <td class="actions"><a class="ghost" href="/admin/promos/{{ promo_code.id }}/edit">Открыть</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">Промокоды пока не заведены.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
-  {% else %}
-  <p class="muted" style="margin-top:18px;">Промокоды пока не заведены.</p>
-  {% endif %}
 </section>
 
 <style>

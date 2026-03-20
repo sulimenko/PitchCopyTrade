@@ -50,11 +50,11 @@ Runtime:
 - новый staff user создается в статусе `invited`
 - staff user становится `active` только после invite/bind через Telegram
 - invite links строятся как абсолютные URL от `BASE_URL`
+- clean bootstrap через `deploy/schema.sql` обязан совпадать с runtime model
 
 Текущий gap:
-- invite email не отправляется автоматически
-- администратору приходится вручную копировать invite link
-- staff UI еще не переведен на единый compact grid layer
+- edit flow staff user обязан соблюдать ту же governance-логику, что и отдельные status/role actions
+- нельзя позволять снять роль `admin` у последнего активного администратора через drawer edit или другой bulk-update path
 
 ## UI priorities
 
@@ -93,11 +93,53 @@ Runtime:
 3. unified CRUD pattern для `admin` и `author`
 4. mutability rules по статусам
 5. быстрый onboarding staff через email invite + Telegram bind
+6. закрытие staff CRUD gaps для existing rows
 
 Подробно:
 - [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
 - [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 - [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
+
+Сейчас уже реализовано:
+- `AG Grid Community` подключен локально
+- invite token versioning и collision-check по `telegram_user_id`
+- reset schema синхронизирована с текущей staff model
+- `admin/staff` и `admin/authors` получили existing-row edit
+- `active/inactive` вынесен в явные actions
+- control emails администраторам работают в `db` и `file` mode
+
+## Staff invite email
+
+Когда письма должны отправляться:
+- при создании нового `admin`
+- при создании нового `author`
+- при `resend invite`
+- контрольное письмо всем активным администраторам при создании `admin/author`
+- контрольное письмо всем активным администраторам при ошибке отправки invite
+
+Что должно быть настроено:
+
+```dotenv
+SMTP_HOST=
+SMTP_PORT=
+SMTP_SSL=true
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM=
+SMTP_FROM_NAME=
+```
+
+Минимальные условия:
+- `SMTP_PASSWORD` не пустой и не `__FILL_ME__`
+- `SMTP_FROM` совпадает с разрешенным отправителем SMTP-сервера
+- серверу доступен SMTP host и порт
+
+Как проверить:
+1. создать нового `author` или `admin` из `/admin/authors` или `/admin/staff`
+2. убедиться, что в реестре появился badge `отправлено` или `отправлено повторно`
+3. проверить письмо у нового сотрудника
+4. проверить контрольное письмо у действующих активных администраторов
+5. если badge `ошибка отправки`, проверить текст ошибки в строке и логи `api`
 
 ## Быстрый запуск
 

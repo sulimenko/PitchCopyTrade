@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -27,44 +27,59 @@
   </div>
 </section>
 
-<section style="display:grid;gap:14px;margin-top:18px;">
-  {% for product in products %}
-  <a class="surface" href="/admin/products/{{ product.id }}/edit" style="padding:22px;display:block;">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="max-width:820px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <strong style="font-size:1.15rem;">{{ product.title }}</strong>
-          <span class="pill">{{ product.product_type.value }}</span>
-          <span class="pill">{{ product.billing_period.value }}</span>
-          {% if product.is_active %}
-          <span class="pill">активен</span>
-          {% endif %}
-          {% if product.autorenew_allowed %}
-          <span class="pill">автопродление</span>
-          {% endif %}
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ product.description or "Описание пока не заполнено" }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">{{ product.slug }}</span>
-          <span class="pill">{{ product.price_rub }} руб</span>
-          <span class="pill">{{ product.trial_days }} дней бесплатно</span>
-          {% if product.strategy %}
-          <span class="pill">{{ product.strategy.title }}</span>
-          {% elif product.author %}
-          <span class="pill">{{ product.author.display_name }}</span>
-          {% elif product.bundle %}
-          <span class="pill">{{ product.bundle.title }}</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="muted">Открыть</div>
-    </div>
-  </a>
-  {% else %}
-  <article class="surface" style="padding:24px;">
-    <strong>Продуктов пока нет</strong>
-    <p class="muted" style="line-height:1.6;margin:10px 0 0;">Создайте первый план подписки для стратегии, автора или bundle.</p>
-  </article>
-  {% endfor %}
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div class="eyebrow">реестр продуктов</div>
+  <h2 style="margin:10px 0 0;font-size:1.5rem;">Продукты</h2>
+  <div class="staff-grid-shell" style="margin-top:18px;">
+    <table class="staff-grid" data-ag-grid-auto="true">
+      <thead>
+        <tr>
+          <th>Продукт</th>
+          <th>Тип</th>
+          <th>Период</th>
+          <th>Статус</th>
+          <th>Цена</th>
+          <th>Пробный доступ</th>
+          <th>Область доступа</th>
+          <th>Открыть</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for product in products %}
+        <tr>
+          <td>
+            <strong>{{ product.title }}</strong>
+            <div class="muted">{{ product.slug }}</div>
+            <div class="muted">{{ product.description or "Описание пока не заполнено" }}</div>
+          </td>
+          <td>{{ product.product_type.value }}</td>
+          <td>{{ product.billing_period.value }}</td>
+          <td>
+            <div class="staff-inline-actions">
+              <span class="staff-badge {% if product.is_active %}ok{% else %}danger{% endif %}">{{ "активен" if product.is_active else "выключен" }}</span>
+              {% if product.autorenew_allowed %}<span class="staff-badge">автопродление</span>{% endif %}
+            </div>
+          </td>
+          <td>{{ product.price_rub }} руб</td>
+          <td>{{ product.trial_days }} дней</td>
+          <td>
+            {% if product.strategy %}
+            {{ product.strategy.title }}
+            {% elif product.author %}
+            {{ product.author.display_name }}
+            {% elif product.bundle %}
+            {{ product.bundle.title }}
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td class="actions"><a class="ghost" href="/admin/products/{{ product.id }}/edit">Открыть</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="muted">Продуктов пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

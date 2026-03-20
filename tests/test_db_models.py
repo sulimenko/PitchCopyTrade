@@ -84,7 +84,7 @@ def test_relationships_support_acl_and_multi_author_content() -> None:
 
 
 def test_sqlalchemy_enums_persist_enum_values_not_names() -> None:
-    assert User.__table__.c.status.type.enums == ["invited", "active", "blocked"]
+    assert User.__table__.c.status.type.enums == ["invited", "active", "inactive"]
     assert Role.__table__.c.slug.type.enums == ["admin", "author", "moderator"]
     assert Payment.__table__.c.status.type.enums == [
         "created",

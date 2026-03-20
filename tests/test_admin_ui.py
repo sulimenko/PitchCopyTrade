@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.api.deps.auth import require_admin
+from pitchcopytrade.services import admin as admin_service
 from pitchcopytrade.core.config import reset_settings_cache
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.auth.passwords import hash_password
@@ -310,6 +311,48 @@ def test_admin_dashboard_renders(monkeypatch) -> None:
         assert "14" in response.text
         assert "Momentum RU Monthly" in response.text
         assert "Lead User" in response.text
+
+
+def test_staff_shell_includes_local_ag_grid_vendor_assets(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.get_admin_dashboard_stats",
+        lambda _session: _async_return(
+            SimpleNamespace(
+                authors_total=0,
+                strategies_total=0,
+                strategies_public=0,
+                active_subscriptions=0,
+                recommendations_live=0,
+            )
+        ),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_strategies", lambda _session: _async_return([]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_products", lambda _session: _async_return([]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_payments", lambda _session: _async_return([]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_subscriptions", lambda _session, query_text='': _async_return([]))
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/dashboard")
+
+        assert response.status_code == 200
+        assert "/static/vendor/ag-grid-community/ag-grid-community.min.noStyle.js" in response.text
+        assert "/static/staff/ag-grid-bootstrap.js" in response.text
+
+
+def test_local_ag_grid_vendor_asset_is_served() -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    with _build_client(session, admin) as client:
+        response = client.get("/static/vendor/ag-grid-community/ag-grid-community.min.noStyle.js")
+
+        assert response.status_code == 200
+        assert "ag-Grid" in response.text
 
 
 def test_subscription_list_renders(monkeypatch) -> None:
@@ -985,7 +1028,7 @@ def test_staff_registry_renders_filters_and_actions(monkeypatch) -> None:
         assert "Команда и роли" in response.text
         assert "Dual Role" in response.text
         assert "multi-role" in response.text
-        assert "Снять admin" in response.text
+        assert "Снять роль администратора" in response.text
         assert "invite_token=" in response.text
 
 
@@ -1084,6 +1127,133 @@ def test_staff_grant_admin_role_redirects(monkeypatch) -> None:
         assert captured["actor_user_id"] == admin.id
         assert captured["target_user_id"] == author.user.id
         assert captured["role_slug"] == RoleSlug.ADMIN
+
+
+def test_staff_edit_updates_existing_row(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+    captured: dict[str, object] = {}
+
+    async def fake_update_staff(_session, *, user_id, data):
+        captured["user_id"] = user_id
+        captured["data"] = data
+        return _make_admin_user()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.update_admin_staff_user", fake_update_staff)
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/staff/staff-2/edit",
+            data={
+                "display_name": "Ops Admin",
+                "email": "ops@example.com",
+                "telegram_user_id": "12345",
+                "role_slugs": ["admin", "author"],
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/staff"
+        assert captured["user_id"] == "staff-2"
+        assert captured["data"].display_name == "Ops Admin"
+        assert captured["data"].email == "ops@example.com"
+        assert captured["data"].telegram_user_id == 12345
+        assert captured["data"].role_slugs == (RoleSlug.ADMIN, RoleSlug.AUTHOR)
+
+
+def test_staff_activate_uses_explicit_status_action(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+    captured: dict[str, object] = {}
+
+    async def fake_set_status(_session, *, actor_user_id, user_id, is_active):
+        captured["actor_user_id"] = actor_user_id
+        captured["user_id"] = user_id
+        captured["is_active"] = is_active
+        return _make_admin_user()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.set_admin_staff_user_status", fake_set_status)
+
+    with _build_client(session, admin) as client:
+        response = client.post("/admin/staff/staff-2/activate", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/staff"
+        assert captured == {"actor_user_id": admin.id, "user_id": "staff-2", "is_active": True}
+
+
+def test_author_edit_updates_existing_row(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+    captured: dict[str, object] = {}
+
+    async def fake_update_author(_session, *, author_id, data):
+        captured["author_id"] = author_id
+        captured["data"] = data
+        return _make_author("author-1", "author-user-1", "Alpha Desk")
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.update_admin_author", fake_update_author)
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/authors/author-1/edit",
+            data={
+                "display_name": "Alpha Desk",
+                "email": "alpha@example.com",
+                "telegram_user_id": "777",
+                "requires_moderation": "on",
+                "status_value": "inactive",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/authors"
+        assert captured["author_id"] == "author-1"
+        assert captured["data"].display_name == "Alpha Desk"
+        assert captured["data"].email == "alpha@example.com"
+        assert captured["data"].telegram_user_id == 777
+        assert captured["data"].requires_moderation is True
+        assert captured["data"].is_active is False
+
+
+async def test_file_mode_oversight_email_uses_active_admins(monkeypatch) -> None:
+    created_user = User(id="created-1", email="new@example.com", full_name="New Staff", status=UserStatus.INVITED)
+    admin = _make_admin_user()
+    inactive_admin = _make_admin_user()
+    inactive_admin.id = "admin-2"
+    inactive_admin.email = "inactive@example.com"
+    inactive_admin.status = UserStatus.INACTIVE
+    graph = SimpleNamespace(users={created_user.id: created_user, admin.id: admin, inactive_admin.id: inactive_admin})
+    delivered: list[tuple[str | None, str, str]] = []
+
+    monkeypatch.setattr(admin_service, "_file_admin_graph", lambda: (graph, object()))
+
+    async def fake_send_email(*, to_email: str | None, subject: str, body: str):
+        delivered.append((to_email, subject, body))
+        return True, None
+
+    monkeypatch.setattr(admin_service, "_send_email_message", fake_send_email)
+
+    await admin_service._send_admin_oversight_email(
+        None,
+        user=created_user,
+        role_slugs=(RoleSlug.ADMIN,),
+        sent=True,
+        error=None,
+    )
+
+    assert delivered == [
+        (
+            "admin@example.com",
+            "Контроль staff onboarding — PitchCopyTrade",
+            "Создан администратор: New Staff\nРоли: admin\nПриглашение: отправлено",
+        )
+    ]
 
 
 def test_staff_revoke_admin_role_renders_governance_error(monkeypatch) -> None:

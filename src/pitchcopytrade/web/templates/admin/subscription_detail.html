@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -18,16 +18,16 @@
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Карточка подписки</h1>
       <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Операционная карточка показывает продукт, access scope, даты, источник лида и связанный платеж.
+        Операционная карточка показывает продукт, область доступа, даты, источник лида и связанный платеж.
       </p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ subscription.status.value }}</span>
+      <span class="pill">{% if subscription.status.value == "active" %}активна{% elif subscription.status.value == "pending" %}в ожидании{% elif subscription.status.value == "cancelled" %}отменена{% elif subscription.status.value == "expired" %}истекла{% elif subscription.status.value == "paused" %}на паузе{% else %}{{ subscription.status.value }}{% endif %}</span>
       {% if subscription.payment %}
-      <span class="pill">{{ subscription.payment.status.value }}</span>
+      <span class="pill">{% if subscription.payment.status.value == "created" %}создан{% elif subscription.payment.status.value == "pending" %}в ожидании{% elif subscription.payment.status.value == "paid" %}оплачен{% elif subscription.payment.status.value == "failed" %}ошибка{% elif subscription.payment.status.value == "expired" %}истек{% elif subscription.payment.status.value == "cancelled" %}отменён{% elif subscription.payment.status.value == "refunded" %}возвращён{% else %}{{ subscription.payment.status.value }}{% endif %}</span>
       {% endif %}
       {% if subscription.is_trial %}
-      <span class="pill">trial</span>
+      <span class="pill">пробная</span>
       {% endif %}
     </div>
   </div>
@@ -35,13 +35,13 @@
 
 <section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">subscription data</div>
+    <div class="eyebrow">данные подписки</div>
     <div style="display:grid;gap:12px;margin-top:16px;">
       <div><strong>Клиент:</strong> <span class="muted">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</span></div>
       <div><strong>Email:</strong> <span class="muted">{{ subscription.user.email or "не задан" }}</span></div>
       <div><strong>Логин:</strong> <span class="muted">{{ subscription.user.username or "не задан" }}</span></div>
       <div><strong>Продукт:</strong> <span class="muted">{{ subscription.product.title }}</span></div>
-      <div><strong>Период:</strong> <span class="muted">{{ subscription.start_at }} -> {{ subscription.end_at }}</span></div>
+      <div><strong>Период:</strong> <span class="muted">{{ subscription.start_at }} → {{ subscription.end_at }}</span></div>
       <div><strong>Автопродление:</strong> <span class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</span></div>
       <div><strong>Источник лида:</strong> <span class="muted">{{ subscription.lead_source.name if subscription.lead_source else "не задан" }}</span></div>
       {% if subscription.payment %}
@@ -58,7 +58,7 @@
   </article>
 
   <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">access scope</div>
+    <div class="eyebrow">область доступа</div>
     <h2 style="margin:10px 0 14px;font-size:1.45rem;">Что получает клиент</h2>
     <div style="display:grid;gap:12px;">
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
@@ -80,8 +80,8 @@
       {% if subscription.payment %}
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Финансовая связка</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.payment.final_amount_rub }} руб / {{ subscription.payment.provider.value }}</div>
-        <div class="muted" style="margin-top:6px;line-height:1.55;">{{ subscription.payment.stub_reference or subscription.payment.external_id or "reference не задан" }}</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.payment.final_amount_rub }} руб / {% if subscription.payment.provider.value == "stub_manual" %}ручной stub{% elif subscription.payment.provider.value == "tbank" %}Т-Банк{% else %}{{ subscription.payment.provider.value }}{% endif %}</div>
+        <div class="muted" style="margin-top:6px;line-height:1.55;">{{ subscription.payment.stub_reference or subscription.payment.external_id or "референс не задан" }}</div>
       </div>
       {% endif %}
     </div>

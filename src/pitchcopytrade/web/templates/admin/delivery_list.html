@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -42,36 +42,46 @@
   </article>
 </section>
 
-<section style="display:grid;gap:14px;margin-top:18px;">
-  {% for record in records %}
-  <a class="surface" href="/admin/delivery/{{ record.recommendation.id }}" style="padding:22px;display:block;">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="max-width:820px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <strong style="font-size:1.15rem;">{{ record.recommendation.title or record.recommendation.strategy.title }}</strong>
-          <span class="pill">{{ record.recommendation.status.value }}</span>
-          <span class="pill">{{ record.delivery_attempts }} попыток</span>
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ record.recommendation.strategy.title }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">доставлено: {{ record.delivered_recipients }}</span>
-          {% if record.latest_delivery_event %}
-          <span class="pill">{{ record.latest_delivery_event.created_at }}</span>
-          <span class="pill">{{ record.latest_delivery_event.payload.trigger if record.latest_delivery_event.payload else "publish" }}</span>
-          {% else %}
-          <span class="pill">доставки еще не было</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="muted">Открыть</div>
-    </div>
-  </a>
-  {% else %}
-  <article class="surface" style="padding:24px;">
-    <strong>Пока нет опубликованных рекомендаций</strong>
-    <p class="muted" style="line-height:1.6;margin:10px 0 0;">После публикации или scheduled publish карточки доставки появятся здесь автоматически.</p>
-  </article>
-  {% endfor %}
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div class="eyebrow">реестр доставки</div>
+  <h2 style="margin:10px 0 0;font-size:1.5rem;">Доставка рекомендаций</h2>
+  <div class="staff-grid-shell" style="margin-top:18px;">
+    <table class="staff-grid" data-ag-grid-auto="true">
+      <thead>
+        <tr>
+          <th>Публикация</th>
+          <th>Стратегия</th>
+          <th>Статус</th>
+          <th>Попытки</th>
+          <th>Доставлено</th>
+          <th>Последнее событие</th>
+          <th>Открыть</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in records %}
+        <tr>
+          <td><strong>{{ record.recommendation.title or record.recommendation.strategy.title }}</strong></td>
+          <td>{{ record.recommendation.strategy.title }}</td>
+          <td><span class="staff-badge">{{ record.recommendation.status.value }}</span></td>
+          <td>{{ record.delivery_attempts }}</td>
+          <td>{{ record.delivered_recipients }}</td>
+          <td>
+            {% if record.latest_delivery_event %}
+            <div>{{ record.latest_delivery_event.created_at }}</div>
+            <div class="muted">{{ record.latest_delivery_event.payload.trigger if record.latest_delivery_event.payload else "publish" }}</div>
+            {% else %}
+            <span class="muted">доставки еще не было</span>
+            {% endif %}
+          </td>
+          <td class="actions"><a class="ghost" href="/admin/delivery/{{ record.recommendation.id }}">Открыть</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">Пока нет опубликованных рекомендаций.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <style>

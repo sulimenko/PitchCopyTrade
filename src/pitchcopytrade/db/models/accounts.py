@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Column, ForeignKey, String, Table, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from pitchcopytrade.db.models.enums import RoleSlug, UserStatus, sql_enum
+from pitchcopytrade.db.models.enums import InviteDeliveryStatus, RoleSlug, UserStatus, sql_enum
 
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.audit import AuditEvent
@@ -42,6 +43,13 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[UserStatus] = mapped_column(sql_enum(UserStatus, name="user_status"), default=UserStatus.ACTIVE)
+    invite_token_version: Mapped[int] = mapped_column(default=1)
+    invite_delivery_status: Mapped[InviteDeliveryStatus | None] = mapped_column(
+        sql_enum(InviteDeliveryStatus, name="invite_delivery_status"),
+        nullable=True,
+    )
+    invite_delivery_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invite_delivery_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Moscow")
     lead_source_id: Mapped[str | None] = mapped_column(ForeignKey("lead_sources.id", ondelete="SET NULL"), nullable=True)
 

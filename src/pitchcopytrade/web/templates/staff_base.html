@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ title }}</title>
+    <style>
+      :root {
+        --staff-bg: #edf1f5;
+        --staff-surface: #ffffff;
+        --staff-surface-soft: #f7f9fb;
+        --staff-line: #d7dee7;
+        --staff-line-strong: #bcc7d4;
+        --staff-ink: #18212b;
+        --staff-muted: #667487;
+        --staff-accent: #224a7a;
+        --staff-accent-soft: #dbe8f8;
+        --staff-danger: #b63b3b;
+        --staff-ok: #1d7a52;
+        --staff-shadow: 0 14px 34px rgba(17, 27, 42, 0.08);
+        --rail-width: 238px;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--staff-ink);
+        background:
+          radial-gradient(circle at top right, rgba(34, 74, 122, 0.06), transparent 24%),
+          linear-gradient(180deg, #eef2f6 0%, #e8edf3 100%);
+      }
+      a { color: inherit; text-decoration: none; }
+      button, input, select, textarea { font: inherit; }
+      .staff-shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: var(--rail-width) minmax(0, 1fr);
+      }
+      .staff-rail {
+        border-right: 1px solid var(--staff-line);
+        background: rgba(248, 250, 252, 0.92);
+        backdrop-filter: blur(12px);
+        padding: 16px 14px 18px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow: auto;
+      }
+      .staff-brand {
+        display: grid;
+        gap: 8px;
+        padding: 10px 10px 14px;
+        border-bottom: 1px solid var(--staff-line);
+      }
+      .staff-brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: var(--staff-accent);
+        color: #fff;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      .staff-brand small,
+      .staff-rail-group-label,
+      .staff-breadcrumbs {
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.72rem;
+        color: var(--staff-muted);
+      }
+      .staff-rail-nav {
+        display: grid;
+        gap: 14px;
+        padding-top: 14px;
+      }
+      .staff-rail-group {
+        display: grid;
+        gap: 6px;
+      }
+      .staff-rail-link {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        min-height: 32px;
+        padding: 7px 10px;
+        border-radius: 10px;
+        color: var(--staff-muted);
+      }
+      .staff-rail-link:hover { background: #eef4fb; color: var(--staff-ink); }
+      .staff-rail-link.is-active {
+        background: var(--staff-accent);
+        color: #fff;
+      }
+      .staff-main {
+        min-width: 0;
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+      }
+      .staff-topline {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        padding: 10px 14px;
+        border: 1px solid var(--staff-line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: var(--staff-shadow);
+      }
+      .staff-topline-main {
+        display: grid;
+        gap: 6px;
+      }
+      .staff-topline-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .staff-back,
+      .staff-btn,
+      .action,
+      .ghost {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: 30px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--staff-line-strong);
+        background: var(--staff-surface);
+        color: var(--staff-ink);
+        cursor: pointer;
+      }
+      .staff-btn.is-primary,
+      .action:not(.ghost) {
+        background: var(--staff-accent);
+        border-color: var(--staff-accent);
+        color: #fff;
+      }
+      .ghost {
+        background: transparent;
+      }
+      .staff-card,
+      .surface {
+        border: 1px solid var(--staff-line);
+        background: var(--staff-surface);
+        border-radius: 16px;
+        box-shadow: var(--staff-shadow);
+      }
+      .staff-page-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        padding: 18px 20px;
+      }
+      .staff-page-head h1,
+      .staff-page-head h2 {
+        margin: 0;
+        font-size: 1.55rem;
+        line-height: 1.05;
+      }
+      .staff-page-head p { margin: 8px 0 0; color: var(--staff-muted); line-height: 1.5; }
+      .staff-toolbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--staff-line);
+        background: var(--staff-surface-soft);
+      }
+      .staff-form-row {
+        display: flex;
+        gap: 10px;
+        align-items: end;
+        flex-wrap: wrap;
+      }
+      .staff-field { display: grid; gap: 6px; min-width: 180px; }
+      .staff-field span { font-size: 0.78rem; color: var(--staff-muted); }
+      .staff-field input,
+      .staff-field select,
+      .staff-field textarea {
+        width: 100%;
+        min-height: 32px;
+        padding: 7px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--staff-line-strong);
+        background: #fff;
+      }
+      .staff-inline-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .staff-badge,
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #edf2f7;
+        color: #334155;
+        font-size: 0.74rem;
+        white-space: nowrap;
+      }
+      .staff-badge.ok { background: #e5f5ee; color: var(--staff-ok); }
+      .staff-badge.warn { background: #fff1d9; color: #956100; }
+      .staff-badge.danger { background: #fde8e8; color: var(--staff-danger); }
+      .staff-error {
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid #efc3c3;
+        background: #fff1f1;
+        color: var(--staff-danger);
+      }
+      .staff-grid-shell {
+        overflow: auto;
+      }
+      .staff-grid {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .staff-grid th,
+      .staff-grid td {
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--staff-line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 0.92rem;
+      }
+      .staff-grid th {
+        position: sticky;
+        top: 0;
+        background: var(--staff-surface-soft);
+        color: var(--staff-muted);
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        z-index: 1;
+      }
+      .staff-grid tr:hover td { background: #fbfdff; }
+      .staff-grid td.actions {
+        width: 1%;
+        white-space: nowrap;
+      }
+      .staff-dialog {
+        border: 0;
+        padding: 0;
+        background: transparent;
+        width: min(560px, calc(100% - 24px));
+        max-width: calc(100% - 24px);
+      }
+      .staff-dialog::backdrop {
+        background: rgba(17, 27, 42, 0.38);
+      }
+      .staff-dialog-backdrop,
+      .staff-dialog-close-zone {
+        display: none;
+      }
+      .staff-drawer {
+        margin-left: auto;
+        width: min(560px, 100%);
+        display: grid;
+        gap: 14px;
+        padding: 18px;
+        border: 1px solid var(--staff-line);
+        border-radius: 18px;
+        background: var(--staff-surface);
+        box-shadow: var(--staff-shadow);
+      }
+      .staff-drawer-head,
+      .staff-drawer-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+      .staff-drawer-body {
+        display: grid;
+        gap: 12px;
+        align-content: start;
+      }
+      .muted { color: var(--staff-muted); }
+      .eyebrow { color: var(--staff-muted); text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.08em; }
+      @media (max-width: 1080px) {
+        .staff-shell { grid-template-columns: 1fr; }
+        .staff-rail { position: static; height: auto; }
+      }
+      @media (max-width: 720px) {
+        .staff-main { padding: 12px; }
+        .staff-topline,
+        .staff-page-head,
+        .staff-toolbar { padding-left: 12px; padding-right: 12px; }
+        .staff-form-row,
+        .staff-inline-actions { width: 100%; }
+        .staff-field { min-width: 100%; }
+      }
+    </style>
+    {% include "partials/ag_grid_assets.html" %}
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body>
+    {% set current_path = request.url.path %}
+    {% set admin_links = [
+      ('dashboard', 'Дашборд', '/admin/dashboard'),
+      ('staff', 'Команда', '/admin/staff'),
+      ('authors', 'Авторы', '/admin/authors'),
+      ('strategies', 'Стратегии', '/admin/strategies'),
+      ('products', 'Продукты', '/admin/products'),
+      ('payments', 'Платежи', '/admin/payments'),
+      ('subscriptions', 'Подписки', '/admin/subscriptions'),
+      ('legal', 'Документы', '/admin/legal'),
+      ('delivery', 'Доставка', '/admin/delivery'),
+      ('promos', 'Промо', '/admin/promos'),
+      ('analytics', 'Аналитика', '/admin/analytics/leads'),
+      ('moderation', 'Модерация', '/moderation/queue')
+    ] %}
+    {% set author_links = [
+      ('dashboard', 'Сводка', '/author/dashboard'),
+      ('strategies', 'Стратегии', '/author/strategies'),
+      ('recommendations', 'Рекомендации', '/author/recommendations')
+    ] %}
+    {% set moderation_links = [('queue', 'Очередь', '/moderation/queue')] %}
+    <div class="staff-shell">
+      <aside class="staff-rail">
+        <div class="staff-brand">
+          <div class="staff-brand-mark">PC</div>
+          <div>
+            <small>Кабинет PitchCopyTrade</small>
+            <div><strong>{{ user.full_name or user.email or user.username or "staff" }}</strong></div>
+          </div>
+        </div>
+        <nav class="staff-rail-nav">
+          {% if current_path.startswith('/admin') %}
+          <div class="staff-rail-group">
+            <div class="staff-rail-group-label">Админ</div>
+            {% for section, label, href in admin_links %}
+            <a class="staff-rail-link {% if current_path == href or current_path.startswith(href + '/') %}is-active{% endif %}" href="{{ href }}">{{ label }}</a>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if current_path.startswith('/author') %}
+          <div class="staff-rail-group">
+            <div class="staff-rail-group-label">Автор</div>
+            {% for section, label, href in author_links %}
+            <a class="staff-rail-link {% if current_path == href or current_path.startswith(href + '/') %}is-active{% endif %}" href="{{ href }}">{{ label }}</a>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if current_path.startswith('/moderation') %}
+          <div class="staff-rail-group">
+            <div class="staff-rail-group-label">Модерация</div>
+            {% for section, label, href in moderation_links %}
+            <a class="staff-rail-link {% if current_path == href or current_path.startswith(href + '/') %}is-active{% endif %}" href="{{ href }}">{{ label }}</a>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <div class="staff-rail-group">
+            <div class="staff-rail-group-label">Сессия</div>
+            <a class="staff-rail-link" href="/logout">Выйти</a>
+          </div>
+        </nav>
+      </aside>
+      <main class="staff-main">
+        <div class="staff-topline">
+          <div class="staff-topline-main">
+            <div class="staff-inline-actions">
+              <button type="button" class="staff-back" data-staff-back data-parent-href="{% block parent_href %}/{% endblock %}">Назад</button>
+              <div class="staff-breadcrumbs">{% block breadcrumbs %}Кабинет / {{ title }}{% endblock %}</div>
+            </div>
+            <div><strong>{% block page_title %}{{ title }}{% endblock %}</strong></div>
+          </div>
+          <div class="staff-topline-actions">
+            {% include "partials/staff_mode_switch.html" %}
+            {% block topbar_actions %}{% endblock %}
+          </div>
+        </div>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+    {% include "app/_miniapp_bridge.html" %}
+    <script>
+      (function () {
+        const backButton = document.querySelector("[data-staff-back]");
+        if (!backButton) return;
+        backButton.addEventListener("click", function () {
+          const parentHref = backButton.getAttribute("data-parent-href") || "/";
+          if (window.history.length > 1 && document.referrer) {
+            window.history.back();
+            return;
+          }
+          window.location.href = parentHref;
+        });
+      })();
+    </script>
+    {% block extra_scripts %}{% endblock %}
+  </body>
+</html>

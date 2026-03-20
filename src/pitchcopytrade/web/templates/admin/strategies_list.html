@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% macro sort_href(column) -%}
   /admin/strategies?q={{ q | urlencode }}&sort_by={{ column }}&direction={% if sort_by == column and direction == "asc" %}desc{% else %}asc{% endif %}
@@ -19,7 +19,7 @@
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">strategy catalog</div>
+  <div class="eyebrow">каталог стратегий</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Каталог стратегий</h1>
@@ -44,7 +44,7 @@
   </form>
 
   <div style="overflow:auto;margin-top:18px;">
-    <table class="workspace-table">
+    <table class="workspace-table" data-ag-grid-auto="true">
       <thead>
         <tr>
           <th><a href="{{ sort_href('title') }}">Стратегия</a></th>
@@ -67,7 +67,7 @@
           <td>{{ strategy.author.display_name }}</td>
           <td><span class="pill">{{ strategy.risk_level.value }}</span></td>
           <td><span class="pill">{{ strategy.status.value }}</span></td>
-          <td>{% if strategy.is_public %}public{% else %}private{% endif %}</td>
+          <td>{% if strategy.is_public %}публичная{% else %}закрытая{% endif %}</td>
           <td>{{ strategy.min_capital_rub or "—" }}</td>
           <td><a class="action ghost" href="/admin/strategies/{{ strategy.id }}/edit" style="padding:8px 12px;">Открыть</a></td>
         </tr>

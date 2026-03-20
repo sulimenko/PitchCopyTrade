@@ -74,6 +74,18 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
             await self.session.refresh(author)
         return instrument
 
+    async def remove_author_watchlist_instrument(self, author_id: str, instrument_id: str) -> bool:
+        author = await self.get_author_by_user_id_or_author_id(author_id)
+        if author is None:
+            return False
+        instrument = next((item for item in author.watchlist_instruments if item.id == instrument_id), None)
+        if instrument is None:
+            return False
+        author.watchlist_instruments.remove(instrument)
+        await self.session.commit()
+        await self.session.refresh(author)
+        return True
+
     async def list_author_recommendations(self, author_id: str) -> list[Recommendation]:
         query = (
             select(Recommendation)
@@ -200,6 +212,19 @@ class FileAuthorRepository(AuthorRepository):
                 instrument.watchlist_authors.append(author)
             self.graph.save(self.store)
         return instrument
+
+    async def remove_author_watchlist_instrument(self, author_id: str, instrument_id: str) -> bool:
+        author = self.graph.authors.get(author_id)
+        if author is None:
+            return False
+        instrument = next((item for item in author.watchlist_instruments if item.id == instrument_id), None)
+        if instrument is None:
+            return False
+        author.watchlist_instruments.remove(instrument)
+        if author in instrument.watchlist_authors:
+            instrument.watchlist_authors.remove(author)
+        self.graph.save(self.store)
+        return True
 
     async def list_author_recommendations(self, author_id: str) -> list[Recommendation]:
         return sorted(

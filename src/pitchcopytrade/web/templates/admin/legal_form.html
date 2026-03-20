@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -12,12 +12,12 @@
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">legal editor</div>
+  <div class="eyebrow">редактор документов</div>
   <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">
     {% if document %}Редактирование документа{% else %}Новый юридический документ{% endif %}
   </h1>
   <p class="muted" style="max-width:760px;line-height:1.65;margin:16px 0 0;">
-    Editor сохраняет markdown в локальный `source_path`, а активная версия используется в checkout и public legal pages.
+    Редактор сохраняет markdown в локальный `source_path`, а активная версия используется в checkout и публичных legal pages.
   </p>
 </section>
 
@@ -55,36 +55,36 @@
     </label>
 
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="action" type="submit">{% if document %}Сохранить документ{% else %}Создать draft{% endif %}</button>
+      <button class="action" type="submit">{% if document %}Сохранить документ{% else %}Создать черновик{% endif %}</button>
       {% if document and not document.is_active %}
       <button class="action ghost" type="submit" formaction="/admin/legal/{{ document.id }}/activate" formmethod="post">Сделать активной версией</button>
       {% endif %}
       {% if document and document.is_active %}
-      <span class="pill">active version</span>
+      <span class="pill">активная версия</span>
       {% endif %}
       <a class="action ghost" href="/admin/legal">Вернуться к списку</a>
       {% if document and document.is_active %}
-      <a class="action ghost" href="/legal/{{ document.id }}" target="_blank" rel="noreferrer">Открыть public view</a>
+      <a class="action ghost" href="/legal/{{ document.id }}" target="_blank" rel="noreferrer">Открыть публичную версию</a>
       {% endif %}
     </div>
   </form>
 
   <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">doc ops</div>
+    <div class="eyebrow">операции с документом</div>
     <h2 style="margin:10px 0 14px;font-size:1.45rem;">Контекст версии</h2>
     {% if document %}
     <div style="display:grid;gap:12px;">
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Source path</strong>
+        <strong>Путь к источнику</strong>
         <div class="muted" style="margin-top:8px;line-height:1.55;">{{ document.source_path }}</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Статус</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ "active" if document.is_active else "draft" }}</div>
-        <div class="muted" style="margin-top:6px;line-height:1.55;">published_at: {{ document.published_at or "не опубликован" }}</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ "активен" if document.is_active else "черновик" }}</div>
+        <div class="muted" style="margin-top:6px;line-height:1.55;">Опубликован: {{ document.published_at or "не опубликован" }}</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Consents</strong>
+        <strong>Согласия</strong>
         <div class="muted" style="margin-top:8px;line-height:1.55;">{{ document.consents|length if document.consents is not none else 0 }} записей согласия</div>
       </div>
     </div>
@@ -92,16 +92,16 @@
     <div style="display:grid;gap:12px;">
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Новая версия</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Создайте draft и затем активируйте его после проверки текста.</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Создайте черновик и затем активируйте его после проверки текста.</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Local-first storage</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Markdown сохраняется в `storage/runtime/blob/legal/*`, а не в remote object storage.</div>
+        <strong>Локальное хранение</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Markdown сохраняется в `storage/runtime/blob/legal/*`, а не в удаленном object storage.</div>
       </div>
     </div>
     {% endif %}
 
-    <div class="eyebrow" style="margin-top:22px;">available versions</div>
+    <div class="eyebrow" style="margin-top:22px;">доступные версии</div>
     <div style="display:grid;gap:10px;margin-top:12px;">
       {% for item in documents %}
       <a class="surface" href="/admin/legal/{{ item.id }}/edit" style="padding:14px 16px;border-radius:18px;background:var(--surface-strong);box-shadow:none;display:block;">

@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -14,7 +14,7 @@
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">subscription registry</div>
+  <div class="eyebrow">реестр подписок</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Подписки и доступ</h1>
@@ -22,7 +22,7 @@
         Операционный реестр подписок: кто подписан, на какой scope, до какой даты и в каком состоянии находится платеж.
       </p>
     </div>
-    <div class="pill">{{ subscriptions|length }} subscription</div>
+    <div class="pill">{{ subscriptions|length }} подписок</div>
   </div>
 </section>
 
@@ -44,62 +44,81 @@
 
 <section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px;">
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">active</div>
+    <div class="eyebrow">активные</div>
     <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.active }}</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">trial</div>
+    <div class="eyebrow">пробные</div>
     <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.trial }}</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">pending</div>
+    <div class="eyebrow">в ожидании</div>
     <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.pending }}</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">paid links</div>
+    <div class="eyebrow">с оплатой</div>
     <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.paid }}</div>
   </article>
 </section>
 
-<section style="display:grid;gap:14px;margin-top:18px;">
-  {% for subscription in subscriptions %}
-  <a class="surface" href="/admin/subscriptions/{{ subscription.id }}" style="padding:22px;display:block;">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="max-width:860px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <strong style="font-size:1.15rem;">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</strong>
-          <span class="pill">{{ subscription.status.value }}</span>
-          {% if subscription.payment %}
-          <span class="pill">{{ subscription.payment.status.value }}</span>
-          {% endif %}
-          {% if subscription.is_trial %}
-          <span class="pill">trial</span>
-          {% endif %}
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ subscription.product.title }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">{{ subscription.start_at }} -> {{ subscription.end_at }}</span>
-          {% if subscription.product.strategy %}
-          <span class="pill">strategy: {{ subscription.product.strategy.title }}</span>
-          {% elif subscription.product.author %}
-          <span class="pill">author: {{ subscription.product.author.display_name }}</span>
-          {% elif subscription.product.bundle %}
-          <span class="pill">bundle: {{ subscription.product.bundle.title }}</span>
-          {% endif %}
-          {% if subscription.lead_source %}
-          <span class="pill">{{ subscription.lead_source.name }}</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="muted">Открыть</div>
-    </div>
-  </a>
-  {% else %}
-  <article class="surface" style="padding:24px;">
-    <strong>Подписок пока нет</strong>
-    <p class="muted" style="line-height:1.6;margin:10px 0 0;">После checkout и admin confirm активные и pending подписки появятся здесь автоматически.</p>
-  </article>
-  {% endfor %}
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <div class="eyebrow">таблица подписок</div>
+  <h2 style="margin:10px 0 0;font-size:1.5rem;">Подписки</h2>
+  <div class="staff-grid-shell" style="margin-top:18px;">
+    <table class="staff-grid" data-ag-grid-auto="true">
+      <thead>
+        <tr>
+          <th>Клиент</th>
+          <th>Продукт</th>
+          <th>Статус</th>
+          <th>Период</th>
+          <th>Область доступа</th>
+          <th>Источник</th>
+          <th>Открыть</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for subscription in subscriptions %}
+        <tr>
+          <td>
+            <strong>{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</strong>
+            {% if subscription.payment %}
+            <div class="muted">
+              Платеж:
+              {% if subscription.payment.status.value == "created" %}создан{% elif subscription.payment.status.value == "pending" %}в ожидании{% elif subscription.payment.status.value == "paid" %}оплачен{% elif subscription.payment.status.value == "failed" %}ошибка{% elif subscription.payment.status.value == "expired" %}истек{% elif subscription.payment.status.value == "cancelled" %}отменён{% elif subscription.payment.status.value == "refunded" %}возвращён{% else %}{{ subscription.payment.status.value }}{% endif %}
+            </div>
+            {% endif %}
+          </td>
+          <td>{{ subscription.product.title }}</td>
+          <td>
+            <div class="staff-inline-actions">
+              <span class="staff-badge">
+                {% if subscription.status.value == "active" %}активна{% elif subscription.status.value == "pending" %}в ожидании{% elif subscription.status.value == "cancelled" %}отменена{% elif subscription.status.value == "expired" %}истекла{% elif subscription.status.value == "paused" %}на паузе{% else %}{{ subscription.status.value }}{% endif %}
+              </span>
+              {% if subscription.is_trial %}<span class="staff-badge">пробная</span>{% endif %}
+            </div>
+          </td>
+          <td>{{ subscription.start_at }} → {{ subscription.end_at }}</td>
+          <td>
+            {% if subscription.product.strategy %}
+            Стратегия: {{ subscription.product.strategy.title }}
+            {% elif subscription.product.author %}
+            Автор: {{ subscription.product.author.display_name }}
+            {% elif subscription.product.bundle %}
+            Пакет: {{ subscription.product.bundle.title }}
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td>{{ subscription.lead_source.name if subscription.lead_source else "—" }}</td>
+          <td class="actions"><a class="ghost" href="/admin/subscriptions/{{ subscription.id }}">Открыть</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">Подписок пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <style>

@@ -15,6 +15,7 @@
 1. compact staff shell
 2. `AG Grid Community` как единый CRUD layer
 3. быстрый onboarding staff через email invite + Telegram bind
+4. закрытие staff CRUD gaps и parity между `db`/`file`
 
 ---
 
@@ -76,6 +77,7 @@
   - без CDN как canonical path
   - shared JS/CSS слой внутри проекта
   - один reusable bootstrap для Jinja templates
+  - удалить handcrafted HTML tables как primary registry layer на staff screens
 
 - [ ] **B2** Сделать compact staff grid theme
   - row height `28-32px`
@@ -114,6 +116,22 @@
   - right drawer для расширенного редактирования
   - row menu для actions
   - modal/fullscreen modal для сложных форм
+  - для `admin/staff` и `admin/authors` обязательно покрыть existing row edit, а не только create/actions
+
+- [ ] **B8** Закрыть existing row edit для `admin/staff`
+  - `display_name`
+  - `email`
+  - `telegram_user_id`
+  - роли
+  - invite actions
+  - edit path должен быть доступен из grid, а не через скрытый side flow
+
+- [ ] **B9** Закрыть existing row edit для `admin/authors`
+  - `display_name`
+  - `email`
+  - `telegram_user_id`
+  - `requires_moderation`
+  - `active/inactive`
 
 - [ ] **B7** Сохранить recommendation editor contract
   - grid остается primary list layer
@@ -138,6 +156,11 @@
   - после bind editable: `display_name`, `email`, `roles`, `telegram_user_id`
   - статус меняется только через явные actions
   - vocabulary: `invited`, `active`, `inactive`
+
+- [ ] **C1.1** Реализовать явный action flow `active/inactive`
+  - status column не должна быть только информативной
+  - должны существовать действия `Активировать` и `Деактивировать`
+  - row menu / drawer не должны показывать невозможные переходы
 
 - [ ] **C2** Authors
   - editable:
@@ -213,6 +236,7 @@
   - при каждом создании `author`
   - при failure отправки invite
   - отправлять уведомление всем активным администраторам
+  - одинаково в `db` и `file` mode
 
 - [ ] **D4** Хранить invite delivery state
   - `sent`
@@ -230,12 +254,19 @@
 - [ ] **D6** Инвалидировать старые invite links при resend
   - старый invite token больше не работает
   - новый становится canonical
+  - token contract должен иметь механизм revoke/version, а не только новый `iat`
 
 - [ ] **D7** Упростить invite state на `/login`
   - отдельное состояние staff invite
   - минимум текста
   - одна primary CTA
   - без необходимости понимать `invite_token`
+
+- [ ] **D8** Защитить bind от collision по `telegram_user_id`
+  - до commit проверять, не привязан ли Telegram account к другому staff user
+  - в `db` mode не допускать DB `500`
+  - в `file` mode не допускать двойного владения одним Telegram ID
+  - отдавать явную бизнес-ошибку в UI
 
 ### Acceptance
 
@@ -261,6 +292,41 @@
 
 - пользователь не видит англоязычных labels и статусов в интерфейсе
 - английский остается только в коде/enum values
+
+---
+
+## Блок F — Runtime parity и governance polish
+
+**Цель:** `db` и `file` mode должны одинаково соблюдать текущий onboarding/governance contract.
+
+- [ ] **F0** Закрыть `P1` по последнему активному администратору
+  - `update_admin_staff_user` не должен позволять убрать роль `admin` у последнего активного администратора
+  - защита должна совпадать с отдельным `roles/admin/remove`
+  - одинаково в `db` и `file` mode
+  - UI должен возвращать бизнес-ошибку, а не частично применять update
+
+- [ ] **F1** Выровнять control emails по mode
+  - `db` и `file` path должны одинаково отправлять уведомления активным администраторам
+  - failed delivery не должен молча выпадать в одном из режимов
+
+- [ ] **F2** Проверить `db/file` parity на staff onboarding
+  - create
+  - resend
+  - oversight mail
+  - audit log
+
+- [ ] **F3** Добавить regression coverage
+  - existing row edit
+  - status actions `active/inactive`
+  - oversight emails в `file` mode
+  - запрет снятия `admin` у последнего активного администратора через `/admin/staff/{id}/edit`
+
+### Acceptance
+
+- `db` и `file` mode ведут себя одинаково для staff onboarding/control path
+- existing staff rows реально редактируются из реестра
+- `active/inactive` работает как action flow, а не только как badge
+- drawer edit не может обойти governance path последнего активного администратора
 
 ---
 
@@ -294,5 +360,16 @@
 2. `AG Grid Community`
 3. mutability gates
 4. onboarding + invite delivery
-5. localization pass
-6. docs sync
+5. runtime parity и governance polish
+6. localization pass
+7. docs sync
+
+### First step для worker
+
+1. Сначала исправить `update_admin_staff_user` в `src/pitchcopytrade/services/admin.py`, чтобы role edit использовал тот же governance contract, что и revoke-flow.
+2. Затем добавить route-level regression test на попытку снять `admin` через `/admin/staff/{id}/edit`.
+3. После этого прогнать целевой набор:
+   - `tests/test_admin_ui.py`
+   - `tests/test_auth.py`
+   - `tests/test_db_models.py`
+   - `tests/test_file_repositories.py`

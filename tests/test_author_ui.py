@@ -268,6 +268,29 @@ def test_author_watchlist_add_returns_updated_list(monkeypatch) -> None:
         assert payload["watchlist"][0]["id"] == "instrument-1"
 
 
+def test_author_watchlist_remove_returns_updated_list(monkeypatch) -> None:
+    author_user = _make_author_user()
+    instrument = _make_instrument()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.remove_author_watchlist_instrument",
+        lambda _repository, _author, _instrument_id: _async_return(None),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.list_author_watchlist",
+        lambda _repository, _author: _async_return([]),
+    )
+
+    with _build_client(author_user) as client:
+        response = client.post(f"/author/watchlist/items/{instrument.id}/remove")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["removed_id"] == instrument.id
+        assert payload["watchlist"] == []
+
+
 def test_author_recommendation_create_page_redirects_to_modal_flow(monkeypatch) -> None:
     author_user = _make_author_user()
 

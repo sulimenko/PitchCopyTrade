@@ -26,6 +26,7 @@ from pitchcopytrade.services.author import (
     list_author_watchlist,
     normalize_attachment_uploads,
     remove_recommendation_attachments,
+    remove_author_watchlist_instrument,
     recommendation_form_values,
     search_author_watchlist_candidates,
     update_author_recommendation,
@@ -284,6 +285,27 @@ async def author_watchlist_add_item(
     return JSONResponse(
         {
             "added": _instrument_payload(instrument),
+            "watchlist": [_instrument_payload(item) for item in watchlist],
+        }
+    )
+
+
+@router.post("/watchlist/items/{instrument_id}/remove")
+async def author_watchlist_remove_item(
+    instrument_id: str,
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> Response:
+    author = await _get_author_or_403(repository, user)
+    try:
+        await remove_author_watchlist_instrument(repository, author, instrument_id.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    watchlist = await list_author_watchlist(repository, author)
+    return JSONResponse(
+        {
+            "removed_id": instrument_id,
             "watchlist": [_instrument_payload(item) for item in watchlist],
         }
     )

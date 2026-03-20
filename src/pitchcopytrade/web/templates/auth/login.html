@@ -8,8 +8,8 @@
   </div>
   {% endif %}
   {% if invite_token %}
-  <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(20,85,216,0.08);color:var(--blue-700);font-weight:600;">
-    Приглашение сотрудника активно. Войдите через Telegram, чтобы привязать аккаунт.
+  <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(20,85,216,0.08);color:var(--blue-700);font-weight:600;line-height:1.5;">
+    Приглашение сотрудника активно. Продолжите через Telegram, чтобы завершить привязку.
   </div>
   {% endif %}
   {% if not telegram_https_ready %}
@@ -22,7 +22,11 @@
   <div style="display:flex;flex-direction:column;gap:24px;text-align:left;">
     <section style="text-align:center;">
       <div class="muted" style="margin-bottom:14px;line-height:1.6;font-size:0.95rem;">
+        {% if is_staff_invite %}
+        Вход по staff-приглашению. Один шаг через Telegram.
+        {% else %}
         Основной вход для сотрудников на сервере: через Telegram.
+        {% endif %}
       </div>
       <script async src="https://telegram.org/js/telegram-widget.js?22"
         data-telegram-login="{{ bot_username }}"
@@ -36,6 +40,7 @@
       </div>
     </section>
 
+    {% if not is_staff_invite %}
     <div style="display:flex;align-items:center;gap:12px;">
       <div style="height:1px;background:rgba(24,46,120,0.12);flex:1;"></div>
       <span class="muted" style="font-size:0.82rem;text-transform:uppercase;letter-spacing:0.12em;">или</span>
@@ -71,6 +76,7 @@
     </label>
     <button class="action" type="submit" style="width:100%;justify-content:center;">Войти</button>
     </form>
+    {% endif %}
   </div>
   <div class="muted" style="margin-top:24px;line-height:1.65;font-size:0.95rem;">
     Этот экран предназначен только для сотрудников: admin, author, moderator.

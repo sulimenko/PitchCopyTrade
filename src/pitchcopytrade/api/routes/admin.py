@@ -14,7 +14,9 @@ from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, ProductType, RiskLevel, RoleSlug, StrategyStatus
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.services.admin import (
+    AdminAuthorUpdateData,
     ProductFormData,
+    StaffUpdateData,
     apply_manual_discount_to_payment,
     confirm_payment_and_activate_subscription,
     create_admin_author,
@@ -44,6 +46,10 @@ from pitchcopytrade.services.admin import (
     list_admin_products,
     list_admin_subscriptions,
     list_admin_strategies,
+    resend_staff_invite,
+    set_admin_staff_user_status,
+    update_admin_author,
+    update_admin_staff_user,
     update_product,
     update_strategy,
 )
@@ -1404,6 +1410,43 @@ async def admin_author_create(
     return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/authors/{author_id}/edit", response_class=HTMLResponse)
+async def admin_author_edit(
+    author_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    telegram_user_id: str = Form(""),
+    requires_moderation: str | None = Form(default=None),
+    status_value: str = Form("active"),
+) -> Response:
+    try:
+        tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
+        await update_admin_author(
+            session,
+            author_id=author_id,
+            data=AdminAuthorUpdateData(
+                display_name=display_name.strip(),
+                email=email.strip() or None,
+                telegram_user_id=tg_id,
+                requires_moderation=requires_moderation is not None,
+                is_active=status_value == "active",
+            ),
+        )
+    except ValueError as exc:
+        authors = await list_admin_authors(session)
+        author_rows = [_author_row(author) for author in authors]
+        return templates.TemplateResponse(
+            request,
+            "admin/authors_list.html",
+            {"title": "Авторы", "user": user, "authors": author_rows, "error": str(exc), "status_filter": "all", "q": "", "sort_by": "display_name", "direction": "asc"},
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/staff", response_class=HTMLResponse)
 async def admin_staff_list(
     request: Request,
@@ -1451,6 +1494,50 @@ async def admin_staff_create_admin(
                 email=email.strip() or None,
                 telegram_user_id=tg_id,
                 role_slugs=(RoleSlug.ADMIN,),
+            ),
+        )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/edit", response_class=HTMLResponse)
+async def admin_staff_edit(
+    target_user_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    telegram_user_id: str = Form(""),
+    role_slugs: list[str] | None = Form(default=None),
+) -> Response:
+    try:
+        tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
+        await update_admin_staff_user(
+            session,
+            user_id=target_user_id,
+            data=StaffUpdateData(
+                display_name=display_name.strip(),
+                email=email.strip() or None,
+                telegram_user_id=tg_id,
+                role_slugs=tuple(RoleSlug(value) for value in (role_slugs or [])),
             ),
         )
     except ValueError as exc:
@@ -1525,6 +1612,96 @@ async def admin_staff_revoke_role(
             target_user_id=target_user_id,
             role_slug=RoleSlug(role_slug),
         )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/activate", response_class=HTMLResponse)
+async def admin_staff_activate(
+    target_user_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    try:
+        await set_admin_staff_user_status(session, actor_user_id=user.id, user_id=target_user_id, is_active=True)
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/deactivate", response_class=HTMLResponse)
+async def admin_staff_deactivate(
+    target_user_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    try:
+        await set_admin_staff_user_status(session, actor_user_id=user.id, user_id=target_user_id, is_active=False)
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/invite/resend", response_class=HTMLResponse)
+async def admin_staff_resend_invite(
+    target_user_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    try:
+        await resend_staff_invite(session, user_id=target_user_id)
     except ValueError as exc:
         staff = await list_admin_staff(session)
         staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
@@ -1646,6 +1823,7 @@ def _author_row(author) -> dict[str, object]:
         "user": author.user,
         "invite_link": invite_link,
         "requires_moderation": author.requires_moderation,
+        "status": "active" if author.is_active else "inactive",
     }
 
 
@@ -1661,8 +1839,14 @@ def _staff_row(user: User, *, current_user_id: str) -> dict[str, object]:
         "email": user.email,
         "telegram_user_id": user.telegram_user_id,
         "status": status_value,
+        "invite_delivery_status": user.invite_delivery_status.value if getattr(user, "invite_delivery_status", None) is not None else None,
+        "invite_delivery_error": getattr(user, "invite_delivery_error", None),
+        "invite_delivery_updated_at": getattr(user, "invite_delivery_updated_at", None),
         "invite_link": invite_link,
         "roles": role_slugs,
+        "has_admin_role": "admin" in role_slugs,
+        "has_author_role": "author" in role_slugs,
+        "has_moderator_role": "moderator" in role_slugs,
         "is_multi_role": len(role_slugs) > 1,
         "can_grant_admin": "admin" not in role_slugs,
         "can_grant_author": "author" not in role_slugs,

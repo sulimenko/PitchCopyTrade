@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -125,17 +125,7 @@
   </div>
 
   <div class="author-watchlist-table-shell">
-    <table class="author-watchlist-table">
-      <thead>
-        <tr>
-          <th>Тикер</th>
-          <th>Название</th>
-          <th>Режим</th>
-          <th>Валюта</th>
-        </tr>
-      </thead>
-      <tbody id="watchlist-table-body"></tbody>
-    </table>
+    <div id="watchlist-grid" class="author-watchlist-grid"></div>
     <div id="watchlist-empty" class="muted author-watchlist-empty" hidden>Совпадений не найдено.</div>
   </div>
 </section>
@@ -144,7 +134,7 @@
   <div class="workspace-modal-shell surface">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
       <div>
-        <div class="eyebrow">modal editor</div>
+        <div class="eyebrow">модальный редактор</div>
         <strong>Новая рекомендация</strong>
       </div>
       <button class="action ghost" type="button" data-close-recommendation-modal>Закрыть</button>
@@ -239,23 +229,8 @@
     color: var(--muted);
   }
 
-  .author-watchlist-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .author-watchlist-table th,
-  .author-watchlist-table td {
-    padding: 14px 12px;
-    border-bottom: 1px solid var(--line);
-    text-align: left;
-  }
-
-  .author-watchlist-table th {
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
+  .author-watchlist-grid {
+    min-height: 320px;
   }
 
   .author-watchlist-empty {
@@ -274,7 +249,7 @@
     const closeButtons = document.querySelectorAll("[data-close-recommendation-modal]");
     const searchInput = document.getElementById("watchlist-search-input");
     const suggestionsBox = document.getElementById("watchlist-suggestions");
-    const tableBody = document.getElementById("watchlist-table-body");
+    const gridHost = document.getElementById("watchlist-grid");
     const emptyState = document.getElementById("watchlist-empty");
 
     function openModal() {
@@ -303,7 +278,7 @@
       });
     }
 
-    if (!searchInput || !suggestionsBox || !tableBody || !emptyState) {
+    if (!searchInput || !suggestionsBox || !gridHost || !emptyState) {
       return;
     }
 
@@ -311,24 +286,66 @@
     let currentSuggestions = [];
     let activeAbortController = null;
     let debounceTimer = null;
+    let gridApi = null;
+
+    function htmlCellRenderer(params) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = params.value || "";
+      return wrapper;
+    }
+
+    function mapWatchlistRows(items) {
+      return items.map(function (item) {
+        return {
+          ticker: item.ticker,
+          name: item.name,
+          board: item.board,
+          currency: item.currency || "RUB",
+          actions: '<button type="button" class="ghost" data-watchlist-remove="' + item.id + '">Удалить</button>',
+        };
+      });
+    }
 
     function normalize(value) {
       return String(value || "").trim().toLowerCase();
     }
 
-    function renderTable(items) {
-      tableBody.innerHTML = "";
-      items.forEach(function (item) {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td><strong>${item.ticker}</strong></td>
-          <td>${item.name}</td>
-          <td>${item.board}</td>
-          <td>${item.currency || "RUB"}</td>
-        `;
-        tableBody.appendChild(row);
-      });
+    function renderGrid(items) {
+      if (!gridApi && window.PCTAgGrid && window.PCTAgGrid.available) {
+        gridApi = window.PCTAgGrid.createGrid(gridHost, {
+          columnDefs: [
+            { headerName: "Тикер", field: "ticker", minWidth: 120, flex: 1, sortable: true, filter: true },
+            { headerName: "Название", field: "name", minWidth: 220, flex: 1.6, sortable: true, filter: true },
+            { headerName: "Режим", field: "board", minWidth: 120, flex: 1, sortable: true, filter: true },
+            { headerName: "Валюта", field: "currency", minWidth: 110, flex: 0.8, sortable: true, filter: true },
+            {
+              headerName: "Действия",
+              field: "actions",
+              minWidth: 140,
+              flex: 0.8,
+              pinned: "right",
+              sortable: false,
+              filter: false,
+              cellRenderer: htmlCellRenderer
+            }
+          ],
+          rowData: mapWatchlistRows(items),
+          defaultColDef: {
+            resizable: true,
+            suppressHeaderMenuButton: true
+          },
+          animateRows: false,
+          domLayout: "autoHeight",
+          enableCellTextSelection: true
+        });
+      } else if (gridApi) {
+        gridApi.setGridOption("rowData", mapWatchlistRows(items));
+      }
+      if (gridApi) {
+        gridApi.setGridOption("quickFilterText", searchInput.value || "");
+      }
       emptyState.hidden = items.length !== 0;
+      gridHost.hidden = items.length === 0;
     }
 
     function filterWatchlist(query) {
@@ -416,12 +433,25 @@
       watchlist = payload.watchlist || watchlist;
       searchInput.value = "";
       hideSuggestions();
-      renderTable(watchlist);
+      renderGrid(watchlist);
+    }
+
+    async function removeInstrument(instrumentId) {
+      const response = await fetch(`/author/watchlist/items/${encodeURIComponent(instrumentId)}/remove`, {
+        method: "POST",
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!response.ok) {
+        return;
+      }
+      const payload = await response.json();
+      watchlist = payload.watchlist || watchlist;
+      renderGrid(filterWatchlist(searchInput.value));
     }
 
     searchInput.addEventListener("input", function () {
       const filtered = filterWatchlist(searchInput.value);
-      renderTable(filtered);
+      renderGrid(filtered);
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(function () {
         fetchSuggestions(searchInput.value, filtered.length);
@@ -436,13 +466,21 @@
       addInstrument(button.dataset.instrumentId);
     });
 
+    gridHost.addEventListener("click", function (event) {
+      const button = event.target.closest("[data-watchlist-remove]");
+      if (!button) {
+        return;
+      }
+      removeInstrument(button.getAttribute("data-watchlist-remove"));
+    });
+
     document.addEventListener("click", function (event) {
       if (!suggestionsBox.contains(event.target) && event.target !== searchInput) {
         hideSuggestions();
       }
     });
 
-    renderTable(watchlist);
+    renderGrid(watchlist);
   })();
 </script>
 {% endblock %}

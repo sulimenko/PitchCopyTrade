@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
 {% if not embedded %}
@@ -61,7 +61,9 @@
         <span class="author-editor-field-title">Тип публикации</span>
         <select name="kind">
           {% for item in recommendation_kind_options %}
-          <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>{{ item }}</option>
+          <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>
+            {% if item == "new_idea" %}Новая идея{% elif item == "update" %}Обновление{% elif item == "close" %}Закрытие{% elif item == "cancel" %}Отмена{% else %}{{ item }}{% endif %}
+          </option>
           {% endfor %}
         </select>
       </label>
@@ -69,7 +71,9 @@
         <span class="author-editor-field-title">Статус</span>
         <select name="status">
           {% for item in recommendation_status_options %}
-          <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>{{ item }}</option>
+          <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>
+            {% if item == "draft" %}Черновик{% elif item == "review" %}На модерации{% elif item == "approved" %}Одобрено{% elif item == "scheduled" %}Запланировано{% elif item == "published" %}Опубликовано{% elif item == "closed" %}Закрыто{% elif item == "cancelled" %}Отменено{% elif item == "archived" %}В архиве{% else %}{{ item }}{% endif %}
+          </option>
           {% endfor %}
         </select>
       </label>
@@ -104,7 +108,7 @@
         <strong>Политика модерации</strong>
         <div class="muted" style="margin-top:6px;line-height:1.55;">
           {% if author.requires_moderation %}
-          Для этого автора публикации автоматически идут через review.
+          Для этого автора публикации автоматически идут на модерацию.
           {% else %}
           Для этого автора дополнительная модерация не требуется.
           {% endif %}
@@ -234,8 +238,8 @@
     </section>
 
     <div class="author-editor-actions">
-      <button class="action" type="submit" name="workflow_action" value="save_draft">Сохранить в draft</button>
-      <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить в review</button>
+      <button class="action" type="submit" name="workflow_action" value="save_draft">Сохранить в черновик</button>
+      <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить на модерацию</button>
       <button class="action ghost" type="submit" name="workflow_action" value="schedule">Запланировать</button>
       <button class="action ghost" type="submit" name="workflow_action" value="publish_now">Опубликовать</button>
       {% if recommendation %}
@@ -253,15 +257,15 @@
     <div class="author-editor-aside-list">
       <div class="surface author-editor-aside-item">
         <strong>Статусы идеи</strong>
-        <div class="muted">`draft`, `review`, `approved`, `scheduled`, `published`, `closed`, `cancelled`, `archived`.</div>
+        <div class="muted">Черновик, на модерации, одобрено, запланировано, опубликовано, закрыто, отменено, в архиве.</div>
       </div>
       <div class="surface author-editor-aside-item">
         <strong>Типы публикации</strong>
-        <div class="muted">`new_idea`, `update`, `close`, `cancel`.</div>
+        <div class="muted">Новая идея, обновление, закрытие, отмена.</div>
       </div>
       <div class="surface author-editor-aside-item">
         <strong>Действия workflow</strong>
-        <div class="muted">Кнопки внизу формы переводят идею в `draft`, `review`, `scheduled`, `published`, `closed` или `cancelled`.</div>
+        <div class="muted">Кнопки внизу формы переводят идею в черновик, на модерацию, в отложенную публикацию, в публикацию, в закрытие или в отмену.</div>
       </div>
       <div class="surface author-editor-aside-item">
         <strong>Структура бумаг</strong>

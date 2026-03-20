@@ -63,6 +63,7 @@ def build_staff_invite_token(user: User) -> str:
     settings = get_settings()
     return create_staff_invite_token(
         user_id=user.id,
+        version=max(int(getattr(user, "invite_token_version", 1) or 1), 1),
         secret_key=settings.app.secret_key.get_secret_value(),
     )
 
@@ -100,7 +101,12 @@ async def get_user_from_staff_invite_token(repository: AuthRepository, token: st
         payload = decode_staff_invite_link_token(token)
     except AuthTokenError:
         return None
-    return await repository.get_user_by_id(payload.subject)
+    user = await repository.get_user_by_id(payload.subject)
+    if user is None:
+        return None
+    if (payload.version or 1) != max(int(getattr(user, "invite_token_version", 1) or 1), 1):
+        return None
+    return user
 
 
 async def get_user_from_telegram_fallback_cookie(repository: AuthRepository, token: str) -> User | None:

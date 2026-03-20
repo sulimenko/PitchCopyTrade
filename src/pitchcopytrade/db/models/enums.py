@@ -12,7 +12,13 @@ class RoleSlug(str, Enum):
 class UserStatus(str, Enum):
     INVITED = "invited"
     ACTIVE = "active"
-    BLOCKED = "blocked"
+    INACTIVE = "inactive"
+
+
+class InviteDeliveryStatus(str, Enum):
+    SENT = "sent"
+    FAILED = "failed"
+    RESENT = "resent"
 
 
 class LeadSourceType(str, Enum):

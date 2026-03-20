@@ -9,7 +9,8 @@
 -- -----------------------------------------------------------------------------
 
 CREATE TYPE role_slug AS ENUM ('admin', 'author', 'moderator');
-CREATE TYPE user_status AS ENUM ('invited', 'active', 'blocked');
+CREATE TYPE user_status AS ENUM ('invited', 'active', 'inactive');
+CREATE TYPE invite_delivery_status AS ENUM ('sent', 'failed', 'resent');
 CREATE TYPE lead_source_type AS ENUM ('ads', 'blogger', 'organic', 'direct', 'referral');
 CREATE TYPE strategy_status AS ENUM ('draft', 'published', 'archived');
 CREATE TYPE risk_level AS ENUM ('low', 'medium', 'high');
@@ -52,6 +53,10 @@ CREATE TABLE users (
     full_name        VARCHAR(255),
     password_hash    VARCHAR(255),
     status           user_status NOT NULL,
+    invite_token_version INTEGER NOT NULL DEFAULT 1,
+    invite_delivery_status invite_delivery_status,
+    invite_delivery_error TEXT,
+    invite_delivery_updated_at TIMESTAMPTZ,
     timezone         VARCHAR(64) NOT NULL,
     lead_source_id   UUID REFERENCES lead_sources (id) ON DELETE SET NULL,
     created_at       TIMESTAMPTZ NOT NULL,

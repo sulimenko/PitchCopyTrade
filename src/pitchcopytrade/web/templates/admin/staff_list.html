@@ -1,136 +1,252 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
-{% macro sort_href(column) -%}
-  /admin/staff?role_filter={{ role_filter | urlencode }}&q={{ q | urlencode }}&sort_by={{ column }}&direction={% if sort_by == column and direction == "asc" %}desc{% else %}asc{% endif %}
+{% macro status_badge(status) -%}
+  {% if status == "active" %}
+  <span class="staff-badge ok">активен</span>
+  {% elif status == "inactive" %}
+  <span class="staff-badge danger">неактивен</span>
+  {% else %}
+  <span class="staff-badge warn">{{ status }}</span>
+  {% endif %}
 {%- endmacro %}
 
+{% macro delivery_badge(state) -%}
+  {% if state == "sent" %}
+  <span class="staff-badge ok">отправлено</span>
+  {% elif state == "resent" %}
+  <span class="staff-badge ok">отправлено повторно</span>
+  {% elif state == "failed" %}
+  <span class="staff-badge danger">ошибка отправки</span>
+  {% else %}
+  <span class="staff-badge">—</span>
+  {% endif %}
+{%- endmacro %}
+
+{% block parent_href %}/admin/dashboard{% endblock %}
+{% block breadcrumbs %}Админ / Команда{% endblock %}
+{% block page_title %}Команда и роли{% endblock %}
+
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a href="/admin/dashboard" class="action ghost">Дашборд</a>
-  <a href="/admin/authors" class="action ghost">Авторы</a>
-  <a href="/admin/strategies" class="action ghost">Стратегии</a>
-  <a href="/logout" class="action ghost">Выйти</a>
-</div>
+<a href="/admin/dashboard" class="ghost">Дашборд</a>
+<a href="/admin/authors" class="ghost">Авторы</a>
 {% endblock %}
 
 {% block content %}
-<div style="display:grid;gap:24px;">
-  <h2 style="margin:0;">Команда и роли</h2>
+{% if error %}
+<div class="staff-error">{{ error }}</div>
+{% endif %}
 
-  {% if error %}
-  <div style="padding:14px 16px;border-radius:16px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;">{{ error }}</div>
-  {% endif %}
-
-  <section class="surface" style="padding:24px;border-radius:24px;">
-    <h3 style="margin:0 0 8px;">Создать администратора</h3>
-    <p class="muted" style="margin:0 0 16px;line-height:1.6;">Bootstrap нужен только для первого admin. Все следующие admin создаются отсюда, без SQL и доступа к серверу.</p>
-    <form method="post" action="/admin/staff/admins" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;">
-      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
-        Имя <input name="display_name" required style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div>
+      <div class="eyebrow">онбординг staff</div>
+      <h1>Команда и роли</h1>
+      <p>Новый сотрудник создается по `display_name + email + roles`, приглашение отправляется автоматически, `telegram_user_id` остается расширенным полем.</p>
+    </div>
+    <div class="staff-inline-actions">
+      <span class="staff-badge">{{ staff|length }} строк</span>
+      <span class="staff-badge">{{ role_filter }}</span>
+      {% if role_filter == 'multi-role' %}<span class="staff-badge">несколько ролей</span>{% endif %}
+    </div>
+  </div>
+  <div class="staff-toolbar">
+    <form method="post" action="/admin/staff/admins" class="staff-form-row">
+      <label class="staff-field">
+        <span>Имя</span>
+        <input name="display_name" required />
       </label>
-      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
-        Email <input name="email" type="email" required style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+      <label class="staff-field">
+        <span>Почта</span>
+        <input name="email" type="email" required />
       </label>
-      <label style="display:grid;gap:6px;font-weight:600;font-size:0.9rem;">
-        Telegram ID <input name="telegram_user_id" type="number" style="padding:10px 14px;border-radius:12px;border:1px solid var(--line);font:inherit;" />
+      <label class="staff-field">
+        <span>Роли</span>
+        <select name="role_slug" disabled>
+          <option>администратор</option>
+        </select>
       </label>
-      <button type="submit" class="action" style="height:42px;">Создать admin</button>
+      <details class="staff-field" style="min-width:220px;">
+        <summary class="ghost" style="list-style:none;cursor:pointer;">Расширенные поля</summary>
+        <div style="margin-top:8px;">
+          <span>Telegram ID</span>
+          <input name="telegram_user_id" type="number" />
+        </div>
+      </details>
+      <button type="submit" class="staff-btn is-primary">Создать администратора</button>
     </form>
-  </section>
-
-  <section class="surface" style="padding:24px;border-radius:24px;">
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px;">
-      <form method="get" action="/admin/staff" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
-        <label style="display:grid;gap:6px;min-width:240px;">
-          <span class="muted">Поиск</span>
-          <input type="text" name="q" value="{{ q }}" placeholder="Имя, email, роль" style="padding:12px 14px;border-radius:14px;border:1px solid var(--line);font:inherit;background:#fff;" />
-        </label>
-        <input type="hidden" name="sort_by" value="{{ sort_by }}" />
-        <input type="hidden" name="direction" value="{{ direction }}" />
-        <span class="muted">Показать:</span>
-        <button class="action {% if role_filter != 'all' %}ghost{% endif %}" type="submit" name="role_filter" value="all" style="padding:8px 14px;">все</button>
-        <button class="action {% if role_filter != 'admin' %}ghost{% endif %}" type="submit" name="role_filter" value="admin" style="padding:8px 14px;">admin</button>
-        <button class="action {% if role_filter != 'author' %}ghost{% endif %}" type="submit" name="role_filter" value="author" style="padding:8px 14px;">author</button>
-        <button class="action {% if role_filter != 'moderator' %}ghost{% endif %}" type="submit" name="role_filter" value="moderator" style="padding:8px 14px;">moderator</button>
-        <button class="action {% if role_filter != 'multi-role' %}ghost{% endif %}" type="submit" name="role_filter" value="multi-role" style="padding:8px 14px;">multi-role</button>
-        <button class="action" type="submit">Применить</button>
-      </form>
-      <a href="/admin/authors" class="action ghost">Реестр авторов</a>
-    </div>
-
-    <div style="overflow:auto;">
-      <table class="workspace-table">
-        <thead>
-          <tr>
-            <th><a href="{{ sort_href('display_name') }}">Сотрудник</a></th>
-            <th>Telegram ID</th>
-            <th><a href="{{ sort_href('roles') }}">Роли</a></th>
-            <th><a href="{{ sort_href('status') }}">Статус</a></th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in staff %}
-          <tr>
-            <td style="min-width:280px;">
-              <div>{{ item.display_name }}</div>
-              <div class="muted" style="margin-top:6px;">{{ item.email or "email не задан" }}</div>
-              {% if item.invite_link %}
-              <div class="muted" style="margin-top:6px;font-size:0.82rem;word-break:break-all;"><a href="{{ item.invite_link }}">{{ item.invite_link }}</a></div>
-              {% endif %}
-              {% if item.is_current_user %}
-              <div class="pill" style="margin-top:8px;">это вы</div>
-              {% endif %}
-            </td>
-            <td style="font-family:monospace;">{{ item.telegram_user_id or "—" }}</td>
-            <td>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                {% for role in item.roles %}
-                <span class="pill">{{ role }}</span>
-                {% endfor %}
-              </div>
-            </td>
-            <td>
-              {% if item.status == "active" %}
-              <span class="pill" style="background:rgba(0,160,80,0.1);color:#007a3d;">active</span>
-              {% else %}
-              <span class="pill" style="background:rgba(250,180,60,0.14);color:#9a6b00;">{{ item.status }}</span>
-              {% endif %}
-            </td>
-            <td>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
-                {% if item.can_grant_admin %}
-                <form method="post" action="/admin/staff/{{ item.id }}/roles" style="display:inline;">
-                  <input type="hidden" name="role_slug" value="admin" />
-                  <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">Выдать admin</button>
-                </form>
-                {% endif %}
-                {% if item.can_grant_author %}
-                <form method="post" action="/admin/staff/{{ item.id }}/roles" style="display:inline;">
-                  <input type="hidden" name="role_slug" value="author" />
-                  <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">Выдать author</button>
-                </form>
-                {% endif %}
-                {% if item.can_revoke_admin %}
-                <form method="post" action="/admin/staff/{{ item.id }}/roles/admin/remove" style="display:inline;">
-                  <button type="submit" class="action ghost" style="padding:6px 14px;font-size:0.85rem;">Снять admin</button>
-                </form>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-          {% else %}
-          <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--muted);">Нет staff-пользователей</td></tr>
+    <form method="get" action="/admin/staff" class="staff-form-row">
+      <label class="staff-field">
+        <span>Поиск</span>
+        <input type="text" name="q" value="{{ q }}" placeholder="Имя, почта, роль" />
+      </label>
+      <label class="staff-field">
+        <span>Роль</span>
+        <select name="role_filter">
+          {% for option in ["all", "admin", "author", "moderator", "multi-role"] %}
+          <option value="{{ option }}" {% if role_filter == option %}selected{% endif %}>
+            {% if option == "all" %}все{% elif option == "admin" %}администратор{% elif option == "author" %}автор{% elif option == "moderator" %}модератор{% elif option == "multi-role" %}несколько ролей{% else %}{{ option }}{% endif %}
+          </option>
           {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-</div>
+        </select>
+      </label>
+      <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+      <input type="hidden" name="direction" value="{{ direction }}" />
+      <button class="staff-btn" type="submit">Применить</button>
+    </form>
+  </div>
+  <div class="staff-grid-shell">
+    <table class="staff-grid" data-ag-grid-auto="true">
+      <thead>
+        <tr>
+          <th>Сотрудник</th>
+          <th>Роли</th>
+          <th>Статус</th>
+          <th>Приглашение</th>
+          <th>Telegram ID</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in staff %}
+        <tr>
+          <td>
+            <strong>{{ item.display_name }}</strong>
+            <div class="muted">{{ item.email or "почта не задана" }}</div>
+            {% if item.invite_link %}
+            <div class="muted"><a href="{{ item.invite_link }}">{{ item.invite_link }}</a></div>
+            {% endif %}
+            {% if item.is_current_user %}
+            <div class="staff-inline-actions" style="margin-top:6px;"><span class="staff-badge">это вы</span></div>
+            {% endif %}
+          </td>
+          <td>
+            <div class="staff-inline-actions">
+              {% for role in item.roles %}
+              <span class="staff-badge">{{ role }}</span>
+              {% endfor %}
+            </div>
+          </td>
+          <td>{{ status_badge(item.status) }}</td>
+          <td>
+            {{ delivery_badge(item.invite_delivery_status) }}
+            {% if item.invite_delivery_updated_at %}
+            <div class="muted">{{ item.invite_delivery_updated_at }}</div>
+            {% endif %}
+            {% if item.invite_delivery_error %}
+            <div class="muted">{{ item.invite_delivery_error }}</div>
+            {% endif %}
+          </td>
+          <td><span class="muted">{{ item.telegram_user_id or "—" }}</span></td>
+          <td class="actions">
+            <div class="staff-inline-actions">
+              <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{{ item.id }}">Редактировать</button>
+              {% if item.status == "inactive" %}
+              <form method="post" action="/admin/staff/{{ item.id }}/activate">
+                <button type="submit" class="ghost">Активировать</button>
+              </form>
+              {% elif item.status == "active" %}
+              <form method="post" action="/admin/staff/{{ item.id }}/deactivate">
+                <button type="submit" class="ghost">Деактивировать</button>
+              </form>
+              {% endif %}
+              {% if item.can_grant_admin %}
+              <form method="post" action="/admin/staff/{{ item.id }}/roles">
+                <input type="hidden" name="role_slug" value="admin" />
+                <button type="submit" class="ghost">Выдать роль администратора</button>
+              </form>
+              {% endif %}
+              {% if item.can_grant_author %}
+              <form method="post" action="/admin/staff/{{ item.id }}/roles">
+                <input type="hidden" name="role_slug" value="author" />
+                <button type="submit" class="ghost">Выдать роль автора</button>
+              </form>
+              {% endif %}
+              {% if item.can_revoke_admin %}
+              <form method="post" action="/admin/staff/{{ item.id }}/roles/admin/remove">
+                <button type="submit" class="ghost">Снять роль администратора</button>
+              </form>
+              {% endif %}
+              <form method="post" action="/admin/staff/{{ item.id }}/invite/resend">
+                <button type="submit" class="ghost">Отправить повторно</button>
+              </form>
+              {% if item.invite_link %}
+              <button type="button" class="ghost" data-copy-text="{{ item.invite_link }}">Скопировать ссылку</button>
+              <a class="ghost" href="{{ item.invite_link }}">Открыть приглашение</a>
+              {% endif %}
+            </div>
+            <dialog id="staff-edit-{{ item.id }}" class="staff-dialog">
+              <form method="dialog" class="staff-dialog-backdrop">
+                <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
+              </form>
+              <form method="post" action="/admin/staff/{{ item.id }}/edit" class="staff-drawer">
+                <div class="staff-drawer-head">
+                  <div>
+                    <div class="eyebrow">редактирование staff row</div>
+                    <strong>{{ item.display_name }}</strong>
+                  </div>
+                  <button type="button" class="ghost" data-close-staff-dialog>Закрыть</button>
+                </div>
+                <div class="staff-drawer-body">
+                  <label class="staff-field">
+                    <span>Имя</span>
+                    <input name="display_name" value="{{ item.display_name }}" required />
+                  </label>
+                  <label class="staff-field">
+                    <span>Почта</span>
+                    <input name="email" type="email" value="{{ item.email or '' }}" required />
+                  </label>
+                  <label class="staff-field">
+                    <span>Telegram ID</span>
+                    <input name="telegram_user_id" type="number" value="{{ item.telegram_user_id or '' }}" />
+                  </label>
+                  <div class="staff-field">
+                    <span>Роли</span>
+                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="admin" {% if item.has_admin_role %}checked{% endif %} /> <span>Администратор</span></label>
+                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="author" {% if item.has_author_role %}checked{% endif %} /> <span>Автор</span></label>
+                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="moderator" {% if item.has_moderator_role %}checked{% endif %} /> <span>Модератор</span></label>
+                  </div>
+                </div>
+                <div class="staff-drawer-actions">
+                  <button type="submit" class="staff-btn is-primary">Сохранить</button>
+                </div>
+              </form>
+            </dialog>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">Нет сотрудников.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
 
-<style>
-  .workspace-table { width: 100%; border-collapse: collapse; }
-  .workspace-table th, .workspace-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-  .workspace-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
-</style>
+{% block extra_scripts %}
+<script>
+  document.querySelectorAll("[data-open-staff-dialog]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var dialog = document.getElementById(button.getAttribute("data-open-staff-dialog"));
+      if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+    });
+  });
+  document.querySelectorAll("[data-close-staff-dialog]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var dialog = button.closest("dialog");
+      if (dialog) dialog.close();
+    });
+  });
+  document.addEventListener("click", async function (event) {
+    const button = event.target.closest("[data-copy-text]");
+    if (!button) return;
+    const text = button.getAttribute("data-copy-text") || "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Скопировано";
+    } catch (_error) {
+      button.textContent = "Не удалось";
+    }
+  });
+</script>
 {% endblock %}
