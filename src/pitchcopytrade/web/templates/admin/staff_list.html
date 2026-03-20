@@ -2,21 +2,21 @@
 
 {% macro status_badge(status) -%}
   {% if status == "active" %}
-  <span class="staff-badge ok">активен</span>
+  <span class="staff-badge ok">{{ label_user_status(status) }}</span>
   {% elif status == "inactive" %}
-  <span class="staff-badge danger">неактивен</span>
+  <span class="staff-badge danger">{{ label_user_status(status) }}</span>
   {% else %}
-  <span class="staff-badge warn">{{ status }}</span>
+  <span class="staff-badge warn">{{ label_user_status(status) }}</span>
   {% endif %}
 {%- endmacro %}
 
 {% macro delivery_badge(state) -%}
   {% if state == "sent" %}
-  <span class="staff-badge ok">отправлено</span>
+  <span class="staff-badge ok">{{ label_invite_delivery_status(state) }}</span>
   {% elif state == "resent" %}
-  <span class="staff-badge ok">отправлено повторно</span>
+  <span class="staff-badge ok">{{ label_invite_delivery_status(state) }}</span>
   {% elif state == "failed" %}
-  <span class="staff-badge danger">ошибка отправки</span>
+  <span class="staff-badge danger">{{ label_invite_delivery_status(state) }}</span>
   {% else %}
   <span class="staff-badge">—</span>
   {% endif %}
@@ -39,13 +39,13 @@
 <section class="staff-card">
   <div class="staff-page-head">
     <div>
-      <div class="eyebrow">онбординг staff</div>
+      <div class="eyebrow">онбординг команды</div>
       <h1>Команда и роли</h1>
       <p>Новый сотрудник создается по `display_name + email + roles`, приглашение отправляется автоматически, `telegram_user_id` остается расширенным полем.</p>
     </div>
     <div class="staff-inline-actions">
       <span class="staff-badge">{{ staff|length }} строк</span>
-      <span class="staff-badge">{{ role_filter }}</span>
+      <span class="staff-badge">{% if role_filter == "all" %}все роли{% elif role_filter == "admin" %}администратор{% elif role_filter == "author" %}автор{% elif role_filter == "moderator" %}модератор{% elif role_filter == "multi-role" %}несколько ролей{% else %}{{ role_filter }}{% endif %}</span>
       {% if role_filter == 'multi-role' %}<span class="staff-badge">несколько ролей</span>{% endif %}
     </div>
   </div>
@@ -122,7 +122,7 @@
           <td>
             <div class="staff-inline-actions">
               {% for role in item.roles %}
-              <span class="staff-badge">{{ role }}</span>
+              <span class="staff-badge">{{ label_role(role) }}</span>
               {% endfor %}
             </div>
           </td>
@@ -138,42 +138,45 @@
           </td>
           <td><span class="muted">{{ item.telegram_user_id or "—" }}</span></td>
           <td class="actions">
-            <div class="staff-inline-actions">
-              <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{{ item.id }}">Редактировать</button>
-              {% if item.status == "inactive" %}
-              <form method="post" action="/admin/staff/{{ item.id }}/activate">
-                <button type="submit" class="ghost">Активировать</button>
-              </form>
-              {% elif item.status == "active" %}
-              <form method="post" action="/admin/staff/{{ item.id }}/deactivate">
-                <button type="submit" class="ghost">Деактивировать</button>
-              </form>
-              {% endif %}
-              {% if item.can_grant_admin %}
-              <form method="post" action="/admin/staff/{{ item.id }}/roles">
-                <input type="hidden" name="role_slug" value="admin" />
-                <button type="submit" class="ghost">Выдать роль администратора</button>
-              </form>
-              {% endif %}
-              {% if item.can_grant_author %}
-              <form method="post" action="/admin/staff/{{ item.id }}/roles">
-                <input type="hidden" name="role_slug" value="author" />
-                <button type="submit" class="ghost">Выдать роль автора</button>
-              </form>
-              {% endif %}
-              {% if item.can_revoke_admin %}
-              <form method="post" action="/admin/staff/{{ item.id }}/roles/admin/remove">
-                <button type="submit" class="ghost">Снять роль администратора</button>
-              </form>
-              {% endif %}
-              <form method="post" action="/admin/staff/{{ item.id }}/invite/resend">
-                <button type="submit" class="ghost">Отправить повторно</button>
-              </form>
-              {% if item.invite_link %}
-              <button type="button" class="ghost" data-copy-text="{{ item.invite_link }}">Скопировать ссылку</button>
-              <a class="ghost" href="{{ item.invite_link }}">Открыть приглашение</a>
-              {% endif %}
-            </div>
+            <details class="staff-row-menu">
+              <summary class="ghost">Действия</summary>
+              <div class="staff-row-menu-panel">
+                <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{{ item.id }}">Редактировать</button>
+                {% if item.status == "inactive" %}
+                <form method="post" action="/admin/staff/{{ item.id }}/activate">
+                  <button type="submit" class="ghost">Активировать</button>
+                </form>
+                {% elif item.status == "active" %}
+                <form method="post" action="/admin/staff/{{ item.id }}/deactivate">
+                  <button type="submit" class="ghost">Деактивировать</button>
+                </form>
+                {% endif %}
+                {% if item.can_grant_admin %}
+                <form method="post" action="/admin/staff/{{ item.id }}/roles">
+                  <input type="hidden" name="role_slug" value="admin" />
+                  <button type="submit" class="ghost">Выдать роль администратора</button>
+                </form>
+                {% endif %}
+                {% if item.can_grant_author %}
+                <form method="post" action="/admin/staff/{{ item.id }}/roles">
+                  <input type="hidden" name="role_slug" value="author" />
+                  <button type="submit" class="ghost">Выдать роль автора</button>
+                </form>
+                {% endif %}
+                {% if item.can_revoke_admin %}
+                <form method="post" action="/admin/staff/{{ item.id }}/roles/admin/remove">
+                  <button type="submit" class="ghost">Снять роль администратора</button>
+                </form>
+                {% endif %}
+                <form method="post" action="/admin/staff/{{ item.id }}/invite/resend">
+                  <button type="submit" class="ghost">Отправить повторно</button>
+                </form>
+                {% if item.invite_link %}
+                <button type="button" class="ghost" data-copy-text="{{ item.invite_link }}">Скопировать ссылку</button>
+                <a class="ghost" href="{{ item.invite_link }}">Открыть Telegram invite</a>
+                {% endif %}
+              </div>
+            </details>
             <dialog id="staff-edit-{{ item.id }}" class="staff-dialog">
               <form method="dialog" class="staff-dialog-backdrop">
                 <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
@@ -181,7 +184,7 @@
               <form method="post" action="/admin/staff/{{ item.id }}/edit" class="staff-drawer">
                 <div class="staff-drawer-head">
                   <div>
-                    <div class="eyebrow">редактирование staff row</div>
+                    <div class="eyebrow">редактирование сотрудника</div>
                     <strong>{{ item.display_name }}</strong>
                   </div>
                   <button type="button" class="ghost" data-close-staff-dialog>Закрыть</button>

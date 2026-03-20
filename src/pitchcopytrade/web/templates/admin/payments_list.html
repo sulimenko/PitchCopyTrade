@@ -58,7 +58,7 @@
           <th>Провайдер</th>
           <th>Сумма</th>
           <th>Подписки</th>
-          <th>Открыть</th>
+          <th>Действия</th>
         </tr>
       </thead>
       <tbody>
@@ -72,12 +72,27 @@
           </td>
           <td>{{ payment.product.title }}</td>
           <td><span class="staff-badge {% if payment.status.value in ['created', 'pending'] %}warn{% elif payment.status.value == 'paid' %}ok{% else %}danger{% endif %}">
-            {% if payment.status.value == "created" %}создан{% elif payment.status.value == "pending" %}в ожидании{% elif payment.status.value == "paid" %}оплачен{% elif payment.status.value == "failed" %}ошибка{% elif payment.status.value == "expired" %}истек{% elif payment.status.value == "cancelled" %}отменён{% elif payment.status.value == "refunded" %}возвращён{% else %}{{ payment.status.value }}{% endif %}
+            {{ label_payment_status(payment.status) }}
           </span></td>
-          <td>{% if payment.provider.value == "stub_manual" %}ручной stub{% elif payment.provider.value == "tbank" %}Т-Банк{% else %}{{ payment.provider.value }}{% endif %}</td>
+          <td>{{ label_payment_provider(payment.provider) }}</td>
           <td>{{ payment.final_amount_rub }} руб</td>
           <td>{{ payment.subscriptions|length }}</td>
-          <td class="actions"><a class="ghost" href="/admin/payments/{{ payment.id }}">Открыть</a></td>
+          <td class="actions">
+            <details class="staff-row-menu">
+              <summary class="ghost">Действия</summary>
+              <div class="staff-row-menu-panel">
+                <a class="ghost" href="/admin/payments/{{ payment.id }}">Открыть</a>
+                {% if payment.status.value == "pending" %}
+                <form method="post" action="/admin/payments/{{ payment.id }}/confirm">
+                  <button type="submit" class="ghost">Подтвердить</button>
+                </form>
+                {% endif %}
+                {% if payment.status.value in ["created", "pending"] and payment.provider.value != "tbank" %}
+                <a class="ghost" href="/admin/payments/{{ payment.id }}">Применить скидку</a>
+                {% endif %}
+              </div>
+            </details>
+          </td>
         </tr>
         {% else %}
         <tr><td colspan="7" class="muted">Платежей пока нет.</td></tr>

@@ -29,9 +29,9 @@
     <div class="surface" style="padding:16px 18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;min-width:240px;">
       <div class="eyebrow">оператор</div>
       <strong style="display:block;margin-top:8px;font-size:1.15rem;">{{ user.full_name or user.username or user.email }}</strong>
-      <div class="muted" style="margin-top:8px;">{{ user.email or "email не задан" }}</div>
+      <div class="muted" style="margin-top:8px;">{{ user.email or "почта не задана" }}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-        <a class="action" href="/admin/staff">Управлять staff</a>
+        <a class="action" href="/admin/staff">Управлять командой</a>
         <a class="action" href="/admin/authors">Создать автора</a>
         <a class="action ghost" href="/admin/strategies/new">Создать стратегию</a>
       </div>
@@ -58,7 +58,7 @@
   <article class="surface" style="padding:20px;">
     <div class="eyebrow">подписки</div>
     <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.active_subscriptions }}</div>
-    <div class="muted" style="margin-top:8px;">активны или trial</div>
+    <div class="muted" style="margin-top:8px;">активны или на пробном периоде</div>
   </article>
   <article class="surface" style="padding:20px;">
     <div class="eyebrow">активные идеи</div>
@@ -86,13 +86,13 @@
             <strong style="font-size:1.05rem;">{{ strategy.title }}</strong>
             <div class="muted" style="margin-top:8px;">{{ strategy.short_description }}</div>
           </div>
-          <span class="pill">{{ strategy.status.value }}</span>
+          <span class="pill">{{ label_strategy_status(strategy.status) }}</span>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">{{ strategy.risk_level.value }}</span>
+          <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
           <span class="pill">{{ strategy.author.display_name }}</span>
           {% if strategy.is_public %}
-          <span class="pill">public</span>
+          <span class="pill">Публичная</span>
           {% endif %}
         </div>
       </a>
@@ -113,7 +113,7 @@
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Нагрузка авторов</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Следите, чтобы каждый автор имел актуальные стратегии и не зависал в draft-состоянии.</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Следите, чтобы каждый автор имел актуальные стратегии и не зависал в черновиках.</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Подписочная воронка</strong>
@@ -140,10 +140,10 @@
           <strong style="font-size:1.05rem;">{{ product.title }}</strong>
           <div class="muted" style="margin-top:8px;">{{ product.description or "Описание пока не заполнено" }}</div>
         </div>
-        <span class="pill">{{ product.product_type.value }}</span>
+        <span class="pill">{{ label_product_type(product.product_type) }}</span>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-        <span class="pill">{{ product.billing_period.value }}</span>
+        <span class="pill">{{ label_billing_period(product.billing_period) }}</span>
         <span class="pill">{{ product.price_rub }} руб</span>
         {% if product.trial_days %}
         <span class="pill">{{ product.trial_days }} дней бесплатно</span>
@@ -177,12 +177,12 @@
           <strong style="font-size:1.05rem;">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</strong>
           <div class="muted" style="margin-top:8px;">{{ subscription.product.title }}</div>
         </div>
-        <span class="pill">{{ subscription.status.value }}</span>
+        <span class="pill">{{ label_subscription_status(subscription.status) }}</span>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
         <span class="pill">{{ subscription.start_at }} -> {{ subscription.end_at }}</span>
         {% if subscription.payment %}
-        <span class="pill">{{ subscription.payment.status.value }}</span>
+        <span class="pill">{{ label_payment_status(subscription.payment.status) }}</span>
         {% endif %}
       </div>
     </a>
@@ -210,11 +210,11 @@
           <strong style="font-size:1.05rem;">{{ payment.user.full_name or payment.user.email or payment.user.id }}</strong>
           <div class="muted" style="margin-top:8px;">{{ payment.product.title }}</div>
         </div>
-        <span class="pill">{{ payment.status.value }}</span>
+        <span class="pill">{{ label_payment_status(payment.status) }}</span>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
         <span class="pill">{{ payment.final_amount_rub }} руб</span>
-        <span class="pill">{{ payment.provider.value }}</span>
+        <span class="pill">{{ label_payment_provider(payment.provider) }}</span>
         {% if payment.stub_reference %}
         <span class="pill">{{ payment.stub_reference }}</span>
         {% endif %}

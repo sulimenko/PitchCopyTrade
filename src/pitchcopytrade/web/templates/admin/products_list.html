@@ -52,8 +52,8 @@
             <div class="muted">{{ product.slug }}</div>
             <div class="muted">{{ product.description or "Описание пока не заполнено" }}</div>
           </td>
-          <td>{{ product.product_type.value }}</td>
-          <td>{{ product.billing_period.value }}</td>
+          <td>{{ label_product_type(product.product_type) }}</td>
+          <td>{{ label_billing_period(product.billing_period) }}</td>
           <td>
             <div class="staff-inline-actions">
               <span class="staff-badge {% if product.is_active %}ok{% else %}danger{% endif %}">{{ "активен" if product.is_active else "выключен" }}</span>

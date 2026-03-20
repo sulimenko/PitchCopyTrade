@@ -72,7 +72,7 @@
         <strong>Риск</strong>
         <select name="risk_level" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
           {% for item in risk_levels %}
-          <option value="{{ item.value }}" {% if form_values.risk_level == item.value %}selected{% endif %}>{{ item.value }}</option>
+          <option value="{{ item.value }}" {% if form_values.risk_level == item.value %}selected{% endif %}>{{ label_risk_level(item) }}</option>
           {% endfor %}
         </select>
       </label>
@@ -80,7 +80,7 @@
         <strong>Статус</strong>
         <select name="status" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
           {% for item in strategy_statuses %}
-          <option value="{{ item.value }}" {% if form_values.status == item.value %}selected{% endif %}>{{ item.value }}</option>
+          <option value="{{ item.value }}" {% if form_values.status == item.value %}selected{% endif %}>{{ label_strategy_status(item) }}</option>
           {% endfor %}
         </select>
       </label>

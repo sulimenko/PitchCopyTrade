@@ -15,7 +15,7 @@
     <div>
       <div class="eyebrow">стратегии автора</div>
       <h1>{{ author.display_name }}</h1>
-      <p>Табличный реестр собственных стратегий. Стратегии редактируются только в `draft`; опубликованные и архивные строки остаются только для чтения.</p>
+      <p>Табличный реестр собственных стратегий. Стратегии редактируются только в черновике; опубликованные и архивные строки остаются только для чтения.</p>
     </div>
     <span class="staff-badge">{{ strategies|length }} строк</span>
   </div>
@@ -47,10 +47,10 @@
         <tr>
           <td><strong>{{ strategy.title }}</strong><div class="muted">{{ strategy.slug }}</div></td>
           <td>{{ strategy.short_description or "—" }}</td>
-          <td><span class="staff-badge">{{ strategy.risk_level.value }}</span></td>
+          <td><span class="staff-badge">{{ label_risk_level(strategy.risk_level) }}</span></td>
           <td>
             <span class="staff-badge {% if strategy.status.value == 'draft' %}ok{% else %}warn{% endif %}">
-              {% if strategy.status.value == "draft" %}черновик{% elif strategy.status.value == "published" %}опубликована{% elif strategy.status.value == "archived" %}в архиве{% else %}{{ strategy.status.value }}{% endif %}
+              {{ label_strategy_status(strategy.status) }}
             </span>
           </td>
           <td>{{ strategy.min_capital_rub or "—" }}</td>

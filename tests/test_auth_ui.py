@@ -144,6 +144,17 @@ def test_login_page_renders() -> None:
         assert "/auth/telegram/callback" in response.text
 
 
+def test_login_page_renders_staff_invite_state() -> None:
+    repository = FakeAuthRepository()
+    with _build_client(repository) as client:
+        response = client.get("/login?invite_token=test-token")
+
+        assert response.status_code == 200
+        assert "Приглашение сотрудника активно" in response.text
+        assert "Один шаг через Telegram" in response.text
+        assert "Логин или email" not in response.text
+
+
 def test_login_submit_sets_session_cookie() -> None:
     repository = FakeAuthRepository()
     user = _make_user()
@@ -366,6 +377,66 @@ def test_telegram_invite_token_binds_admin_account() -> None:
         assert response.headers["location"] == "/admin/dashboard"
         assert user.telegram_user_id == 888002
         assert user.status == UserStatus.ACTIVE
+
+
+def test_telegram_invite_token_rejects_stale_token_after_version_bump() -> None:
+    repository = FakeAuthRepository()
+    user = _make_admin_user()
+    user.status = UserStatus.INVITED
+    stale_token = build_staff_invite_token(user)
+    user.invite_token_version = 2
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "888002",
+            "first_name": "Ops",
+            "username": "ops_admin",
+            "auth_date": str(auth_date),
+            "invite_token": stale_token,
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params)
+
+        assert response.status_code == 409
+        assert "Приглашение недействительно или устарело." in response.text
+        assert user.status == UserStatus.INVITED
+
+
+def test_telegram_invite_token_rejects_telegram_collision() -> None:
+    repository = FakeAuthRepository()
+    invited_user = _make_admin_user()
+    invited_user.id = "staff-1"
+    invited_user.status = UserStatus.INVITED
+    repository.users_by_id[invited_user.id] = invited_user
+
+    existing_user = _make_user()
+    existing_user.id = "staff-2"
+    existing_user.telegram_user_id = 777001
+    repository.users_by_telegram_id[existing_user.telegram_user_id] = existing_user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "777001",
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(invited_user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params)
+
+        assert response.status_code == 409
+        assert "Этот Telegram-аккаунт уже привязан к другому сотруднику." in response.text
+        assert invited_user.status == UserStatus.INVITED
 
 
 def test_dual_role_login_defaults_to_admin_mode() -> None:

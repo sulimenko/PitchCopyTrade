@@ -1135,7 +1135,8 @@ def test_staff_edit_updates_existing_row(monkeypatch) -> None:
     session.users_by_id[admin.id] = admin
     captured: dict[str, object] = {}
 
-    async def fake_update_staff(_session, *, user_id, data):
+    async def fake_update_staff(_session, *, actor_user_id, user_id, data):
+        captured["actor_user_id"] = actor_user_id
         captured["user_id"] = user_id
         captured["data"] = data
         return _make_admin_user()
@@ -1161,6 +1162,37 @@ def test_staff_edit_updates_existing_row(monkeypatch) -> None:
         assert captured["data"].email == "ops@example.com"
         assert captured["data"].telegram_user_id == 12345
         assert captured["data"].role_slugs == (RoleSlug.ADMIN, RoleSlug.AUTHOR)
+        assert captured["actor_user_id"] == admin.id
+
+
+def test_staff_edit_renders_governance_error_for_last_active_admin(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    async def fake_update_staff(_session, *, actor_user_id, user_id, data):
+        assert actor_user_id == admin.id
+        assert user_id == admin.id
+        assert data.role_slugs == (RoleSlug.AUTHOR,)
+        raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.update_admin_staff_user", fake_update_staff)
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_staff", lambda _session, role_filter="all": _async_return([admin]))
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            f"/admin/staff/{admin.id}/edit",
+            data={
+                "display_name": "Admin User",
+                "email": "admin@example.com",
+                "telegram_user_id": "",
+                "role_slugs": ["author"],
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "Нельзя снять у себя роль последнего активного администратора." in response.text
 
 
 def test_staff_activate_uses_explicit_status_action(monkeypatch) -> None:

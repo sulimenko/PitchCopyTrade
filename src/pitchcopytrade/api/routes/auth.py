@@ -387,12 +387,12 @@ async def _bind_staff_user_by_invite_token(
 ):
     invited_user = await get_user_from_staff_invite_token(repository, invite_token)
     if invited_user is None:
-        return None
+        raise ValueError("Приглашение недействительно или устарело.")
     existing_user = await repository.get_user_by_telegram_id(telegram_user_id)
     if existing_user is not None and existing_user.id != invited_user.id:
         raise ValueError("Этот Telegram-аккаунт уже привязан к другому сотруднику.")
     if invited_user.telegram_user_id not in (None, telegram_user_id):
-        return None
+        raise ValueError("Приглашение уже связано с другим Telegram-аккаунтом.")
     invited_user.telegram_user_id = telegram_user_id
     invited_user.status = UserStatus.ACTIVE
     await repository.commit()

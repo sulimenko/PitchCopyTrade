@@ -37,7 +37,7 @@
         <strong>Тип продукта</strong>
         <select name="product_type" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
           {% for item in product_types %}
-          <option value="{{ item.value }}" {% if form_values.product_type == item.value %}selected{% endif %}>{{ item.value }}</option>
+          <option value="{{ item.value }}" {% if form_values.product_type == item.value %}selected{% endif %}>{{ label_product_type(item) }}</option>
           {% endfor %}
         </select>
       </label>
@@ -45,7 +45,7 @@
         <strong>Период биллинга</strong>
         <select name="billing_period" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
           {% for item in billing_periods %}
-          <option value="{{ item.value }}" {% if form_values.billing_period == item.value %}selected{% endif %}>{{ item.value }}</option>
+          <option value="{{ item.value }}" {% if form_values.billing_period == item.value %}selected{% endif %}>{{ label_billing_period(item) }}</option>
           {% endfor %}
         </select>
       </label>

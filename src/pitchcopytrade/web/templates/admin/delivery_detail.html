@@ -16,11 +16,11 @@
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">{{ record.recommendation.title or record.recommendation.strategy.title }}</h1>
       <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        История publish/delivery по конкретной рекомендации и ручной retry для Telegram-доставки.
+        История публикации и доставки по конкретной рекомендации, а также ручной повтор для Telegram-рассылки.
       </p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ record.recommendation.status.value }}</span>
+      <span class="pill">{{ label_recommendation_status(record.recommendation.status) }}</span>
       <span class="pill">{{ record.delivery_attempts }} попыток</span>
     </div>
   </div>
@@ -47,7 +47,7 @@
       <button class="action" type="submit">Повторить доставку в Telegram</button>
       </form>
       <a class="action ghost" href="/admin/delivery">Вернуться к очереди</a>
-      <a class="action ghost" href="/app/recommendations/{{ record.recommendation.id }}">Открыть клиентское отображение</a>
+      <a class="action ghost" href="/app/recommendations/{{ record.recommendation.id }}">Открыть клиентский экран</a>
     </div>
   </article>
 
@@ -57,7 +57,7 @@
     <div style="display:grid;gap:12px;">
       {% for event in record.events %}
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>{{ event.action }}</strong>
+        <strong>{{ label_audit_action(event.action) }}</strong>
         <div class="muted" style="margin-top:8px;line-height:1.55;">{{ event.created_at }}</div>
         {% if event.payload %}
         <div class="muted" style="margin-top:8px;line-height:1.55;">{{ event.payload }}</div>

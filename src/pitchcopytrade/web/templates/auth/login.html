@@ -9,7 +9,7 @@
   {% endif %}
   {% if invite_token %}
   <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(20,85,216,0.08);color:var(--blue-700);font-weight:600;line-height:1.5;">
-    Приглашение сотрудника активно. Продолжите через Telegram, чтобы завершить привязку.
+    Приглашение сотрудника активно. Нажмите кнопку Telegram ниже, чтобы завершить вход.
   </div>
   {% endif %}
   {% if not telegram_https_ready %}
@@ -23,7 +23,7 @@
     <section style="text-align:center;">
       <div class="muted" style="margin-bottom:14px;line-height:1.6;font-size:0.95rem;">
         {% if is_staff_invite %}
-        Вход по staff-приглашению. Один шаг через Telegram.
+        Вход по приглашению сотрудника. Один шаг через Telegram.
         {% else %}
         Основной вход для сотрудников на сервере: через Telegram.
         {% endif %}
@@ -35,8 +35,12 @@
         data-request-access="write">
       </script>
       <div class="muted" style="margin-top:16px;line-height:1.65;font-size:0.95rem;">
+        {% if is_staff_invite %}
+        Если кнопка не работает, запросите у администратора новое приглашение.
+        {% else %}
         Для работы входа через Telegram у бота в <strong>@BotFather</strong> должен быть установлен домен
         <strong>{{ telegram_login_domain }}</strong> через команду <code>/setdomain</code>.
+        {% endif %}
       </div>
     </section>
 

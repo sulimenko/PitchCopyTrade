@@ -19,7 +19,7 @@
       <p class="muted" style="line-height:1.7;margin:16px 0 0;">{{ strategy.short_description }}</p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ strategy.risk_level.value }}</span>
+      <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
       {% if strategy.min_capital_rub %}
       <span class="pill">от {{ strategy.min_capital_rub }} руб</span>
       {% endif %}

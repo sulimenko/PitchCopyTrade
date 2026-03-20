@@ -67,7 +67,7 @@
         <div class="eyebrow">{{ strategy.author.display_name }}</div>
         <h2 style="margin:10px 0 0;font-size:1.7rem;">{{ strategy.title }}</h2>
       </div>
-      <span class="pill">{{ strategy.risk_level.value }}</span>
+      <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
     </div>
     <p class="muted" style="margin:16px 0 0;line-height:1.65;">{{ strategy.short_description }}</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">

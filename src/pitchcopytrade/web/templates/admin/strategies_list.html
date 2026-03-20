@@ -65,8 +65,8 @@
             <div class="muted" style="margin-top:4px;">{{ strategy.short_description }}</div>
           </td>
           <td>{{ strategy.author.display_name }}</td>
-          <td><span class="pill">{{ strategy.risk_level.value }}</span></td>
-          <td><span class="pill">{{ strategy.status.value }}</span></td>
+          <td><span class="pill">{{ label_risk_level(strategy.risk_level) }}</span></td>
+          <td><span class="pill">{{ label_strategy_status(strategy.status) }}</span></td>
           <td>{% if strategy.is_public %}публичная{% else %}закрытая{% endif %}</td>
           <td>{{ strategy.min_capital_rub or "—" }}</td>
           <td><a class="action ghost" href="/admin/strategies/{{ strategy.id }}/edit" style="padding:8px 12px;">Открыть</a></td>

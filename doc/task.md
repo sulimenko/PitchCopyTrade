@@ -23,12 +23,12 @@
 
 **Цель:** убрать public-like visual language из staff кабинетов и сделать operator-first shell.
 
-- [ ] **A1** Сделать отдельный staff base layout
+- [x] **A1** Сделать отдельный staff base layout
   - не использовать текущий общий `base.html` как final visual language для staff
   - выделить compact shell для `admin`, `author`, `moderation`
   - public/subscriber design не должен протекать в staff UI
 
-- [ ] **A2** Внедрить left rail
+- [x] **A2** Внедрить left rail
   - узкая вертикальная навигация
   - группы разделов:
     - dashboard
@@ -45,17 +45,17 @@
     - analytics
     - moderation
 
-- [ ] **A3** Внедрить верхнюю navigation line
+- [x] **A3** Внедрить верхнюю navigation line
   - `Назад`
   - breadcrumb
   - быстрые действия текущего экрана
   - переключение роли
 
-- [ ] **A4** Правило `Назад`
+- [x] **A4** Правило `Назад`
   - browser history fallback
   - если history невалидна, fallback на parent route
 
-- [ ] **A5** Уменьшить визуальный шум
+- [x] **A5** Уменьшить визуальный шум
   - убрать большие hero blocks как primary pattern
   - убрать крупные action buttons как основную навигацию
   - сделать staff controls компактными
@@ -73,13 +73,13 @@
 
 **Цель:** все staff list/registry/queue surfaces переводятся на единый `AG Grid Community`.
 
-- [ ] **B1** Подключить `AG Grid Community` локально
+- [x] **B1** Подключить `AG Grid Community` локально
   - без CDN как canonical path
   - shared JS/CSS слой внутри проекта
   - один reusable bootstrap для Jinja templates
   - удалить handcrafted HTML tables как primary registry layer на staff screens
 
-- [ ] **B2** Сделать compact staff grid theme
+- [x] **B2** Сделать compact staff grid theme
   - row height `28-32px`
   - header height `30-34px`
   - слабые borders
@@ -88,7 +88,7 @@
   - нейтральный фон
   - минимум карточности
 
-- [ ] **B3** Перевести admin surfaces
+- [x] **B3** Перевести admin surfaces
   - `/admin/staff`
   - `/admin/authors`
   - `/admin/strategies`
@@ -100,17 +100,17 @@
   - `/admin/delivery`
   - табличные части `/admin/analytics/*`
 
-- [ ] **B4** Перевести author surfaces
+- [x] **B4** Перевести author surfaces
   - `/author/strategies`
   - `/author/recommendations`
   - watchlist в `/author/dashboard`
 
-- [ ] **B5** Перевести moderation surface
+- [x] **B5** Перевести moderation surface
   - `/moderation/queue`
   - detail как right drawer
   - approve/rework/reject как row actions
 
-- [ ] **B6** Сделать один CRUD language
+- [x] **B6** Сделать один CRUD language
   - grid row
   - inline edit простых полей
   - right drawer для расширенного редактирования
@@ -118,7 +118,7 @@
   - modal/fullscreen modal для сложных форм
   - для `admin/staff` и `admin/authors` обязательно покрыть existing row edit, а не только create/actions
 
-- [ ] **B8** Закрыть existing row edit для `admin/staff`
+- [x] **B8** Закрыть existing row edit для `admin/staff`
   - `display_name`
   - `email`
   - `telegram_user_id`
@@ -126,14 +126,14 @@
   - invite actions
   - edit path должен быть доступен из grid, а не через скрытый side flow
 
-- [ ] **B9** Закрыть existing row edit для `admin/authors`
+- [x] **B9** Закрыть existing row edit для `admin/authors`
   - `display_name`
   - `email`
   - `telegram_user_id`
   - `requires_moderation`
   - `active/inactive`
 
-- [ ] **B7** Сохранить recommendation editor contract
+- [x] **B7** Сохранить recommendation editor contract
   - grid остается primary list layer
   - full recommendation edit остается modal/fullscreen modal
   - быстрый inline add остается operator shortcut
@@ -151,18 +151,18 @@
 
 **Цель:** все grids и drawers obey explicit editability rules по статусам.
 
-- [ ] **C1** Staff users
+- [x] **C1** Staff users
   - до bind editable: `display_name`, `email`, `roles`, `telegram_user_id`
   - после bind editable: `display_name`, `email`, `roles`, `telegram_user_id`
   - статус меняется только через явные actions
   - vocabulary: `invited`, `active`, `inactive`
 
-- [ ] **C1.1** Реализовать явный action flow `active/inactive`
+- [x] **C1.1** Реализовать явный action flow `active/inactive`
   - status column не должна быть только информативной
   - должны существовать действия `Активировать` и `Деактивировать`
   - row menu / drawer не должны показывать невозможные переходы
 
-- [ ] **C2** Authors
+- [x] **C2** Authors
   - editable:
     - `display_name`
     - `email`
@@ -171,15 +171,15 @@
     - `requires_moderation`
     - `active/inactive`
 
-- [ ] **C3** Strategies
+- [x] **C3** Strategies
   - editable только `draft`
   - `published`, `archived` read-only
 
-- [ ] **C4** Recommendations
+- [x] **C4** Recommendations
   - editable только `draft`, `review`
   - `approved`, `scheduled`, `published`, `closed`, `cancelled`, `archived` read-only
 
-- [ ] **C5** Payments
+- [x] **C5** Payments
   - editable/actionable только `created`, `pending`
   - `paid`, `failed`, `expired`, `cancelled`, `refunded` read-only
   - row actions minimum:
@@ -187,7 +187,7 @@
     - `Подтвердить`
     - `Применить скидку`
 
-- [ ] **C6** Subscriptions
+- [x] **C6** Subscriptions
   - free-form row edit не допускается
   - row actions minimum:
     - `Открыть`
@@ -195,12 +195,12 @@
     - `Отменить`
   - terminal states read-only
 
-- [ ] **C7** Legal
+- [x] **C7** Legal
   - draft editable
   - active version read-only
   - смена active документа только через новую версию и `activate`
 
-- [ ] **C8** Watchlist
+- [x] **C8** Watchlist
   - добавить сортировку/фильтрацию
   - добавить удаление
   - не редактировать instrument master-data из watchlist
@@ -217,28 +217,28 @@
 
 **Цель:** убрать ручную пересылку invite URL и сделать onboarding новым `admin/author` быстрым и естественным.
 
-- [ ] **D1** Упростить create flow
+- [x] **D1** Упростить create flow
   - primary fields:
     - `display_name`
     - `email`
     - `roles`
   - `telegram_user_id` увести в advanced field
 
-- [ ] **D2** Автоматически отправлять invite email
+- [x] **D2** Автоматически отправлять invite email
   - новый `admin`
   - новый `author`
   - письмо с CTA:
     - `Открыть приглашение`
     - `Войти через Telegram`
 
-- [ ] **D3** Делать admin oversight mail
+- [x] **D3** Делать admin oversight mail
   - при каждом создании `admin`
   - при каждом создании `author`
   - при failure отправки invite
   - отправлять уведомление всем активным администраторам
   - одинаково в `db` и `file` mode
 
-- [ ] **D4** Хранить invite delivery state
+- [x] **D4** Хранить invite delivery state
   - `sent`
   - `failed`
   - `resent`
@@ -246,23 +246,23 @@
   - `last_error`
   - log entry для каждой отправки
 
-- [ ] **D5** Добавить registry actions
+- [x] **D5** Добавить registry actions
   - `Отправить повторно`
   - `Скопировать ссылку`
   - `Открыть Telegram invite`
 
-- [ ] **D6** Инвалидировать старые invite links при resend
+- [x] **D6** Инвалидировать старые invite links при resend
   - старый invite token больше не работает
   - новый становится canonical
   - token contract должен иметь механизм revoke/version, а не только новый `iat`
 
-- [ ] **D7** Упростить invite state на `/login`
+- [x] **D7** Упростить invite state на `/login`
   - отдельное состояние staff invite
   - минимум текста
   - одна primary CTA
   - без необходимости понимать `invite_token`
 
-- [ ] **D8** Защитить bind от collision по `telegram_user_id`
+- [x] **D8** Защитить bind от collision по `telegram_user_id`
   - до commit проверять, не привязан ли Telegram account к другому staff user
   - в `db` mode не допускать DB `500`
   - в `file` mode не допускать двойного владения одним Telegram ID
@@ -282,11 +282,11 @@
 
 **Цель:** весь видимый UI перевести на русский и убрать английские статусы/подписи из staff и subscriber layers.
 
-- [ ] **E1** Локализовать staff shell
-- [ ] **E2** Локализовать grid headers
-- [ ] **E3** Локализовать row actions и drawer labels
-- [ ] **E4** Локализовать статусы и badge text
-- [ ] **E5** Локализовать moderation, payments, subscriptions, legal и analytics surfaces
+- [x] **E1** Локализовать staff shell
+- [x] **E2** Локализовать grid headers
+- [x] **E3** Локализовать row actions и drawer labels
+- [x] **E4** Локализовать статусы и badge text
+- [x] **E5** Локализовать moderation, payments, subscriptions, legal и analytics surfaces
 
 ### Acceptance
 

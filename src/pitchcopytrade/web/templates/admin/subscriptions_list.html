@@ -74,7 +74,7 @@
           <th>Период</th>
           <th>Область доступа</th>
           <th>Источник</th>
-          <th>Открыть</th>
+          <th>Действия</th>
         </tr>
       </thead>
       <tbody>
@@ -85,7 +85,7 @@
             {% if subscription.payment %}
             <div class="muted">
               Платеж:
-              {% if subscription.payment.status.value == "created" %}создан{% elif subscription.payment.status.value == "pending" %}в ожидании{% elif subscription.payment.status.value == "paid" %}оплачен{% elif subscription.payment.status.value == "failed" %}ошибка{% elif subscription.payment.status.value == "expired" %}истек{% elif subscription.payment.status.value == "cancelled" %}отменён{% elif subscription.payment.status.value == "refunded" %}возвращён{% else %}{{ subscription.payment.status.value }}{% endif %}
+              {{ label_payment_status(subscription.payment.status) }}
             </div>
             {% endif %}
           </td>
@@ -93,7 +93,7 @@
           <td>
             <div class="staff-inline-actions">
               <span class="staff-badge">
-                {% if subscription.status.value == "active" %}активна{% elif subscription.status.value == "pending" %}в ожидании{% elif subscription.status.value == "cancelled" %}отменена{% elif subscription.status.value == "expired" %}истекла{% elif subscription.status.value == "paused" %}на паузе{% else %}{{ subscription.status.value }}{% endif %}
+                {{ label_subscription_status(subscription.status) }}
               </span>
               {% if subscription.is_trial %}<span class="staff-badge">пробная</span>{% endif %}
             </div>
@@ -111,7 +111,24 @@
             {% endif %}
           </td>
           <td>{{ subscription.lead_source.name if subscription.lead_source else "—" }}</td>
-          <td class="actions"><a class="ghost" href="/admin/subscriptions/{{ subscription.id }}">Открыть</a></td>
+          <td class="actions">
+            <details class="staff-row-menu">
+              <summary class="ghost">Действия</summary>
+              <div class="staff-row-menu-panel">
+                <a class="ghost" href="/admin/subscriptions/{{ subscription.id }}">Открыть</a>
+                {% if subscription.status.value not in ["cancelled", "expired", "blocked"] and subscription.autorenew_enabled %}
+                <form method="post" action="/admin/subscriptions/{{ subscription.id }}/autorenew/disable">
+                  <button type="submit" class="ghost">Отключить автопродление</button>
+                </form>
+                {% endif %}
+                {% if subscription.status.value not in ["cancelled", "expired", "blocked"] %}
+                <form method="post" action="/admin/subscriptions/{{ subscription.id }}/cancel">
+                  <button type="submit" class="ghost">Отменить</button>
+                </form>
+                {% endif %}
+              </div>
+            </details>
+          </td>
         </tr>
         {% else %}
         <tr><td colspan="7" class="muted">Подписок пока нет.</td></tr>

@@ -16,8 +16,8 @@
       <p class="muted" style="margin:16px 0 0;line-height:1.7;">{{ recommendation.summary or recommendation.thesis or "Без краткого описания" }}</p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{% if recommendation.status.value == "review" %}на модерации{% elif recommendation.status.value == "scheduled" %}запланировано{% elif recommendation.status.value == "published" %}опубликовано{% else %}{{ recommendation.status.value }}{% endif %}</span>
-      <span class="pill">{{ recommendation.kind.value }}</span>
+      <span class="pill">{{ label_recommendation_status(recommendation.status) }}</span>
+      <span class="pill">{{ label_recommendation_kind(recommendation.kind) }}</span>
       <span class="pill">{{ recommendation.author.display_name }}</span>
     </div>
   </div>
@@ -35,7 +35,7 @@
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>{{ leg.instrument.ticker if leg.instrument else "Инструмент" }}</strong>
         <div class="muted" style="margin-top:8px;line-height:1.6;">
-          {{ leg.side.value if leg.side else "не указано" }} · вход {{ leg.entry_from or "не указано" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %}
+          {{ label_trade_side(leg.side) if leg.side else "не указано" }} · вход {{ leg.entry_from or "не указано" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %}
           · стоп {{ leg.stop_loss or "не указано" }}
           {% if leg.take_profit_1 %} · tp1 {{ leg.take_profit_1 }}{% endif %}
           {% if leg.take_profit_2 %} · tp2 {{ leg.take_profit_2 }}{% endif %}
@@ -67,7 +67,7 @@
       <div><strong>Стратегия:</strong> <span class="muted">{{ recommendation.strategy.title }}</span></div>
       <div><strong>Вложений:</strong> <span class="muted">{{ recommendation.attachments|length }}</span></div>
       <div><strong>Комментарий модерации:</strong> <span class="muted">{{ recommendation.moderation_comment or "пока нет" }}</span></div>
-      <div><strong>Контроль SLA:</strong> <span class="muted">{{ metrics.sla_state }}</span></div>
+      <div><strong>Контроль SLA:</strong> <span class="muted">{{ label_sla_state(metrics.sla_state) }}</span></div>
       <div><strong>Задержка:</strong> <span class="muted">{{ metrics.resolution_hours if metrics.resolution_hours is not none else "не указана" }} ч</span></div>
     </div>
 
@@ -75,7 +75,7 @@
     <div style="display:grid;gap:10px;margin-top:12px;">
       {% for event in history %}
       <div class="surface" style="padding:14px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">
-        <strong>{{ event.action }}</strong>
+        <strong>{{ label_audit_action(event.action) }}</strong>
         <div class="muted" style="margin-top:6px;">{{ event.created_at }}</div>
         {% if event.actor_user %}
         <div class="muted" style="margin-top:6px;">{{ event.actor_user.full_name or event.actor_user.username or event.actor_user.id }}</div>

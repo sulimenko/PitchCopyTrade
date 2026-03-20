@@ -54,7 +54,7 @@
             <strong>{{ strategy.title }}</strong>
             <div class="muted" style="margin-top:6px;">{{ strategy.slug }}</div>
           </div>
-          <span class="pill">{{ strategy.status.value }}</span>
+          <span class="pill">{{ label_strategy_status(strategy.status) }}</span>
         </div>
       </a>
       {% else %}
@@ -78,8 +78,8 @@
             <div class="muted" style="margin-top:8px;">{{ recommendation.strategy.title }}</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <span class="pill">{{ recommendation.kind.value }}</span>
-            <span class="pill">{{ recommendation.status.value }}</span>
+            <span class="pill">{{ label_recommendation_kind(recommendation.kind) }}</span>
+            <span class="pill">{{ label_recommendation_status(recommendation.status) }}</span>
           </div>
         </div>
         <div class="muted" style="margin-top:10px;line-height:1.6;">
@@ -101,7 +101,7 @@
 </section>
 
 <section class="surface author-watchlist-shell">
-  <div class="eyebrow">watchlist автора</div>
+  <div class="eyebrow">список наблюдения автора</div>
   <div class="author-watchlist-head">
     <div>
       <h2 style="margin:10px 0 8px;">Наблюдение за бумагами</h2>

@@ -69,7 +69,7 @@
           <td>{{ primary_leg.take_profit_1 if primary_leg and primary_leg.take_profit_1 is not none else "—" }}</td>
           <td>{{ primary_leg.stop_loss if primary_leg and primary_leg.stop_loss is not none else "—" }}</td>
           <td><span class="staff-badge {% if recommendation.status.value in ['draft', 'review'] %}ok{% else %}warn{% endif %}">
-            {% if recommendation.status.value == "draft" %}черновик{% elif recommendation.status.value == "review" %}на модерации{% elif recommendation.status.value == "approved" %}одобрено{% elif recommendation.status.value == "scheduled" %}запланировано{% elif recommendation.status.value == "published" %}опубликовано{% elif recommendation.status.value == "closed" %}закрыто{% elif recommendation.status.value == "cancelled" %}отменено{% elif recommendation.status.value == "archived" %}в архиве{% else %}{{ recommendation.status.value }}{% endif %}
+            {{ label_recommendation_status(recommendation.status) }}
           </span></td>
           <td class="muted">{{ recommendation.updated_at or recommendation.created_at }}</td>
           <td class="actions"><a class="ghost" href="/author/recommendations/{{ recommendation.id }}/edit">Открыть</a></td>

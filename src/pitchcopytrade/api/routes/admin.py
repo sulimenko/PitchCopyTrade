@@ -18,6 +18,7 @@ from pitchcopytrade.services.admin import (
     ProductFormData,
     StaffUpdateData,
     apply_manual_discount_to_payment,
+    cancel_subscription_admin,
     confirm_payment_and_activate_subscription,
     create_admin_author,
     create_admin_staff_user,
@@ -26,6 +27,7 @@ from pitchcopytrade.services.admin import (
     grant_staff_role,
     list_admin_staff,
     reseed_author_watchlists,
+    set_subscription_autorenew_admin,
     revoke_staff_role,
     save_strategy_onepager,
     toggle_admin_author,
@@ -687,8 +689,63 @@ async def subscription_detail_page(
             "title": "Карточка подписки",
             "user": user,
             "subscription": subscription,
+            "error": None,
         },
     )
+
+
+@router.post("/subscriptions/{subscription_id}/autorenew/disable", response_class=HTMLResponse)
+async def subscription_disable_autorenew_submit(
+    subscription_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    subscription = await get_admin_subscription(session, subscription_id)
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    try:
+        await set_subscription_autorenew_admin(session, subscription, enabled=False)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "admin/subscription_detail.html",
+            {
+                "title": "Карточка подписки",
+                "user": user,
+                "subscription": subscription,
+                "error": str(exc),
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/subscriptions/{subscription.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/subscriptions/{subscription_id}/cancel", response_class=HTMLResponse)
+async def subscription_cancel_submit(
+    subscription_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    subscription = await get_admin_subscription(session, subscription_id)
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    try:
+        await cancel_subscription_admin(session, subscription)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "admin/subscription_detail.html",
+            {
+                "title": "Карточка подписки",
+                "user": user,
+                "subscription": subscription,
+                "error": str(exc),
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/subscriptions/{subscription.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/analytics/leads", response_class=HTMLResponse)
@@ -1419,6 +1476,7 @@ async def admin_author_edit(
     display_name: str = Form(...),
     email: str = Form(""),
     telegram_user_id: str = Form(""),
+    role_slugs: list[str] | None = Form(default=None),
     requires_moderation: str | None = Form(default=None),
     status_value: str = Form("active"),
 ) -> Response:
@@ -1431,6 +1489,7 @@ async def admin_author_edit(
                 display_name=display_name.strip(),
                 email=email.strip() or None,
                 telegram_user_id=tg_id,
+                role_slugs=tuple(RoleSlug(value) for value in (role_slugs or [RoleSlug.AUTHOR.value])),
                 requires_moderation=requires_moderation is not None,
                 is_active=status_value == "active",
             ),
@@ -1532,6 +1591,7 @@ async def admin_staff_edit(
         tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
         await update_admin_staff_user(
             session,
+            actor_user_id=user.id,
             user_id=target_user_id,
             data=StaffUpdateData(
                 display_name=display_name.strip(),
@@ -1816,6 +1876,7 @@ def _author_row(author) -> dict[str, object]:
     invite_link = None
     if author.user is not None and author.user.telegram_user_id is None:
         invite_link = build_staff_invite_link(author.user)
+    role_slugs = sorted((item.slug.value for item in author.user.roles), key=lambda item: ["admin", "author", "moderator"].index(item)) if author.user is not None else []
     return {
         "id": author.id,
         "display_name": author.display_name,
@@ -1824,6 +1885,9 @@ def _author_row(author) -> dict[str, object]:
         "invite_link": invite_link,
         "requires_moderation": author.requires_moderation,
         "status": "active" if author.is_active else "inactive",
+        "has_admin_role": "admin" in role_slugs,
+        "has_author_role": "author" in role_slugs,
+        "has_moderator_role": "moderator" in role_slugs,
     }
 
 

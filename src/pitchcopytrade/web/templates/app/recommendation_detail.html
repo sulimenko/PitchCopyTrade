@@ -23,8 +23,8 @@
       <p class="muted" style="margin:16px 0 0;line-height:1.7;">{{ recommendation.summary or recommendation.thesis or "Текст рекомендации будет добавлен позже." }}</p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ recommendation.status.value }}</span>
-      <span class="pill">{{ recommendation.kind.value }}</span>
+      <span class="pill">{{ label_recommendation_status(recommendation.status) }}</span>
+      <span class="pill">{{ label_recommendation_kind(recommendation.kind) }}</span>
     </div>
   </div>
 </section>
@@ -51,11 +51,11 @@
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
           <strong>{{ leg.instrument.ticker if leg.instrument else "Инструмент" }}</strong>
-          <span class="pill">{{ leg.side.value if leg.side else "n/a" }}</span>
+          <span class="pill">{{ label_trade_side(leg.side) if leg.side else "не указано" }}</span>
         </div>
         <div class="muted" style="margin-top:8px;line-height:1.55;">
-          вход: {{ leg.entry_from or "n/a" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %},
-          стоп: {{ leg.stop_loss or "n/a" }}
+          вход: {{ leg.entry_from or "не указано" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %},
+          стоп: {{ leg.stop_loss or "не указано" }}
           {% if leg.time_horizon %} · горизонт: {{ leg.time_horizon }}{% endif %}
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">

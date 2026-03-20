@@ -26,7 +26,7 @@
   <article class="surface" style="padding:24px;">
     <div class="eyebrow">оплата</div>
     <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.payment.final_amount_rub }} руб</strong>
-    <div class="muted" style="margin-top:10px;">статус: {{ result.payment.status.value }}</div>
+    <div class="muted" style="margin-top:10px;">статус: {{ label_payment_status(result.payment.status) }}</div>
     <div class="muted" style="margin-top:6px;">reference: {{ result.payment.stub_reference }}</div>
     {% if result.applied_promo_code %}
     <div class="muted" style="margin-top:6px;">промокод: {{ result.applied_promo_code.code }} / скидка {{ result.payment.discount_rub }} руб</div>
@@ -39,7 +39,7 @@
   </article>
   <article class="surface" style="padding:24px;">
     <div class="eyebrow">подписка</div>
-    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.subscription.status.value }}</strong>
+    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ label_subscription_status(result.subscription.status) }}</strong>
     <div class="muted" style="margin-top:10px;">продукт: {{ product.title }}</div>
     <div class="muted" style="margin-top:6px;">автопродление: {{ "включено" if result.subscription.autorenew_enabled else "выключено" }}</div>
   </article>

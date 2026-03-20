@@ -295,6 +295,34 @@
         gap: 12px;
         align-content: start;
       }
+      .staff-row-menu {
+        position: relative;
+      }
+      .staff-row-menu summary {
+        list-style: none;
+      }
+      .staff-row-menu summary::-webkit-details-marker {
+        display: none;
+      }
+      .staff-row-menu-panel {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 6px);
+        z-index: 30;
+        min-width: 220px;
+        display: grid;
+        gap: 6px;
+        padding: 8px;
+        border: 1px solid var(--staff-line);
+        border-radius: 12px;
+        background: var(--staff-surface);
+        box-shadow: var(--staff-shadow);
+      }
+      .staff-row-menu-panel form,
+      .staff-row-menu-panel a,
+      .staff-row-menu-panel button {
+        width: 100%;
+      }
       .muted { color: var(--staff-muted); }
       .eyebrow { color: var(--staff-muted); text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.08em; }
       @media (max-width: 1080px) {
@@ -342,7 +370,7 @@
           <div class="staff-brand-mark">PC</div>
           <div>
             <small>Кабинет PitchCopyTrade</small>
-            <div><strong>{{ user.full_name or user.email or user.username or "staff" }}</strong></div>
+            <div><strong>{{ user.full_name or user.email or user.username or "сотрудник" }}</strong></div>
           </div>
         </div>
         <nav class="staff-rail-nav">

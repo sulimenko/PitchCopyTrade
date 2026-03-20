@@ -16,7 +16,7 @@
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Очередь доставки и повторов</h1>
       <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Оператор видит опубликованные рекомендации, историю notification delivery и может инициировать повторную отправку.
+        Оператор видит опубликованные рекомендации, историю доставки уведомлений и может инициировать повторную отправку.
       </p>
     </div>
     <div class="pill">{{ records|length }} записей</div>
@@ -63,13 +63,13 @@
         <tr>
           <td><strong>{{ record.recommendation.title or record.recommendation.strategy.title }}</strong></td>
           <td>{{ record.recommendation.strategy.title }}</td>
-          <td><span class="staff-badge">{{ record.recommendation.status.value }}</span></td>
+          <td><span class="staff-badge">{{ label_recommendation_status(record.recommendation.status) }}</span></td>
           <td>{{ record.delivery_attempts }}</td>
           <td>{{ record.delivered_recipients }}</td>
           <td>
             {% if record.latest_delivery_event %}
             <div>{{ record.latest_delivery_event.created_at }}</div>
-            <div class="muted">{{ record.latest_delivery_event.payload.trigger if record.latest_delivery_event.payload else "publish" }}</div>
+            <div class="muted">{{ record.latest_delivery_event.payload.trigger if record.latest_delivery_event.payload else "публикация" }}</div>
             {% else %}
             <span class="muted">доставки еще не было</span>
             {% endif %}

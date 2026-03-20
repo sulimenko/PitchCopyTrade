@@ -22,9 +22,9 @@
       </p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{% if subscription.status.value == "active" %}активна{% elif subscription.status.value == "pending" %}в ожидании{% elif subscription.status.value == "cancelled" %}отменена{% elif subscription.status.value == "expired" %}истекла{% elif subscription.status.value == "paused" %}на паузе{% else %}{{ subscription.status.value }}{% endif %}</span>
+      <span class="pill">{{ label_subscription_status(subscription.status) }}</span>
       {% if subscription.payment %}
-      <span class="pill">{% if subscription.payment.status.value == "created" %}создан{% elif subscription.payment.status.value == "pending" %}в ожидании{% elif subscription.payment.status.value == "paid" %}оплачен{% elif subscription.payment.status.value == "failed" %}ошибка{% elif subscription.payment.status.value == "expired" %}истек{% elif subscription.payment.status.value == "cancelled" %}отменён{% elif subscription.payment.status.value == "refunded" %}возвращён{% else %}{{ subscription.payment.status.value }}{% endif %}</span>
+      <span class="pill">{{ label_payment_status(subscription.payment.status) }}</span>
       {% endif %}
       {% if subscription.is_trial %}
       <span class="pill">пробная</span>
@@ -35,6 +35,11 @@
 
 <section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
+    {% if error %}
+    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);margin-bottom:18px;">
+      {{ error }}
+    </div>
+    {% endif %}
     <div class="eyebrow">данные подписки</div>
     <div style="display:grid;gap:12px;margin-top:16px;">
       <div><strong>Клиент:</strong> <span class="muted">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</span></div>
@@ -51,6 +56,18 @@
 
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
       <a class="action ghost" href="/admin/subscriptions">Вернуться к реестру</a>
+      {% if subscription.status.value not in ["cancelled", "expired", "blocked"] and subscription.autorenew_enabled %}
+      <form method="post" action="/admin/subscriptions/{{ subscription.id }}/autorenew/disable">
+        <button class="action ghost" type="submit">Отключить автопродление</button>
+      </form>
+      {% endif %}
+      {% if subscription.status.value not in ["cancelled", "expired", "blocked"] %}
+      <form method="post" action="/admin/subscriptions/{{ subscription.id }}/cancel">
+        <button class="action ghost" type="submit">Отменить</button>
+      </form>
+      {% else %}
+      <span class="pill">только чтение</span>
+      {% endif %}
       {% if subscription.payment %}
       <a class="action ghost" href="/admin/payments/{{ subscription.payment.id }}">Открыть платеж</a>
       {% endif %}
@@ -80,7 +97,7 @@
       {% if subscription.payment %}
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Финансовая связка</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.payment.final_amount_rub }} руб / {% if subscription.payment.provider.value == "stub_manual" %}ручной stub{% elif subscription.payment.provider.value == "tbank" %}Т-Банк{% else %}{{ subscription.payment.provider.value }}{% endif %}</div>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.payment.final_amount_rub }} руб / {{ label_payment_provider(subscription.payment.provider) }}</div>
         <div class="muted" style="margin-top:6px;line-height:1.55;">{{ subscription.payment.stub_reference or subscription.payment.external_id or "референс не задан" }}</div>
       </div>
       {% endif %}

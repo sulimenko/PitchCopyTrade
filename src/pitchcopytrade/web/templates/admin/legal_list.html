@@ -48,7 +48,7 @@
             <strong>{{ document.title }}</strong>
             <div class="muted">{{ document.published_at or "черновик" }}</div>
           </td>
-          <td>{{ document.document_type.value }}</td>
+          <td>{{ label_legal_document_type(document.document_type) }}</td>
           <td>{{ document.version }}</td>
           <td><span class="staff-badge {% if document.is_active %}ok{% else %}warn{% endif %}">{{ "активен" if document.is_active else "черновик" }}</span></td>
           <td>{{ document.consents|length if document.consents is not none else 0 }}</td>

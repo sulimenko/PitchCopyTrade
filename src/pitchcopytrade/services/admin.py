@@ -102,6 +102,7 @@ class AdminAuthorUpdateData:
     display_name: str
     email: str | None
     telegram_user_id: int | None
+    role_slugs: tuple[RoleSlug, ...]
     requires_moderation: bool
     is_active: bool
 
@@ -585,8 +586,8 @@ async def apply_manual_discount_to_payment(
     *,
     discount_rub: int,
 ) -> Payment:
-    if payment.status is not PaymentStatus.PENDING:
-        raise ValueError("Ручную скидку можно применять только к payment в статусе pending")
+    if payment.status not in {PaymentStatus.CREATED, PaymentStatus.PENDING}:
+        raise ValueError("Ручную скидку можно применять только к payment в статусах created или pending")
     if payment.provider.value == "tbank":
         raise ValueError("Для T-Bank ручную скидку меняйте до создания checkout, а не на готовом платеже")
     if discount_rub < 0:
@@ -619,6 +620,66 @@ async def apply_manual_discount_to_payment(
     await session.commit()
     await session.refresh(payment)
     return payment
+
+
+async def set_subscription_autorenew_admin(
+    session: AsyncSession | None,
+    subscription: Subscription,
+    *,
+    enabled: bool,
+) -> Subscription:
+    if subscription.status in {SubscriptionStatus.CANCELLED, SubscriptionStatus.BLOCKED, SubscriptionStatus.EXPIRED}:
+        raise ValueError("Для terminal subscriptions изменение автопродления недоступно.")
+
+    if session is None:
+        graph, store = _file_admin_graph()
+        persisted = graph.subscriptions.get(subscription.id)
+        if persisted is None:
+            raise ValueError("Subscription not found")
+        persisted.autorenew_enabled = enabled
+        graph.save(store)
+        return persisted
+
+    subscription.autorenew_enabled = enabled
+    await session.commit()
+    await session.refresh(subscription)
+    return subscription
+
+
+async def cancel_subscription_admin(
+    session: AsyncSession | None,
+    subscription: Subscription,
+    *,
+    cancelled_at: datetime | None = None,
+) -> Subscription:
+    if subscription.status in {SubscriptionStatus.CANCELLED, SubscriptionStatus.BLOCKED, SubscriptionStatus.EXPIRED}:
+        raise ValueError("Terminal subscription нельзя отменить повторно.")
+
+    timestamp = cancelled_at or datetime.now(timezone.utc)
+
+    if session is None:
+        graph, store = _file_admin_graph()
+        persisted = graph.subscriptions.get(subscription.id)
+        if persisted is None:
+            raise ValueError("Subscription not found")
+        persisted.status = SubscriptionStatus.CANCELLED
+        persisted.autorenew_enabled = False
+        if persisted.end_at is None or persisted.end_at > timestamp:
+            persisted.end_at = timestamp
+        if persisted.payment is not None and persisted.payment.status is PaymentStatus.PENDING:
+            persisted.payment.status = PaymentStatus.CANCELLED
+        graph.save(store)
+        return persisted
+
+    subscription.status = SubscriptionStatus.CANCELLED
+    subscription.autorenew_enabled = False
+    if subscription.end_at is None or subscription.end_at > timestamp:
+        subscription.end_at = timestamp
+    if subscription.payment is not None and subscription.payment.status is PaymentStatus.PENDING:
+        subscription.payment.status = PaymentStatus.CANCELLED
+    await session.commit()
+    await session.refresh(subscription)
+    return subscription
 
 
 async def _count_query(session: AsyncSession, query: Any) -> int:
@@ -769,6 +830,7 @@ async def create_admin_staff_user(session: AsyncSession | None, data: StaffCreat
 async def update_admin_staff_user(
     session: AsyncSession | None,
     *,
+    actor_user_id: str,
     user_id: str,
     data: StaffUpdateData,
 ) -> User:
@@ -787,6 +849,12 @@ async def update_admin_staff_user(
         user = graph.users.get(user_id)
         if user is None or not _is_staff_user(user):
             raise ValueError("Сотрудник не найден.")
+        await _validate_admin_role_update_file(
+            graph,
+            actor_user_id=actor_user_id,
+            user=user,
+            role_slugs=role_slugs,
+        )
         _validate_staff_uniqueness_file(graph, email=normalized_email, telegram_user_id=data.telegram_user_id, current_user_id=user.id)
         user.full_name = normalized_display_name
         user.email = normalized_email
@@ -803,6 +871,12 @@ async def update_admin_staff_user(
         return user
 
     user = await _require_staff_user(session, user_id)
+    await _validate_admin_role_update_sql(
+        session,
+        actor_user_id=actor_user_id,
+        user=user,
+        role_slugs=role_slugs,
+    )
     await _validate_staff_uniqueness_sql(session, email=normalized_email, telegram_user_id=data.telegram_user_id, current_user_id=user.id)
     user.full_name = normalized_display_name
     user.email = normalized_email
@@ -994,6 +1068,40 @@ async def revoke_staff_role(
     )
     await session.commit()
     return await _require_staff_user(session, user.id)
+
+
+async def _validate_admin_role_update_file(
+    graph: FileDatasetGraph,
+    *,
+    actor_user_id: str,
+    user: User,
+    role_slugs: tuple[RoleSlug, ...],
+) -> None:
+    existing_roles = _staff_role_slugs(user)
+    if RoleSlug.ADMIN not in existing_roles or RoleSlug.ADMIN in role_slugs or user.status != UserStatus.ACTIVE:
+        return
+    active_admins = _count_active_admins_file(graph)
+    if active_admins <= 1:
+        if user.id == actor_user_id:
+            raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
+        raise ValueError("Нельзя снять роль у последнего активного администратора.")
+
+
+async def _validate_admin_role_update_sql(
+    session: AsyncSession,
+    *,
+    actor_user_id: str,
+    user: User,
+    role_slugs: tuple[RoleSlug, ...],
+) -> None:
+    existing_roles = _staff_role_slugs(user)
+    if RoleSlug.ADMIN not in existing_roles or RoleSlug.ADMIN in role_slugs or user.status != UserStatus.ACTIVE:
+        return
+    active_admins = await _count_active_admins_sql(session)
+    if active_admins <= 1:
+        if user.id == actor_user_id:
+            raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
+        raise ValueError("Нельзя снять роль у последнего активного администратора.")
 
 
 async def _create_staff_user(session: AsyncSession | None, data: StaffCreateData) -> User:
@@ -1200,10 +1308,13 @@ async def update_admin_author(
 ) -> AuthorProfile:
     normalized_display_name = data.display_name.strip()
     normalized_email = (data.email or "").strip().lower()
+    role_slugs = tuple(dict.fromkeys(data.role_slugs or (RoleSlug.AUTHOR,)))
     if not normalized_display_name:
         raise ValueError("Поле display_name обязательно.")
     if not normalized_email:
         raise ValueError("Поле email обязательно.")
+    if RoleSlug.AUTHOR not in role_slugs:
+        raise ValueError("У автора должна оставаться роль author.")
 
     if session is None:
         graph, store = _file_admin_graph()
@@ -1218,9 +1329,7 @@ async def update_admin_author(
         profile.user.email = normalized_email
         profile.user.telegram_user_id = data.telegram_user_id or None
         profile.user.status = UserStatus.ACTIVE if data.is_active else UserStatus.INACTIVE
-        profile.user.roles = _normalize_role_objects(profile.user.roles, graph=graph)
-        if RoleSlug.AUTHOR not in _staff_role_slugs(profile.user):
-            profile.user.roles.append(_ensure_graph_role(graph, RoleSlug.AUTHOR))
+        profile.user.roles = [_ensure_graph_role(graph, role_slug) for role_slug in role_slugs]
         graph.save(store)
         return profile
 
@@ -1238,9 +1347,7 @@ async def update_admin_author(
     profile.user.email = normalized_email
     profile.user.telegram_user_id = data.telegram_user_id or None
     profile.user.status = UserStatus.ACTIVE if data.is_active else UserStatus.INACTIVE
-    if RoleSlug.AUTHOR not in _staff_role_slugs(profile.user):
-        role = await _ensure_sql_role(session, RoleSlug.AUTHOR)
-        await session.execute(insert(user_roles).values(user_id=profile.user.id, role_id=role.id))
+    await _replace_staff_roles_sql(session, profile.user, role_slugs)
     await session.commit()
     await session.refresh(profile)
     return profile

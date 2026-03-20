@@ -14,7 +14,7 @@
 <div class="staff-error">{{ error }}</div>
 {% endif %}
 {% if request.query_params.get("reseed") %}
-<div class="staff-card" style="padding:12px 14px;">Watchlist пересобран для {{ request.query_params.get("reseed") }} авторов.</div>
+<div class="staff-card" style="padding:12px 14px;">Список наблюдения пересобран для {{ request.query_params.get("reseed") }} авторов.</div>
 {% endif %}
 
 <section class="staff-card">
@@ -112,7 +112,7 @@
           <td>
             {% if author.user.invite_delivery_status %}
             <span class="staff-badge">
-              {% if author.user.invite_delivery_status.value == "sent" %}отправлено{% elif author.user.invite_delivery_status.value == "resent" %}отправлено повторно{% elif author.user.invite_delivery_status.value == "failed" %}ошибка отправки{% else %}{{ author.user.invite_delivery_status.value }}{% endif %}
+              {{ label_invite_delivery_status(author.user.invite_delivery_status) }}
             </span>
             {% if author.user.invite_delivery_updated_at %}
             <div class="muted">{{ author.user.invite_delivery_updated_at }}</div>
@@ -125,16 +125,19 @@
             {% endif %}
           </td>
           <td class="actions">
-            <div class="staff-inline-actions">
-              <button type="button" class="ghost" data-open-staff-dialog="author-edit-{{ author.id }}">Редактировать</button>
-              <form method="post" action="/admin/staff/{{ author.user.id }}/invite/resend">
-                <button type="submit" class="ghost">Отправить повторно</button>
-              </form>
-              {% if author.invite_link %}
-              <button type="button" class="ghost" data-copy-text="{{ author.invite_link }}">Скопировать ссылку</button>
-              <a class="ghost" href="{{ author.invite_link }}">Открыть приглашение</a>
-              {% endif %}
-            </div>
+            <details class="staff-row-menu">
+              <summary class="ghost">Действия</summary>
+              <div class="staff-row-menu-panel">
+                <button type="button" class="ghost" data-open-staff-dialog="author-edit-{{ author.id }}">Редактировать</button>
+                <form method="post" action="/admin/staff/{{ author.user.id }}/invite/resend">
+                  <button type="submit" class="ghost">Отправить повторно</button>
+                </form>
+                {% if author.invite_link %}
+                <button type="button" class="ghost" data-copy-text="{{ author.invite_link }}">Скопировать ссылку</button>
+                <a class="ghost" href="{{ author.invite_link }}">Открыть Telegram invite</a>
+                {% endif %}
+              </div>
+            </details>
             <dialog id="author-edit-{{ author.id }}" class="staff-dialog">
               <form method="dialog" class="staff-dialog-backdrop">
                 <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
@@ -160,6 +163,12 @@
                     <span>Telegram ID</span>
                     <input name="telegram_user_id" type="number" value="{{ author.user.telegram_user_id or '' }}" />
                   </label>
+                  <div class="staff-field">
+                    <span>Роли</span>
+                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="admin" {% if author.has_admin_role %}checked{% endif %} /> <span>Администратор</span></label>
+                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="author" {% if author.has_author_role %}checked{% endif %} /> <span>Автор</span></label>
+                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="moderator" {% if author.has_moderator_role %}checked{% endif %} /> <span>Модератор</span></label>
+                  </div>
                   <label class="staff-inline-actions">
                     <input type="checkbox" name="requires_moderation" {% if author.requires_moderation %}checked{% endif %} />
                     <span>Требует модерации</span>

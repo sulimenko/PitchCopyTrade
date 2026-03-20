@@ -6,12 +6,12 @@
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">рабочее пространство staff</div>
+  <div class="eyebrow">рабочее пространство команды</div>
   <h1 style="margin:10px 0 16px;font-size:clamp(2rem,4vw,3.6rem);line-height:0.95;letter-spacing:-0.05em;">
     {{ role_home }}
   </h1>
   <p class="muted" style="max-width:620px;line-height:1.65;">
-    Это staff-контур для ролей `admin`, `author`, `moderator`. Клиентский контур сюда не входит и открывается только через Telegram.
+    Это внутренний контур для ролей `admin`, `author`, `moderator`. Клиентский интерфейс сюда не входит и открывается только через Telegram.
   </p>
 
   <div style="display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:18px;margin-top:22px;">
@@ -33,7 +33,7 @@
         {% endfor %}
       </div>
       <p class="muted" style="margin:16px 0 0;line-height:1.6;">
-        Это временный staff-shell. Следующие шаги заменят его на полноценные рабочие пространства автора и модератора.
+        Это временная оболочка команды. Следующие шаги заменят ее на полноценные рабочие пространства автора и модератора.
       </p>
     </article>
   </div>
