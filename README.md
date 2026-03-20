@@ -52,9 +52,9 @@ Runtime:
 - invite links строятся как абсолютные URL от `BASE_URL`
 - clean bootstrap через `deploy/schema.sql` обязан совпадать с runtime model
 
-Текущий gap:
-- все edit/update paths обязаны соблюдать ту же governance-логику, что и отдельные status/role actions
-- нельзя позволять снять роль `admin` у последнего активного администратора ни через `admin/staff`, ни через `admin/authors`, ни через другой bulk-update path
+Текущий открытый UX/runtime block:
+- remaining staff density pass для admin/moderation/author surfaces
+- runtime resilience `bot` до `api.telegram.org` без ручного redeploy
 
 ## UI priorities
 
@@ -113,6 +113,11 @@ Runtime:
 - `admin/staff` и `admin/authors` получили existing-row edit
 - `active/inactive` вынесен в явные actions
 - control emails администраторам работают в `db` и `file` mode
+- compact staff shell уплотнен
+- `admin/strategies` и `admin/legal` переведены в более компактный registry language
+- `admin`-редактор стратегии переведен в compact section layout
+- inline recommendation shortcut использует явный CTA `Создать и открыть`
+- raw enum values убраны из user-facing author editor copy и edit-guard ошибок
 
 Отдельный открытый runtime-блок:
 - `bot` должен переживать временные ошибки сети/TLS до `api.telegram.org` без ручного redeploy

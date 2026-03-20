@@ -152,7 +152,7 @@ async def update_author_strategy(
     data: AuthorStrategyFormData,
 ) -> Strategy:
     if strategy.status is not StrategyStatus.DRAFT:
-        raise ValueError("Редактировать можно только draft-стратегии.")
+        raise ValueError("Редактировать можно только стратегии в статусе «Черновик».")
     strategy.slug = data.slug
     strategy.title = data.title
     strategy.short_description = data.short_description
@@ -298,7 +298,7 @@ async def update_author_recommendation(
     storage: StorageBackend | None = None,
 ) -> Recommendation:
     if recommendation.status not in {RecommendationStatus.DRAFT, RecommendationStatus.REVIEW}:
-        raise ValueError("Редактировать можно только рекомендации в статусах draft или review.")
+        raise ValueError("Редактировать можно только рекомендации в статусах «Черновик» и «На модерации».")
     recommendation.strategy_id = data.strategy_id
     recommendation.kind = data.kind
     recommendation.status = data.status

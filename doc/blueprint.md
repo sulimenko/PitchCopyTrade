@@ -171,6 +171,12 @@ Canonical staff shell:
 - desktop-first;
 - mobile fallback допустим, но не primary target для `admin` и `moderation`.
 
+Density rules:
+- page-head в staff UI не должен быть большим hero-блоком ради декоративного copy;
+- заголовок экрана = короткий title + 1 короткая helper line + actions;
+- крупные пустые зоны между topline, page-head и первым рабочим блоком не являются допустимым паттерном;
+- если экран является реестром, первый экран должен сразу показывать рабочие данные, а не large intro surface.
+
 ## 6. Grid layer
 
 ### 6.1 Canonical choice
@@ -230,6 +236,11 @@ Grid должен поддерживать:
 - отсутствие второго параллельного handcrafted registry как fallback.
 - status column не может быть только информативной; для `staff user` нужен рабочий action flow `active/inactive`.
 - row edit не может обходить governance-ограничения отдельных actions; любые изменения ролей и статуса обязаны уважать правило последнего активного администратора.
+
+Registry readability rules:
+- ключевые поля записи должны быть видны в grid до открытия detail/edit;
+- допустимы 1-2 compact secondary lines внутри ячейки;
+- оператор не должен открывать карточку только чтобы увидеть `slug`, короткое описание, автора, риск или базовый статус, если эти поля уже помещаются в реестр.
 
 ## 7. Unified CRUD pattern
 
@@ -293,8 +304,11 @@ UX rules:
 - первая зона экрана должна помещать основную metadata и первую бумагу без длинного скролла;
 - help text должен быть коротким, secondary и не забирать высоту у формы;
 - field errors должны показываться рядом с конкретным полем, а не только в общем alert.
+- inline operator shortcut должен иметь явный CTA по результату действия, а не символическую кнопку без объяснения;
+- shortcut create flow должен явно сообщать, что будет создан черновик и откроется полный редактор.
 
 Strategy editor должен использовать тот же compact visual language, что и recommendation editor.
+Admin strategy editor и связанные admin forms должны использовать тот же compact section language без больших hero-блоков и правой декоративной панели как обязательного паттерна.
 
 ## 8. Mutability rules
 

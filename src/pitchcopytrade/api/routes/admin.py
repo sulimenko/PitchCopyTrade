@@ -1877,7 +1877,12 @@ def _author_row(author) -> dict[str, object]:
     invite_link = None
     if author.user is not None and author.user.telegram_user_id is None:
         invite_link = build_staff_invite_link(author.user)
-    role_slugs = sorted((item.slug.value for item in author.user.roles), key=lambda item: ["admin", "author", "moderator"].index(item)) if author.user is not None else []
+    role_order = {"admin": 0, "author": 1, "moderator": 2}
+    role_slugs = (
+        sorted((item.slug.value for item in author.user.roles), key=lambda item: (role_order.get(item, 99), item))
+        if author.user is not None
+        else []
+    )
     return {
         "id": author.id,
         "display_name": author.display_name,
@@ -1893,7 +1898,8 @@ def _author_row(author) -> dict[str, object]:
 
 
 def _staff_row(user: User, *, current_user_id: str) -> dict[str, object]:
-    role_slugs = sorted((item.slug.value for item in user.roles), key=lambda item: ["admin", "author", "moderator"].index(item))
+    role_order = {"admin": 0, "author": 1, "moderator": 2}
+    role_slugs = sorted((item.slug.value for item in user.roles), key=lambda item: (role_order.get(item, 99), item))
     invite_link = None
     if user.telegram_user_id is None:
         invite_link = build_staff_invite_link(user)

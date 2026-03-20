@@ -15,7 +15,7 @@
     <div>
       <div class="eyebrow">реестр рекомендаций</div>
       <h1>Рекомендации автора</h1>
-      <p>Grid остается основным списочным слоем, полный редактор живет в модальном окне, а быстрая строка добавления остается операторским shortcut.</p>
+      <p>Полный редактор открывается отдельно, а нижняя строка нужна для быстрого создания черновика с немедленным переходом в форму.</p>
     </div>
     <span class="staff-badge">{{ recommendations|length }} строк</span>
   </div>
@@ -77,6 +77,13 @@
         {% else %}
         <tr><td colspan="9" class="muted">Нет рекомендаций.</td></tr>
         {% endfor %}
+        <tr data-ag-grid-skip="true" class="inline-create-hint-row">
+          <td colspan="9">
+            <div class="inline-create-hint">
+              Быстрое создание: выберите стратегию, бумагу и направление, затем нажмите <strong>Создать и открыть</strong>.
+            </div>
+          </td>
+        </tr>
         <tr data-ag-grid-skip="true">
           <form method="post" action="/author/recommendations" id="inline-recommendation-form">
             <input type="hidden" name="inline_mode" value="1" />
@@ -87,6 +94,11 @@
             <input type="hidden" name="market_context" value="" />
             <input type="hidden" name="scheduled_for" value="" />
             <input type="hidden" name="next_path" value="/author/recommendations" />
+            <input type="hidden" name="leg_1_entry_to" value="" />
+            <input type="hidden" name="leg_1_take_profit_2" value="" />
+            <input type="hidden" name="leg_1_take_profit_3" value="" />
+            <input type="hidden" name="leg_1_time_horizon" value="" />
+            <input type="hidden" name="leg_1_note" value="" />
             <td>
               <select name="strategy_id">
                 <option value="">Стратегия</option>
@@ -97,8 +109,9 @@
             </td>
             <td>
               <input type="hidden" name="leg_1_instrument_id" id="inline-instrument-id" />
-              <input type="text" name="title" placeholder="Заголовок или идея" />
-              <input type="text" id="inline-ticker-input" placeholder="Тикер" autocomplete="off" />
+              <input type="text" name="title" id="inline-title-input" placeholder="Идея" />
+              <input type="text" id="inline-ticker-input" placeholder="Бумага" autocomplete="off" />
+              <div id="inline-picker-state" class="inline-picker-state muted">Сначала выберите бумагу из подсказок.</div>
               <div id="inline-ticker-popup" class="staff-card" hidden style="position:absolute;z-index:20;padding:8px;"></div>
             </td>
             <td>
@@ -112,8 +125,8 @@
             <td><input type="text" name="leg_1_take_profit_1" placeholder="TP1" /></td>
             <td><input type="text" name="leg_1_stop_loss" placeholder="Стоп" /></td>
             <td><span class="staff-badge ok">черновик</span></td>
-            <td class="muted">новая строка</td>
-            <td class="actions"><button class="staff-btn is-primary" type="submit">+</button></td>
+            <td class="muted">после сохранения откроется редактор</td>
+            <td class="actions"><button class="staff-btn is-primary" type="submit">Создать и открыть</button></td>
           </form>
         </tr>
       </tbody>
@@ -142,6 +155,10 @@
   #inline-recommendation-form { display: contents; }
   #inline-recommendation-form input,
   #inline-recommendation-form select { width: 100%; min-height: 32px; padding: 7px 10px; border: 1px solid var(--staff-line-strong); border-radius: 10px; }
+  #inline-recommendation-form td { position: relative; }
+  .inline-create-hint-row td { padding-top: 10px; padding-bottom: 6px; background: var(--staff-surface-soft); }
+  .inline-create-hint { font-size: 0.78rem; color: var(--staff-muted); }
+  .inline-picker-state { margin-top: 4px; font-size: 0.72rem; }
   .workspace-modal { border: 0; padding: 0; background: transparent; width: min(1220px, calc(100% - 24px)); }
   .workspace-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
 </style>
@@ -154,10 +171,17 @@
     const openButtons = document.querySelectorAll("[data-open-recommendation-modal]");
     const closeButtons = document.querySelectorAll("[data-close-recommendation-modal]");
     const inlineForm = document.getElementById("inline-recommendation-form");
+    const titleInput = document.getElementById("inline-title-input");
     const tickerInput = document.getElementById("inline-ticker-input");
     const tickerPopup = document.getElementById("inline-ticker-popup");
     const instrumentIdInput = document.getElementById("inline-instrument-id");
+    const pickerState = document.getElementById("inline-picker-state");
     const instruments = {{ instrument_items | tojson }};
+    const strategySelect = inlineForm ? inlineForm.querySelector('select[name="strategy_id"]') : null;
+    const sideSelect = inlineForm ? inlineForm.querySelector('select[name="leg_1_side"]') : null;
+    const entryInput = inlineForm ? inlineForm.querySelector('input[name="leg_1_entry_from"]') : null;
+    const tpInput = inlineForm ? inlineForm.querySelector('input[name="leg_1_take_profit_1"]') : null;
+    const stopInput = inlineForm ? inlineForm.querySelector('input[name="leg_1_stop_loss"]') : null;
 
     function openModal() { if (modal && typeof modal.showModal === "function") modal.showModal(); }
     function closeModal() { if (modal && modal.open) modal.close(); }
@@ -168,6 +192,12 @@
     function hideTickerPopup() {
       tickerPopup.hidden = true;
       tickerPopup.innerHTML = "";
+    }
+
+    function setPickerState(text, isError) {
+      if (!pickerState) return;
+      pickerState.textContent = text;
+      pickerState.style.color = isError ? "var(--staff-danger)" : "var(--staff-muted)";
     }
 
     function renderSuggestions(query) {
@@ -188,6 +218,7 @@
         button.addEventListener("click", function () {
           tickerInput.value = item.ticker;
           instrumentIdInput.value = item.id;
+          setPickerState("Выбрана бумага: " + item.ticker + " · " + item.name, false);
           hideTickerPopup();
         });
         tickerPopup.appendChild(button);
@@ -197,7 +228,38 @@
 
     tickerInput.addEventListener("input", function () {
       instrumentIdInput.value = "";
+      setPickerState("Выберите бумагу из подсказок, затем создайте черновик.", false);
       renderSuggestions(tickerInput.value);
+    });
+
+    inlineForm.addEventListener("submit", function (event) {
+      const strategyValue = strategySelect ? strategySelect.value.trim() : "";
+      const sideValue = sideSelect ? sideSelect.value.trim() : "";
+      if (!strategyValue) {
+        event.preventDefault();
+        setPickerState("Сначала выберите стратегию.", true);
+        strategySelect && strategySelect.focus();
+        return;
+      }
+      if (!instrumentIdInput.value.trim()) {
+        event.preventDefault();
+        setPickerState("Выберите бумагу из подсказок перед созданием.", true);
+        tickerInput.focus();
+        return;
+      }
+      if (!sideValue) {
+        event.preventDefault();
+        setPickerState("Укажите направление сделки.", true);
+        sideSelect && sideSelect.focus();
+        return;
+      }
+      if (titleInput && !titleInput.value.trim()) {
+        const sideLabel = sideValue === "sell" ? "Продажа" : "Покупка";
+        titleInput.value = sideLabel + " " + tickerInput.value.trim();
+      }
+      if (entryInput && !entryInput.value.trim() && stopInput && !stopInput.value.trim() && tpInput && !tpInput.value.trim()) {
+        setPickerState("Черновик создастся и откроется в редакторе для заполнения уровней.", false);
+      }
     });
   })();
 </script>

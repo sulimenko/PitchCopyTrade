@@ -4,11 +4,11 @@
 
 ## Общий вывод
 
-Базовый продукт работает, текущий governance blocker по `admin/authors` закрыт, и staff rollout больше не имеет открытых edit-flow обходов для последнего активного администратора.
+Базовый продукт работает. Текущий governance blocker по `admin/authors` закрыт, residual raw-enum drift в `author` editor тоже закрыт, а последний блок staff-density fixes проходит целевой тестовый набор.
 
 ## Текущие findings
 
-- Активных governance findings на текущий момент нет.
+- Активных blocking findings по последнему increment нет.
 
 ## Что должно считаться готовностью следующего блока
 
@@ -38,8 +38,8 @@ Merge считается готовым только если одновреме
 - deploy troubleshooting и smoke-check для connectivity к `api.telegram.org`;
 - автоматическое восстановление polling после временных сетевых ошибок.
 
-Следующий staff UX/onboarding block после этого:
-- fallback path для `/login?invite_token=...`, если Telegram widget не отрисовался;
-- deep-link / copy / resend сценарий вместо серого placeholder;
-- unclipped row menus в staff registries;
-- убрать raw invite URL из primary cell в `/admin/staff`.
+Следующий worker block:
+- remaining staff density pass для admin/moderation/author surfaces;
+- вычистить оставшиеся oversized hero/page-head паттерны;
+- довести remaining admin forms до compact section language;
+- удержать правило: ключевые поля записи должны быть видны в реестре до открытия карточки.

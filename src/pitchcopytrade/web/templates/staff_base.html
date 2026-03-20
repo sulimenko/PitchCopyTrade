@@ -98,25 +98,25 @@
       }
       .staff-main {
         min-width: 0;
-        padding: 18px;
+        padding: 12px;
         display: grid;
-        gap: 14px;
+        gap: 10px;
       }
       .staff-topline {
         display: flex;
         justify-content: space-between;
         gap: 12px;
-        align-items: flex-start;
+        align-items: center;
         flex-wrap: wrap;
-        padding: 10px 14px;
+        padding: 8px 12px;
         border: 1px solid var(--staff-line);
-        border-radius: 14px;
+        border-radius: 12px;
         background: rgba(255, 255, 255, 0.82);
         box-shadow: var(--staff-shadow);
       }
       .staff-topline-main {
         display: grid;
-        gap: 6px;
+        gap: 2px;
       }
       .staff-topline-actions {
         display: flex;
@@ -154,7 +154,7 @@
       .surface {
         border: 1px solid var(--staff-line);
         background: var(--staff-surface);
-        border-radius: 16px;
+        border-radius: 14px;
         box-shadow: var(--staff-shadow);
       }
       .staff-page-head {
@@ -163,22 +163,22 @@
         gap: 16px;
         align-items: flex-start;
         flex-wrap: wrap;
-        padding: 18px 20px;
+        padding: 14px 16px;
       }
       .staff-page-head h1,
       .staff-page-head h2 {
         margin: 0;
-        font-size: 1.55rem;
+        font-size: 1.35rem;
         line-height: 1.05;
       }
-      .staff-page-head p { margin: 8px 0 0; color: var(--staff-muted); line-height: 1.5; }
+      .staff-page-head p { margin: 6px 0 0; color: var(--staff-muted); line-height: 1.45; max-width: 760px; }
       .staff-toolbar {
         display: flex;
         justify-content: space-between;
         gap: 12px;
         align-items: flex-end;
         flex-wrap: wrap;
-        padding: 14px 16px;
+        padding: 10px 12px;
         border-bottom: 1px solid var(--staff-line);
         background: var(--staff-surface-soft);
       }
@@ -327,6 +327,21 @@
       }
       .muted { color: var(--staff-muted); }
       .eyebrow { color: var(--staff-muted); text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.08em; }
+      .staff-page-note {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 22px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: var(--staff-surface-soft);
+        color: var(--staff-muted);
+        font-size: 0.74rem;
+      }
+      .staff-section-stack {
+        display: grid;
+        gap: 10px;
+      }
       @media (max-width: 1080px) {
         .staff-shell { grid-template-columns: 1fr; }
         .staff-rail { position: static; height: auto; }
@@ -413,7 +428,9 @@
               <button type="button" class="staff-back" data-staff-back data-parent-href="{% block parent_href %}/{% endblock %}">Назад</button>
               <div class="staff-breadcrumbs">{% block breadcrumbs %}Кабинет / {{ title }}{% endblock %}</div>
             </div>
-            <div><strong>{% block page_title %}{{ title }}{% endblock %}</strong></div>
+            {% block page_title_row %}
+            <div><strong style="font-size:0.98rem;">{% block page_title %}{{ title }}{% endblock %}</strong></div>
+            {% endblock %}
           </div>
           <div class="staff-topline-actions">
             {% include "partials/staff_mode_switch.html" %}

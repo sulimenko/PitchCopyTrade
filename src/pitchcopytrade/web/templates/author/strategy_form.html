@@ -20,7 +20,7 @@
     </div>
     <div class="author-compact-head-actions">
       {% if strategy %}
-      <span class="pill">{{ strategy.status.value }}</span>
+      <span class="pill">{% if strategy.status.value == "draft" %}Черновик{% elif strategy.status.value == "published" %}Опубликована{% elif strategy.status.value == "archived" %}В архиве{% else %}{{ strategy.status.value }}{% endif %}</span>
       {% endif %}
       {% if not is_editable %}
       <span class="pill">только чтение</span>
@@ -28,7 +28,7 @@
     </div>
   </div>
   {% if strategy and not is_editable %}
-  <p class="muted author-compact-note">Редактирование доступно только для `draft`.</p>
+  <p class="muted author-compact-note">Редактирование доступно только для черновика.</p>
   {% endif %}
 </section>
 
@@ -201,7 +201,7 @@
     min-height: 34px;
     padding: 7px 10px;
     border-radius: 10px;
-    border: 1px solid var(--staff-line-strong);
+    border: 1px solid #aebac9;
     background: #fff;
     font: inherit;
   }

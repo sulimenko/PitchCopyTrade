@@ -455,6 +455,35 @@
 - ошибка `Leg 1` больше не возникает при валидном выборе бумаги
 - ошибки показываются рядом с проблемным полем, а не только глобально
 
+### Worker pack — Author editor
+
+#### UI/UX fixes
+
+- [x] Ужать header recommendation editor
+- [x] Ужать strategy editor до того же visual language
+- [x] Перевести формы на compact field tokens
+- [x] Разбить recommendation editor на компактные секции
+- [x] Упростить copy в editor
+
+#### Data flow fixes
+
+- [x] Сделать один data contract для inline add и detail editor
+- [x] Убрать свободный text-only ticker flow
+- [x] Починить `+` flow
+
+#### Validation fixes
+
+- [x] Сделать field-level validation для первой бумаги
+- [x] Уточнить semantics первой бумаги
+- [x] Добавить regression coverage
+
+#### Acceptance criteria
+
+- [x] inline add и full editor используют один и тот же объект бумаги
+- [x] выбранный в grid ticker подтягивается в detail editor
+- [x] ошибка `Leg 1` больше не возникает при валидном выборе бумаги
+- [x] ошибки показываются рядом с проблемным полем, а не только глобально
+
 ---
 
 ## Блок I — Governance parity для `admin/authors`
@@ -557,3 +586,77 @@
 - пользователь по invite не застревает на сером placeholder без следующего шага
 - `/admin/staff` остается компактным даже для длинных invite tokens
 - action menus не клипуются grid-shell контейнером
+
+---
+
+## Блок L — Остаточная русификация author editor
+
+**Цель:** после compact redesign и data-flow фиксов в author editor не должны оставаться видимые raw enum values и англоязычные статусы.
+
+- [x] **L1** Локализовать readonly/status copy в author editor templates
+  - `author/recommendation_form.html`
+  - `author/strategy_form.html`
+  - не показывать пользователю `draft`, `review` и другие raw enum values в help text, pill и readonly note
+
+- [x] **L2** Локализовать user-facing ошибки редактирования
+  - `services/author.py`
+  - ошибки вида `Редактировать можно только draft-стратегии`
+  - ошибки вида `Редактировать можно только рекомендации в статусах draft или review`
+  - в UI и backend feedback должны использоваться русские статусы
+
+- [x] **L3** Добавить regression coverage
+  - template/UI test на отсутствие raw `draft/review` в author editor
+  - test на русские user-facing ошибки для strategy/recommendation edit guards
+
+### Acceptance
+
+- в author editor не видно raw enum values вроде `draft`, `review`, `published`
+- readonly notes, status pills и ошибки показывают только русскую копию
+- author editor не ломает текущий compact layout и data flow
+
+---
+
+## Блок M — Remaining staff density pass
+
+**Цель:** довести compact operator-first density до остальных staff surfaces, где еще остались большие hero-блоки, пустые зоны и слабая видимость ключевых данных до открытия карточки.
+
+- [ ] **M1** Убрать oversized page-head/hero из remaining admin surfaces
+  - `/admin/dashboard`
+  - `/admin/products`
+  - `/admin/payments`
+  - `/admin/subscriptions`
+  - `/admin/promos`
+  - `/admin/analytics/*`
+  - `/admin/delivery`
+  - `/moderation/detail`
+  - `/author/dashboard`
+
+- [ ] **M2** Довести compact registries до консистентного operator-readability
+  - в списке должно быть видно ключевое содержимое записи до клика `Открыть`
+  - для row summary использовать 1-2 compact secondary lines вместо большого detail-screen dependence
+  - не плодить большие пустые зоны ради декоративного copy
+
+- [ ] **M3** Перевести remaining admin forms в compact section layout
+  - `admin/product_form.html`
+  - `admin/legal_form.html`
+  - `admin/promo_form.html`
+  - `admin/payment_detail.html`
+  - `admin/subscription_detail.html`
+  - `admin/delivery_detail.html`
+
+- [ ] **M4** Упростить operator affordances
+  - в быстрых строках создания CTA должен быть явным по результату, а не символьным
+  - helper copy должен объяснять следующий шаг в 1 короткой строке
+  - статусы и secondary hints должны оставаться компактными
+
+- [ ] **M5** Добавить regression/manual acceptance coverage
+  - smoke-check на отсутствие giant hero-block на указанных surfaces
+  - smoke-check на compact registries, где ключевые поля видны без открытия карточки
+  - smoke-check на inline create CTA и immediate next step
+
+### Acceptance
+
+- staff surfaces не содержат больших пустых hero-зон как primary pattern
+- ключевые поля записи видны в реестре до открытия detail/edit
+- remaining admin forms используют тот же compact section language, что и strategy/recommendation editors
+- inline operator shortcuts объясняют результат действия без двусмысленности

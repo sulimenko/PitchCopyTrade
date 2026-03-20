@@ -1,126 +1,283 @@
 {% extends "staff_base.html" %}
 
+{% block parent_href %}/admin/strategies{% endblock %}
+{% block breadcrumbs %}Админ / Карточка стратегии{% endblock %}
+{% block page_title %}Карточка стратегии{% endblock %}
+
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/strategies">Каталог стратегий</a>
-  <a class="action ghost" href="/admin/products">Продукты</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Доставка</a>
-  <a class="action ghost" href="/admin/payments">Платежи</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
+<a class="ghost" href="/admin/dashboard">Сводка</a>
+<a class="ghost" href="/admin/strategies">Каталог стратегий</a>
+<a class="ghost" href="/admin/products">Продукты</a>
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
+<section class="staff-card admin-strategy-head">
   <div class="eyebrow">редактор стратегии</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">
-    {% if strategy %}Редактирование стратегии{% else %}Новая стратегия{% endif %}
-  </h1>
-  <p class="muted" style="max-width:760px;line-height:1.65;margin:16px 0 0;">
-    Карточка должна быть понятной для холодного трафика: кто автор, какой риск, какой порог капитала и почему эта стратегия заслуживает подписки.
-  </p>
-</section>
-
-<section style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,0.8fr);gap:18px;margin-top:18px;">
-  <form class="surface" method="post" action="{% if strategy %}/admin/strategies/{{ strategy.id }}{% else %}/admin/strategies{% endif %}" style="padding:24px;display:grid;gap:18px;">
-    {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
-      {{ error }}
+  <div class="admin-strategy-head-row">
+    <div class="admin-strategy-head-copy">
+      <h1>{% if strategy %}Редактирование стратегии{% else %}Новая стратегия{% endif %}</h1>
+      <p class="muted">Основные поля, статус и публикация собраны в одном компактном экране без больших пустых зон.</p>
+    </div>
+    {% if strategy %}
+    <div class="staff-inline-actions">
+      <span class="staff-badge">{{ label_strategy_status(strategy.status) }}</span>
+      <span class="staff-badge {% if strategy.is_public %}ok{% else %}warn{% endif %}">{% if strategy.is_public %}публичная{% else %}закрытая{% endif %}</span>
     </div>
     {% endif %}
+  </div>
+</section>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Автор</strong>
-      <select name="author_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-        {% for author in authors %}
-        <option value="{{ author.id }}" {% if form_values.author_id == author.id %}selected{% endif %}>{{ author.display_name }}</option>
-        {% endfor %}
-      </select>
-    </label>
+<section class="admin-strategy-layout">
+  <form class="staff-card admin-strategy-form" method="post" action="{% if strategy %}/admin/strategies/{{ strategy.id }}{% else %}/admin/strategies{% endif %}">
+    {% if error %}
+    <div class="admin-strategy-error">{{ error }}</div>
+    {% endif %}
 
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Слаг</strong>
-        <input type="text" name="slug" value="{{ form_values.slug }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    <section class="staff-card admin-strategy-section">
+      <div class="admin-strategy-section-head">
+        <div>
+          <h2>Основное</h2>
+          <p class="muted">Автор, название и ключевые параметры карточки.</p>
+        </div>
+      </div>
+
+      <div class="admin-strategy-grid admin-strategy-grid--two">
+        <label class="admin-strategy-field">
+          <span>Автор</span>
+          <select name="author_id">
+            {% for author in authors %}
+            <option value="{{ author.id }}" {% if form_values.author_id == author.id %}selected{% endif %}>{{ author.display_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="admin-strategy-field">
+          <span>Слаг</span>
+          <input type="text" name="slug" value="{{ form_values.slug }}" />
+        </label>
+      </div>
+
+      <div class="admin-strategy-grid admin-strategy-grid--two">
+        <label class="admin-strategy-field">
+          <span>Название</span>
+          <input type="text" name="title" value="{{ form_values.title }}" />
+        </label>
+        <label class="admin-strategy-field">
+          <span>Минимальный капитал, руб</span>
+          <input type="number" name="min_capital_rub" min="0" value="{{ form_values.min_capital_rub }}" />
+        </label>
+      </div>
+
+      <div class="admin-strategy-grid admin-strategy-grid--two">
+        <label class="admin-strategy-field">
+          <span>Риск</span>
+          <select name="risk_level">
+            {% for item in risk_levels %}
+            <option value="{{ item.value }}" {% if form_values.risk_level == item.value %}selected{% endif %}>{{ label_risk_level(item) }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="admin-strategy-field">
+          <span>Статус</span>
+          <select name="status">
+            {% for item in strategy_statuses %}
+            <option value="{{ item.value }}" {% if form_values.status == item.value %}selected{% endif %}>{{ label_strategy_status(item) }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <label class="admin-strategy-inline-check">
+        <input type="checkbox" name="is_public" value="1" {% if form_values.is_public %}checked{% endif %} />
+        <span>Показывать на публичной витрине</span>
       </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Минимальный капитал, руб</strong>
-        <input type="number" name="min_capital_rub" min="0" value="{{ form_values.min_capital_rub }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    </section>
+
+    <section class="staff-card admin-strategy-section">
+      <div class="admin-strategy-section-head">
+        <div>
+          <h2>Описание</h2>
+          <p class="muted">Сделайте оффер видимым сразу в списке и понятным в карточке.</p>
+        </div>
+      </div>
+
+      <label class="admin-strategy-field">
+        <span>Короткое описание</span>
+        <textarea name="short_description" rows="3">{{ form_values.short_description }}</textarea>
       </label>
-    </div>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Название</strong>
-      <input type="text" name="title" value="{{ form_values.title }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-    </label>
-
-    <label style="display:grid;gap:8px;">
-      <strong>Короткое описание</strong>
-      <textarea name="short_description" rows="4" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.short_description }}</textarea>
-    </label>
-
-    <label style="display:grid;gap:8px;">
-      <strong>Полное описание</strong>
-      <textarea name="full_description" rows="8" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.full_description }}</textarea>
-    </label>
-
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Риск</strong>
-        <select name="risk_level" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          {% for item in risk_levels %}
-          <option value="{{ item.value }}" {% if form_values.risk_level == item.value %}selected{% endif %}>{{ label_risk_level(item) }}</option>
-          {% endfor %}
-        </select>
+      <label class="admin-strategy-field">
+        <span>Полное описание</span>
+        <textarea name="full_description" rows="7">{{ form_values.full_description }}</textarea>
       </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Статус</strong>
-        <select name="status" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          {% for item in strategy_statuses %}
-          <option value="{{ item.value }}" {% if form_values.status == item.value %}selected{% endif %}>{{ label_strategy_status(item) }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
+    </section>
 
-    <label style="display:flex;gap:10px;align-items:center;">
-      <input type="checkbox" name="is_public" value="1" {% if form_values.is_public %}checked{% endif %} />
-      <span><strong>Показывать на публичной витрине</strong></span>
-    </label>
-
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="action" type="submit">{% if strategy %}Сохранить изменения{% else %}Создать стратегию{% endif %}</button>
-      <a class="action ghost" href="/admin/strategies">Вернуться к каталогу</a>
-    </div>
+    <section class="staff-card admin-strategy-section">
+      <div class="admin-strategy-actions">
+        <button class="staff-btn is-primary" type="submit">{% if strategy %}Сохранить изменения{% else %}Создать стратегию{% endif %}</button>
+        <a class="staff-btn" href="/admin/strategies">Вернуться к каталогу</a>
+      </div>
+    </section>
   </form>
 
-  <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">подсказки редактора</div>
-    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Чек-лист карточки</h2>
-    <div style="display:grid;gap:12px;">
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Оффер в 1 абзац</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Короткое описание должно объяснять подход, а не набор общих слов про рынок.</div>
+  <aside class="staff-card admin-strategy-aside">
+    <div class="eyebrow">короткая памятка</div>
+    <div class="admin-strategy-checklist">
+      <div class="admin-strategy-checklist-item">
+        <strong>Что должно быть видно сразу</strong>
+        <div class="muted">Название, автор, короткий оффер, риск, статус и публичность.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Прозрачный риск</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Уровень риска и минимальный капитал должны совпадать с реальной тактикой автора.</div>
-      </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Публиковать только после проверки</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Публичность включайте только после проверки текста, статуса и автора.</div>
+      <div class="admin-strategy-checklist-item">
+        <strong>Что важно перед публикацией</strong>
+        <div class="muted">Проверьте описание, минимальный капитал и соответствие статуса реальному состоянию стратегии.</div>
       </div>
     </div>
   </aside>
 </section>
 
 <style>
-  @media (max-width: 860px) {
-    section[style*="1.2fr"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  .admin-strategy-head {
+    padding: 14px 16px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .admin-strategy-head-row,
+  .admin-strategy-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .admin-strategy-head-copy {
+    display: grid;
+    gap: 6px;
+  }
+
+  .admin-strategy-head-copy h1,
+  .admin-strategy-section-head h2 {
+    margin: 0;
+    font-size: 1.45rem;
+    line-height: 1.08;
+  }
+
+  .admin-strategy-head-copy p,
+  .admin-strategy-section-head p {
+    margin: 0;
+    line-height: 1.42;
+  }
+
+  .admin-strategy-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 10px;
+  }
+
+  .admin-strategy-form {
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-strategy-section {
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+    background: var(--staff-surface-soft);
+    box-shadow: none;
+  }
+
+  .admin-strategy-section-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .admin-strategy-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-strategy-grid--two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-strategy-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .admin-strategy-field span {
+    font-size: 0.78rem;
+    color: var(--staff-muted);
+  }
+
+  .admin-strategy-field input,
+  .admin-strategy-field select,
+  .admin-strategy-field textarea {
+    width: 100%;
+    min-height: 34px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--staff-line-strong);
+    background: #fff;
+    font: inherit;
+  }
+
+  .admin-strategy-field textarea {
+    min-height: 88px;
+    resize: vertical;
+  }
+
+  .admin-strategy-inline-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .admin-strategy-error {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(182, 59, 59, 0.2);
+    background: rgba(182, 59, 59, 0.08);
+    color: var(--staff-danger);
+  }
+
+  .admin-strategy-aside {
+    padding: 14px;
+    align-self: start;
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-strategy-checklist {
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-strategy-checklist-item {
+    padding: 10px;
+    border: 1px solid var(--staff-line);
+    border-radius: 10px;
+    background: var(--staff-surface-soft);
+    display: grid;
+    gap: 4px;
+  }
+
+  @media (max-width: 1080px) {
+    .admin-strategy-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .admin-strategy-grid--two {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 {% endblock %}

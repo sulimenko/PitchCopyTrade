@@ -42,7 +42,7 @@
     </div>
   </div>
   {% if recommendation and not recommendation_is_editable %}
-  <p class="muted author-editor-head-note">Редактирование разрешено только для `draft` и `review`.</p>
+  <p class="muted author-editor-head-note">Редактирование разрешено только для черновика и статуса «На модерации».</p>
   {% endif %}
 </section>
 
@@ -480,7 +480,7 @@
     min-height: 34px;
     padding: 7px 10px;
     border-radius: 10px;
-    border: 1px solid var(--staff-line-strong);
+    border: 1px solid #aebac9;
     font: inherit;
     background: #fff;
   }

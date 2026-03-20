@@ -86,9 +86,7 @@
         <tr>
           <td>
             <strong>{{ author.display_name }}</strong>
-            {% if author.invite_link %}
-            <div class="muted"><a href="{{ author.invite_link }}">{{ author.invite_link }}</a></div>
-            {% endif %}
+            <div class="muted">{{ author.user.email or "почта не задана" }}</div>
           </td>
           <td>{{ author.user.email or "—" }}</td>
           <td>{{ author.user.telegram_user_id or "—" }}</td>

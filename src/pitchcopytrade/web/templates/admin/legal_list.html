@@ -1,34 +1,28 @@
 {% extends "staff_base.html" %}
 
+{% block parent_href %}/admin/dashboard{% endblock %}
+{% block breadcrumbs %}Админ / Юридические документы{% endblock %}
+{% block page_title %}Юридические документы{% endblock %}
+
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/delivery">Доставка</a>
-  <a class="action ghost" href="/admin/payments">Платежи</a>
-  <a class="action" href="/admin/legal/new">Новый документ</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
+<a class="ghost" href="/admin/subscriptions">Подписки</a>
+<a class="ghost" href="/admin/delivery">Доставка</a>
+<a class="ghost" href="/admin/payments">Платежи</a>
+<a class="staff-btn is-primary" href="/admin/legal/new">Новый документ</a>
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">юридические операции</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+<section class="staff-card">
+  <div class="staff-page-head">
     <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Юридические документы</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Управление markdown-источниками, версиями и активными редакциями без ручного редактирования файлов на сервере.
-      </p>
+      <div class="eyebrow">юридические документы</div>
+      <h1>Документы</h1>
+      <p>Компактный реестр версий и статусов без крупного hero-блока и длинного вводного текста.</p>
     </div>
-    <div class="pill">{{ documents|length }} документов</div>
+    <span class="staff-badge">{{ documents|length }} документов</span>
   </div>
-</section>
 
-<section class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">реестр документов</div>
-  <h2 style="margin:10px 0 0;font-size:1.5rem;">Документы</h2>
-  <div class="staff-grid-shell" style="margin-top:18px;">
+  <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
         <tr>
@@ -52,7 +46,7 @@
           <td>{{ document.version }}</td>
           <td><span class="staff-badge {% if document.is_active %}ok{% else %}warn{% endif %}">{{ "активен" if document.is_active else "черновик" }}</span></td>
           <td>{{ document.consents|length if document.consents is not none else 0 }}</td>
-          <td>{{ document.source_path or "source_path будет создан автоматически" }}</td>
+          <td>{{ document.source_path or "будет создан автоматически" }}</td>
           <td class="actions"><a class="ghost" href="/admin/legal/{{ document.id }}/edit">Открыть</a></td>
         </tr>
         {% else %}

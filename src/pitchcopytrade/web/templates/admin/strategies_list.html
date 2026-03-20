@@ -4,47 +4,44 @@
   /admin/strategies?q={{ q | urlencode }}&sort_by={{ column }}&direction={% if sort_by == column and direction == "asc" %}desc{% else %}asc{% endif %}
 {%- endmacro %}
 
+{% block parent_href %}/admin/dashboard{% endblock %}
+{% block breadcrumbs %}Админ / Стратегии{% endblock %}
+{% block page_title %}Стратегии{% endblock %}
+
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/products">Продукты</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Доставка</a>
-  <a class="action ghost" href="/admin/payments">Платежи</a>
-  <a class="action" href="/admin/strategies/new">Новая стратегия</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
+<a class="ghost" href="/admin/products">Продукты</a>
+<a class="ghost" href="/admin/subscriptions">Подписки</a>
+<a class="ghost" href="/admin/legal">Документы</a>
+<a class="ghost" href="/admin/payments">Платежи</a>
+<a class="staff-btn is-primary" href="/admin/strategies/new">Новая стратегия</a>
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">каталог стратегий</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+<section class="staff-card">
+  <div class="staff-page-head">
     <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Каталог стратегий</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:720px;line-height:1.65;">
-        Табличный реестр карточек стратегий с фильтрацией по автору, статусу и содержимому.
-      </p>
+      <div class="eyebrow">каталог стратегий</div>
+      <h1>Каталог стратегий</h1>
+      <p>Список должен сразу показывать автора, оффер, риск, статус и порог капитала без перехода в карточку.</p>
     </div>
-    <div class="pill">{{ strategies|length }} строк в текущем срезе</div>
+    <span class="staff-badge">{{ strategies|length }} строк</span>
   </div>
-</section>
 
-<section class="surface" style="padding:24px;margin-top:18px;">
-  <form method="get" action="/admin/strategies" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
-    <label style="display:grid;gap:6px;min-width:260px;">
-      <span class="muted">Фильтр</span>
-      <input type="text" name="q" value="{{ q }}" placeholder="Стратегия, slug, автор" style="padding:12px 14px;border-radius:14px;border:1px solid var(--line);font:inherit;background:#fff;" />
-    </label>
-    <input type="hidden" name="sort_by" value="{{ sort_by }}" />
-    <input type="hidden" name="direction" value="{{ direction }}" />
-    <button class="action" type="submit">Применить</button>
-    <a class="action ghost" href="/admin/strategies">Сбросить</a>
-  </form>
+  <div class="staff-toolbar">
+    <form method="get" action="/admin/strategies" class="staff-form-row">
+      <label class="staff-field" style="min-width:280px;">
+        <span>Фильтр</span>
+        <input type="text" name="q" value="{{ q }}" placeholder="Стратегия, slug, автор" />
+      </label>
+      <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+      <input type="hidden" name="direction" value="{{ direction }}" />
+      <button class="staff-btn is-primary" type="submit">Применить</button>
+      <a class="staff-btn" href="/admin/strategies">Сбросить</a>
+    </form>
+  </div>
 
-  <div style="overflow:auto;margin-top:18px;">
-    <table class="workspace-table" data-ag-grid-auto="true">
+  <div class="staff-grid-shell">
+    <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
         <tr>
           <th><a href="{{ sort_href('title') }}">Стратегия</a></th>
@@ -53,26 +50,30 @@
           <th><a href="{{ sort_href('status') }}">Статус</a></th>
           <th>Публичность</th>
           <th>Мин. капитал</th>
-          <th></th>
+          <th>Открыть</th>
         </tr>
       </thead>
       <tbody>
         {% for strategy in strategies %}
         <tr>
           <td>
-            <strong>{{ strategy.title }}</strong>
-            <div class="muted" style="margin-top:4px;">{{ strategy.slug }}</div>
-            <div class="muted" style="margin-top:4px;">{{ strategy.short_description }}</div>
+            <div class="strategy-cell">
+              <strong>{{ strategy.title }}</strong>
+              <div class="muted">{{ strategy.slug }}</div>
+              {% if strategy.short_description %}
+              <div class="muted strategy-cell-summary">{{ strategy.short_description }}</div>
+              {% endif %}
+            </div>
           </td>
           <td>{{ strategy.author.display_name }}</td>
-          <td><span class="pill">{{ label_risk_level(strategy.risk_level) }}</span></td>
-          <td><span class="pill">{{ label_strategy_status(strategy.status) }}</span></td>
+          <td><span class="staff-badge">{{ label_risk_level(strategy.risk_level) }}</span></td>
+          <td><span class="staff-badge {% if strategy.status.value == 'draft' %}ok{% else %}warn{% endif %}">{{ label_strategy_status(strategy.status) }}</span></td>
           <td>{% if strategy.is_public %}публичная{% else %}закрытая{% endif %}</td>
           <td>{{ strategy.min_capital_rub or "—" }}</td>
-          <td><a class="action ghost" href="/admin/strategies/{{ strategy.id }}/edit" style="padding:8px 12px;">Открыть</a></td>
+          <td class="actions"><a class="ghost" href="/admin/strategies/{{ strategy.id }}/edit">Открыть</a></td>
         </tr>
         {% else %}
-        <tr><td colspan="7" style="padding:20px;text-align:center;color:var(--muted);">Стратегий пока нет</td></tr>
+        <tr><td colspan="7" class="muted">Стратегий пока нет.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -80,8 +81,15 @@
 </section>
 
 <style>
-  .workspace-table { width: 100%; border-collapse: collapse; }
-  .workspace-table th, .workspace-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-  .workspace-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+  .strategy-cell {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .strategy-cell-summary {
+    max-width: 480px;
+    line-height: 1.35;
+  }
 </style>
 {% endblock %}
