@@ -10,57 +10,70 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">карточка доставки</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">{{ record.recommendation.title or record.recommendation.strategy.title }}</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        История публикации и доставки по конкретной рекомендации, а также ручной повтор для Telegram-рассылки.
-      </p>
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">карточка доставки</div>
+      <h1>{{ record.recommendation.title or record.recommendation.strategy.title }}</h1>
+      <p>История публикации, объём доставки и retry action собраны в компактной карточке без лишнего intro-пробела.</p>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ label_recommendation_status(record.recommendation.status) }}</span>
-      <span class="pill">{{ record.delivery_attempts }} попыток</span>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ label_recommendation_status(record.recommendation.status) }}</span>
+      <span class="staff-badge">{{ record.delivery_attempts }} попыток</span>
     </div>
   </div>
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
-  <article class="surface" style="padding:24px;">
+<section class="staff-detail-layout">
+  <article class="staff-card staff-form-shell">
     {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);margin-bottom:18px;">
-      {{ error }}
-    </div>
+    <div class="staff-error">{{ error }}</div>
     {% endif %}
-    <div class="eyebrow">сводка по доставке</div>
-    <div style="display:grid;gap:12px;margin-top:16px;">
-      <div><strong>Стратегия:</strong> <span class="muted">{{ record.recommendation.strategy.title }}</span></div>
-      <div><strong>Автор:</strong> <span class="muted">{{ record.recommendation.author.display_name }}</span></div>
-      <div><strong>Опубликовано:</strong> <span class="muted">{{ record.recommendation.published_at or "не опубликовано" }}</span></div>
-      <div><strong>Попыток доставки:</strong> <span class="muted">{{ record.delivery_attempts }}</span></div>
-      <div><strong>Получателей:</strong> <span class="muted">{{ record.delivered_recipients }}</span></div>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Сводка по доставке</h2>
+          <p>Оператор сразу видит стратегию, автора, дату публикации и текущий delivery объём.</p>
+        </div>
+      </div>
+      <div class="staff-key-list">
+        <div class="staff-key-row"><strong>Стратегия</strong><div class="muted">{{ record.recommendation.strategy.title }}</div></div>
+        <div class="staff-key-row"><strong>Автор</strong><div class="muted">{{ record.recommendation.author.display_name }}</div></div>
+        <div class="staff-key-row"><strong>Опубликовано</strong><div class="muted">{{ record.recommendation.published_at or "не опубликовано" }}</div></div>
+        <div class="staff-key-row"><strong>Попыток доставки</strong><div class="muted">{{ record.delivery_attempts }}</div></div>
+        <div class="staff-key-row"><strong>Получателей</strong><div class="muted">{{ record.delivered_recipients }}</div></div>
+      </div>
+    </section>
 
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
-      <form method="post" action="/admin/delivery/{{ record.recommendation.id }}/retry">
-      <button class="action" type="submit">Повторить доставку в Telegram</button>
-      </form>
-      <a class="action ghost" href="/admin/delivery">Вернуться к очереди</a>
-      <a class="action ghost" href="/app/recommendations/{{ record.recommendation.id }}">Открыть клиентский экран</a>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Действия</h2>
+          <p>Основной следующий шаг здесь один: вручную повторить Telegram delivery для этой рекомендации.</p>
+        </div>
+      </div>
+      <div class="staff-inline-actions">
+        <form method="post" action="/admin/delivery/{{ record.recommendation.id }}/retry">
+          <button class="staff-btn is-primary" type="submit">Повторить доставку в Telegram</button>
+        </form>
+        <a class="staff-btn" href="/admin/delivery">Вернуться к очереди</a>
+        <a class="staff-btn" href="/app/recommendations/{{ record.recommendation.id }}">Открыть клиентский экран</a>
+      </div>
+    </section>
   </article>
 
-  <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">аудит</div>
-    <h2 style="margin:10px 0 14px;font-size:1.45rem;">События доставки</h2>
-    <div style="display:grid;gap:12px;">
+  <aside class="staff-card staff-detail-panel">
+    <div class="staff-form-section-copy">
+      <h2>События доставки</h2>
+      <p>Правая колонка оставляет только audit trail, чтобы не раздувать основную action-поверхность.</p>
+    </div>
+    <div class="staff-info-stack">
       {% for event in record.events %}
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>{{ label_audit_action(event.action) }}</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ event.created_at }}</div>
+        <div class="muted">{{ event.created_at }}</div>
         {% if event.payload %}
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ event.payload }}</div>
+        <div class="muted">{{ event.payload }}</div>
         {% endif %}
       </div>
       {% else %}
@@ -69,10 +82,4 @@
     </div>
   </aside>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

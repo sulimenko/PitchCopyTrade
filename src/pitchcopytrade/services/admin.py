@@ -217,11 +217,11 @@ async def list_admin_authors(session: AsyncSession | None, *, status_filter: str
             items = [item for item in items if item.is_active]
         elif status_filter == "inactive":
             items = [item for item in items if not item.is_active]
-        items.sort(key=lambda item: item.display_name.lower())
+        items.sort(key=lambda item: ((item.display_name or item.slug or item.id or "")).lower())
         return items
     query = (
         select(AuthorProfile)
-        .options(selectinload(AuthorProfile.user))
+        .options(selectinload(AuthorProfile.user).selectinload(User.roles))
         .order_by(AuthorProfile.display_name.asc())
     )
     if status_filter == "active":
@@ -912,9 +912,7 @@ async def set_admin_staff_user_status(
         if target_status == UserStatus.INACTIVE and RoleSlug.ADMIN in _staff_role_slugs(user) and user.status == UserStatus.ACTIVE:
             active_admins = _count_active_admins_file(graph)
             if active_admins <= 1:
-                if user.id == actor_user_id:
-                    raise ValueError("Нельзя деактивировать себя как последнего активного администратора.")
-                raise ValueError("Нельзя деактивировать последнего активного администратора.")
+                _raise_last_active_admin_deactivation_error(actor_user_id=actor_user_id, target_user_id=user.id)
         user.status = target_status
         graph.add(
             AuditEvent(
@@ -935,9 +933,7 @@ async def set_admin_staff_user_status(
     if target_status == UserStatus.INACTIVE and RoleSlug.ADMIN in _staff_role_slugs(user) and user.status == UserStatus.ACTIVE:
         active_admins = await _count_active_admins_sql(session)
         if active_admins <= 1:
-            if user.id == actor_user_id:
-                raise ValueError("Нельзя деактивировать себя как последнего активного администратора.")
-            raise ValueError("Нельзя деактивировать последнего активного администратора.")
+            _raise_last_active_admin_deactivation_error(actor_user_id=actor_user_id, target_user_id=user.id)
     user.status = target_status
     session.add(
         AuditEvent(
@@ -1029,9 +1025,7 @@ async def revoke_staff_role(
             raise ValueError("Роль не назначена.")
         active_admins = _count_active_admins_file(graph)
         if user.status == UserStatus.ACTIVE and active_admins <= 1:
-            if user.id == actor_user_id:
-                raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
-            raise ValueError("Нельзя снять роль у последнего активного администратора.")
+            _raise_last_active_admin_role_removal_error(actor_user_id=actor_user_id, target_user_id=user.id)
         user.roles = [item for item in user.roles if item.slug != role_slug]
         graph.add(
             AuditEvent(
@@ -1051,9 +1045,7 @@ async def revoke_staff_role(
         raise ValueError("Роль не назначена.")
     active_admins = await _count_active_admins_sql(session)
     if user.status == UserStatus.ACTIVE and active_admins <= 1:
-        if user.id == actor_user_id:
-            raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
-        raise ValueError("Нельзя снять роль у последнего активного администратора.")
+        _raise_last_active_admin_role_removal_error(actor_user_id=actor_user_id, target_user_id=user.id)
 
     role = await _ensure_sql_role(session, role_slug)
     await session.execute(delete(user_roles).where(user_roles.c.user_id == user.id, user_roles.c.role_id == role.id))
@@ -1082,9 +1074,7 @@ async def _validate_admin_role_update_file(
         return
     active_admins = _count_active_admins_file(graph)
     if active_admins <= 1:
-        if user.id == actor_user_id:
-            raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
-        raise ValueError("Нельзя снять роль у последнего активного администратора.")
+        _raise_last_active_admin_role_removal_error(actor_user_id=actor_user_id, target_user_id=user.id)
 
 
 async def _validate_admin_role_update_sql(
@@ -1099,9 +1089,7 @@ async def _validate_admin_role_update_sql(
         return
     active_admins = await _count_active_admins_sql(session)
     if active_admins <= 1:
-        if user.id == actor_user_id:
-            raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
-        raise ValueError("Нельзя снять роль у последнего активного администратора.")
+        _raise_last_active_admin_role_removal_error(actor_user_id=actor_user_id, target_user_id=user.id)
 
 
 async def _create_staff_user(session: AsyncSession | None, data: StaffCreateData) -> User:
@@ -1278,6 +1266,18 @@ async def _count_active_admins_sql(session: AsyncSession) -> int:
     return int(result.scalar_one())
 
 
+def _raise_last_active_admin_role_removal_error(*, actor_user_id: str, target_user_id: str) -> None:
+    if target_user_id == actor_user_id:
+        raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
+    raise ValueError("Нельзя снять роль у последнего активного администратора.")
+
+
+def _raise_last_active_admin_deactivation_error(*, actor_user_id: str, target_user_id: str) -> None:
+    if target_user_id == actor_user_id:
+        raise ValueError("Нельзя деактивировать себя как последнего активного администратора.")
+    raise ValueError("Нельзя деактивировать последнего активного администратора.")
+
+
 async def create_admin_author(
     session: AsyncSession | None,
     *,
@@ -1386,9 +1386,7 @@ async def _validate_admin_author_governance_file(
         return
     active_admins = _count_active_admins_file(graph)
     if active_admins <= 1:
-        if user.id == actor_user_id:
-            raise ValueError("Нельзя деактивировать себя как последнего активного администратора.")
-        raise ValueError("Нельзя деактивировать последнего активного администратора.")
+        _raise_last_active_admin_deactivation_error(actor_user_id=actor_user_id, target_user_id=user.id)
 
 
 async def _validate_admin_author_governance_sql(
@@ -1409,9 +1407,7 @@ async def _validate_admin_author_governance_sql(
         return
     active_admins = await _count_active_admins_sql(session)
     if active_admins <= 1:
-        if user.id == actor_user_id:
-            raise ValueError("Нельзя деактивировать себя как последнего активного администратора.")
-        raise ValueError("Нельзя деактивировать последнего активного администратора.")
+        _raise_last_active_admin_deactivation_error(actor_user_id=actor_user_id, target_user_id=user.id)
 
 
 async def resend_staff_invite(

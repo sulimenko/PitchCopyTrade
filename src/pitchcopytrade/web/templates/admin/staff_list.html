@@ -38,12 +38,12 @@
 
 <section class="staff-card">
   <div class="staff-page-head">
-    <div>
+    <div class="staff-page-head-copy">
       <div class="eyebrow">онбординг команды</div>
       <h1>Команда и роли</h1>
-      <p>Новый сотрудник создается по `display_name + email + roles`, приглашение отправляется автоматически, `telegram_user_id` остается расширенным полем.</p>
+      <p>В реестре сразу видны роли, статус приглашения и operator actions без отдельного intro-экрана.</p>
     </div>
-    <div class="staff-inline-actions">
+    <div class="staff-page-head-actions">
       <span class="staff-badge">{{ staff|length }} строк</span>
       <span class="staff-badge">{% if role_filter == "all" %}все роли{% elif role_filter == "admin" %}администратор{% elif role_filter == "author" %}автор{% elif role_filter == "moderator" %}модератор{% elif role_filter == "multi-role" %}несколько ролей{% else %}{{ role_filter }}{% endif %}</span>
       {% if role_filter == 'multi-role' %}<span class="staff-badge">несколько ролей</span>{% endif %}
@@ -93,6 +93,7 @@
       <input type="hidden" name="direction" value="{{ direction }}" />
       <button class="staff-btn" type="submit">Применить</button>
     </form>
+    <div class="staff-toolbar-note">Создание сразу выпускает приглашение. Telegram ID остаётся необязательным расширенным полем до bind.</div>
   </div>
   <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">

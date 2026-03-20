@@ -10,42 +10,41 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">операции доставки</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Очередь доставки и повторов</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Оператор видит опубликованные рекомендации, историю доставки уведомлений и может инициировать повторную отправку.
-      </p>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">операции доставки</div>
+      <h1>Очередь доставки и повторов</h1>
+      <p>Сразу видно публикацию, последние события и объём доставок. Карточка открывается только для аудита и ручного retry.</p>
     </div>
-    <div class="pill">{{ records|length }} записей</div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ records|length }} записей</span>
+      <span class="staff-page-note">Повтор запускает Telegram delivery без ручной правки очереди.</span>
+    </div>
   </div>
-</section>
-
-<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px;">
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">опубликовано</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.published }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">с доставкой</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.delivered }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">попытки</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.attempts }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">получатели</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.recipients }}</div>
-  </article>
-</section>
-
-<section class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">реестр доставки</div>
-  <h2 style="margin:10px 0 0;font-size:1.5rem;">Доставка рекомендаций</h2>
-  <div class="staff-grid-shell" style="margin-top:18px;">
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">опубликовано</div>
+      <strong>{{ stats.published }}</strong>
+      <div class="staff-metric-note">идей в delivery scope</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">с доставкой</div>
+      <strong>{{ stats.delivered }}</strong>
+      <div class="staff-metric-note">уже дошли до получателей</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">попытки</div>
+      <strong>{{ stats.attempts }}</strong>
+      <div class="staff-metric-note">всех delivery событий</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">получатели</div>
+      <strong>{{ stats.recipients }}</strong>
+      <div class="staff-metric-note">совокупный delivery охват</div>
+    </article>
+  </div>
+  <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
         <tr>
@@ -61,8 +60,16 @@
       <tbody>
         {% for record in records %}
         <tr>
-          <td><strong>{{ record.recommendation.title or record.recommendation.strategy.title }}</strong></td>
-          <td>{{ record.recommendation.strategy.title }}</td>
+          <td>
+            <strong>{{ record.recommendation.title or record.recommendation.strategy.title }}</strong>
+            <div class="muted">{{ record.recommendation.author.display_name }}</div>
+          </td>
+          <td>
+            <strong>{{ record.recommendation.strategy.title }}</strong>
+            {% if record.recommendation.published_at %}
+            <div class="muted">{{ record.recommendation.published_at }}</div>
+            {% endif %}
+          </td>
           <td><span class="staff-badge">{{ label_recommendation_status(record.recommendation.status) }}</span></td>
           <td>{{ record.delivery_attempts }}</td>
           <td>{{ record.delivered_recipients }}</td>
@@ -83,13 +90,4 @@
     </table>
   </div>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  }
-  @media (max-width: 640px) {
-    section[style*="repeat(4"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

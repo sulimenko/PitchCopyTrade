@@ -12,12 +12,15 @@
 {% block content %}
 <section class="staff-card">
   <div class="staff-page-head">
-    <div>
+    <div class="staff-page-head-copy">
       <div class="eyebrow">стратегии автора</div>
-      <h1>{{ author.display_name }}</h1>
-      <p>Табличный реестр собственных стратегий. Стратегии редактируются только в черновике; опубликованные и архивные строки остаются только для чтения.</p>
+      <h1>Стратегии автора</h1>
+      <p>{{ author.display_name }}. В реестре сразу видны slug, риск, статус и порог капитала без открытия редактора.</p>
     </div>
-    <span class="staff-badge">{{ strategies|length }} строк</span>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ strategies|length }} строк</span>
+      <span class="staff-page-note">Новая стратегия откроет короткую форму и вернёт в реестр после сохранения.</span>
+    </div>
   </div>
   <div class="staff-toolbar">
     <form method="get" action="/author/strategies" class="staff-form-row">
@@ -29,6 +32,7 @@
       <input type="hidden" name="direction" value="{{ direction }}" />
       <button class="staff-btn" type="submit">Применить</button>
     </form>
+    <div class="staff-toolbar-note">Черновики можно редактировать, опубликованные и архивные строки остаются только для чтения.</div>
   </div>
   <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">

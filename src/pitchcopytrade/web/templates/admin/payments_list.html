@@ -13,42 +13,41 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">очередь проверки платежей</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Платежи и активации</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Очередь ручного подтверждения `stub/manual`: после подтверждения платеж помечается как оплаченный, а подписка активируется без правки БД руками.
-      </p>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">очередь проверки платежей</div>
+      <h1>Платежи и активации</h1>
+      <p>Очередь показывает клиента, продукт, статус и операторский следующий шаг без ручного копания в деталях платежа.</p>
     </div>
-    <div class="pill">{{ payments|length }} платежей</div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ payments|length }} платежей</span>
+      <span class="staff-page-note">Подтверждение меняет статус на paid и активирует связанную подписку.</span>
+    </div>
   </div>
-</section>
-
-<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px;">
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">платежи в ожидании</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ review_stats.pending_payments }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">оплаченные платежи</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ review_stats.paid_payments }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">ожидающие подписки</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ review_stats.pending_subscriptions }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">активные или пробные</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ review_stats.active_subscriptions }}</div>
-  </article>
-</section>
-
-<section class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">реестр платежей</div>
-  <h2 style="margin:10px 0 0;font-size:1.5rem;">Платежи</h2>
-  <div class="staff-grid-shell" style="margin-top:18px;">
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">в ожидании</div>
+      <strong>{{ review_stats.pending_payments }}</strong>
+      <div class="staff-metric-note">платежей на проверке</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">оплачено</div>
+      <strong>{{ review_stats.paid_payments }}</strong>
+      <div class="staff-metric-note">подтверждённых платежей</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">подписки ждут</div>
+      <strong>{{ review_stats.pending_subscriptions }}</strong>
+      <div class="staff-metric-note">ещё не активированы</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">доступ уже выдан</div>
+      <strong>{{ review_stats.active_subscriptions }}</strong>
+      <div class="staff-metric-note">активных или пробных</div>
+    </article>
+  </div>
+  <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
         <tr>
@@ -66,17 +65,24 @@
         <tr>
           <td>
             <strong>{{ payment.user.full_name or payment.user.email or payment.user.id }}</strong>
+            <div class="muted">{{ payment.user.email or "почта не задана" }}</div>
             {% if payment.stub_reference %}
             <div class="muted">{{ payment.stub_reference }}</div>
             {% endif %}
           </td>
-          <td>{{ payment.product.title }}</td>
+          <td>
+            <strong>{{ payment.product.title }}</strong>
+            <div class="muted">{{ label_product_type(payment.product.product_type) }}</div>
+          </td>
           <td><span class="staff-badge {% if payment.status.value in ['created', 'pending'] %}warn{% elif payment.status.value == 'paid' %}ok{% else %}danger{% endif %}">
             {{ label_payment_status(payment.status) }}
           </span></td>
           <td>{{ label_payment_provider(payment.provider) }}</td>
           <td>{{ payment.final_amount_rub }} руб</td>
-          <td>{{ payment.subscriptions|length }}</td>
+          <td>
+            <strong>{{ payment.subscriptions|length }}</strong>
+            <div class="muted">связанных строк доступа</div>
+          </td>
           <td class="actions">
             <details class="staff-row-menu">
               <summary class="ghost">Действия</summary>
@@ -101,13 +107,4 @@
     </table>
   </div>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  }
-  @media (max-width: 640px) {
-    section[style*="repeat(4"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

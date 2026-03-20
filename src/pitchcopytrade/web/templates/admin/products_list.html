@@ -14,23 +14,22 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">продукты подписки</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Продукты подписки</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Коммерческий слой над стратегиями, авторами и пакетами: цена, период, пробный доступ и разрешение на автопродление.
-      </p>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">продукты подписки</div>
+      <h1>Продукты подписки</h1>
+      <p>В реестре сразу видны коммерческие условия, scope доступа и базовый статус без отдельного hero-экрана.</p>
     </div>
-    <div class="pill">{{ products|length }} продуктов</div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ products|length }} продуктов</span>
+      <a class="staff-btn is-primary" href="/admin/products/new">Создать продукт</a>
+    </div>
   </div>
-</section>
-
-<section class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">реестр продуктов</div>
-  <h2 style="margin:10px 0 0;font-size:1.5rem;">Продукты</h2>
-  <div class="staff-grid-shell" style="margin-top:18px;">
+  <div class="staff-toolbar">
+    <div class="staff-toolbar-note">Новый продукт должен сразу отвечать на три вопроса: что покупают, на какой срок и какой именно scope доступа выдаётся после оплаты.</div>
+  </div>
+  <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
         <tr>
@@ -64,11 +63,14 @@
           <td>{{ product.trial_days }} дней</td>
           <td>
             {% if product.strategy %}
-            {{ product.strategy.title }}
+            <strong>{{ product.strategy.title }}</strong>
+            <div class="muted">стратегия</div>
             {% elif product.author %}
-            {{ product.author.display_name }}
+            <strong>{{ product.author.display_name }}</strong>
+            <div class="muted">автор</div>
             {% elif product.bundle %}
-            {{ product.bundle.title }}
+            <strong>{{ product.bundle.title }}</strong>
+            <div class="muted">пакет</div>
             {% else %}
             —
             {% endif %}

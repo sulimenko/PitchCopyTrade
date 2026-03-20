@@ -86,10 +86,16 @@
         <tr>
           <td>
             <strong>{{ author.display_name }}</strong>
-            <div class="muted">{{ author.user.email or "почта не задана" }}</div>
+            {% if author.user_warning %}
+            <div class="muted">{{ author.user_warning }}</div>
+            {% elif author.email %}
+            <div class="muted">{{ author.email }}</div>
+            {% else %}
+            <div class="muted">почта не задана</div>
+            {% endif %}
           </td>
-          <td>{{ author.user.email or "—" }}</td>
-          <td>{{ author.user.telegram_user_id or "—" }}</td>
+          <td>{{ author.email or "—" }}</td>
+          <td>{{ author.telegram_user_id or "—" }}</td>
           <td>
             <form method="post" action="/admin/authors/{{ author.id }}/permissions">
               <label class="staff-inline-actions">
@@ -108,34 +114,43 @@
             {% endif %}
           </td>
           <td>
-            {% if author.user.invite_delivery_status %}
+            {% if not author.has_linked_user %}
+            <span class="staff-badge danger">нет staff bind</span>
+            {% elif author.invite_delivery_status %}
             <span class="staff-badge">
-              {{ label_invite_delivery_status(author.user.invite_delivery_status) }}
+              {{ label_invite_delivery_status(author.invite_delivery_status) }}
             </span>
-            {% if author.user.invite_delivery_updated_at %}
-            <div class="muted">{{ author.user.invite_delivery_updated_at }}</div>
-            {% endif %}
-            {% if author.user.invite_delivery_error %}
-            <div class="muted">{{ author.user.invite_delivery_error }}</div>
-            {% endif %}
+            {% elif author.invite_delivery_error or author.invite_delivery_updated_at %}
+            <span class="staff-badge warn">invite-данные неполные</span>
             {% else %}
             <span class="staff-badge">—</span>
+            {% endif %}
+            {% if author.invite_delivery_updated_at %}
+            <div class="muted">{{ author.invite_delivery_updated_at }}</div>
+            {% endif %}
+            {% if author.invite_delivery_error %}
+            <div class="muted">{{ author.invite_delivery_error }}</div>
             {% endif %}
           </td>
           <td class="actions">
             <details class="staff-row-menu">
               <summary class="ghost">Действия</summary>
               <div class="staff-row-menu-panel">
+                {% if author.has_linked_user %}
                 <button type="button" class="ghost" data-open-staff-dialog="author-edit-{{ author.id }}">Редактировать</button>
-                <form method="post" action="/admin/staff/{{ author.user.id }}/invite/resend">
+                <form method="post" action="/admin/staff/{{ author.user_id }}/invite/resend">
                   <button type="submit" class="ghost">Отправить повторно</button>
                 </form>
                 {% if author.invite_link %}
                 <button type="button" class="ghost" data-copy-text="{{ author.invite_link }}">Скопировать ссылку</button>
                 <a class="ghost" href="{{ author.invite_link }}">Открыть Telegram invite</a>
                 {% endif %}
+                {% else %}
+                <span class="muted">Недоступно без связанного staff-аккаунта.</span>
+                {% endif %}
               </div>
             </details>
+            {% if author.has_linked_user %}
             <dialog id="author-edit-{{ author.id }}" class="staff-dialog">
               <form method="dialog" class="staff-dialog-backdrop">
                 <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
@@ -155,17 +170,20 @@
                   </label>
                   <label class="staff-field">
                     <span>Почта</span>
-                    <input name="email" type="email" value="{{ author.user.email or '' }}" required />
+                    <input name="email" type="email" value="{{ author.email or '' }}" required />
                   </label>
                   <label class="staff-field">
                     <span>Telegram ID</span>
-                    <input name="telegram_user_id" type="number" value="{{ author.user.telegram_user_id or '' }}" />
+                    <input name="telegram_user_id" type="number" value="{{ author.telegram_user_id or '' }}" />
                   </label>
                   <div class="staff-field">
                     <span>Роли</span>
                     <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="admin" {% if author.has_admin_role %}checked{% endif %} /> <span>Администратор</span></label>
                     <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="author" {% if author.has_author_role %}checked{% endif %} /> <span>Автор</span></label>
                     <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="moderator" {% if author.has_moderator_role %}checked{% endif %} /> <span>Модератор</span></label>
+                    {% if author.extra_roles %}
+                    <div class="muted">Дополнительные роли: {{ author.extra_roles | join(", ") }}</div>
+                    {% endif %}
                   </div>
                   <label class="staff-inline-actions">
                     <input type="checkbox" name="requires_moderation" {% if author.requires_moderation %}checked{% endif %} />
@@ -184,6 +202,7 @@
                 </div>
               </form>
             </dialog>
+            {% endif %}
           </td>
         </tr>
         {% else %}

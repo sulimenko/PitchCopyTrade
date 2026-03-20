@@ -157,7 +157,8 @@ def test_author_strategy_list_renders(monkeypatch) -> None:
         response = client.get("/author/strategies")
 
         assert response.status_code == 200
-        assert "Табличный реестр собственных стратегий" in response.text
+        assert "порог капитала без открытия редактора" in response.text
+        assert "Новая стратегия откроет короткую форму" in response.text
         assert "Momentum RU" in response.text
 
 
@@ -223,8 +224,15 @@ def test_author_recommendation_list_renders(monkeypatch) -> None:
         assert "Рекомендации автора" in response.text
         assert "Покупка SBER" in response.text
         assert "inline-recommendation-form" in response.text
+        assert 'id="inline-recommendation-form" hidden' in response.text
+        assert 'form="inline-recommendation-form"' in response.text
         assert 'name="kind" value="new_idea"' in response.text
         assert 'name="inline_mode" value="1"' in response.text
+        assert 'form="inline-recommendation-form">Создать</button>' in response.text
+        assert "data-inline-detail" in response.text
+        assert ">Детально</button>" in response.text
+        assert "Создать добавляет черновик в реестр" in response.text
+        assert "display: contents" not in response.text
         assert "inline-ticker-backdrop" in response.text
         assert "workspace-modal-frame" in response.text
 
@@ -326,6 +334,38 @@ def test_author_recommendation_embedded_create_page_renders(monkeypatch) -> None
         assert "Что уже поддержано" not in response.text
 
 
+def test_author_recommendation_detail_prefills_editor(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+    instrument = _make_instrument()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+
+    with _build_client(author_user) as client:
+        response = client.get(
+            "/author/recommendations/new"
+            "?embedded=1"
+            "&next=/author/recommendations"
+            "&strategy_id=strategy-1"
+            "&title=%D0%9F%D0%BE%D0%BA%D1%83%D0%BF%D0%BA%D0%B0%20SBER"
+            "&leg_1_instrument_id=instrument-1"
+            "&leg_1_side=buy"
+            "&leg_1_entry_from=101.5"
+            "&leg_1_take_profit_1=106.2"
+            "&leg_1_stop_loss=99.9",
+        )
+
+        assert response.status_code == 200
+        assert 'name="title" value="Покупка SBER"' in response.text
+        assert 'value="strategy-1" selected' in response.text
+        assert 'value="instrument-1" selected' in response.text
+        assert 'name="leg_1_entry_from" value="101.5"' in response.text
+        assert 'name="leg_1_take_profit_1" value="106.2"' in response.text
+        assert 'name="leg_1_stop_loss" value="99.9"' in response.text
+        assert 'option value="buy" selected' in response.text
+
+
 def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
     author_user = _make_author_user()
     strategy = _make_strategy()
@@ -403,10 +443,54 @@ def test_author_recommendation_inline_create_allows_minimal_fields(monkeypatch) 
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/author/recommendations/rec-1/edit"
+        assert response.headers["location"] == "/author/recommendations"
         assert captured["kind"] == "new_idea"
         assert captured["entry_from"] is None
         assert captured["instrument_id"] == "instrument-1"
+
+
+def test_author_recommendation_inline_create_price_error_stays_in_list(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+    recommendation = _make_recommendation()
+    instrument = _make_instrument()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.list_author_recommendations",
+        lambda _session, _author: _async_return([recommendation]),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
+
+    with _build_client(author_user) as client:
+        response = client.post(
+            "/author/recommendations",
+            data={
+                "inline_mode": "1",
+                "strategy_id": "strategy-1",
+                "kind": "new_idea",
+                "status": "draft",
+                "next_path": "/author/recommendations",
+                "title": "",
+                "instrument_query": "SBER",
+                "leg_1_instrument_id": "instrument-1",
+                "leg_1_side": "buy",
+                "leg_1_entry_from": "105",
+                "leg_1_entry_to": "100",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "Рекомендации автора" in response.text
+        assert "Редактор рекомендации" not in response.text
+        assert "Leg 1:" not in response.text
+        assert "Цена входа «до» должна быть не ниже цены «от»." in response.text
+        assert 'name="leg_1_entry_from" value="105"' in response.text
+        assert 'name="leg_1_entry_to" value="100"' in response.text
+        assert "Значение не может быть меньше цены «от»" in response.text
 
 
 def test_author_recommendation_create_validation_error(monkeypatch) -> None:
@@ -507,7 +591,8 @@ def test_author_recommendation_create_marks_first_leg_instrument_error(monkeypat
         )
 
         assert response.status_code == 422
-        assert "Leg 1: выберите допустимый инструмент." in response.text
+        assert "Leg 1:" not in response.text
+        assert "Выберите инструмент для первой бумаги." in response.text
         assert "Выберите инструмент из списка" in response.text
         assert 'name="leg_7_instrument_id"' in response.text
         assert 'class="is-invalid"' in response.text
@@ -613,7 +698,8 @@ def test_author_recommendation_create_requires_datetime_for_scheduled(monkeypatc
         )
 
         assert response.status_code == 422
-        assert "planned datetime" in response.text
+        assert "planned datetime" not in response.text
+        assert "Укажите дату и время для запланированной публикации." in response.text
 
 
 def _author_return(author):

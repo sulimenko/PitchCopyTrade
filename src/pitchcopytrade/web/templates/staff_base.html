@@ -342,9 +342,148 @@
         display: grid;
         gap: 10px;
       }
+      .staff-page-head-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .staff-page-head-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .staff-toolbar-note {
+        max-width: 620px;
+        color: var(--staff-muted);
+        font-size: 0.78rem;
+        line-height: 1.45;
+      }
+      .staff-metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+        gap: 10px;
+        padding: 0 12px 12px;
+      }
+      .staff-metric-card {
+        padding: 12px 14px;
+        border: 1px solid var(--staff-line);
+        border-radius: 12px;
+        background: var(--staff-surface-soft);
+      }
+      .staff-metric-card strong {
+        display: block;
+        font-size: 1.4rem;
+        line-height: 1.05;
+        margin-top: 6px;
+      }
+      .staff-metric-note {
+        margin-top: 4px;
+        color: var(--staff-muted);
+        font-size: 0.76rem;
+        line-height: 1.35;
+      }
+      .staff-detail-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+        gap: 14px;
+      }
+      .staff-form-shell,
+      .staff-detail-panel {
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+      }
+      .staff-form-section {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--staff-line);
+        border-radius: 12px;
+        background: var(--staff-surface-soft);
+      }
+      .staff-form-section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      .staff-form-section-copy {
+        display: grid;
+        gap: 4px;
+      }
+      .staff-form-section-copy h2 {
+        margin: 0;
+        font-size: 1.08rem;
+        line-height: 1.1;
+      }
+      .staff-form-section-copy p {
+        margin: 0;
+        color: var(--staff-muted);
+        font-size: 0.82rem;
+        line-height: 1.45;
+        max-width: 720px;
+      }
+      .staff-form-grid {
+        display: grid;
+        gap: 10px;
+      }
+      .staff-form-grid.is-two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .staff-form-grid.is-three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .staff-form-grid.is-sidebar {
+        grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.65fr);
+      }
+      .staff-form-check {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .staff-info-stack {
+        display: grid;
+        gap: 10px;
+      }
+      .staff-info-card {
+        padding: 14px;
+        border: 1px solid var(--staff-line);
+        border-radius: 12px;
+        background: var(--staff-surface-soft);
+      }
+      .staff-info-card strong {
+        display: block;
+      }
+      .staff-info-card .muted {
+        margin-top: 6px;
+        line-height: 1.45;
+      }
+      .staff-key-list {
+        display: grid;
+        gap: 10px;
+      }
+      .staff-key-row {
+        display: grid;
+        grid-template-columns: minmax(126px, 160px) minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+      }
+      .staff-key-row strong {
+        font-size: 0.8rem;
+        line-height: 1.4;
+      }
       @media (max-width: 1080px) {
         .staff-shell { grid-template-columns: 1fr; }
         .staff-rail { position: static; height: auto; }
+      }
+      @media (max-width: 960px) {
+        .staff-detail-layout,
+        .staff-form-grid.is-sidebar {
+          grid-template-columns: 1fr;
+        }
       }
       @media (max-width: 720px) {
         .staff-main { padding: 12px; }
@@ -354,6 +493,11 @@
         .staff-form-row,
         .staff-inline-actions { width: 100%; }
         .staff-field { min-width: 100%; }
+        .staff-form-grid.is-two,
+        .staff-form-grid.is-three,
+        .staff-key-row {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
     {% include "partials/ag_grid_assets.html" %}

@@ -16,17 +16,18 @@ async def seed_admin(session: AsyncSession, *, telegram_id: int | None, email: s
         logger.info("No ADMIN_TELEGRAM_ID or ADMIN_EMAIL configured, skipping admin seeder")
         return False
 
-    # Check if admin already exists
+    # Presence-check must stay idempotent-safe for 0/1/N existing admins.
     query = (
-        select(User)
+        select(User.id)
         .join(user_roles, User.id == user_roles.c.user_id)
         .join(Role, Role.id == user_roles.c.role_id)
         .where(Role.slug == RoleSlug.ADMIN)
+        .limit(1)
     )
     result = await session.execute(query)
-    existing = result.scalar_one_or_none()
-    if existing is not None:
-        logger.info("Admin user already exists (id=%s), skipping", existing.id)
+    existing_admin_id = result.scalar_one_or_none()
+    if existing_admin_id is not None:
+        logger.info("Admin bootstrap skipped: at least one admin already exists")
         return False
 
     # Get or create admin role

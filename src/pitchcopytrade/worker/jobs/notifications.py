@@ -90,20 +90,19 @@ async def send_recommendation_notifications(ctx: dict, recommendation_id: str) -
 
 
 async def _send_telegram(settings, recommendation_id: str, telegram_user_id: int, text: str) -> tuple[bool, str | None]:
-    import aiohttp
+    import httpx
     bot_internal_url = "http://bot:8080/internal/broadcast"
     secret = settings.internal_api_secret.get_secret_value()
     try:
-        async with aiohttp.ClientSession() as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 bot_internal_url,
                 json={"recommendation_id": recommendation_id},
                 headers={"X-Internal-Token": secret},
-                timeout=aiohttp.ClientTimeout(total=30),
             )
-            if resp.status == 200:
+            if resp.status_code == 200:
                 return True, None
-            return False, f"HTTP {resp.status}"
+            return False, f"HTTP {resp.status_code}"
     except Exception as exc:
         logger.error("Telegram notification failed: %s", exc)
         return False, str(exc)

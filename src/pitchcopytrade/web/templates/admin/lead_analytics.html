@@ -10,36 +10,35 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px 28px 22px;">
-  <div class="eyebrow">аналитика лидов</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.95;letter-spacing:-0.05em;">Источники лидов</h1>
-  <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-    Нормализованный срез по рекламным и реферальным источникам: пользователи, подписки, оплаты и выручка.
-  </p>
-</section>
-
-<section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">источники</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.sources }}</div>
-    <div class="muted" style="margin-top:8px;">источников в отчете</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">подписки</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.subscriptions }}</div>
-    <div class="muted" style="margin-top:8px;">всего атрибутированных подписок</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">выручка</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.revenue_rub }} RUB</div>
-    <div class="muted" style="margin-top:8px;">оплаченная выручка по источникам</div>
-  </article>
-</section>
-
-<section class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">таблица атрибуции</div>
-  <h2 style="margin:10px 0 0;font-size:1.5rem;">Сводка по источникам</h2>
-  <div class="staff-grid-shell" style="margin-top:18px;">
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">аналитика лидов</div>
+      <h1>Источники лидов</h1>
+      <p>Компактный срез по users, подпискам, оплатам и выручке: первый экран сразу показывает рабочую таблицу атрибуции.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ rows|length }} строк</span>
+    </div>
+  </div>
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">источники</div>
+      <strong>{{ stats.sources }}</strong>
+      <div class="staff-metric-note">в отчёте</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">подписки</div>
+      <strong>{{ stats.subscriptions }}</strong>
+      <div class="staff-metric-note">атрибутировано по source</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">выручка</div>
+      <strong>{{ stats.revenue_rub }} RUB</strong>
+      <div class="staff-metric-note">paid revenue по источникам</div>
+    </article>
+  </div>
+  <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
         <tr>
@@ -70,10 +69,4 @@
     </table>
   </div>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="repeat(3"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

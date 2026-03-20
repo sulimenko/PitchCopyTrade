@@ -4,42 +4,106 @@
 
 ## Общий вывод
 
-Базовый продукт работает. Текущий governance blocker по `admin/authors` закрыт, residual raw-enum drift в `author` editor тоже закрыт, а последний блок staff-density fixes проходит целевой тестовый набор.
+Кодовая база MVP стабильна. Алембик удалён, схема переведена на `deploy/schema.sql`. UX-блоки A–Q закрыты. Обнаружены два критических инфраструктурных дефекта, блокирующих первый live run на сервере.
 
-## Текущие findings
+---
 
-- Активных blocking findings по последнему increment нет.
+## Критические findings (блокируют продакшн)
 
-## Что должно считаться готовностью следующего блока
+### R1 — pg_hba.conf не пускает Docker-контейнеры в postgres **[BLOCKER]**
 
-Merge считается готовым только если одновременно выполнены все пункты:
+**Симптом:**
+```
+ERROR | Instrument seeder failed: в pg_hba.conf нет записи для компьютера "172.21.0.4",
+       пользователя "pct", базы "pct", SSL выкл.
+```
 
-1. все staff list/registry/queue screens работают через `AG Grid Community`;
-2. `admin/staff` и `admin/authors` получили полноценный CRUD/edit flow;
-3. `active/inactive` работает как action flow;
-4. mutability rules по статусам enforced и отражены в UI;
-5. onboarding нового `admin/author` больше не требует ручной пересылки invite link;
-6. control emails администраторам одинаково работают в `db` и `file` mode;
-7. UI статусы и labels переведены на русский;
-8. ни один edit flow не может обойти правило последнего активного администратора.
+**Причина:** Postgres на хосте слушает только `127.0.0.1/32`. Docker-контейнеры подключаются через `host.docker.internal`, но postgres видит source IP контейнера (`172.21.x.x` или `172.20.x.x` — зависит от конкретной docker-сети). Правила для этих подсетей в `pg_hba.conf` отсутствуют.
+
+**Примечание:** `docker-compose.server.yml` объявляет `subnet: 172.20.0.0/24`, но контейнер получил `172.21.0.4` — Docker выбрал следующую свободную подсеть. Правило должно покрывать оба диапазона.
+
+**Исправление:**
+```bash
+# Найти pg_hba.conf
+sudo -u postgres psql -c "SHOW hba_file;"
+
+# Добавить строку (пример для CentOS: /var/lib/pgsql/data/pg_hba.conf)
+echo "host    pct    pct    172.0.0.0/8    md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
+
+# Перечитать конфиг без перезапуска
+sudo systemctl reload postgresql
+```
+
+**Последствия пока не исправлено:** seeders падают при каждом старте, инструменты и admin-пользователь не создаются, DB не инициализируется.
+
+---
+
+### R2 — ARQ-worker не запущен, notifications при немедленном publish не доставляются **[BLOCKER]**
+
+**Причина:** В системе два worker-пути:
+
+| Путь | Файл | Запущен? |
+|------|------|---------|
+| Polling loop (cron-like) | `worker/main.py` → `placeholders.py` | ✅ да (docker-compose) |
+| ARQ queue worker | `worker/arq_worker.py` | ❌ нет |
+
+`docker-compose.server.yml` запускает `python -m pitchcopytrade.worker.main` — это polling loop. ARQ-worker (`arq_worker.py`) не запускается.
+
+**Что ломается:** Когда автор публикует рекомендацию немедленно (не scheduled), `services/publishing.py` вызывает:
+```python
+await arq_pool.enqueue_job("send_recommendation_notifications", recommendation_id=...)
+```
+Задача попадает в Redis, но обработчик не работает — notifications молча теряются.
+
+**Что работает:** Scheduled-publish через polling worker доставляет notifications через `services/notifications.py` — этот путь исправен.
+
+**Исправление:** Запустить ARQ worker как отдельный сервис (добавить в docker-compose) ИЛИ убрать дублирование кодпатей и обрабатывать все notifications через polling.
+
+---
+
+## Medium findings
+
+### R3 — `aiohttp` импортируется, но не объявлен в зависимостях
+
+**Файл:** `worker/jobs/notifications.py`, строка 93: `import aiohttp`
+
+`aiohttp` отсутствует в `pyproject.toml`. В production-образе пакет может быть доступен как транзитивная зависимость `uvicorn[standard]`, но это ненадёжно. `httpx` уже объявлен явно и пригоден для того же.
+
+**Исправление:** Заменить `aiohttp` на `httpx` в `worker/jobs/notifications.py`.
+
+---
+
+### R4 — Два параллельных кодпати для recommendation notifications
+
+`services/notifications.py` → вызывается polling worker, broadcast через direct Telegram bot call.
+`worker/jobs/notifications.py` → ARQ job, дополнительно отправляет email.
+
+Оба делают одно: рассылку при publish. Canonical path должен быть один. Для MVP достаточно polling-пути (`services/notifications.py`); ARQ-job можно либо удалить, либо сделать основным и убрать дублирование.
+
+---
+
+## Housekeeping (не блокируют)
+
+- **Alembic удалён** — `alembic.ini`, `alembic/` папка, зависимость в `pyproject.toml` отсутствуют. Схема переведена на `deploy/schema.sql`. ✅
+- **Блоки F0–F3** (`task.md`) остаются открытыми — db/file parity для staff governance. Не блокируют первый запуск.
+- **`db/session.py`** создаёт engine на уровне импорта — нормально для production, усложняет unit-tests. Не критично для MVP.
+- **`worker/main.py`** спит 3600 секунд между циклами — для scheduled notifications достаточно, но задержка может быть до 1 часа от времени создания.
+
+---
+
+## Gate на следующий merge
+
+1. `pg_hba.conf` пофикшен, seeders запускаются без ошибок при `docker compose up`
+2. Notifications при немедленном publish доставляются (ARQ worker запущен ИЛИ переработан на единый путь)
+3. `aiohttp` заменён на `httpx` в `worker/jobs/notifications.py`
+4. Блоки F0–F3 закрыты
+
+---
 
 ## Worker target
 
 Следующий исполнитель должен брать как canonical source:
-- [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
-- [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+- `doc/blueprint.md` — архитектура MVP
+- `doc/task.md` — backlog задач
 
 Исторические completed phases не использовать как источник правды.
-
-## Next UX block
-
-Следующий приоритет после закрытия текущего governance gate:
-- runtime resilience для Telegram bot;
-- deploy troubleshooting и smoke-check для connectivity к `api.telegram.org`;
-- автоматическое восстановление polling после временных сетевых ошибок.
-
-Следующий worker block:
-- remaining staff density pass для admin/moderation/author surfaces;
-- вычистить оставшиеся oversized hero/page-head паттерны;
-- довести remaining admin forms до compact section language;
-- удержать правило: ключевые поля записи должны быть видны в реестре до открытия карточки.

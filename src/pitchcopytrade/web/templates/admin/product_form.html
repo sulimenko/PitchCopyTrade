@@ -14,140 +14,169 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">редактор продукта</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">
-    {% if product %}Редактирование продукта{% else %}Новый продукт подписки{% endif %}
-  </h1>
-  <p class="muted" style="max-width:760px;line-height:1.65;margin:16px 0 0;">
-    Один продукт должен ясно отвечать на два вопроса: что именно покупает клиент и на каких условиях он это получает.
-  </p>
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">редактор продукта</div>
+      <h1>{% if product %}Редактирование продукта{% else %}Новый продукт подписки{% endif %}</h1>
+      <p>Компактная форма для scope доступа, цены и статуса. Без отдельного hero-блока над рабочими полями.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      {% if product %}
+      <span class="staff-badge {% if product.is_active %}ok{% else %}danger{% endif %}">{{ "активен" if product.is_active else "выключен" }}</span>
+      <span class="staff-badge">{{ label_product_type(product.product_type) }}</span>
+      {% endif %}
+    </div>
+  </div>
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,0.8fr);gap:18px;margin-top:18px;">
-  <form class="surface" method="post" action="{% if product %}/admin/products/{{ product.id }}{% else %}/admin/products{% endif %}" style="padding:24px;display:grid;gap:18px;">
+<section class="staff-detail-layout">
+  <form class="staff-card staff-form-shell" method="post" action="{% if product %}/admin/products/{{ product.id }}{% else %}/admin/products{% endif %}">
     {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
-      {{ error }}
-    </div>
+    <div class="staff-error">{{ error }}</div>
     {% endif %}
 
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Тип продукта</strong>
-        <select name="product_type" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          {% for item in product_types %}
-          <option value="{{ item.value }}" {% if form_values.product_type == item.value %}selected{% endif %}>{{ label_product_type(item) }}</option>
-          {% endfor %}
-        </select>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Основное</h2>
+          <p>Определите тип продукта, период и читаемые публичные идентификаторы карточки.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-field">
+          <span>Тип продукта</span>
+          <select name="product_type">
+            {% for item in product_types %}
+            <option value="{{ item.value }}" {% if form_values.product_type == item.value %}selected{% endif %}>{{ label_product_type(item) }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="staff-field">
+          <span>Период биллинга</span>
+          <select name="billing_period">
+            {% for item in billing_periods %}
+            <option value="{{ item.value }}" {% if form_values.billing_period == item.value %}selected{% endif %}>{{ label_billing_period(item) }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-field">
+          <span>Слаг</span>
+          <input type="text" name="slug" value="{{ form_values.slug }}" />
+        </label>
+        <label class="staff-field">
+          <span>Название</span>
+          <input type="text" name="title" value="{{ form_values.title }}" />
+        </label>
+      </div>
+      <label class="staff-field">
+        <span>Описание</span>
+        <textarea name="description" rows="5">{{ form_values.description }}</textarea>
       </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Период биллинга</strong>
-        <select name="billing_period" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          {% for item in billing_periods %}
-          <option value="{{ item.value }}" {% if form_values.billing_period == item.value %}selected{% endif %}>{{ label_billing_period(item) }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
+    </section>
 
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Слаг</strong>
-        <input type="text" name="slug" value="{{ form_values.slug }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Название</strong>
-        <input type="text" name="title" value="{{ form_values.title }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Цель доступа</h2>
+          <p>У продукта должен быть ровно один target: стратегия, автор или пакет.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-three">
+        <label class="staff-field">
+          <span>Стратегия</span>
+          <select name="strategy_id">
+            <option value="">не выбрана</option>
+            {% for item in strategies %}
+            <option value="{{ item.id }}" {% if form_values.strategy_id == item.id %}selected{% endif %}>{{ item.title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="staff-field">
+          <span>Автор</span>
+          <select name="author_id">
+            <option value="">не выбран</option>
+            {% for item in authors %}
+            <option value="{{ item.id }}" {% if form_values.author_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="staff-field">
+          <span>Пакет</span>
+          <select name="bundle_id">
+            <option value="">не выбран</option>
+            {% for item in bundles %}
+            <option value="{{ item.id }}" {% if form_values.bundle_id == item.id %}selected{% endif %}>{{ item.title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+    </section>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Описание</strong>
-      <textarea name="description" rows="6" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.description }}</textarea>
-    </label>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Коммерция и доступность</h2>
+          <p>Цена и пробный период должны объяснять следующий шаг клиента без двусмысленности.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-field">
+          <span>Цена, руб</span>
+          <input type="number" name="price_rub" min="0" value="{{ form_values.price_rub }}" />
+        </label>
+        <label class="staff-field">
+          <span>Пробный период, дней</span>
+          <input type="number" name="trial_days" min="0" value="{{ form_values.trial_days }}" />
+        </label>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-form-check">
+          <input type="checkbox" name="is_active" value="1" {% if form_values.is_active %}checked{% endif %} />
+          <span>Продукт активен</span>
+        </label>
+        <label class="staff-form-check">
+          <input type="checkbox" name="autorenew_allowed" value="1" {% if form_values.autorenew_allowed %}checked{% endif %} />
+          <span>Разрешить автопродление</span>
+        </label>
+      </div>
+    </section>
 
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Стратегия</strong>
-        <select name="strategy_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          <option value="">не выбран</option>
-          {% for item in strategies %}
-          <option value="{{ item.id }}" {% if form_values.strategy_id == item.id %}selected{% endif %}>{{ item.title }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Автор</strong>
-        <select name="author_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          <option value="">не выбран</option>
-          {% for item in authors %}
-          <option value="{{ item.id }}" {% if form_values.author_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Пакет</strong>
-        <select name="bundle_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          <option value="">не выбран</option>
-          {% for item in bundles %}
-          <option value="{{ item.id }}" {% if form_values.bundle_id == item.id %}selected{% endif %}>{{ item.title }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Цена, руб</strong>
-        <input type="number" name="price_rub" min="0" value="{{ form_values.price_rub }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Пробный период, дней</strong>
-        <input type="number" name="trial_days" min="0" value="{{ form_values.trial_days }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-    </div>
-
-    <label style="display:flex;gap:10px;align-items:center;">
-      <input type="checkbox" name="is_active" value="1" {% if form_values.is_active %}checked{% endif %} />
-      <span><strong>Продукт активен</strong></span>
-    </label>
-    <label style="display:flex;gap:10px;align-items:center;">
-      <input type="checkbox" name="autorenew_allowed" value="1" {% if form_values.autorenew_allowed %}checked{% endif %} />
-      <span><strong>Разрешить автопродление</strong></span>
-    </label>
-
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="action" type="submit">{% if product %}Сохранить изменения{% else %}Создать продукт{% endif %}</button>
-      <a class="action ghost" href="/admin/products">Вернуться к продуктам</a>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Действия</h2>
+          <p>Сохранение вернёт карточку в реестр продуктов, где сразу будет виден её scope и коммерческий статус.</p>
+        </div>
+      </div>
+      <div class="staff-inline-actions">
+        <button class="staff-btn is-primary" type="submit">{% if product %}Сохранить продукт{% else %}Создать продукт{% endif %}</button>
+        <a class="staff-btn" href="/admin/products">Вернуться к продуктам</a>
+      </div>
+    </section>
   </form>
 
-  <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">подсказки по тарифу</div>
-    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Правила модели</h2>
-    <div style="display:grid;gap:12px;">
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+  <aside class="staff-card staff-detail-panel">
+    <div class="staff-form-section-copy">
+      <h2>Подсказки по тарифу</h2>
+      <p>Правая колонка держит только operator context: target, коммерцию и критерий готовности к публикации.</p>
+    </div>
+    <div class="staff-info-stack">
+      <div class="staff-info-card">
         <strong>Один target</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Тип продукта определяет ровно одну цель: strategy, author или bundle.</div>
+        <div class="muted">Тип продукта определяет ровно одну цель: strategy, author или bundle.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Прозрачная коммерция</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Цена и пробный период должны быть реальными для продажи, а не тестовыми значениями.</div>
+        <div class="muted">Цена и пробный период должны быть реальными для продажи, а не тестовыми значениями.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Активировать только после проверки</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Не включайте активность, пока карточка не привязана к корректному target и не проверена командой.</div>
+        <div class="muted">Не включайте активность, пока карточка не привязана к корректному target и не проверена командой.</div>
       </div>
     </div>
   </aside>
 </section>
-
-<style>
-  @media (max-width: 860px) {
-    section[style*="1.2fr"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(3"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

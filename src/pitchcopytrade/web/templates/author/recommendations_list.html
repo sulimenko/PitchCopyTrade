@@ -5,19 +5,22 @@
 {% block page_title %}Рекомендации автора{% endblock %}
 
 {% block topbar_actions %}
-<button class="staff-btn is-primary" type="button" data-open-recommendation-modal>Новая рекомендация</button>
+<button class="staff-btn is-primary" type="button" data-open-recommendation-modal data-modal-url="{{ recommendation_modal_url }}">Новая рекомендация</button>
 <a class="ghost" href="/author/strategies">Стратегии</a>
 {% endblock %}
 
 {% block content %}
 <section class="staff-card">
   <div class="staff-page-head">
-    <div>
+    <div class="staff-page-head-copy">
       <div class="eyebrow">реестр рекомендаций</div>
       <h1>Рекомендации автора</h1>
-      <p>Полный редактор открывается отдельно, а нижняя строка нужна для быстрого создания черновика с немедленным переходом в форму.</p>
+      <p>Сразу видны стратегия, бумага, направление, базовые цены и статус без перехода в карточку.</p>
     </div>
-    <span class="staff-badge">{{ recommendations|length }} строк</span>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ recommendations|length }} строк</span>
+      <span class="staff-page-note">Создать добавляет черновик в реестр, а Детально открывает тот же полный редактор с уже перенесёнными значениями из строки.</span>
+    </div>
   </div>
   <div class="staff-toolbar">
     <form method="get" action="/author/recommendations" class="staff-form-row">
@@ -39,7 +42,27 @@
       <input type="hidden" name="direction" value="{{ direction }}" />
       <button class="staff-btn" type="submit">Применить</button>
     </form>
+    <div class="staff-toolbar-note">Для быстрого старта выберите стратегию, бумагу и направление. Остальные поля можно заполнить уже в редакторе.</div>
   </div>
+  <form method="post" action="/author/recommendations" id="inline-recommendation-form" hidden>
+    <input type="hidden" name="inline_mode" value="1" />
+    <input type="hidden" name="kind" value="{{ inline_form_values.kind }}" />
+    <input type="hidden" name="status" value="{{ inline_form_values.status }}" />
+    <input type="hidden" name="summary" value="" />
+    <input type="hidden" name="thesis" value="" />
+    <input type="hidden" name="market_context" value="" />
+    <input type="hidden" name="scheduled_for" value="" />
+    <input type="hidden" name="next_path" value="{{ inline_next_path }}" />
+    <input type="hidden" name="q" value="{{ q }}" />
+    <input type="hidden" name="status_filter" value="{{ status_filter }}" />
+    <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+    <input type="hidden" name="direction" value="{{ direction }}" />
+    <input type="hidden" name="leg_1_entry_to" value="{{ inline_form_values.leg_1_entry_to }}" />
+    <input type="hidden" name="leg_1_time_horizon" value="{{ inline_form_values.leg_1_time_horizon }}" />
+    <input type="hidden" name="leg_1_note" value="{{ inline_form_values.leg_1_note }}" />
+    <input type="hidden" name="leg_1_take_profit_2" value="{{ inline_form_values.leg_1_take_profit_2 }}" />
+    <input type="hidden" name="leg_1_take_profit_3" value="{{ inline_form_values.leg_1_take_profit_3 }}" />
+  </form>
   <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
@@ -80,54 +103,73 @@
         <tr data-ag-grid-skip="true" class="inline-create-hint-row">
           <td colspan="9">
             <div class="inline-create-hint">
-              Быстрое создание: выберите стратегию, бумагу и направление, затем нажмите <strong>Создать и открыть</strong>.
+              Быстрый старт: заполните стратегию, бумагу и направление, затем выберите <strong>Создать</strong> для мгновенного черновика или <strong>Детально</strong> для полного редактора с теми же значениями.
             </div>
+            {% if inline_error %}
+            <div class="inline-create-error" role="alert">{{ inline_error }}</div>
+            {% endif %}
           </td>
         </tr>
-        <tr data-ag-grid-skip="true">
-          <form method="post" action="/author/recommendations" id="inline-recommendation-form">
-            <input type="hidden" name="inline_mode" value="1" />
-            <input type="hidden" name="kind" value="new_idea" />
-            <input type="hidden" name="status" value="draft" />
-            <input type="hidden" name="summary" value="" />
-            <input type="hidden" name="thesis" value="" />
-            <input type="hidden" name="market_context" value="" />
-            <input type="hidden" name="scheduled_for" value="" />
-            <input type="hidden" name="next_path" value="/author/recommendations" />
-            <input type="hidden" name="leg_1_entry_to" value="" />
-            <input type="hidden" name="leg_1_take_profit_2" value="" />
-            <input type="hidden" name="leg_1_take_profit_3" value="" />
-            <input type="hidden" name="leg_1_time_horizon" value="" />
-            <input type="hidden" name="leg_1_note" value="" />
+        <tr data-ag-grid-skip="true" id="inline-recommendation-shortcut">
             <td>
-              <select name="strategy_id">
+              <select form="inline-recommendation-form" name="strategy_id" {% if inline_field_errors.get("strategy_id") %}class="is-invalid"{% endif %}>
                 <option value="">Стратегия</option>
                 {% for strategy in strategies %}
-                <option value="{{ strategy.id }}">{{ strategy.title }}</option>
+                <option value="{{ strategy.id }}" {% if inline_form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
                 {% endfor %}
               </select>
+              {% if inline_field_errors.get("strategy_id") %}
+              <div class="inline-field-error">{{ inline_field_errors.get("strategy_id") }}</div>
+              {% endif %}
             </td>
             <td>
-              <input type="hidden" name="leg_1_instrument_id" id="inline-instrument-id" />
-              <input type="text" name="title" id="inline-title-input" placeholder="Идея" />
-              <input type="text" id="inline-ticker-input" placeholder="Бумага" autocomplete="off" />
+              <input type="hidden" form="inline-recommendation-form" name="leg_1_instrument_id" id="inline-instrument-id" value="{{ inline_form_values.leg_1_instrument_id }}" />
+              <input type="text" form="inline-recommendation-form" name="title" id="inline-title-input" value="{{ inline_form_values.title }}" placeholder="Идея" />
+              <input type="text" form="inline-recommendation-form" name="instrument_query" id="inline-ticker-input" value="{{ inline_form_values.instrument_query }}" placeholder="Бумага" autocomplete="off" {% if inline_field_errors.get("leg_1_instrument_id") %}class="is-invalid"{% endif %} />
               <div id="inline-picker-state" class="inline-picker-state muted">Сначала выберите бумагу из подсказок.</div>
+              {% if inline_field_errors.get("leg_1_instrument_id") %}
+              <div class="inline-field-error">{{ inline_field_errors.get("leg_1_instrument_id") }}</div>
+              {% endif %}
               <div id="inline-ticker-popup" class="staff-card" hidden style="position:absolute;z-index:20;padding:8px;"></div>
             </td>
             <td>
-              <select name="leg_1_side">
+              <select form="inline-recommendation-form" name="leg_1_side" {% if inline_field_errors.get("leg_1_side") %}class="is-invalid"{% endif %}>
                 <option value="">Покупка / продажа</option>
-                <option value="buy">Покупка</option>
-                <option value="sell">Продажа</option>
+                <option value="buy" {% if inline_form_values.leg_1_side == "buy" %}selected{% endif %}>Покупка</option>
+                <option value="sell" {% if inline_form_values.leg_1_side == "sell" %}selected{% endif %}>Продажа</option>
               </select>
+              {% if inline_field_errors.get("leg_1_side") %}
+              <div class="inline-field-error">{{ inline_field_errors.get("leg_1_side") }}</div>
+              {% endif %}
             </td>
-            <td><input type="text" name="leg_1_entry_from" placeholder="Цена входа" /></td>
-            <td><input type="text" name="leg_1_take_profit_1" placeholder="TP1" /></td>
-            <td><input type="text" name="leg_1_stop_loss" placeholder="Стоп" /></td>
+            <td>
+              <input type="text" form="inline-recommendation-form" name="leg_1_entry_from" value="{{ inline_form_values.leg_1_entry_from }}" placeholder="Цена входа" {% if inline_field_errors.get("leg_1_entry_from") %}class="is-invalid"{% endif %} />
+              {% if inline_field_errors.get("leg_1_entry_from") %}
+              <div class="inline-field-error">{{ inline_field_errors.get("leg_1_entry_from") }}</div>
+              {% elif inline_field_errors.get("leg_1_entry_to") %}
+              <div class="inline-field-error">{{ inline_field_errors.get("leg_1_entry_to") }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <input type="text" form="inline-recommendation-form" name="leg_1_take_profit_1" value="{{ inline_form_values.leg_1_take_profit_1 }}" placeholder="TP1" {% if inline_field_errors.get("leg_1_take_profit_1") %}class="is-invalid"{% endif %} />
+              {% if inline_field_errors.get("leg_1_take_profit_1") %}
+              <div class="inline-field-error">{{ inline_field_errors.get("leg_1_take_profit_1") }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <input type="text" form="inline-recommendation-form" name="leg_1_stop_loss" value="{{ inline_form_values.leg_1_stop_loss }}" placeholder="Стоп" {% if inline_field_errors.get("leg_1_stop_loss") %}class="is-invalid"{% endif %} />
+              {% if inline_field_errors.get("leg_1_stop_loss") %}
+              <div class="inline-field-error">{{ inline_field_errors.get("leg_1_stop_loss") }}</div>
+              {% endif %}
+            </td>
             <td><span class="staff-badge ok">черновик</span></td>
-            <td class="muted">после сохранения откроется редактор</td>
-            <td class="actions"><button class="staff-btn is-primary" type="submit">Создать и открыть</button></td>
-          </form>
+            <td class="muted">Создать добавит строку в реестр, а Детально откроет полный редактор с уже перенесёнными значениями.</td>
+            <td class="actions">
+              <div class="inline-create-actions">
+                <button class="staff-btn is-primary" type="submit" form="inline-recommendation-form">Создать</button>
+                <button class="ghost" type="button" data-open-recommendation-modal data-inline-detail data-modal-url="{{ recommendation_modal_url }}">Детально</button>
+              </div>
+            </td>
         </tr>
       </tbody>
     </table>
@@ -143,7 +185,7 @@
       </div>
       <button class="ghost" type="button" data-close-recommendation-modal>Закрыть</button>
     </div>
-    <iframe src="{{ recommendation_modal_url }}" title="Создание рекомендации" class="workspace-modal-frame" style="width:100%;height:min(84vh,980px);border:0;border-radius:14px;margin-top:14px;background:#fff;"></iframe>
+    <iframe id="recommendation-modal-frame" src="{{ recommendation_modal_url }}" title="Создание рекомендации" class="workspace-modal-frame" style="width:100%;height:min(84vh,980px);border:0;border-radius:14px;margin-top:14px;background:#fff;"></iframe>
   </div>
 </dialog>
 
@@ -152,12 +194,16 @@
 
 {% block extra_head %}
 <style>
-  #inline-recommendation-form { display: contents; }
-  #inline-recommendation-form input,
-  #inline-recommendation-form select { width: 100%; min-height: 32px; padding: 7px 10px; border: 1px solid var(--staff-line-strong); border-radius: 10px; }
-  #inline-recommendation-form td { position: relative; }
+  #inline-recommendation-shortcut input:not([type="hidden"]),
+  #inline-recommendation-shortcut select { width: 100%; min-height: 32px; padding: 7px 10px; border: 1px solid var(--staff-line-strong); border-radius: 10px; }
+  #inline-recommendation-shortcut input.is-invalid,
+  #inline-recommendation-shortcut select.is-invalid { border-color: var(--staff-danger); background: #fff4f4; }
+  #inline-recommendation-shortcut td { position: relative; }
   .inline-create-hint-row td { padding-top: 10px; padding-bottom: 6px; background: var(--staff-surface-soft); }
   .inline-create-hint { font-size: 0.78rem; color: var(--staff-muted); }
+  .inline-create-error { margin-top: 8px; font-size: 0.78rem; color: var(--staff-danger); }
+  .inline-field-error { margin-top: 4px; font-size: 0.72rem; color: var(--staff-danger); line-height: 1.35; }
+  .inline-create-actions { display: grid; gap: 6px; }
   .inline-picker-state { margin-top: 4px; font-size: 0.72rem; }
   .workspace-modal { border: 0; padding: 0; background: transparent; width: min(1220px, calc(100% - 24px)); }
   .workspace-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
@@ -168,6 +214,7 @@
 <script>
   (function () {
     const modal = document.getElementById("recommendation-modal");
+    const modalFrame = document.getElementById("recommendation-modal-frame");
     const openButtons = document.querySelectorAll("[data-open-recommendation-modal]");
     const closeButtons = document.querySelectorAll("[data-close-recommendation-modal]");
     const inlineForm = document.getElementById("inline-recommendation-form");
@@ -177,15 +224,57 @@
     const instrumentIdInput = document.getElementById("inline-instrument-id");
     const pickerState = document.getElementById("inline-picker-state");
     const instruments = {{ instrument_items | tojson }};
-    const strategySelect = inlineForm ? inlineForm.querySelector('select[name="strategy_id"]') : null;
-    const sideSelect = inlineForm ? inlineForm.querySelector('select[name="leg_1_side"]') : null;
-    const entryInput = inlineForm ? inlineForm.querySelector('input[name="leg_1_entry_from"]') : null;
-    const tpInput = inlineForm ? inlineForm.querySelector('input[name="leg_1_take_profit_1"]') : null;
-    const stopInput = inlineForm ? inlineForm.querySelector('input[name="leg_1_stop_loss"]') : null;
 
-    function openModal() { if (modal && typeof modal.showModal === "function") modal.showModal(); }
+    function openModal(url) {
+      if (modalFrame && url) modalFrame.src = url;
+      if (modal && typeof modal.showModal === "function") modal.showModal();
+    }
     function closeModal() { if (modal && modal.open) modal.close(); }
-    openButtons.forEach(function (button) { button.addEventListener("click", openModal); });
+    function getInlineField(name) {
+      return (inlineForm ? inlineForm.querySelector('[name="' + name + '"]') : null)
+        || document.querySelector('[form="inline-recommendation-form"][name="' + name + '"]');
+    }
+    const strategySelect = getInlineField("strategy_id");
+    const sideSelect = getInlineField("leg_1_side");
+    const entryInput = getInlineField("leg_1_entry_from");
+    const tpInput = getInlineField("leg_1_take_profit_1");
+    const stopInput = getInlineField("leg_1_stop_loss");
+    function buildInlineDetailUrl(baseUrl) {
+      if (!baseUrl || !inlineForm) return baseUrl;
+      const url = new URL(baseUrl, window.location.origin);
+      const fieldNames = [
+        "strategy_id",
+        "title",
+        "leg_1_instrument_id",
+        "leg_1_side",
+        "leg_1_entry_from",
+        "leg_1_entry_to",
+        "leg_1_stop_loss",
+        "leg_1_take_profit_1",
+        "leg_1_take_profit_2",
+        "leg_1_take_profit_3",
+        "leg_1_time_horizon",
+        "leg_1_note"
+      ];
+      fieldNames.forEach(function (name) {
+        const field = getInlineField(name);
+        if (!field) return;
+        const value = field.value.trim();
+        if (!value) {
+          url.searchParams.delete(name);
+          return;
+        }
+        url.searchParams.set(name, value);
+      });
+      return url.pathname + "?" + url.searchParams.toString();
+    }
+    openButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        const baseUrl = button.dataset.modalUrl || "{{ recommendation_modal_url }}";
+        const targetUrl = button.hasAttribute("data-inline-detail") ? buildInlineDetailUrl(baseUrl) : baseUrl;
+        openModal(targetUrl);
+      });
+    });
     closeButtons.forEach(function (button) { button.addEventListener("click", closeModal); });
     if (!inlineForm || !tickerInput || !tickerPopup || !instrumentIdInput) return;
 
@@ -228,9 +317,16 @@
 
     tickerInput.addEventListener("input", function () {
       instrumentIdInput.value = "";
-      setPickerState("Выберите бумагу из подсказок, затем создайте черновик.", false);
+      setPickerState("Выберите бумагу из подсказок, затем создайте черновик или откройте детальную форму.", false);
       renderSuggestions(tickerInput.value);
     });
+
+    if (instrumentIdInput.value.trim()) {
+      const selectedInstrument = instruments.find(function (item) { return item.id === instrumentIdInput.value.trim(); });
+      if (selectedInstrument) {
+        setPickerState("Выбрана бумага: " + selectedInstrument.ticker + " · " + selectedInstrument.name, false);
+      }
+    }
 
     inlineForm.addEventListener("submit", function (event) {
       const strategyValue = strategySelect ? strategySelect.value.trim() : "";
@@ -258,7 +354,7 @@
         titleInput.value = sideLabel + " " + tickerInput.value.trim();
       }
       if (entryInput && !entryInput.value.trim() && stopInput && !stopInput.value.trim() && tpInput && !tpInput.value.trim()) {
-        setPickerState("Черновик создастся и откроется в редакторе для заполнения уровней.", false);
+        setPickerState("Черновик сохранится в реестре. Уровни можно заполнить позже или через «Детально».", false);
       }
     });
   })();

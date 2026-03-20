@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -81,6 +82,7 @@ from pitchcopytrade.web.templates import templates
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", include_in_schema=False)
@@ -1427,14 +1429,14 @@ async def admin_authors_list(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
-    authors = await list_admin_authors(session, status_filter=status_filter)
-    authors = _filter_admin_author_rows(authors, q=q)
-    authors = _sort_admin_author_rows(authors, sort_by=sort_by, direction=direction)
-    author_rows = [_author_row(author) for author in authors]
-    return templates.TemplateResponse(
-        request,
-        "admin/authors_list.html",
-        {"title": "Авторы", "user": user, "authors": author_rows, "status_filter": status_filter, "q": q, "sort_by": sort_by, "direction": direction},
+    return await _render_admin_authors_registry(
+        request=request,
+        user=user,
+        session=session,
+        status_filter=status_filter,
+        q=q,
+        sort_by=sort_by,
+        direction=direction,
     )
 
 
@@ -1456,12 +1458,11 @@ async def admin_author_create(
             telegram_user_id=tg_id,
         )
     except ValueError as exc:
-        authors = await list_admin_authors(session)
-        author_rows = [_author_row(author) for author in authors]
-        return templates.TemplateResponse(
-            request,
-            "admin/authors_list.html",
-            {"title": "Авторы", "user": user, "authors": author_rows, "error": str(exc), "status_filter": "all", "q": "", "sort_by": "display_name", "direction": "asc"},
+        return await _render_admin_authors_registry(
+            request=request,
+            user=user,
+            session=session,
+            error=str(exc),
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
@@ -1496,12 +1497,11 @@ async def admin_author_edit(
             ),
         )
     except ValueError as exc:
-        authors = await list_admin_authors(session)
-        author_rows = [_author_row(author) for author in authors]
-        return templates.TemplateResponse(
-            request,
-            "admin/authors_list.html",
-            {"title": "Авторы", "user": user, "authors": author_rows, "error": str(exc), "status_filter": "all", "q": "", "sort_by": "display_name", "direction": "asc"},
+        return await _render_admin_authors_registry(
+            request=request,
+            user=user,
+            session=session,
+            error=str(exc),
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
@@ -1874,23 +1874,45 @@ async def admin_metrics(
 
 
 def _author_row(author) -> dict[str, object]:
-    invite_link = None
-    if author.user is not None and author.user.telegram_user_id is None:
-        invite_link = build_staff_invite_link(author.user)
-    role_order = {"admin": 0, "author": 1, "moderator": 2}
-    role_slugs = (
-        sorted((item.slug.value for item in author.user.roles), key=lambda item: (role_order.get(item, 99), item))
-        if author.user is not None
-        else []
+    user = getattr(author, "user", None)
+    role_slugs = _safe_role_slugs(user)
+    display_name = (
+        getattr(author, "display_name", None)
+        or getattr(author, "slug", None)
+        or getattr(user, "full_name", None)
+        or getattr(user, "email", None)
+        or getattr(user, "username", None)
+        or getattr(author, "id", None)
+        or "Автор без имени"
     )
+    email = getattr(user, "email", None) if user is not None else None
+    telegram_user_id = getattr(user, "telegram_user_id", None) if user is not None else None
+    invite_delivery_status = getattr(user, "invite_delivery_status", None) if user is not None else None
+    invite_delivery_error = getattr(user, "invite_delivery_error", None) if user is not None else None
+    invite_delivery_updated_at = getattr(user, "invite_delivery_updated_at", None) if user is not None else None
+    user_id = getattr(user, "id", None) if user is not None else None
+    invite_link = None
+    if user is not None and user_id and telegram_user_id is None:
+        invite_link = build_staff_invite_link(user)
+    known_roles = {"admin", "author", "moderator"}
     return {
-        "id": author.id,
-        "display_name": author.display_name,
-        "is_active": author.is_active,
-        "user": author.user,
+        "id": getattr(author, "id", ""),
+        "display_name": display_name,
+        "slug": getattr(author, "slug", "") or "",
+        "email": email or "",
+        "telegram_user_id": telegram_user_id,
+        "user_id": user_id,
+        "has_linked_user": user is not None and bool(user_id),
+        "user_warning": None if user is not None else "Связанный staff-аккаунт не найден.",
+        "is_active": bool(getattr(author, "is_active", False)),
         "invite_link": invite_link,
-        "requires_moderation": author.requires_moderation,
-        "status": "active" if author.is_active else "inactive",
+        "invite_delivery_status": invite_delivery_status,
+        "invite_delivery_error": invite_delivery_error,
+        "invite_delivery_updated_at": invite_delivery_updated_at,
+        "requires_moderation": bool(getattr(author, "requires_moderation", False)),
+        "status": "active" if getattr(author, "is_active", False) else "inactive",
+        "roles": role_slugs,
+        "extra_roles": [item for item in role_slugs if item not in known_roles],
         "has_admin_role": "admin" in role_slugs,
         "has_author_role": "author" in role_slugs,
         "has_moderator_role": "moderator" in role_slugs,
@@ -1933,7 +1955,14 @@ def _filter_admin_author_rows(authors, *, q: str):
     return [
         item for item in authors
         if normalized in " ".join(
-            part.lower() for part in [item.display_name, item.slug, item.user.email if item.user is not None and item.user.email else ""] if part
+            part.lower()
+            for part in [
+                getattr(item, "display_name", None) or "",
+                getattr(item, "slug", None) or "",
+                getattr(getattr(item, "user", None), "email", None) or "",
+                " ".join(_safe_role_slugs(getattr(item, "user", None))),
+            ]
+            if part
         )
     ]
 
@@ -1941,12 +1970,76 @@ def _filter_admin_author_rows(authors, *, q: str):
 def _sort_admin_author_rows(authors, *, sort_by: str, direction: str):
     reverse = direction == "desc"
     if sort_by == "status":
-        key = lambda item: "active" if item.is_active else "inactive"
+        key = lambda item: "active" if getattr(item, "is_active", False) else "inactive"
     elif sort_by == "moderation":
-        key = lambda item: "review" if item.requires_moderation else "direct"
+        key = lambda item: "review" if getattr(item, "requires_moderation", False) else "direct"
     else:
-        key = lambda item: item.display_name.lower()
+        key = lambda item: ((getattr(item, "display_name", None) or getattr(item, "slug", None) or getattr(item, "id", None) or "")).lower()
     return sorted(authors, key=key, reverse=reverse)
+
+
+async def _render_admin_authors_registry(
+    *,
+    request: Request,
+    user: User,
+    session: AsyncSession | None,
+    status_filter: str = "all",
+    q: str = "",
+    sort_by: str = "display_name",
+    direction: str = "asc",
+    error: str | None = None,
+    status_code: int = status.HTTP_200_OK,
+) -> Response:
+    template_error = error
+    try:
+        authors = await list_admin_authors(session, status_filter=status_filter)
+        authors = _filter_admin_author_rows(authors, q=q)
+        authors = _sort_admin_author_rows(authors, sort_by=sort_by, direction=direction)
+        author_rows: list[dict[str, object]] = []
+        skipped_rows = 0
+        for author in authors:
+            try:
+                author_rows.append(_author_row(author))
+            except Exception:
+                skipped_rows += 1
+                logger.exception("admin author row build failed for %s", getattr(author, "id", None))
+        if skipped_rows:
+            warning = f"Часть строк реестра авторов пропущена: {skipped_rows}. Проверьте связанные staff/user данные."
+            template_error = f"{template_error} {warning}".strip() if template_error else warning
+    except Exception:
+        logger.exception("admin authors registry failed")
+        author_rows = []
+        fallback = "Не удалось загрузить реестр авторов. Проверьте связанные staff/user данные и повторите попытку."
+        template_error = f"{template_error} {fallback}".strip() if template_error else fallback
+
+    return templates.TemplateResponse(
+        request,
+        "admin/authors_list.html",
+        {
+            "title": "Авторы",
+            "user": user,
+            "authors": author_rows,
+            "error": template_error,
+            "status_filter": status_filter,
+            "q": q,
+            "sort_by": sort_by,
+            "direction": direction,
+        },
+        status_code=status_code,
+    )
+
+
+def _safe_role_slugs(user: User | None) -> list[str]:
+    role_order = {"admin": 0, "author": 1, "moderator": 2}
+    if user is None:
+        return []
+    normalized: list[str] = []
+    for item in getattr(user, "roles", None) or []:
+        slug = getattr(item, "slug", None)
+        value = getattr(slug, "value", slug)
+        if value:
+            normalized.append(str(value))
+    return sorted(set(normalized), key=lambda item: (role_order.get(item, 99), item))
 
 
 def _filter_admin_staff_rows(users, *, q: str):

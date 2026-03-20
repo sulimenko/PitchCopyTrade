@@ -9,93 +9,120 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px 28px 22px;">
-  <div class="eyebrow">редактор промокода</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.95;letter-spacing:-0.05em;">
-    {{ "Карточка промокода" if promo_code else "Новый промокод" }}
-  </h1>
-  <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-    Промокод применяется на checkout и влияет на итоговую сумму платежа. Используйте либо процентную, либо фиксированную скидку.
-  </p>
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">редактор промокода</div>
+      <h1>{{ "Карточка промокода" if promo_code else "Новый промокод" }}</h1>
+      <p>Компактная форма для кода, скидки, лимитов и срока действия без отдельной декоративной шапки.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      {% if promo_code %}
+      <span class="staff-badge {% if promo_code.is_active %}ok{% else %}danger{% endif %}">{{ "активен" if promo_code.is_active else "выключен" }}</span>
+      <span class="staff-badge">{{ promo_code.current_redemptions }} использований</span>
+      {% endif %}
+    </div>
+  </div>
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
-  <form class="surface" method="post" style="padding:24px;display:grid;gap:18px;">
+<section class="staff-detail-layout">
+  <form class="staff-card staff-form-shell" method="post">
     {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
-      {{ error }}
-    </div>
+    <div class="staff-error">{{ error }}</div>
     {% endif %}
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Код</strong>
-        <input type="text" name="code" value="{{ form_values.code or '' }}" placeholder="WELCOME10" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;text-transform:uppercase;" />
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Основное</h2>
+          <p>Код и лимит должны сразу объяснять checkout behavior и объём допустимых redemption.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-field">
+          <span>Код</span>
+          <input type="text" name="code" value="{{ form_values.code or '' }}" placeholder="WELCOME10" style="text-transform:uppercase;" />
+        </label>
+        <label class="staff-field">
+          <span>Лимит использований</span>
+          <input type="number" name="max_redemptions" min="1" value="{{ form_values.max_redemptions or '' }}" />
+        </label>
+      </div>
+      <label class="staff-field">
+        <span>Описание</span>
+        <textarea name="description" rows="3">{{ form_values.description or '' }}</textarea>
       </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Лимит использований</strong>
-        <input type="number" name="max_redemptions" min="1" value="{{ form_values.max_redemptions or '' }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    </section>
+
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Скидка и срок действия</h2>
+          <p>Используйте либо процентную, либо фиксированную скидку. Два режима одновременно не допускаются.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-three">
+        <label class="staff-field">
+          <span>Скидка, %</span>
+          <input type="number" name="discount_percent" min="1" max="100" value="{{ form_values.discount_percent or '' }}" />
+        </label>
+        <label class="staff-field">
+          <span>Скидка, руб</span>
+          <input type="number" name="discount_amount_rub" min="0" value="{{ form_values.discount_amount_rub or '' }}" />
+        </label>
+        <label class="staff-field">
+          <span>Истекает</span>
+          <input type="datetime-local" name="expires_at" value="{{ form_values.expires_at or '' }}" />
+        </label>
+      </div>
+      <label class="staff-form-check">
+        <input type="checkbox" name="is_active" {% if form_values.is_active %}checked{% endif %} />
+        <span>Промокод активен</span>
       </label>
-    </div>
-    <label style="display:grid;gap:8px;">
-      <strong>Описание</strong>
-      <textarea name="description" rows="3" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.description or '' }}</textarea>
-    </label>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Скидка, %</strong>
-        <input type="number" name="discount_percent" min="1" max="100" value="{{ form_values.discount_percent or '' }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Скидка, руб</strong>
-        <input type="number" name="discount_amount_rub" min="0" value="{{ form_values.discount_amount_rub or '' }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Истекает</strong>
-        <input type="datetime-local" name="expires_at" value="{{ form_values.expires_at or '' }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-    </div>
-    <label style="display:flex;gap:12px;align-items:center;">
-      <input type="checkbox" name="is_active" {% if form_values.is_active %}checked{% endif %} />
-      <span><strong>Промокод активен</strong></span>
-    </label>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="action" type="submit">Сохранить</button>
-      <a class="action ghost" href="/admin/promos">Вернуться в реестр</a>
-    </div>
+    </section>
+
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Действия</h2>
+          <p>Сохранение оставит карточку в контуре промокодов, где сразу видны лимиты, истечение и состояние.</p>
+        </div>
+      </div>
+      <div class="staff-inline-actions">
+        <button class="staff-btn is-primary" type="submit">Сохранить промокод</button>
+        <a class="staff-btn" href="/admin/promos">Вернуться в реестр</a>
+      </div>
+    </section>
   </form>
 
-  <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">сводка промокода</div>
-    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Текущая карточка</h2>
+  <aside class="staff-card staff-detail-panel">
+    <div class="staff-form-section-copy">
+      <h2>Текущая карточка</h2>
+      <p>Правая колонка держит только usage summary и статус, а не отдельный длинный detail-screen.</p>
+    </div>
     {% if promo_code %}
-    <div style="display:grid;gap:12px;">
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+    <div class="staff-info-stack">
+      <div class="staff-info-card">
         <strong>{{ promo_code.code }}</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ promo_code.description or "Описание пока не заполнено" }}</div>
+        <div class="muted">{{ promo_code.description or "Описание пока не заполнено" }}</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Использований</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ promo_code.current_redemptions }} подтверждено</div>
+        <div class="muted">{{ promo_code.current_redemptions }} подтверждено</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Состояние</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">
+        <div class="muted">
           {{ "Активен" if promo_code.is_active else "Выключен" }}
           {% if promo_code.expires_at %}<br />До {{ promo_code.expires_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}
         </div>
       </div>
     </div>
     {% else %}
-    <p class="muted" style="line-height:1.6;">После создания здесь появятся usage и состояние промокода.</p>
+    <div class="staff-info-card">
+      <strong>Следующий шаг</strong>
+      <div class="muted">После создания здесь появятся usage и текущее состояние промокода.</div>
+    </div>
     {% endif %}
   </aside>
 </section>
-
-<style>
-  @media (max-width: 960px) {
-    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(3"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

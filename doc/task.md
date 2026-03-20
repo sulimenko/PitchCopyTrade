@@ -9,6 +9,39 @@
 - `[x]` — завершено
 - `[!]` — заблокировано
 
+---
+
+## Блок R — Инфраструктура и notification pipeline (найдено в review 2026-03-20)
+
+**Цель:** устранить два blocker'а, блокирующих первый live run на сервере.
+
+- [ ] **R1** Добавить правило в `pg_hba.conf` для Docker-подсетей
+  - Добавить строку `host pct pct 172.0.0.0/8 md5` в `/var/lib/pgsql/data/pg_hba.conf`
+  - Перечитать конфиг: `sudo systemctl reload postgresql`
+  - Проверить: seeders запускаются без ошибок при `docker compose up`
+
+- [ ] **R2** Запустить ARQ worker или консолидировать notification путь
+  - Выбрать один из двух вариантов:
+    - **A:** Добавить `arq`-сервис в `deploy/docker-compose.server.yml` (`python -m arq pitchcopytrade.worker.arq_worker.WorkerSettings`)
+    - **B:** Убрать ARQ-путь для notifications; routing при immediate publish направить через polling worker
+  - Проверить: после немедленного publish рекомендации Telegram-уведомление доставляется
+
+- [ ] **R3** Заменить `aiohttp` на `httpx` в `worker/jobs/notifications.py`
+  - Строка 93: `import aiohttp` → переписать на `httpx.AsyncClient`
+  - `aiohttp` отсутствует в `pyproject.toml`; `httpx` уже объявлен
+
+- [ ] **R4** Устранить дублирование notification кодпатей
+  - `services/notifications.py` и `worker/jobs/notifications.py` делают одно и то же
+  - Оставить один canonical path, удалить второй или явно разграничить роли
+
+### Acceptance для Блока R
+- `docker compose up` стартует без ERROR в логах api
+- seeders выполняются (инструменты и admin-user создаются)
+- немедленный publish → notification доставлена подписчику
+- `aiohttp` больше не используется без явного объявления в зависимостях
+
+---
+
 ## Текущий program block
 
 Следующий крупный блок состоит из трех частей:
@@ -620,23 +653,26 @@
 
 **Цель:** довести compact operator-first density до остальных staff surfaces, где еще остались большие hero-блоки, пустые зоны и слабая видимость ключевых данных до открытия карточки.
 
-- [ ] **M1** Убрать oversized page-head/hero из remaining admin surfaces
-  - `/admin/dashboard`
+- [x] **M1** Убрать oversized page-head/hero из remaining admin surfaces
+  - reference baseline = `/author/dashboard`
+  - `/author/strategies`
+  - `/author/recommendations`
+  - `/admin/staff`
   - `/admin/products`
+  - `/admin/legal`
   - `/admin/payments`
   - `/admin/subscriptions`
-  - `/admin/promos`
-  - `/admin/analytics/*`
   - `/admin/delivery`
-  - `/moderation/detail`
-  - `/author/dashboard`
+  - `/admin/promos`
+  - `/admin/analytics/leads`
+  - если тот же oversized top-shell паттерн остался на других staff surfaces, привести и их к этому же baseline в рамках одного прохода
 
-- [ ] **M2** Довести compact registries до консистентного operator-readability
+- [x] **M2** Довести compact registries до консистентного operator-readability
   - в списке должно быть видно ключевое содержимое записи до клика `Открыть`
   - для row summary использовать 1-2 compact secondary lines вместо большого detail-screen dependence
   - не плодить большие пустые зоны ради декоративного copy
 
-- [ ] **M3** Перевести remaining admin forms в compact section layout
+- [x] **M3** Перевести remaining admin forms в compact section layout
   - `admin/product_form.html`
   - `admin/legal_form.html`
   - `admin/promo_form.html`
@@ -644,12 +680,12 @@
   - `admin/subscription_detail.html`
   - `admin/delivery_detail.html`
 
-- [ ] **M4** Упростить operator affordances
+- [x] **M4** Упростить operator affordances
   - в быстрых строках создания CTA должен быть явным по результату, а не символьным
   - helper copy должен объяснять следующий шаг в 1 короткой строке
   - статусы и secondary hints должны оставаться компактными
 
-- [ ] **M5** Добавить regression/manual acceptance coverage
+- [x] **M5** Добавить regression/manual acceptance coverage
   - smoke-check на отсутствие giant hero-block на указанных surfaces
   - smoke-check на compact registries, где ключевые поля видны без открытия карточки
   - smoke-check на inline create CTA и immediate next step
@@ -660,3 +696,113 @@
 - ключевые поля записи видны в реестре до открытия detail/edit
 - remaining admin forms используют тот же compact section language, что и strategy/recommendation editors
 - inline operator shortcuts объясняют результат действия без двусмысленности
+
+---
+
+## Блок N — Split inline create для `/author/recommendations`
+
+**Цель:** нижняя shortcut-строка рекомендаций должна перестать смешивать inline-create и переход в full editor в одну кнопку.
+
+- [x] **N1** Разделить inline shortcut на два разных действия
+  - `Создать` — создает черновик из inline-ввода после локальной проверки обязательных полей
+  - `Детально` — открывает полный create-flow рекомендации
+  - top action `Новая рекомендация` и inline action `Детально` должны вести в один и тот же detailed create contour
+
+- [x] **N2** Явно определить data-flow для обеих кнопок
+  - `Создать` не должен неявно открывать редактор, если по смыслу действие только создает строку
+  - `Детально` должен переносить уже введенные значения из shortcut-строки в full editor как prefill
+  - если shortcut-строка пуста, `Детально` открывает обычный пустой detailed create flow
+
+- [x] **N3** Довести validation contract для inline create
+  - `Создать` должен валидировать стратегию, бумагу и направление как минимальный обязательный набор
+  - если введены ценовые поля, ошибки должны оставаться локальными и понятными
+  - текст CTA и helper copy не должны вводить в заблуждение относительно следующего шага
+
+- [x] **N4** Добавить regression/manual acceptance coverage
+  - UI test на наличие двух разных CTA в inline shortcut
+  - test на prefill при переходе через `Детально`
+  - smoke-check на inline create без открытия full editor
+
+### Acceptance
+
+- на нижней строке `/author/recommendations` есть два разных действия: `Создать` и `Детально`
+- inline create и detailed create больше не смешаны в одну кнопку
+- `Детально` переиспользует уже введенные данные, а не теряет их
+- intent каждого действия понятен без дополнительного объяснения
+
+---
+
+## Блок O — Hardening для `/admin/authors`
+
+**Цель:** registry `/admin/authors` должен стабильно открываться на реальных server-данных и не падать raw `500`.
+
+- [x] **O1** Воспроизвести и локализовать server-side причину `Internal Server Error`
+  - снять traceback из `api` logs на текущем dataset
+  - зафиксировать точную точку падения: route, service, row builder или template rendering
+  - проверить кейсы с неполным staff bind, неожиданным набором ролей и частично заполненными invite-полями
+
+- [x] **O2** Сделать registry и row rendering null-safe
+  - `/admin/authors` не должен падать из-за missing related user/profile fields
+  - role/status/invite rendering должен устойчиво переносить sparse data
+  - route обязан либо рендерить список, либо отдавать controlled business-state без raw traceback в браузер
+
+- [x] **O3** Добавить regression coverage
+  - route/UI test на `/admin/authors` с неполными связанными данными
+  - service test на устойчивое построение author row
+  - smoke-check на открытие `/admin/authors` после создания/редактирования author/staff записей
+
+### Acceptance
+
+- `/admin/authors` открывается без raw `500` на текущем server-датасете
+- неполные или нестандартные связанные данные не валят registry
+- при ошибке пользователь видит controlled state, а не пустой Internal Server Error
+
+---
+
+## Блок P — Friendly validation copy и valid inline DOM в `/author/recommendations`
+
+**Цель:** recommendation shortcut и editor не должны светить внутренние parser-тексты и не должны зависеть от невалидной table/form разметки.
+
+- [x] **P1** Убрать raw validation copy из user-facing feedback
+  - inline error summary не должен показывать строки вида `Leg 1: ...`
+  - full editor error summary тоже не должен показывать внутренние parser tokens
+  - локальные field-level ошибки должны остаться, но общий текст нужно привести к русской operator-copy
+
+- [x] **P2** Привести inline shortcut к валидной HTML-разметке
+  - убрать паттерн `tr > form > td`
+  - использовать валидную table/form схему (`form=` attributes, отдельный form-container или другой стабильный вариант)
+  - обе CTA (`Создать`, `Детально`) и picker бумаги должны остаться рабочими после DOM cleanup
+
+- [x] **P3** Добавить regression coverage
+  - UI test на отсутствие raw `Leg 1` / `entry_to` в user-facing response body
+  - test на сохранение split-flow после перевода shortcut-строки на валидную DOM-структуру
+
+### Acceptance
+
+- пользователь не видит raw validation строк вроде `Leg 1: entry_to ...`
+- inline shortcut использует валидную table/form разметку
+- split-flow `Создать` / `Детально` не ломается после DOM cleanup
+
+---
+
+## Блок Q — Multi-admin-safe bootstrap seeder
+
+**Цель:** startup admin seeder не должен шуметь и падать на валидной базе, где уже есть несколько администраторов.
+
+- [x] **Q1** Сделать presence-check idempotent-safe
+  - не использовать `scalar_one_or_none()` на запросе, который может валидно вернуть больше одной строки
+  - проверка существующего admin должна корректно работать для 0, 1 и N администраторов
+
+- [x] **Q2** Нормализовать startup behavior и логи
+  - если в системе уже есть хотя бы один admin, seeder должен quietly skip bootstrap
+  - `api` lifespan не должен логировать `Multiple rows were found when one or none was required` как startup error на валидном state
+
+- [x] **Q3** Добавить regression coverage
+  - seeder test на базу с двумя admin users
+  - acceptance path для startup без error-log на multi-admin dataset
+
+### Acceptance
+
+- bootstrap seeder корректно пропускается при наличии одного или более администраторов
+- startup не шумит ошибкой `Multiple rows were found...` на валидной рабочей базе
+- regression tests покрывают multi-admin state

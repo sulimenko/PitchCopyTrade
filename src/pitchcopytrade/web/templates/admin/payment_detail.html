@@ -12,86 +12,114 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">проверка платежа</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Проверка платежа</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Подтверждение переводит платеж в `paid` и активирует связанную подписку без ручного вмешательства в БД.
-      </p>
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">проверка платежа</div>
+      <h1>Проверка платежа</h1>
+      <p>Клиент, сумма, продукт и операторский следующий шаг собраны в компактной detail-карточке.</p>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ label_payment_status(payment.status) }}</span>
-      <span class="pill">{{ label_payment_provider(payment.provider) }}</span>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ label_payment_status(payment.status) }}</span>
+      <span class="staff-badge">{{ label_payment_provider(payment.provider) }}</span>
     </div>
   </div>
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
-  <article class="surface" style="padding:24px;">
+<section class="staff-detail-layout">
+  <article class="staff-card staff-form-shell">
     {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);margin-bottom:18px;">
-      {{ error }}
-    </div>
+    <div class="staff-error">{{ error }}</div>
     {% endif %}
-    <div class="eyebrow">данные платежа</div>
-    <div style="display:grid;gap:12px;margin-top:16px;">
-      <div><strong>Клиент:</strong> <span class="muted">{{ payment.user.full_name or payment.user.email or payment.user.id }}</span></div>
-      <div><strong>Email:</strong> <span class="muted">{{ payment.user.email or "не задан" }}</span></div>
-      <div><strong>Продукт:</strong> <span class="muted">{{ payment.product.title }}</span></div>
-      <div><strong>Сумма:</strong> <span class="muted">{{ payment.final_amount_rub }} руб</span></div>
-      <div><strong>Промо-скидка:</strong> <span class="muted">{{ payment.discount_rub }} руб</span></div>
-      <div><strong>Ручная скидка:</strong> <span class="muted">{{ payment.provider_payload.get("manual_discount_rub", 0) if payment.provider_payload else 0 }} руб</span></div>
-      <div><strong>Референс:</strong> <span class="muted">{{ payment.stub_reference or "нет" }}</span></div>
-      <div><strong>Истекает:</strong> <span class="muted">{{ payment.expires_at or "не задано" }}</span></div>
-      <div><strong>Подтвержден:</strong> <span class="muted">{{ payment.confirmed_at or "еще не подтвержден" }}</span></div>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Платёж и клиент</h2>
+          <p>Ключевые поля видны одной колонкой: оператору не нужно раскрывать дополнительные панели для базовой проверки.</p>
+        </div>
+      </div>
+      <div class="staff-key-list">
+        <div class="staff-key-row"><strong>Клиент</strong><div class="muted">{{ payment.user.full_name or payment.user.email or payment.user.id }}</div></div>
+        <div class="staff-key-row"><strong>Email</strong><div class="muted">{{ payment.user.email or "не задан" }}</div></div>
+        <div class="staff-key-row"><strong>Продукт</strong><div class="muted">{{ payment.product.title }}</div></div>
+        <div class="staff-key-row"><strong>Сумма</strong><div class="muted">{{ payment.final_amount_rub }} руб</div></div>
+        <div class="staff-key-row"><strong>Промо-скидка</strong><div class="muted">{{ payment.discount_rub }} руб</div></div>
+        <div class="staff-key-row"><strong>Ручная скидка</strong><div class="muted">{{ payment.provider_payload.get("manual_discount_rub", 0) if payment.provider_payload else 0 }} руб</div></div>
+        <div class="staff-key-row"><strong>Референс</strong><div class="muted">{{ payment.stub_reference or "нет" }}</div></div>
+        <div class="staff-key-row"><strong>Истекает</strong><div class="muted">{{ payment.expires_at or "не задано" }}</div></div>
+        <div class="staff-key-row"><strong>Подтверждён</strong><div class="muted">{{ payment.confirmed_at or "ещё не подтверждён" }}</div></div>
+      </div>
+    </section>
 
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
-      {% if payment.status.value in ["created", "pending"] %}
-      <span class="pill">доступны operator actions</span>
-      {% else %}
-      <span class="pill">только чтение</span>
-      {% endif %}
-      {% if payment.status.value == "pending" %}
-      <form method="post" action="/admin/payments/{{ payment.id }}/confirm">
-        <button class="action" type="submit">Подтвердить оплату и активировать подписку</button>
-      </form>
-      {% endif %}
-      <a class="action ghost" href="/admin/payments">Вернуться к очереди</a>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Действия</h2>
+          <p>Если платёж ещё не подтверждён, здесь остаётся ровно один явный следующий шаг.</p>
+        </div>
+      </div>
+      <div class="staff-inline-actions">
+        {% if payment.status.value in ["created", "pending"] %}
+        <span class="staff-page-note">доступны operator actions</span>
+        {% else %}
+        <span class="staff-page-note">только чтение</span>
+        {% endif %}
+        {% if payment.status.value == "pending" %}
+        <form method="post" action="/admin/payments/{{ payment.id }}/confirm">
+          <button class="staff-btn is-primary" type="submit">Подтвердить оплату и активировать подписку</button>
+        </form>
+        {% endif %}
+        <a class="staff-btn" href="/admin/payments">Вернуться к очереди</a>
+      </div>
+    </section>
 
     {% if payment.status.value in ["created", "pending"] and payment.provider.value != "tbank" %}
-    <form method="post" action="/admin/payments/{{ payment.id }}/manual-discount" style="display:grid;gap:12px;margin-top:22px;max-width:320px;">
-      <strong>Ручная скидка</strong>
-      <input type="number" min="0" name="discount_rub" value="{{ payment.provider_payload.get('manual_discount_rub', 0) if payment.provider_payload else 0 }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      <button class="action ghost" type="submit">Применить скидку</button>
-    </form>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Ручная скидка</h2>
+          <p>Изменение влияет на итоговую сумму текущего платежа без отдельного редактирования продукта.</p>
+        </div>
+      </div>
+      <form method="post" action="/admin/payments/{{ payment.id }}/manual-discount" class="staff-form-grid is-two">
+        <label class="staff-field">
+          <span>Скидка, руб</span>
+          <input type="number" min="0" name="discount_rub" value="{{ payment.provider_payload.get('manual_discount_rub', 0) if payment.provider_payload else 0 }}" />
+        </label>
+        <div class="staff-inline-actions" style="align-items:end;">
+          <button class="staff-btn" type="submit">Применить скидку</button>
+        </div>
+      </form>
+    </section>
     {% endif %}
   </article>
 
-  <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">связанные подписки</div>
-    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Связанные подписки</h2>
-    <div style="display:grid;gap:12px;">
+  <aside class="staff-card staff-detail-panel">
+    <div class="staff-form-section-copy">
+      <h2>Связанные подписки</h2>
+      <p>Правая колонка показывает доступ, который будет активирован или уже активирован этим платежом.</p>
+    </div>
+    <div class="staff-info-stack">
       {% for subscription in payment.subscriptions %}
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>{{ subscription.product.title }}</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">статус: {{ label_subscription_status(subscription.status) }}</div>
-        <div class="muted" style="margin-top:6px;line-height:1.55;">{{ subscription.start_at }} → {{ subscription.end_at }}</div>
+        <div class="muted">статус: {{ label_subscription_status(subscription.status) }}</div>
+        <div class="muted">{{ subscription.start_at }} → {{ subscription.end_at }}</div>
       </div>
       {% else %}
       <div class="muted">У платежа нет подписок.</div>
       {% endfor %}
     </div>
 
-    <div class="eyebrow" style="margin-top:22px;">зафиксированные согласия</div>
-    <div style="display:grid;gap:10px;margin-top:12px;">
+    <div class="staff-form-section-copy">
+      <h2>Зафиксированные согласия</h2>
+      <p>Показываем только документ и версию, чтобы быстро сверить legal bundle платежа.</p>
+    </div>
+    <div class="staff-info-stack">
       {% for consent in payment.consents %}
-      <div class="surface" style="padding:14px 16px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>{{ consent.document.title }}</strong>
-        <div class="muted" style="margin-top:6px;">{{ label_legal_document_type(consent.document.document_type) }} / {{ consent.document.version }}</div>
+        <div class="muted">{{ label_legal_document_type(consent.document.document_type) }} / {{ consent.document.version }}</div>
       </div>
       {% else %}
       <div class="muted">Записей согласия нет.</div>
@@ -99,10 +127,4 @@
     </div>
   </aside>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

@@ -11,41 +11,39 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px 28px 22px;">
-  <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-end;flex-wrap:wrap;">
-    <div>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
       <div class="eyebrow">жизненный цикл промокодов</div>
-      <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.95;letter-spacing:-0.05em;">Промокоды и скидки</h1>
-      <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Управление скидками для checkout и Mini App. Здесь админ контролирует коды, лимиты использований и срок действия.
-      </p>
+      <h1>Промокоды и скидки</h1>
+      <p>Сразу видны код, скидка, лимиты и срок действия без отдельной hero-поверхности над реестром.</p>
     </div>
-    <a class="action" href="/admin/promos/new">Создать промокод</a>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ promo_codes|length }} кодов</span>
+      <a class="staff-btn is-primary" href="/admin/promos/new">Создать промокод</a>
+    </div>
   </div>
-</section>
-
-<section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;">
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">активные</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.active }}</div>
-    <div class="muted" style="margin-top:8px;">доступны для checkout</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">выключенные</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.inactive }}</div>
-    <div class="muted" style="margin-top:8px;">выключены вручную</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">использования</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.redeemed }}</div>
-    <div class="muted" style="margin-top:8px;">подтвержденных использований</div>
-  </article>
-</section>
-
-<section class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">реестр промокодов</div>
-  <h2 style="margin:10px 0 0;font-size:1.5rem;">Реестр кодов</h2>
-  <div class="staff-grid-shell" style="margin-top:18px;">
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">активные</div>
+      <strong>{{ stats.active }}</strong>
+      <div class="staff-metric-note">доступны для checkout</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">выключенные</div>
+      <strong>{{ stats.inactive }}</strong>
+      <div class="staff-metric-note">остаются в истории</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">использования</div>
+      <strong>{{ stats.redeemed }}</strong>
+      <div class="staff-metric-note">подтверждённых redemption</div>
+    </article>
+  </div>
+  <div class="staff-toolbar">
+    <div class="staff-toolbar-note">Создание и редактирование держит только один активный смысл CTA: сохранить код с понятной скидкой и immediate checkout behavior.</div>
+  </div>
+  <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
         <tr>
@@ -87,10 +85,4 @@
     </table>
   </div>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="repeat(3"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

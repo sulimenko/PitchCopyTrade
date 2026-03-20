@@ -12,117 +12,144 @@
 
 {% block content %}
 {% set legal_is_editable = (not document) or (not document.is_active) %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">редактор документов</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">
-    {% if document %}Редактирование документа{% else %}Новый юридический документ{% endif %}
-  </h1>
-  <p class="muted" style="max-width:760px;line-height:1.65;margin:16px 0 0;">
-    Редактор сохраняет markdown в локальный `source_path`, а активная версия используется в checkout и публичных legal pages.
-  </p>
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">редактор документов</div>
+      <h1>{% if document %}Редактирование документа{% else %}Новый юридический документ{% endif %}</h1>
+      <p>Markdown, версия и activation flow собраны в компактной форме без большого intro-экрана.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      {% if document %}
+      <span class="staff-badge {% if document.is_active %}ok{% else %}warn{% endif %}">{{ "активен" if document.is_active else "черновик" }}</span>
+      <span class="staff-badge">{{ label_legal_document_type(document.document_type) }}</span>
+      {% endif %}
+    </div>
+  </div>
   {% if document and not legal_is_editable %}
-  <p class="muted" style="max-width:760px;line-height:1.65;margin:12px 0 0;">Активная версия доступна только для чтения. Для изменений создайте новую версию и активируйте ее отдельно.</p>
+  <div class="staff-toolbar">
+    <div class="staff-toolbar-note">Активная версия доступна только для чтения. Для изменений создайте новую версию и активируйте её отдельно.</div>
+  </div>
   {% endif %}
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,0.8fr);gap:18px;margin-top:18px;">
-  <form class="surface" method="post" action="{% if document %}/admin/legal/{{ document.id }}{% else %}/admin/legal{% endif %}" style="padding:24px;display:grid;gap:18px;">
+<section class="staff-detail-layout">
+  <form class="staff-card staff-form-shell" method="post" action="{% if document %}/admin/legal/{{ document.id }}{% else %}/admin/legal{% endif %}">
     {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
-      {{ error }}
-    </div>
+    <div class="staff-error">{{ error }}</div>
     {% endif %}
 
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Тип документа</strong>
-        <select name="document_type" {% if not legal_is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          {% for item in document_types %}
-          <option value="{{ item.value }}" {% if form_values.document_type == item.value %}selected{% endif %}>{{ label_legal_document_type(item) }}</option>
-          {% endfor %}
-        </select>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Основное</h2>
+          <p>Тип и версия определяют canonical legal record. Активную версию редактировать нельзя.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-field">
+          <span>Тип документа</span>
+          <select name="document_type" {% if not legal_is_editable %}disabled{% endif %}>
+            {% for item in document_types %}
+            <option value="{{ item.value }}" {% if form_values.document_type == item.value %}selected{% endif %}>{{ label_legal_document_type(item) }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="staff-field">
+          <span>Версия</span>
+          <input type="text" name="version" value="{{ form_values.version }}" {% if not legal_is_editable %}disabled{% endif %} />
+        </label>
+      </div>
+      <label class="staff-field">
+        <span>Название</span>
+        <input type="text" name="title" value="{{ form_values.title }}" {% if not legal_is_editable %}disabled{% endif %} />
       </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Версия</strong>
-        <input type="text" name="version" value="{{ form_values.version }}" {% if not legal_is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    </section>
+
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Контент</h2>
+          <p>Markdown сохраняется в локальный `source_path` и используется в checkout и публичных legal pages.</p>
+        </div>
+      </div>
+      <label class="staff-field">
+        <span>Markdown</span>
+        <textarea name="content_md" rows="18" {% if not legal_is_editable %}disabled{% endif %}>{{ form_values.content_md }}</textarea>
       </label>
-    </div>
+    </section>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Название</strong>
-      <input type="text" name="title" value="{{ form_values.title }}" {% if not legal_is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-    </label>
-
-    <label style="display:grid;gap:8px;">
-      <strong>Markdown</strong>
-      <textarea name="content_md" rows="18" {% if not legal_is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.content_md }}</textarea>
-    </label>
-
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      {% if legal_is_editable %}
-      <button class="action" type="submit">{% if document %}Сохранить документ{% else %}Создать черновик{% endif %}</button>
-      {% endif %}
-      {% if document and not document.is_active %}
-      <button class="action ghost" type="submit" formaction="/admin/legal/{{ document.id }}/activate" formmethod="post">Сделать активной версией</button>
-      {% endif %}
-      {% if document and document.is_active %}
-      <span class="pill">активная версия</span>
-      {% endif %}
-      <a class="action ghost" href="/admin/legal">Вернуться к списку</a>
-      {% if document and document.is_active %}
-      <a class="action ghost" href="/legal/{{ document.id }}" target="_blank" rel="noreferrer">Открыть публичную версию</a>
-      {% endif %}
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Действия</h2>
+          <p>Черновик можно сохранить, а неактивную версию затем отдельно сделать активной.</p>
+        </div>
+      </div>
+      <div class="staff-inline-actions">
+        {% if legal_is_editable %}
+        <button class="staff-btn is-primary" type="submit">{% if document %}Сохранить документ{% else %}Создать черновик{% endif %}</button>
+        {% endif %}
+        {% if document and not document.is_active %}
+        <button class="staff-btn" type="submit" formaction="/admin/legal/{{ document.id }}/activate" formmethod="post">Сделать активной версией</button>
+        {% endif %}
+        {% if document and document.is_active %}
+        <span class="staff-page-note">активная версия</span>
+        {% endif %}
+        <a class="staff-btn" href="/admin/legal">Вернуться к списку</a>
+        {% if document and document.is_active %}
+        <a class="staff-btn" href="/legal/{{ document.id }}" target="_blank" rel="noreferrer">Открыть публичную версию</a>
+        {% endif %}
+      </div>
+    </section>
   </form>
 
-  <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">операции с документом</div>
-    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Контекст версии</h2>
+  <aside class="staff-card staff-detail-panel">
+    <div class="staff-form-section-copy">
+      <h2>Контекст версии</h2>
+      <p>Правая колонка держит только version context и быстрый переход по соседним версиям.</p>
+    </div>
     {% if document %}
-    <div style="display:grid;gap:12px;">
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+    <div class="staff-info-stack">
+      <div class="staff-info-card">
         <strong>Путь к источнику</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ document.source_path }}</div>
+        <div class="muted">{{ document.source_path }}</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Статус</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ "активен" if document.is_active else "черновик" }}</div>
-        <div class="muted" style="margin-top:6px;line-height:1.55;">Опубликован: {{ document.published_at or "не опубликован" }}</div>
+        <div class="muted">{{ "активен" if document.is_active else "черновик" }}</div>
+        <div class="muted">Опубликован: {{ document.published_at or "не опубликован" }}</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Согласия</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ document.consents|length if document.consents is not none else 0 }} записей согласия</div>
+        <div class="muted">{{ document.consents|length if document.consents is not none else 0 }} записей согласия</div>
       </div>
     </div>
     {% else %}
-    <div style="display:grid;gap:12px;">
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+    <div class="staff-info-stack">
+      <div class="staff-info-card">
         <strong>Новая версия</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Создайте черновик и затем активируйте его после проверки текста.</div>
+        <div class="muted">Создайте черновик и затем активируйте его после проверки текста.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Локальное хранение</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Markdown сохраняется в `storage/runtime/blob/legal/*`, а не в удаленном object storage.</div>
+        <div class="muted">Markdown сохраняется в `storage/runtime/blob/legal/*`, а не в удалённом object storage.</div>
       </div>
     </div>
     {% endif %}
 
-    <div class="eyebrow" style="margin-top:22px;">доступные версии</div>
-    <div style="display:grid;gap:10px;margin-top:12px;">
+    <div class="staff-form-section-copy">
+      <h2>Доступные версии</h2>
+      <p>Быстрый переход между версиями без отдельного registry-screen.</p>
+    </div>
+    <div class="staff-info-stack">
       {% for item in documents %}
-      <a class="surface" href="/admin/legal/{{ item.id }}/edit" style="padding:14px 16px;border-radius:18px;background:var(--surface-strong);box-shadow:none;display:block;">
+      <a class="staff-info-card" href="/admin/legal/{{ item.id }}/edit">
         <strong>{{ label_legal_document_type(item.document_type) }} / {{ item.version }}</strong>
-        <div class="muted" style="margin-top:6px;">{{ item.title }}</div>
+        <div class="muted">{{ item.title }}</div>
       </a>
       {% endfor %}
     </div>
   </aside>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="1.2fr"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

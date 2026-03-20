@@ -17,54 +17,47 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px 28px 22px;">
-  <div class="eyebrow">панель администратора</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4.2vw,3.6rem);line-height:0.95;letter-spacing:-0.05em;">Операционный центр</h1>
-      <p class="muted" style="max-width:700px;line-height:1.65;margin:16px 0 0;">
-        Контроль авторов, карточек стратегий, публичности каталога и активных подписок в одном контуре.
-      </p>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">панель администратора</div>
+      <h1>Операционный центр</h1>
+      <p>Короткая сводка по авторам, каталогу, подпискам и публикациям без большого верхнего hero-блока.</p>
     </div>
-    <div class="surface" style="padding:16px 18px;border-radius:22px;background:var(--surface-strong);box-shadow:none;min-width:240px;">
-      <div class="eyebrow">оператор</div>
-      <strong style="display:block;margin-top:8px;font-size:1.15rem;">{{ user.full_name or user.username or user.email }}</strong>
-      <div class="muted" style="margin-top:8px;">{{ user.email or "почта не задана" }}</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-        <a class="action" href="/admin/staff">Управлять командой</a>
-        <a class="action" href="/admin/authors">Создать автора</a>
-        <a class="action ghost" href="/admin/strategies/new">Создать стратегию</a>
-      </div>
+    <div class="staff-page-head-actions">
+      <span class="staff-page-note">{{ user.full_name or user.username or user.email }} · {{ user.email or "почта не задана" }}</span>
+      <a class="staff-btn is-primary" href="/admin/staff">Управлять командой</a>
+      <a class="staff-btn" href="/admin/authors">Создать автора</a>
+      <a class="staff-btn" href="/admin/strategies/new">Создать стратегию</a>
     </div>
   </div>
-</section>
-
-<section style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;margin-top:18px;">
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">авторы</div>
-    <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.authors_total }}</div>
-    <div class="muted" style="margin-top:8px;">активных профилей авторов</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">стратегии</div>
-    <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.strategies_total }}</div>
-    <div class="muted" style="margin-top:8px;">карточек в каталоге</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">публичные</div>
-    <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.strategies_public }}</div>
-    <div class="muted" style="margin-top:8px;">доступны на витрине</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">подписки</div>
-    <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.active_subscriptions }}</div>
-    <div class="muted" style="margin-top:8px;">активны или на пробном периоде</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">активные идеи</div>
-    <div style="font-size:2.1rem;font-weight:800;margin-top:10px;">{{ stats.recommendations_live }}</div>
-    <div class="muted" style="margin-top:8px;">уже опубликовано</div>
-  </article>
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">авторы</div>
+      <strong>{{ stats.authors_total }}</strong>
+      <div class="staff-metric-note">активных профилей</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">стратегии</div>
+      <strong>{{ stats.strategies_total }}</strong>
+      <div class="staff-metric-note">карточек в каталоге</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">публичные</div>
+      <strong>{{ stats.strategies_public }}</strong>
+      <div class="staff-metric-note">видны на витрине</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">подписки</div>
+      <strong>{{ stats.active_subscriptions }}</strong>
+      <div class="staff-metric-note">активны или пробные</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">активные идеи</div>
+      <strong>{{ stats.recommendations_live }}</strong>
+      <div class="staff-metric-note">уже опубликованы</div>
+    </article>
+  </div>
 </section>
 
 <section style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,0.9fr);gap:18px;margin-top:18px;">

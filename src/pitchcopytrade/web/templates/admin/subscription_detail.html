@@ -12,102 +12,109 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">карточка подписки</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Карточка подписки</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Операционная карточка показывает продукт, область доступа, даты, источник лида и связанный платеж.
-      </p>
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">карточка подписки</div>
+      <h1>Карточка подписки</h1>
+      <p>Клиент, продукт, период, scope доступа и operator actions собраны в одном компактном экране.</p>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ label_subscription_status(subscription.status) }}</span>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ label_subscription_status(subscription.status) }}</span>
       {% if subscription.payment %}
-      <span class="pill">{{ label_payment_status(subscription.payment.status) }}</span>
+      <span class="staff-badge">{{ label_payment_status(subscription.payment.status) }}</span>
       {% endif %}
       {% if subscription.is_trial %}
-      <span class="pill">пробная</span>
+      <span class="staff-badge">пробная</span>
       {% endif %}
     </div>
   </div>
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
-  <article class="surface" style="padding:24px;">
+<section class="staff-detail-layout">
+  <article class="staff-card staff-form-shell">
     {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);margin-bottom:18px;">
-      {{ error }}
-    </div>
+    <div class="staff-error">{{ error }}</div>
     {% endif %}
-    <div class="eyebrow">данные подписки</div>
-    <div style="display:grid;gap:12px;margin-top:16px;">
-      <div><strong>Клиент:</strong> <span class="muted">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</span></div>
-      <div><strong>Email:</strong> <span class="muted">{{ subscription.user.email or "не задан" }}</span></div>
-      <div><strong>Логин:</strong> <span class="muted">{{ subscription.user.username or "не задан" }}</span></div>
-      <div><strong>Продукт:</strong> <span class="muted">{{ subscription.product.title }}</span></div>
-      <div><strong>Период:</strong> <span class="muted">{{ subscription.start_at }} → {{ subscription.end_at }}</span></div>
-      <div><strong>Автопродление:</strong> <span class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</span></div>
-      <div><strong>Источник лида:</strong> <span class="muted">{{ subscription.lead_source.name if subscription.lead_source else "не задан" }}</span></div>
-      {% if subscription.payment %}
-      <div><strong>Платеж:</strong> <span class="muted"><a href="/admin/payments/{{ subscription.payment.id }}">{{ subscription.payment.id }}</a></span></div>
-      {% endif %}
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Клиент и доступ</h2>
+          <p>Базовый контекст подписки виден одной колонкой: клиент, период, лид-источник и связь с оплатой.</p>
+        </div>
+      </div>
+      <div class="staff-key-list">
+        <div class="staff-key-row"><strong>Клиент</strong><div class="muted">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</div></div>
+        <div class="staff-key-row"><strong>Email</strong><div class="muted">{{ subscription.user.email or "не задан" }}</div></div>
+        <div class="staff-key-row"><strong>Логин</strong><div class="muted">{{ subscription.user.username or "не задан" }}</div></div>
+        <div class="staff-key-row"><strong>Продукт</strong><div class="muted">{{ subscription.product.title }}</div></div>
+        <div class="staff-key-row"><strong>Период</strong><div class="muted">{{ subscription.start_at }} → {{ subscription.end_at }}</div></div>
+        <div class="staff-key-row"><strong>Автопродление</strong><div class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</div></div>
+        <div class="staff-key-row"><strong>Источник лида</strong><div class="muted">{{ subscription.lead_source.name if subscription.lead_source else "не задан" }}</div></div>
+        {% if subscription.payment %}
+        <div class="staff-key-row"><strong>Платёж</strong><div class="muted"><a href="/admin/payments/{{ subscription.payment.id }}">{{ subscription.payment.id }}</a></div></div>
+        {% endif %}
+      </div>
+    </section>
 
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
-      <a class="action ghost" href="/admin/subscriptions">Вернуться к реестру</a>
-      {% if subscription.status.value not in ["cancelled", "expired", "blocked"] and subscription.autorenew_enabled %}
-      <form method="post" action="/admin/subscriptions/{{ subscription.id }}/autorenew/disable">
-        <button class="action ghost" type="submit">Отключить автопродление</button>
-      </form>
-      {% endif %}
-      {% if subscription.status.value not in ["cancelled", "expired", "blocked"] %}
-      <form method="post" action="/admin/subscriptions/{{ subscription.id }}/cancel">
-        <button class="action ghost" type="submit">Отменить</button>
-      </form>
-      {% else %}
-      <span class="pill">только чтение</span>
-      {% endif %}
-      {% if subscription.payment %}
-      <a class="action ghost" href="/admin/payments/{{ subscription.payment.id }}">Открыть платеж</a>
-      {% endif %}
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Действия</h2>
+          <p>Если подписка ещё живая, оператор может отключить автопродление или отменить доступ прямо с этой карточки.</p>
+        </div>
+      </div>
+      <div class="staff-inline-actions">
+        <a class="staff-btn" href="/admin/subscriptions">Вернуться к реестру</a>
+        {% if subscription.status.value not in ["cancelled", "expired", "blocked"] and subscription.autorenew_enabled %}
+        <form method="post" action="/admin/subscriptions/{{ subscription.id }}/autorenew/disable">
+          <button class="staff-btn" type="submit">Отключить автопродление</button>
+        </form>
+        {% endif %}
+        {% if subscription.status.value not in ["cancelled", "expired", "blocked"] %}
+        <form method="post" action="/admin/subscriptions/{{ subscription.id }}/cancel">
+          <button class="staff-btn" type="submit">Отменить подписку</button>
+        </form>
+        {% else %}
+        <span class="staff-page-note">только чтение</span>
+        {% endif %}
+        {% if subscription.payment %}
+        <a class="staff-btn" href="/admin/payments/{{ subscription.payment.id }}">Открыть платеж</a>
+        {% endif %}
+      </div>
+    </section>
   </article>
 
-  <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">область доступа</div>
-    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Что получает клиент</h2>
-    <div style="display:grid;gap:12px;">
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+  <aside class="staff-card staff-detail-panel">
+    <div class="staff-form-section-copy">
+      <h2>Что получает клиент</h2>
+      <p>Правая колонка показывает только scope доступа и финансовую связку, без лишнего detail-dependence.</p>
+    </div>
+    <div class="staff-info-stack">
+      <div class="staff-info-card">
         <strong>{{ subscription.product.title }}</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.description or "Описание продукта пока не заполнено" }}</div>
+        <div class="muted">{{ subscription.product.description or "Описание продукта пока не заполнено" }}</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         {% if subscription.product.strategy %}
         <strong>Доступ к стратегии</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.strategy.title }}</div>
+        <div class="muted">{{ subscription.product.strategy.title }}</div>
         {% elif subscription.product.author %}
         <strong>Доступ ко всем стратегиям автора</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.author.display_name }}</div>
+        <div class="muted">{{ subscription.product.author.display_name }}</div>
         {% elif subscription.product.bundle %}
         <strong>Доступ к пакету</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.product.bundle.title }}</div>
+        <div class="muted">{{ subscription.product.bundle.title }}</div>
         {% endif %}
       </div>
       {% if subscription.payment %}
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Финансовая связка</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ subscription.payment.final_amount_rub }} руб / {{ label_payment_provider(subscription.payment.provider) }}</div>
-        <div class="muted" style="margin-top:6px;line-height:1.55;">{{ subscription.payment.stub_reference or subscription.payment.external_id or "референс не задан" }}</div>
+        <div class="muted">{{ subscription.payment.final_amount_rub }} руб / {{ label_payment_provider(subscription.payment.provider) }}</div>
+        <div class="muted">{{ subscription.payment.stub_reference or subscription.payment.external_id or "референс не задан" }}</div>
       </div>
       {% endif %}
     </div>
   </aside>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="1.15fr"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

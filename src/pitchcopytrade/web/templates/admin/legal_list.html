@@ -14,12 +14,18 @@
 {% block content %}
 <section class="staff-card">
   <div class="staff-page-head">
-    <div>
+    <div class="staff-page-head-copy">
       <div class="eyebrow">юридические документы</div>
       <h1>Документы</h1>
-      <p>Компактный реестр версий и статусов без крупного hero-блока и длинного вводного текста.</p>
+      <p>Видно тип, версия, статус, согласия и путь к источнику без открытия редактора.</p>
     </div>
-    <span class="staff-badge">{{ documents|length }} документов</span>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ documents|length }} документов</span>
+      <a class="staff-btn is-primary" href="/admin/legal/new">Новый документ</a>
+    </div>
+  </div>
+  <div class="staff-toolbar">
+    <div class="staff-toolbar-note">Новая версия сначала создаётся как черновик, затем вручную активируется после проверки текста и source path.</div>
   </div>
 
   <div class="staff-grid-shell">

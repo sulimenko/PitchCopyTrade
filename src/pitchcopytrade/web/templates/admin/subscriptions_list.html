@@ -13,58 +13,59 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">реестр подписок</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Подписки и доступ</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Операционный реестр подписок: кто подписан, на какой scope, до какой даты и в каком состоянии находится платеж.
-      </p>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">реестр подписок</div>
+      <h1>Подписки и доступ</h1>
+      <p>Сразу видны клиент, продукт, статус, период, scope и связь с оплатой без открытия detail-карточки.</p>
     </div>
-    <div class="pill">{{ subscriptions|length }} подписок</div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ subscriptions|length }} подписок</span>
+      <span class="staff-page-note">Поиск сразу отфильтрует клиента, стратегию, автора или продукт.</span>
+    </div>
   </div>
-</section>
-
-<section class="surface" style="padding:20px 24px;margin-top:18px;">
-  <form method="get" action="/admin/subscriptions" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-    <input
-      type="text"
-      name="q"
-      value="{{ query_text }}"
-      placeholder="Поиск по клиенту, стратегии, автору или продукту"
-      style="flex:1 1 340px;padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;"
-    />
-    <button class="action" type="submit">Искать</button>
-    {% if query_text %}
-    <a class="action ghost" href="/admin/subscriptions">Сбросить</a>
-    {% endif %}
-  </form>
-</section>
-
-<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px;">
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">активные</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.active }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">пробные</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.trial }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">в ожидании</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.pending }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">с оплатой</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.paid }}</div>
-  </article>
-</section>
-
-<section class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">таблица подписок</div>
-  <h2 style="margin:10px 0 0;font-size:1.5rem;">Подписки</h2>
-  <div class="staff-grid-shell" style="margin-top:18px;">
+  <div class="staff-toolbar">
+    <form method="get" action="/admin/subscriptions" class="staff-form-row" style="flex: 1 1 460px;">
+      <label class="staff-field" style="min-width:320px;flex:1 1 320px;">
+        <span>Поиск</span>
+        <input
+          type="text"
+          name="q"
+          value="{{ query_text }}"
+          placeholder="Клиент, стратегия, автор или продукт"
+        />
+      </label>
+      <button class="staff-btn is-primary" type="submit">Найти подписки</button>
+      {% if query_text %}
+      <a class="staff-btn" href="/admin/subscriptions">Сбросить</a>
+      {% endif %}
+    </form>
+    <div class="staff-toolbar-note">Поиск оставляет оператора в том же реестре: откройте нужную строку только когда нужно действие, а не для базового контекста.</div>
+  </div>
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">активные</div>
+      <strong>{{ stats.active }}</strong>
+      <div class="staff-metric-note">подписки с доступом</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">пробные</div>
+      <strong>{{ stats.trial }}</strong>
+      <div class="staff-metric-note">триал ещё идёт</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">в ожидании</div>
+      <strong>{{ stats.pending }}</strong>
+      <div class="staff-metric-note">ждут подтверждения</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">с оплатой</div>
+      <strong>{{ stats.paid }}</strong>
+      <div class="staff-metric-note">есть связанный paid payment</div>
+    </article>
+  </div>
+  <div class="staff-grid-shell">
     <table class="staff-grid" data-ag-grid-auto="true">
       <thead>
         <tr>
@@ -82,6 +83,7 @@
         <tr>
           <td>
             <strong>{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</strong>
+            <div class="muted">{{ subscription.user.email or "почта не задана" }}</div>
             {% if subscription.payment %}
             <div class="muted">
               Платеж:
@@ -89,7 +91,10 @@
             </div>
             {% endif %}
           </td>
-          <td>{{ subscription.product.title }}</td>
+          <td>
+            <strong>{{ subscription.product.title }}</strong>
+            <div class="muted">{{ label_product_type(subscription.product.product_type) }}</div>
+          </td>
           <td>
             <div class="staff-inline-actions">
               <span class="staff-badge">
@@ -101,11 +106,14 @@
           <td>{{ subscription.start_at }} → {{ subscription.end_at }}</td>
           <td>
             {% if subscription.product.strategy %}
-            Стратегия: {{ subscription.product.strategy.title }}
+            <strong>Стратегия</strong>
+            <div class="muted">{{ subscription.product.strategy.title }}</div>
             {% elif subscription.product.author %}
-            Автор: {{ subscription.product.author.display_name }}
+            <strong>Автор</strong>
+            <div class="muted">{{ subscription.product.author.display_name }}</div>
             {% elif subscription.product.bundle %}
-            Пакет: {{ subscription.product.bundle.title }}
+            <strong>Пакет</strong>
+            <div class="muted">{{ subscription.product.bundle.title }}</div>
             {% else %}
             —
             {% endif %}
@@ -137,13 +145,4 @@
     </table>
   </div>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  }
-  @media (max-width: 640px) {
-    section[style*="repeat(4"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

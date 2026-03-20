@@ -114,6 +114,8 @@ Invite contract:
 - failed invite delivery не отменяет создание staff user;
 - failed delivery создает log entry;
 - failed delivery отправляет email всем активным администраторам для контроля;
+- bootstrap admin seeder должен быть идемпотентным, если в базе уже есть один или несколько `admin`;
+- multi-admin рабочее состояние не должно приводить к startup noise или исключению seeder-а.
 - создание нового `admin` и нового `author` также отправляет контрольное письмо всем администраторам.
 - поведение по control emails должно совпадать в `db` и `file` mode.
 
@@ -176,6 +178,9 @@ Density rules:
 - заголовок экрана = короткий title + 1 короткая helper line + actions;
 - крупные пустые зоны между topline, page-head и первым рабочим блоком не являются допустимым паттерном;
 - если экран является реестром, первый экран должен сразу показывать рабочие данные, а не large intro surface.
+- `/author/dashboard` считается текущим референсом по плотности верхнего shell для author-mode;
+- `/author/strategies`, `/author/recommendations`, `/admin/staff`, `/admin/products`, `/admin/legal`, `/admin/payments`, `/admin/subscriptions`, `/admin/delivery`, `/admin/promos`, `/admin/analytics/leads` обязаны быть приведены к той же компактной плотности без аномально больших верхних белых блоков;
+- если экрану не нужен KPI/summary block, верхняя пустая surface должна быть схлопнута, а не оставлена как декоративный контейнер.
 
 ## 6. Grid layer
 
@@ -236,6 +241,7 @@ Grid должен поддерживать:
 - отсутствие второго параллельного handcrafted registry как fallback.
 - status column не может быть только информативной; для `staff user` нужен рабочий action flow `active/inactive`.
 - row edit не может обходить governance-ограничения отдельных actions; любые изменения ролей и статуса обязаны уважать правило последнего активного администратора.
+- route `/admin/authors` не может завершаться raw `500` из-за неполных связанных данных, нестандартного набора ролей или частично заполненных invite/staff полей; registry обязан либо рендериться, либо отдавать controlled business-state без падения шаблона.
 
 Registry readability rules:
 - ключевые поля записи должны быть видны в grid до открытия detail/edit;
@@ -296,7 +302,7 @@ Grid/popup rules:
 - inline add в grid не может работать на свободном `ticker` text без нормализованного `instrument_id`;
 - если оператор вводит бумагу через shortcut-строку, detail editor обязан открываться уже с сохраненным `instrument_id` и тем же `ticker`;
 - full editor не должен терять выбранную бумагу при переходе из inline add;
-- сообщение `Leg 1: выберите допустимый инструмент.` допустимо только если у первой бумаги реально нет валидного инструмента из разрешенного списка.
+- ошибка по первой бумаге допустима только если у нее реально нет валидного инструмента из разрешенного списка, но user-facing copy при этом должна оставаться русской и не светить внутренний parser token `Leg 1`.
 
 UX rules:
 - recommendation editor должен быть compact operator form, а не большой hero-screen;
@@ -304,8 +310,14 @@ UX rules:
 - первая зона экрана должна помещать основную metadata и первую бумагу без длинного скролла;
 - help text должен быть коротким, secondary и не забирать высоту у формы;
 - field errors должны показываться рядом с конкретным полем, а не только в общем alert.
-- inline operator shortcut должен иметь явный CTA по результату действия, а не символическую кнопку без объяснения;
-- shortcut create flow должен явно сообщать, что будет создан черновик и откроется полный редактор.
+- user-facing validation copy не должна показывать внутренние parser-тексты вроде `Leg 1`, `entry_to` и другие semi-technical сообщения; в интерфейсе допустимы только русские формулировки уровня `Бумага 1`, `цена входа`, `цена «до»`, `стоп`;
+- inline operator shortcut в `/author/recommendations` должен иметь два разных действия, а не одну двусмысленную кнопку:
+  - `Создать` — валидирует обязательные поля shortcut-строки и создает черновик прямо из inline-ввода;
+  - `Детально` — открывает полный create-flow рекомендации;
+- если пользователь нажимает `Детально` после частичного или полного заполнения shortcut-строки, уже введенные значения должны быть перенесены в full editor как prefill;
+- header action `Новая рекомендация` и inline action `Детально` должны вести в один и тот же canonical detailed create flow;
+- shortcut create flow не должен обещать открытие редактора, если действие по смыслу создает запись inline без немедленного перехода.
+- inline shortcut-строка в recommendation grid должна использовать валидную HTML-разметку; `<form>` не может быть прямым child-узлом `<tr>`, иначе browser-dependent DOM drift снова ломает operator UX.
 
 Strategy editor должен использовать тот же compact visual language, что и recommendation editor.
 Admin strategy editor и связанные admin forms должны использовать тот же compact section language без больших hero-блоков и правой декоративной панели как обязательного паттерна.

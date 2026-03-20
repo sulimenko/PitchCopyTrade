@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
@@ -322,28 +324,15 @@ async def recommendation_list_page(
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
-    recommendations = await list_author_recommendations(repository, author)
-    recommendations = _filter_author_recommendations(recommendations, q=q, status_filter=status_filter)
-    recommendations = _sort_author_recommendations(recommendations, sort_by=sort_by, direction=direction)
-    strategies = await list_author_strategies(repository, author)
-    instruments = await list_active_instruments(repository)
-    return templates.TemplateResponse(
-        request,
-        "author/recommendations_list.html",
-        {
-            "title": "Рекомендации автора",
-            "user": user,
-            "author": author,
-            "recommendations": recommendations,
-            "strategies": strategies,
-            "instruments": instruments,
-            "instrument_items": [_instrument_payload(item) for item in instruments],
-            "q": q,
-            "status_filter": status_filter,
-            "sort_by": sort_by,
-            "direction": direction,
-            "recommendation_modal_url": "/author/recommendations/new?embedded=1&next=/author/recommendations",
-        },
+    return await _render_recommendation_list(
+        request=request,
+        user=user,
+        author=author,
+        repository=repository,
+        q=q,
+        status_filter=status_filter,
+        sort_by=sort_by,
+        direction=direction,
     )
 
 
@@ -365,7 +354,7 @@ async def recommendation_create_page(
         repository=repository,
         recommendation=None,
         error=None,
-        form_values=None,
+        form_values=_build_recommendation_prefill_form_values(request=request, author=author),
         embedded=True,
         next_path=next,
     )
@@ -411,6 +400,22 @@ async def recommendation_create_submit(
             uploaded_by_user_id=user.id,
         )
     except ValueError as exc:
+        if inline_mode:
+            inline_feedback = _build_inline_recommendation_feedback(str(exc), leg_rows)
+            return await _render_recommendation_list(
+                request=request,
+                user=user,
+                author=author,
+                repository=repository,
+                q=str(form.get("q", "") or ""),
+                status_filter=str(form.get("status_filter", "all") or "all"),
+                sort_by=str(form.get("sort_by", "updated_at") or "updated_at"),
+                direction=str(form.get("direction", "desc") or "desc"),
+                inline_error=inline_feedback["error"],
+                inline_form_values=_build_inline_recommendation_form_values(form),
+                inline_field_errors=inline_feedback["field_errors"],
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
         feedback = _build_recommendation_form_feedback(str(exc), leg_rows)
         return await _render_recommendation_form(
             request=request,
@@ -439,7 +444,7 @@ async def recommendation_create_submit(
     next_path = _safe_author_next_path(str(form.get("next_path", "") or ""))
     if inline_mode:
         return RedirectResponse(
-            url=f"/author/recommendations/{recommendation.id}/edit",
+            url=next_path or "/author/recommendations",
             status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(url=next_path or f"/author/recommendations/{recommendation.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
@@ -618,6 +623,57 @@ async def _render_recommendation_form(
     )
 
 
+async def _render_recommendation_list(
+    *,
+    request: Request,
+    user: User,
+    author: AuthorProfile,
+    repository: AuthorRepository,
+    q: str = "",
+    status_filter: str = "all",
+    sort_by: str = "updated_at",
+    direction: str = "desc",
+    inline_error: str | None = None,
+    inline_form_values: dict[str, str] | None = None,
+    inline_field_errors: dict[str, str] | None = None,
+    status_code: int = status.HTTP_200_OK,
+) -> Response:
+    recommendations = await list_author_recommendations(repository, author)
+    recommendations = _filter_author_recommendations(recommendations, q=q, status_filter=status_filter)
+    recommendations = _sort_author_recommendations(recommendations, sort_by=sort_by, direction=direction)
+    strategies = await list_author_strategies(repository, author)
+    instruments = await list_active_instruments(repository)
+    current_list_path = _author_recommendations_list_path(
+        q=q,
+        status_filter=status_filter,
+        sort_by=sort_by,
+        direction=direction,
+    )
+    return templates.TemplateResponse(
+        request,
+        "author/recommendations_list.html",
+        {
+            "title": "Рекомендации автора",
+            "user": user,
+            "author": author,
+            "recommendations": recommendations,
+            "strategies": strategies,
+            "instruments": instruments,
+            "instrument_items": [_instrument_payload(item) for item in instruments],
+            "q": q,
+            "status_filter": status_filter,
+            "sort_by": sort_by,
+            "direction": direction,
+            "recommendation_modal_url": _recommendation_modal_url(next_path=current_list_path),
+            "inline_next_path": current_list_path,
+            "inline_error": inline_error,
+            "inline_field_errors": inline_field_errors or {},
+            "inline_form_values": _normalize_inline_recommendation_form_values(inline_form_values, instruments),
+        },
+        status_code=status_code,
+    )
+
+
 async def _get_author_or_403(repository: AuthorRepository, user: User) -> AuthorProfile:
     author = user.author_profile or await get_author_by_user(repository, user)
     if author is None:
@@ -656,13 +712,72 @@ def _next_leg_index(form_values: dict[str, object]) -> int:
 
 
 def _build_recommendation_form_feedback(error_text: str, leg_rows: list[dict[str, str]]) -> dict[str, object]:
-    field_errors: dict[str, str] = {}
     first_row_id = str(leg_rows[0].get("row_id", "0")) if leg_rows else "0"
+    field_errors = _build_leg_field_errors(
+        error_text,
+        row_id=first_row_id,
+        instrument_error="Выберите инструмент из списка",
+    )
+    return {"error": _friendly_recommendation_error_message(error_text), "field_errors": field_errors}
+
+
+def _build_inline_recommendation_feedback(error_text: str, leg_rows: list[dict[str, str]]) -> dict[str, object]:
+    first_row_id = str(leg_rows[0].get("row_id", "1")) if leg_rows else "1"
+    field_errors = _build_leg_field_errors(
+        error_text,
+        row_id=first_row_id,
+        instrument_error="Выберите бумагу из подсказок",
+    )
+    if error_text == "Выберите стратегию автора.":
+        field_errors["strategy_id"] = "Выберите стратегию автора"
+    return {"error": _friendly_recommendation_error_message(error_text), "field_errors": field_errors}
+
+
+def _build_leg_field_errors(error_text: str, *, row_id: str, instrument_error: str) -> dict[str, str]:
+    field_prefix = f"leg_{row_id}_"
     if error_text.startswith("Leg 1: выберите допустимый инструмент."):
-        field_errors[f"leg_{first_row_id}_instrument_id"] = "Выберите инструмент из списка"
+        return {f"{field_prefix}instrument_id": instrument_error}
     if error_text.startswith("Leg 1: выберите направление сделки."):
-        field_errors[f"leg_{first_row_id}_side"] = "Выберите направление сделки"
-    return {"error": error_text, "field_errors": field_errors}
+        return {f"{field_prefix}side": "Выберите направление сделки"}
+    if error_text.startswith("Leg 1: некорректный entry_from."):
+        return {f"{field_prefix}entry_from": "Укажите корректную цену входа"}
+    if error_text.startswith("Leg 1: некорректный entry_to."):
+        return {f"{field_prefix}entry_to": "Укажите корректную цену входа"}
+    if error_text.startswith("Leg 1: entry_to не может быть меньше entry_from."):
+        return {f"{field_prefix}entry_to": "Значение не может быть меньше цены «от»"}
+    if error_text.startswith("Leg 1: некорректный stop_loss."):
+        return {f"{field_prefix}stop_loss": "Укажите корректный стоп"}
+    if error_text.startswith("Leg 1: некорректный take_profit_1."):
+        return {f"{field_prefix}take_profit_1": "Укажите корректный TP1"}
+    if error_text.startswith("Leg 1: некорректный take_profit_2."):
+        return {f"{field_prefix}take_profit_2": "Укажите корректный TP2"}
+    if error_text.startswith("Leg 1: некорректный take_profit_3."):
+        return {f"{field_prefix}take_profit_3": "Укажите корректный TP3"}
+    return {}
+
+
+def _friendly_recommendation_error_message(error_text: str) -> str:
+    if error_text.startswith("Leg 1: выберите допустимый инструмент."):
+        return "Выберите инструмент для первой бумаги."
+    if error_text.startswith("Leg 1: выберите направление сделки."):
+        return "Укажите направление для первой бумаги."
+    if error_text.startswith("Leg 1: некорректный entry_from."):
+        return "Проверьте цену входа для первой бумаги."
+    if error_text.startswith("Leg 1: некорректный entry_to."):
+        return "Проверьте диапазон цены входа для первой бумаги."
+    if error_text.startswith("Leg 1: entry_to не может быть меньше entry_from."):
+        return "Цена входа «до» должна быть не ниже цены «от»."
+    if error_text.startswith("Leg 1: некорректный stop_loss."):
+        return "Проверьте стоп для первой бумаги."
+    if error_text.startswith("Leg 1: некорректный take_profit_1."):
+        return "Проверьте TP1 для первой бумаги."
+    if error_text.startswith("Leg 1: некорректный take_profit_2."):
+        return "Проверьте TP2 для первой бумаги."
+    if error_text.startswith("Leg 1: некорректный take_profit_3."):
+        return "Проверьте TP3 для первой бумаги."
+    if error_text == "Для scheduled нужен planned datetime.":
+        return "Укажите дату и время для запланированной публикации."
+    return error_text
 
 
 def _instrument_payload(instrument) -> dict[str, str]:
@@ -690,6 +805,94 @@ def _safe_author_next_path(next_path: str) -> str:
     if not normalized.startswith("/author/"):
         return ""
     return normalized
+
+
+def _author_recommendations_list_path(*, q: str, status_filter: str, sort_by: str, direction: str) -> str:
+    params: list[tuple[str, str]] = []
+    if q.strip():
+        params.append(("q", q.strip()))
+    if status_filter != "all":
+        params.append(("status_filter", status_filter))
+    if sort_by != "updated_at":
+        params.append(("sort_by", sort_by))
+    if direction != "desc":
+        params.append(("direction", direction))
+    if not params:
+        return "/author/recommendations"
+    return f"/author/recommendations?{urlencode(params)}"
+
+
+def _recommendation_modal_url(*, next_path: str) -> str:
+    return f"/author/recommendations/new?{urlencode({'embedded': '1', 'next': next_path})}"
+
+
+def _build_recommendation_prefill_form_values(*, request: Request, author: AuthorProfile) -> dict[str, object]:
+    form_values = recommendation_form_values(None)
+    form_values.update(
+        {
+            "strategy_id": str(request.query_params.get("strategy_id", "") or ""),
+            "kind": str(request.query_params.get("kind", form_values["kind"]) or form_values["kind"]),
+            "status": str(request.query_params.get("status", form_values["status"]) or form_values["status"]),
+            "title": str(request.query_params.get("title", "") or ""),
+            "summary": str(request.query_params.get("summary", "") or ""),
+            "thesis": str(request.query_params.get("thesis", "") or ""),
+            "market_context": str(request.query_params.get("market_context", "") or ""),
+            "requires_moderation": author.requires_moderation,
+            "scheduled_for": str(request.query_params.get("scheduled_for", "") or ""),
+            "legs": leg_form_values_from_rows(build_leg_rows_from_form(request.query_params)),
+        }
+    )
+    return form_values
+
+
+def _normalize_inline_recommendation_form_values(
+    inline_form_values: dict[str, str] | None,
+    instruments,
+) -> dict[str, str]:
+    values = {
+        "strategy_id": "",
+        "kind": "new_idea",
+        "status": "draft",
+        "title": "",
+        "instrument_query": "",
+        "leg_1_instrument_id": "",
+        "leg_1_side": "",
+        "leg_1_entry_from": "",
+        "leg_1_entry_to": "",
+        "leg_1_stop_loss": "",
+        "leg_1_take_profit_1": "",
+        "leg_1_take_profit_2": "",
+        "leg_1_take_profit_3": "",
+        "leg_1_time_horizon": "",
+        "leg_1_note": "",
+    }
+    if inline_form_values:
+        values.update({key: str(value or "") for key, value in inline_form_values.items() if key in values})
+    if not values["instrument_query"] and values["leg_1_instrument_id"]:
+        selected = next((item for item in instruments if item.id == values["leg_1_instrument_id"]), None)
+        if selected is not None:
+            values["instrument_query"] = selected.ticker
+    return values
+
+
+def _build_inline_recommendation_form_values(form) -> dict[str, str]:
+    return {
+        "strategy_id": str(form.get("strategy_id", "") or ""),
+        "kind": str(form.get("kind", "new_idea") or "new_idea"),
+        "status": str(form.get("status", "draft") or "draft"),
+        "title": str(form.get("title", "") or ""),
+        "instrument_query": str(form.get("instrument_query", "") or ""),
+        "leg_1_instrument_id": str(form.get("leg_1_instrument_id", "") or ""),
+        "leg_1_side": str(form.get("leg_1_side", "") or ""),
+        "leg_1_entry_from": str(form.get("leg_1_entry_from", "") or ""),
+        "leg_1_entry_to": str(form.get("leg_1_entry_to", "") or ""),
+        "leg_1_stop_loss": str(form.get("leg_1_stop_loss", "") or ""),
+        "leg_1_take_profit_1": str(form.get("leg_1_take_profit_1", "") or ""),
+        "leg_1_take_profit_2": str(form.get("leg_1_take_profit_2", "") or ""),
+        "leg_1_take_profit_3": str(form.get("leg_1_take_profit_3", "") or ""),
+        "leg_1_time_horizon": str(form.get("leg_1_time_horizon", "") or ""),
+        "leg_1_note": str(form.get("leg_1_note", "") or ""),
+    }
 
 
 def _filter_author_recommendations(recommendations, *, q: str, status_filter: str):
