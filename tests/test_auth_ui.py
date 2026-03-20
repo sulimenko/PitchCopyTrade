@@ -152,6 +152,9 @@ def test_login_page_renders_staff_invite_state() -> None:
         assert response.status_code == 200
         assert "Приглашение сотрудника активно" in response.text
         assert "Один шаг через Telegram" in response.text
+        assert "Открыть Telegram" in response.text
+        assert "Скопировать приглашение" in response.text
+        assert "Запросить новое приглашение" in response.text
         assert "Логин или email" not in response.text
 
 

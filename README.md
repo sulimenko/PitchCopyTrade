@@ -53,8 +53,8 @@ Runtime:
 - clean bootstrap через `deploy/schema.sql` обязан совпадать с runtime model
 
 Текущий gap:
-- edit flow staff user обязан соблюдать ту же governance-логику, что и отдельные status/role actions
-- нельзя позволять снять роль `admin` у последнего активного администратора через drawer edit или другой bulk-update path
+- все edit/update paths обязаны соблюдать ту же governance-логику, что и отдельные status/role actions
+- нельзя позволять снять роль `admin` у последнего активного администратора ни через `admin/staff`, ни через `admin/authors`, ни через другой bulk-update path
 
 ## UI priorities
 
@@ -71,6 +71,12 @@ Runtime:
 - единый `AG Grid Community` layer
 - редактирование через right drawer
 - сложные формы через modal / fullscreen modal
+- row menus не клипуются контейнером таблицы
+- raw invite URL не рендерится как основной текст строки в staff registry
+
+Для staff invite screen:
+- Telegram Login Widget остается primary path
+- но invite page обязана иметь fallback, если widget не загрузился или заблокирован
 
 ## Язык интерфейса
 
@@ -107,6 +113,9 @@ Runtime:
 - `admin/staff` и `admin/authors` получили existing-row edit
 - `active/inactive` вынесен в явные actions
 - control emails администраторам работают в `db` и `file` mode
+
+Отдельный открытый runtime-блок:
+- `bot` должен переживать временные ошибки сети/TLS до `api.telegram.org` без ручного redeploy
 
 ## Staff invite email
 

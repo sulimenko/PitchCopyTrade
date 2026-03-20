@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 import hmac
 import logging
@@ -7,12 +8,16 @@ from typing import Any
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramUnauthorizedError
+from aiogram.methods import GetMe
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from pitchcopytrade.bot.dispatcher import build_dispatcher
 from pitchcopytrade.core.runtime import bootstrap_runtime
 
 logger = logging.getLogger(__name__)
+DEFAULT_POLLING_RETRY_DELAY_SECONDS = 2
+MAX_POLLING_RETRY_DELAY_SECONDS = 60
 
 
 def create_bot(token: str) -> Bot:
@@ -116,6 +121,61 @@ def _format_recommendation(rec: Any, strategy: Any) -> str:
     return "\n".join(lines)
 
 
+def _is_retryable_bot_transport_error(exc: BaseException) -> bool:
+    return isinstance(exc, (TelegramNetworkError, OSError, TimeoutError, asyncio.TimeoutError))
+
+
+def _is_fatal_bot_polling_error(exc: BaseException) -> bool:
+    return isinstance(exc, (TelegramUnauthorizedError, TelegramBadRequest))
+
+
+def _polling_retry_delay(attempt: int) -> int:
+    exponent = max(0, attempt - 1)
+    return min(DEFAULT_POLLING_RETRY_DELAY_SECONDS * (2**exponent), MAX_POLLING_RETRY_DELAY_SECONDS)
+
+
+async def run_bot_smoke_check(bot: Bot) -> Any:
+    me = await bot.get_me()
+    logger.info("Telegram smoke check ok: id=%s username=%s", getattr(me, "id", None), getattr(me, "username", None))
+    return me
+
+
+async def run_polling_with_backoff(
+    dp: Dispatcher,
+    bot: Bot,
+    *,
+    sleep_func: Any = asyncio.sleep,
+) -> None:
+    attempt = 0
+    while True:
+        try:
+            await run_bot_smoke_check(bot)
+            if attempt:
+                logger.info("Telegram polling recovered after %s retry attempt(s)", attempt)
+            await dp.start_polling(bot, close_bot_session=False)
+            logger.info("Telegram polling stopped gracefully")
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if _is_retryable_bot_transport_error(exc):
+                attempt += 1
+                delay_seconds = _polling_retry_delay(attempt)
+                logger.warning(
+                    "Telegram transport failure during polling/getMe; retrying in %ss attempt=%s error=%s",
+                    delay_seconds,
+                    attempt,
+                    exc,
+                )
+                await sleep_func(delay_seconds)
+                continue
+            if _is_fatal_bot_polling_error(exc):
+                logger.exception("Fatal Telegram bot polling error; stopping bot process")
+                raise
+            logger.exception("Unhandled Telegram bot polling error; stopping bot process")
+            raise
+
+
 async def run_bot() -> None:
     settings = bootstrap_runtime("bot")
 
@@ -154,8 +214,26 @@ async def run_bot() -> None:
             await runner.cleanup()
     else:
         logger.info("Starting bot polling")
-        await dp.start_polling(bot)
+        try:
+            await run_polling_with_backoff(dp, bot)
+        finally:
+            await bot.session.close()
+
+
+async def run_bot_cli(*, smoke_check: bool = False) -> None:
+    settings = bootstrap_runtime("bot")
+    bot = create_bot(settings.telegram.bot_token.get_secret_value())
+    if smoke_check:
+        try:
+            await run_bot_smoke_check(bot)
+        finally:
+            await bot.session.close()
+        return
+    await run_bot()
 
 
 if __name__ == "__main__":
-    asyncio.run(run_bot())
+    parser = argparse.ArgumentParser(description="PitchCopyTrade Telegram bot runtime")
+    parser.add_argument("--smoke-check", action="store_true", help="Run Telegram connectivity smoke check via getMe and exit")
+    args = parser.parse_args()
+    asyncio.run(run_bot_cli(smoke_check=args.smoke_check))

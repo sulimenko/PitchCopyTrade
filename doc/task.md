@@ -373,3 +373,187 @@
    - `tests/test_auth.py`
    - `tests/test_db_models.py`
    - `tests/test_file_repositories.py`
+
+---
+
+## Блок G — Author editor compact redesign
+
+**Цель:** убрать oversized editor screens и привести strategy/recommendation forms к compact operator-first layout.
+
+- [x] **G1** Ужать header recommendation editor
+  - убрать giant hero-block
+  - оставить короткий title + one-line helper
+  - actions держать в одной компактной строке
+
+- [x] **G2** Ужать strategy editor до того же visual language
+  - те же вертикальные ритмы
+  - те же размеры инпутов
+  - те же border/padding tokens
+
+- [x] **G3** Перевести формы на compact field tokens
+  - input/select height `32-36px`
+  - явная рамка `1px`
+  - меньшие gap между полями
+  - textarea с небольшой стартовой высотой
+
+- [x] **G4** Разбить recommendation editor на компактные секции
+  - `Основное`
+  - `Бумаги`
+  - `Вложения`
+  - `Действия`
+  - без огромных пустых зон и декоративных блоков
+
+- [x] **G5** Упростить copy в editor
+  - убрать длинные объяснения, которые не несут операционной ценности
+  - оставить короткие contextual hints
+
+### Acceptance
+
+- recommendation и strategy editor визуально соответствуют compact staff shell
+- верхний экран не тратит высоту на giant titles и лишний copy
+- оператор видит структуру формы с первого экрана
+
+---
+
+## Блок H — Recommendation data flow и validation
+
+**Цель:** inline add, full editor и validation должны работать как один консистентный contour.
+
+- [x] **H1** Сделать один data contract для inline add и detail editor
+  - inline add сохраняет нормализованный `instrument_id`, а не только текст тикера
+  - detail editor открывается с уже выбранной бумагой
+  - при переходе не теряется `ticker`
+
+- [x] **H2** Убрать свободный text-only ticker flow
+  - paper selection только через controlled picker / autocomplete
+  - выбор бумаги должен создавать валидную связку `instrument_id + ticker label`
+
+- [x] **H3** Починить `+` flow
+  - при нажатии `+` открывается detail уже для валидного draft
+  - если бумага не выбрана валидно, UI не должен создавать видимость заполненной рекомендации
+
+- [x] **H4** Сделать field-level validation для первой бумаги
+  - общий alert можно оставить
+  - но поле `Инструмент` должно подсвечиваться локально
+  - текст ошибки для оператора:
+    - `Выберите инструмент из списка`
+    - а не только общий `Leg 1...`
+
+- [x] **H5** Уточнить semantics первой бумаги
+  - первая бумага обязательна
+  - без валидного инструмента и направления рекомендация не может считаться собранной
+
+- [x] **H6** Добавить regression coverage
+  - inline add -> detail editor сохраняет бумагу
+  - `instrument_id` не теряется
+  - `Leg 1` ошибка возникает только при реально невалидной первой бумаге
+
+### Acceptance
+
+- inline add и full editor используют один и тот же объект бумаги
+- выбранный в grid ticker подтягивается в detail editor
+- ошибка `Leg 1` больше не возникает при валидном выборе бумаги
+- ошибки показываются рядом с проблемным полем, а не только глобально
+
+---
+
+## Блок I — Governance parity для `admin/authors`
+
+**Цель:** edit flow автора не должен обходить ту же governance-защиту, что уже действует в `admin/staff`.
+
+- [x] **I1** Распространить защиту последнего активного администратора на `update_admin_author`
+  - drawer edit в `/admin/authors`
+  - `file` mode
+  - `db` mode
+  - замена ролей через author edit не может снимать `admin` у последнего активного администратора
+
+- [x] **I2** Унифицировать ошибки и UX
+  - если admin снимается у самого себя через author edit, сообщение должно совпадать с staff edit
+  - если admin снимается у другого последнего активного администратора, сообщение тоже должно совпадать с governance contract
+
+- [x] **I3** Добавить regression coverage
+  - service-level test для `update_admin_author`
+  - route/UI test для `/admin/authors/{id}/edit`
+  - behavior должен быть одинаковым в `db` и `file` mode
+
+### Acceptance
+
+- через `/admin/authors/{id}/edit` нельзя снять `admin` у последнего активного администратора
+- behavior совпадает с `/admin/staff/{id}/edit`
+- regression tests покрывают сценарий и не допускают повторного drift
+
+---
+
+## Блок J — Telegram bot transport resilience
+
+**Цель:** bot не должен требовать ручного redeploy после временной сетевой/TLS ошибки при доступе к `api.telegram.org`.
+
+- [x] **J1** Сделать resilient startup/polling loop
+  - `TelegramNetworkError`, DNS, timeout и TLS handshake failures не должны завершать процесс навсегда
+  - polling должен перезапускаться с backoff
+  - лог должен явно показывать, что это transport/network failure, а не ошибка токена или бизнес-логики
+
+- [x] **J2** Развести retry и fatal errors
+  - временные network/TLS ошибки считаются retryable
+  - truly fatal config errors остаются явными
+  - при retry не должно быть бесконечного noisy traceback без контекста
+
+- [x] **J3** Добавить deploy runbook для Telegram connectivity
+  - проверить DNS из контейнера
+  - проверить исходящий `443` до `api.telegram.org`
+  - проверить системное время
+  - проверить CA/cert trust внутри образа
+  - проверить, что проблема воспроизводится именно из контейнера
+
+- [x] **J4** Добавить post-deploy smoke-check
+  - bot после старта должен дойти до `getMe/polling` без ручного перезапуска
+  - при временном сетевом сбое восстановление должно происходить автоматически
+
+### Acceptance
+
+- единичный сбой сети до `api.telegram.org:443` не убивает bot-contour
+- bot восстанавливает polling без ручного `docker compose up -d`
+- deploy docs содержат явный troubleshooting path для Telegram connectivity
+
+---
+
+## Блок K — Staff invite fallback и unclipped action menus
+
+**Цель:** onboarding staff не должен зависеть от единственного Telegram widget path, а operator menus не должны ломаться из-за scroll/container clipping.
+
+- [x] **K1** Добавить fallback path на staff invite page
+  - invite screen не должен держаться только на Telegram Login Widget
+  - если widget не инициализировался, UI обязан показать рабочий следующий шаг
+  - preferred fallback: deep-link в Telegram bot с invite context
+
+- [x] **K2** Добавить явный fallback UX на `/login?invite_token=...`
+  - детектировать, что widget не появился/не загрузился
+  - показать понятное сообщение без технического шума
+  - дать действия:
+    - `Открыть Telegram`
+    - `Скопировать приглашение`
+    - `Запросить новое приглашение`
+
+- [x] **K3** Убрать raw invite URL из primary grid cell в `/admin/staff`
+  - длинный tokenized link не должен раздувать строку
+  - в таблице оставить compact presentation:
+    - badge статуса
+    - дата/время отправки
+    - короткие operator actions
+  - invite link оставить только в row menu / drawer / copy action
+
+- [x] **K4** Убрать clipping row menu в staff registries
+  - `Действия` не должны резаться `.staff-grid-shell`
+  - row menu перевести в viewport-level popover / dialog / portal
+  - минимально допустимо: отдельный unclipped popup layer, а не absolute panel внутри scroll container
+
+- [x] **K5** Добавить regression/manual acceptance coverage
+  - mobile Safari / narrow viewport smoke-check для invite page
+  - row menu открывается целиком в конце строки и у нижнего края таблицы
+  - staff row не раздувается из-за invite link
+
+### Acceptance
+
+- пользователь по invite не застревает на сером placeholder без следующего шага
+- `/admin/staff` остается компактным даже для длинных invite tokens
+- action menus не клипуются grid-shell контейнером

@@ -86,6 +86,16 @@ Staff user — это один `User`.
 5. сотрудник завершает bind через Telegram;
 6. user получает `active`.
 
+Invite page contract:
+- staff invite page не может зависеть только от Telegram Login Widget;
+- если widget не загрузился, не инициализировался или заблокирован, пользователь должен увидеть fallback path;
+- preferred fallback: deep-link в Telegram bot с invite context;
+- допустимые secondary actions:
+  - `Открыть Telegram`
+  - `Скопировать приглашение`
+  - `Запросить новое приглашение`
+- серый placeholder без рабочего следующего шага не является допустимым состоянием UI.
+
 ### 4.3 Статусы staff user
 
 Для продукта и UI canonical vocabulary:
@@ -125,6 +135,21 @@ Bind по invite обязан:
 Invite token обязан:
 - иметь механизм отзыва старых токенов после resend;
 - не оставаться валидным просто до `exp`, если уже был выпущен новый invite.
+
+Governance rule:
+- row edit не может обходить governance-ограничения отдельных actions;
+- нельзя снять `admin` у последнего активного администратора ни через `/admin/staff`, ни через `/admin/authors`, ни через другой bulk/update path.
+
+### 4.7 Telegram bot runtime contract
+
+`bot` — это устойчивый runtime contour, а не одноразовый startup script.
+
+Правила:
+- временная недоступность `api.telegram.org` не должна требовать ручного redeploy;
+- DNS, timeout и TLS handshake failures должны считаться retryable transport errors;
+- polling должен восстанавливаться автоматически через backoff loop;
+- deploy/runbook обязан содержать отдельный troubleshooting path для connectivity из контейнера;
+- bot logs должны явно отличать network/TLS проблему от ошибки токена или неправильной конфигурации.
 
 ## 5. Staff UI shell
 
@@ -222,6 +247,12 @@ Grid должен поддерживать:
 - products
 - promos
 
+Grid/popup rules:
+- row action menu не может клиповаться scroll-container'ом таблицы;
+- popup/menu/drawer actions должны открываться в unclipped layer поверх viewport или shell popup-layer;
+- raw operational URL не должен рендериться как основной cell content в compact operator grid;
+- для invite flow в grid primary content = status/badge/date, а не длинный tokenized link.
+
 ### 7.2 Operational entities
 
 Для operational entities primary pattern:
@@ -245,6 +276,25 @@ Grid должен поддерживать:
 - recommendations
 - legal document versions
 - one pager / long-form content
+
+### 7.4 Recommendation editor contract
+
+`/author/recommendations` и `/author/recommendations/{id}/edit` обязаны работать как один связанный contour, а не как два независимых способа ввода.
+
+Правила:
+- inline add в grid не может работать на свободном `ticker` text без нормализованного `instrument_id`;
+- если оператор вводит бумагу через shortcut-строку, detail editor обязан открываться уже с сохраненным `instrument_id` и тем же `ticker`;
+- full editor не должен терять выбранную бумагу при переходе из inline add;
+- сообщение `Leg 1: выберите допустимый инструмент.` допустимо только если у первой бумаги реально нет валидного инструмента из разрешенного списка.
+
+UX rules:
+- recommendation editor должен быть compact operator form, а не большой hero-screen;
+- giant intro block и длинный explanatory copy не являются primary pattern;
+- первая зона экрана должна помещать основную metadata и первую бумагу без длинного скролла;
+- help text должен быть коротким, secondary и не забирать высоту у формы;
+- field errors должны показываться рядом с конкретным полем, а не только в общем alert.
+
+Strategy editor должен использовать тот же compact visual language, что и recommendation editor.
 
 ## 8. Mutability rules
 

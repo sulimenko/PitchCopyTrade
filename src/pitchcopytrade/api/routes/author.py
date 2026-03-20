@@ -386,6 +386,7 @@ async def recommendation_create_submit(
         status_value=str(form.get("status", "") or ""),
         workflow_action=str(form.get("workflow_action", "") or ""),
     )
+    inline_mode = str(form.get("inline_mode", "") or "") == "1"
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
         data = build_recommendation_form_data(
@@ -410,13 +411,14 @@ async def recommendation_create_submit(
             uploaded_by_user_id=user.id,
         )
     except ValueError as exc:
+        feedback = _build_recommendation_form_feedback(str(exc), leg_rows)
         return await _render_recommendation_form(
             request=request,
             user=user,
             author=author,
             repository=repository,
             recommendation=None,
-            error=str(exc),
+            error=feedback["error"],
             form_values={
                 "strategy_id": str(form.get("strategy_id", "") or ""),
                 "kind": str(form.get("kind", "") or ""),
@@ -429,11 +431,17 @@ async def recommendation_create_submit(
                 "scheduled_for": str(form.get("scheduled_for", "") or ""),
                 "legs": leg_form_values_from_rows(leg_rows),
             },
+            field_errors=feedback["field_errors"],
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             embedded=str(form.get("embedded", "") or "") == "1",
             next_path=str(form.get("next_path", "") or ""),
         )
     next_path = _safe_author_next_path(str(form.get("next_path", "") or ""))
+    if inline_mode:
+        return RedirectResponse(
+            url=f"/author/recommendations/{recommendation.id}/edit",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
     return RedirectResponse(url=next_path or f"/author/recommendations/{recommendation.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -529,13 +537,14 @@ async def recommendation_edit_submit(
             uploaded_by_user_id=user.id,
         )
     except ValueError as exc:
+        feedback = _build_recommendation_form_feedback(str(exc), leg_rows)
         return await _render_recommendation_form(
             request=request,
             user=user,
             author=author,
             repository=repository,
             recommendation=recommendation,
-            error=str(exc),
+            error=feedback["error"],
             form_values={
                 "strategy_id": str(form.get("strategy_id", "") or ""),
                 "kind": str(form.get("kind", "") or ""),
@@ -548,6 +557,7 @@ async def recommendation_edit_submit(
                 "scheduled_for": str(form.get("scheduled_for", "") or ""),
                 "legs": leg_form_values_from_rows(leg_rows),
             },
+            field_errors=feedback["field_errors"],
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             embedded=str(form.get("embedded", "") or "") == "1",
             next_path=str(form.get("next_path", "") or ""),
@@ -568,6 +578,7 @@ async def _render_recommendation_form(
     recommendation,
     error: str | None,
     form_values: dict[str, object] | None,
+    field_errors: dict[str, str] | None = None,
     status_code: int = status.HTTP_200_OK,
     embedded: bool = False,
     next_path: str = "",
@@ -597,6 +608,7 @@ async def _render_recommendation_form(
                 "archived",
             ],
             "error": error,
+            "field_errors": field_errors or {},
             "form_values": effective_form_values,
             "next_leg_index": _next_leg_index(effective_form_values),
             "embedded": embedded,
@@ -641,6 +653,16 @@ def _next_leg_index(form_values: dict[str, object]) -> int:
         except ValueError:
             continue
     return (max(indexes) + 1) if indexes else len(legs)
+
+
+def _build_recommendation_form_feedback(error_text: str, leg_rows: list[dict[str, str]]) -> dict[str, object]:
+    field_errors: dict[str, str] = {}
+    first_row_id = str(leg_rows[0].get("row_id", "0")) if leg_rows else "0"
+    if error_text.startswith("Leg 1: выберите допустимый инструмент."):
+        field_errors[f"leg_{first_row_id}_instrument_id"] = "Выберите инструмент из списка"
+    if error_text.startswith("Leg 1: выберите направление сделки."):
+        field_errors[f"leg_{first_row_id}_side"] = "Выберите направление сделки"
+    return {"error": error_text, "field_errors": field_errors}
 
 
 def _instrument_payload(instrument) -> dict[str, str]:

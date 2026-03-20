@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
+import pytest
 
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.api.deps.auth import require_admin
@@ -1030,6 +1031,7 @@ def test_staff_registry_renders_filters_and_actions(monkeypatch) -> None:
         assert "multi-role" in response.text
         assert "Снять роль администратора" in response.text
         assert "invite_token=" in response.text
+        assert 'class="staff-row-menu-panel"' in response.text
 
 
 def test_staff_registry_invite_link_is_absolute(monkeypatch) -> None:
@@ -1052,6 +1054,8 @@ def test_staff_registry_invite_link_is_absolute(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert "https://pct.test.ptfin.ru/login?invite_token=" in response.text
+        assert '>https://pct.test.ptfin.ru/login?invite_token=' not in response.text
+        assert "Скопировать ссылку" in response.text
     reset_settings_cache()
 
 
@@ -1223,7 +1227,8 @@ def test_author_edit_updates_existing_row(monkeypatch) -> None:
     session.users_by_id[admin.id] = admin
     captured: dict[str, object] = {}
 
-    async def fake_update_author(_session, *, author_id, data):
+    async def fake_update_author(_session, *, actor_user_id, author_id, data):
+        captured["actor_user_id"] = actor_user_id
         captured["author_id"] = author_id
         captured["data"] = data
         return _make_author("author-1", "author-user-1", "Alpha Desk")
@@ -1251,6 +1256,73 @@ def test_author_edit_updates_existing_row(monkeypatch) -> None:
         assert captured["data"].telegram_user_id == 777
         assert captured["data"].requires_moderation is True
         assert captured["data"].is_active is False
+        assert captured["actor_user_id"] == admin.id
+
+
+async def test_update_admin_author_file_mode_blocks_last_active_admin_role_removal(monkeypatch) -> None:
+    admin = _make_admin_user()
+    admin.roles = [Role(slug=RoleSlug.ADMIN, title="Admin"), Role(slug=RoleSlug.AUTHOR, title="Author")]
+    profile = AuthorProfile(
+        id="author-1",
+        user_id=admin.id,
+        display_name="Admin Author",
+        slug="admin-author",
+        is_active=True,
+    )
+    profile.user = admin
+    admin.author_profile = profile
+    graph = SimpleNamespace(authors={profile.id: profile}, users={admin.id: admin}, roles={})
+
+    monkeypatch.setattr(admin_service, "_file_admin_graph", lambda: (graph, object()))
+
+    with pytest.raises(ValueError, match="Нельзя снять у себя роль последнего активного администратора."):
+        await admin_service.update_admin_author(
+            None,
+            actor_user_id=admin.id,
+            author_id=profile.id,
+            data=admin_service.AdminAuthorUpdateData(
+                display_name="Admin Author",
+                email="admin@example.com",
+                telegram_user_id=None,
+                role_slugs=(RoleSlug.AUTHOR,),
+                requires_moderation=False,
+                is_active=True,
+            ),
+        )
+
+
+def test_author_edit_renders_governance_error_for_last_active_admin(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", admin.id, "Admin Author")
+    author.user = admin
+    admin.author_profile = author
+    session.users_by_id[admin.id] = admin
+
+    async def fake_update_author(_session, *, actor_user_id, author_id, data):
+        assert actor_user_id == admin.id
+        assert author_id == author.id
+        assert data.role_slugs == (RoleSlug.AUTHOR,)
+        raise ValueError("Нельзя снять у себя роль последнего активного администратора.")
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.update_admin_author", fake_update_author)
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_authors", lambda _session, status_filter="all": _async_return([author]))
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            f"/admin/authors/{author.id}/edit",
+            data={
+                "display_name": "Admin Author",
+                "email": "admin@example.com",
+                "telegram_user_id": "",
+                "role_slugs": ["author"],
+                "status_value": "active",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "Нельзя снять у себя роль последнего активного администратора." in response.text
 
 
 async def test_file_mode_oversight_email_uses_active_admins(monkeypatch) -> None:

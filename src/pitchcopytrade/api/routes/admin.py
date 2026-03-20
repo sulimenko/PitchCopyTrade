@@ -1484,6 +1484,7 @@ async def admin_author_edit(
         tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
         await update_admin_author(
             session,
+            actor_user_id=user.id,
             author_id=author_id,
             data=AdminAuthorUpdateData(
                 display_name=display_name.strip(),

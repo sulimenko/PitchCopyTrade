@@ -199,6 +199,8 @@ def test_author_strategy_edit_page_renders(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Редактирование стратегии" in response.text
         assert "Momentum RU" in response.text
+        assert "Основное" in response.text
+        assert "Действия" in response.text
 
 
 def test_author_recommendation_list_renders(monkeypatch) -> None:
@@ -315,8 +317,13 @@ def test_author_recommendation_embedded_create_page_renders(monkeypatch) -> None
         assert response.status_code == 200
         assert "Новая рекомендация" in response.text
         assert "Momentum RU" in response.text
+        assert "Основное" in response.text
+        assert "Бумаги" in response.text
+        assert "Вложения" in response.text
+        assert "Действия" in response.text
         assert "+ Добавить бумагу" in response.text
         assert "Политика модерации" in response.text
+        assert "Что уже поддержано" not in response.text
 
 
 def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
@@ -374,6 +381,7 @@ def test_author_recommendation_inline_create_allows_minimal_fields(monkeypatch) 
     async def _create(_session, _author, data, uploaded_by_user_id=None):
         captured["kind"] = data.kind.value
         captured["entry_from"] = data.legs[0].entry_from
+        captured["instrument_id"] = data.legs[0].instrument_id
         return recommendation
 
     monkeypatch.setattr("pitchcopytrade.api.routes.author.create_author_recommendation", _create)
@@ -395,9 +403,10 @@ def test_author_recommendation_inline_create_allows_minimal_fields(monkeypatch) 
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/author/recommendations"
+        assert response.headers["location"] == "/author/recommendations/rec-1/edit"
         assert captured["kind"] == "new_idea"
         assert captured["entry_from"] is None
+        assert captured["instrument_id"] == "instrument-1"
 
 
 def test_author_recommendation_create_validation_error(monkeypatch) -> None:
@@ -473,6 +482,35 @@ def test_author_recommendation_edit_page_renders(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Редактирование рекомендации" in response.text
         assert "Покупка SBER" in response.text
+
+
+def test_author_recommendation_create_marks_first_leg_instrument_error(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+    instrument = _make_instrument()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
+
+    with _build_client(author_user) as client:
+        response = client.post(
+            "/author/recommendations",
+            data={
+                "strategy_id": "strategy-1",
+                "kind": "new_idea",
+                "status": "draft",
+                "title": "Покупка SBER",
+                "leg_7_side": "buy",
+            },
+        )
+
+        assert response.status_code == 422
+        assert "Leg 1: выберите допустимый инструмент." in response.text
+        assert "Выберите инструмент из списка" in response.text
+        assert 'name="leg_7_instrument_id"' in response.text
+        assert 'class="is-invalid"' in response.text
 
 
 def test_author_recommendation_preview_renders_subscriber_view(monkeypatch) -> None:

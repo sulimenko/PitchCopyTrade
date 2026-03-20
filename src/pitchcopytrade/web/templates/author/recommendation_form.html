@@ -21,26 +21,29 @@
   .page-shell { width: min(1180px, calc(100% - 12px)); padding-top: 8px; }
 </style>
 {% endif %}
-<section class="surface author-editor-hero">
+<section class="surface author-editor-head">
   <div class="eyebrow">редактор рекомендации</div>
-  <div class="author-editor-hero-head">
-    <div class="author-editor-hero-copy">
+  <div class="author-editor-head-row">
+    <div class="author-editor-head-copy">
       <h1>{% if recommendation %}Редактирование рекомендации{% else %}Новая рекомендация{% endif %}</h1>
-      <p class="muted">
-        Заполните параметры идеи, добавьте минимум одну бумагу и соберите публикацию в одном экране. Дополнительные
-        бумаги добавляются через <strong>+</strong> без фиксированного лимита.
-      </p>
-      {% if recommendation and not recommendation_is_editable %}
-      <p class="muted">Эта рекомендация доступна только для чтения. Редактирование разрешено только для `draft` и `review`.</p>
-      {% endif %}
+      <p class="muted">Основное, первая бумага и workflow-сценарии собраны в компактном операторском экране.</p>
     </div>
-    {% if recommendation %}
-    <div class="author-editor-status-badges">
+    <div class="author-editor-head-actions">
+      {% if recommendation %}
       <span class="pill">{{ label_recommendation_kind(recommendation.kind) }}</span>
       <span class="pill">{{ label_recommendation_status(recommendation.status) }}</span>
+      {% endif %}
+      {% if recommendation and not embedded %}
+      <a class="action ghost" href="/author/recommendations/{{ recommendation.id }}/preview">Предпросмотр</a>
+      {% endif %}
+      {% if not recommendation_is_editable %}
+      <span class="pill">только чтение</span>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
+  {% if recommendation and not recommendation_is_editable %}
+  <p class="muted author-editor-head-note">Редактирование разрешено только для `draft` и `review`.</p>
+  {% endif %}
 </section>
 
 <section class="author-editor-shell">
@@ -51,81 +54,91 @@
     <div class="author-editor-error">{{ error }}</div>
     {% endif %}
 
-    <div class="author-editor-grid author-editor-grid--meta">
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Стратегия</span>
-        <select name="strategy_id" {% if not recommendation_is_editable %}disabled{% endif %}>
-          <option value="">Выберите стратегию</option>
-          {% for strategy in strategies %}
-          <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Тип публикации</span>
-        <select name="kind" {% if not recommendation_is_editable %}disabled{% endif %}>
-          {% for item in recommendation_kind_options %}
-          <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>
-            {% if item == "new_idea" %}Новая идея{% elif item == "update" %}Обновление{% elif item == "close" %}Закрытие{% elif item == "cancel" %}Отмена{% else %}{{ item }}{% endif %}
-          </option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Статус</span>
-        <select name="status" {% if not recommendation_is_editable %}disabled{% endif %}>
-          {% for item in recommendation_status_options %}
-          <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>
-            {% if item == "draft" %}Черновик{% elif item == "review" %}На модерации{% elif item == "approved" %}Одобрено{% elif item == "scheduled" %}Запланировано{% elif item == "published" %}Опубликовано{% elif item == "closed" %}Закрыто{% elif item == "cancelled" %}Отменено{% elif item == "archived" %}В архиве{% else %}{{ item }}{% endif %}
-          </option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
-
-    <label class="author-editor-field">
-      <span class="author-editor-field-title">Заголовок</span>
-      <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER от уровня" {% if not recommendation_is_editable %}disabled{% endif %} />
-    </label>
-
-    <label class="author-editor-field">
-      <span class="author-editor-field-title">Краткое описание</span>
-      <textarea name="summary" rows="4" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.summary }}</textarea>
-    </label>
-
-    <label class="author-editor-field">
-      <span class="author-editor-field-title">Тезис идеи</span>
-      <textarea name="thesis" rows="6" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.thesis }}</textarea>
-    </label>
-
-    <label class="author-editor-field">
-      <span class="author-editor-field-title">Контекст рынка</span>
-      <textarea name="market_context" rows="5" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.market_context }}</textarea>
-    </label>
-
-    <div class="author-editor-grid author-editor-grid--schedule">
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Дата публикации</span>
-        <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-      </label>
-      <div class="surface" style="padding:14px 16px;border-radius:18px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Политика модерации</strong>
-        <div class="muted" style="margin-top:6px;line-height:1.55;">
-          {% if author.requires_moderation %}
-          Для этого автора публикации автоматически идут на модерацию.
-          {% else %}
-          Для этого автора дополнительная модерация не требуется.
-          {% endif %}
-        </div>
-      </div>
-    </div>
-
-    <section class="surface author-editor-section author-editor-section--legs">
-      <div class="eyebrow">структура сделок</div>
+    <section class="surface author-editor-section">
       <div class="author-editor-section-head">
         <div class="author-editor-section-copy">
-          <h2>Параметры идеи</h2>
-          <p class="muted">Минимум одна бумага обязательна. Остальные добавляйте через кнопку <strong>+ Добавить бумагу</strong>.</p>
+          <h2>Основное</h2>
+          <p class="muted">Базовые параметры идеи и короткие контекстные подсказки без длинного intro-блока.</p>
+        </div>
+      </div>
+
+      <div class="author-editor-grid author-editor-grid--meta">
+        <label class="author-editor-field">
+          <span class="author-editor-field-title">Стратегия</span>
+          <select name="strategy_id" {% if not recommendation_is_editable %}disabled{% endif %}>
+            <option value="">Выберите стратегию</option>
+            {% for strategy in strategies %}
+            <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="author-editor-field">
+          <span class="author-editor-field-title">Тип публикации</span>
+          <select name="kind" {% if not recommendation_is_editable %}disabled{% endif %}>
+            {% for item in recommendation_kind_options %}
+            <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>
+              {% if item == "new_idea" %}Новая идея{% elif item == "update" %}Обновление{% elif item == "close" %}Закрытие{% elif item == "cancel" %}Отмена{% else %}{{ item }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="author-editor-field">
+          <span class="author-editor-field-title">Статус</span>
+          <select name="status" {% if not recommendation_is_editable %}disabled{% endif %}>
+            {% for item in recommendation_status_options %}
+            <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>
+              {% if item == "draft" %}Черновик{% elif item == "review" %}На модерации{% elif item == "approved" %}Одобрено{% elif item == "scheduled" %}Запланировано{% elif item == "published" %}Опубликовано{% elif item == "closed" %}Закрыто{% elif item == "cancelled" %}Отменено{% elif item == "archived" %}В архиве{% else %}{{ item }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Заголовок</span>
+        <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER от уровня" {% if not recommendation_is_editable %}disabled{% endif %} />
+      </label>
+
+      <div class="author-editor-grid author-editor-grid--content">
+        <label class="author-editor-field">
+          <span class="author-editor-field-title">Краткое описание</span>
+          <textarea name="summary" rows="3" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.summary }}</textarea>
+        </label>
+        <label class="author-editor-field">
+          <span class="author-editor-field-title">Тезис идеи</span>
+          <textarea name="thesis" rows="4" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.thesis }}</textarea>
+        </label>
+      </div>
+
+      <div class="author-editor-grid author-editor-grid--content">
+        <label class="author-editor-field">
+          <span class="author-editor-field-title">Контекст рынка</span>
+          <textarea name="market_context" rows="4" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.market_context }}</textarea>
+        </label>
+        <div class="author-editor-grid author-editor-grid--stack">
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Дата публикации</span>
+            <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" {% if not recommendation_is_editable %}disabled{% endif %} />
+          </label>
+          <div class="author-editor-note">
+            <strong>Политика модерации</strong>
+            <div class="muted">
+              {% if author.requires_moderation %}
+              Публикации этого автора автоматически идут на модерацию.
+              {% else %}
+              Для этого автора дополнительная модерация не требуется.
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="surface author-editor-section author-editor-section--legs">
+      <div class="author-editor-section-head">
+        <div class="author-editor-section-copy">
+          <h2>Бумаги</h2>
+          <p class="muted">Первая бумага обязательна. Остальные добавляйте через <strong>+ Добавить бумагу</strong>.</p>
         </div>
         {% if recommendation_is_editable %}
         <button class="action ghost" type="button" id="add-leg-button">+ Добавить бумагу</button>
@@ -142,9 +155,9 @@
               <strong class="author-leg-card-title js-leg-title">Бумага {{ loop.index }}</strong>
               <p class="muted author-leg-card-note">
                 {% if loop.first %}
-                Обязательная бумага для публикации. Заполните инструмент, направление и хотя бы один уровень входа или цели.
+                Обязательная бумага для публикации.
                 {% else %}
-                Дополнительная бумага. Удалите ее, если она не нужна в этой публикации.
+                Дополнительная бумага. Удалите, если она не нужна.
                 {% endif %}
               </p>
             </div>
@@ -155,21 +168,37 @@
 
           <div class="author-leg-grid author-leg-grid--primary">
             <label class="author-editor-field">
+              {% set instrument_field_name = "leg_" ~ leg.row_id ~ "_instrument_id" %}
               <span class="author-editor-field-title">Инструмент</span>
-              <select name="leg_{{ leg.row_id }}_instrument_id" {% if not recommendation_is_editable %}disabled{% endif %}>
+              <select
+                name="{{ instrument_field_name }}"
+                {% if field_errors.get(instrument_field_name) %}class="is-invalid"{% endif %}
+                {% if not recommendation_is_editable %}disabled{% endif %}
+              >
                 <option value="">Выберите инструмент</option>
                 {% for instrument in instruments %}
                 <option value="{{ instrument.id }}" {% if leg.instrument_id == instrument.id %}selected{% endif %}>{{ instrument.ticker }} · {{ instrument.name }}</option>
                 {% endfor %}
               </select>
+              {% if field_errors.get(instrument_field_name) %}
+              <span class="author-editor-field-error">{{ field_errors.get(instrument_field_name) }}</span>
+              {% endif %}
             </label>
             <label class="author-editor-field">
+              {% set side_field_name = "leg_" ~ leg.row_id ~ "_side" %}
               <span class="author-editor-field-title">Направление</span>
-              <select name="leg_{{ leg.row_id }}_side" {% if not recommendation_is_editable %}disabled{% endif %}>
+              <select
+                name="{{ side_field_name }}"
+                {% if field_errors.get(side_field_name) %}class="is-invalid"{% endif %}
+                {% if not recommendation_is_editable %}disabled{% endif %}
+              >
                 <option value="">Выберите направление</option>
                 <option value="buy" {% if leg.side == "buy" %}selected{% endif %}>Покупка</option>
                 <option value="sell" {% if leg.side == "sell" %}selected{% endif %}>Продажа</option>
               </select>
+              {% if field_errors.get(side_field_name) %}
+              <span class="author-editor-field-error">{{ field_errors.get(side_field_name) }}</span>
+              {% endif %}
             </label>
             <label class="author-editor-field">
               <span class="author-editor-field-title">Горизонт</span>
@@ -216,10 +245,9 @@
     </section>
 
     <section class="surface author-editor-section author-editor-section--attachments">
-      <div class="eyebrow">вложения</div>
       <div class="author-editor-section-copy">
         <h2>Вложения</h2>
-        <p class="muted">Поддерживаются PDF, JPG, PNG и WEBP. Файл добавится к публикации после сохранения формы.</p>
+        <p class="muted">PDF, JPG, PNG и WEBP. Файл добавится после сохранения формы.</p>
       </div>
       <label class="author-editor-field">
         <span class="author-editor-field-title">Добавить PDF или изображение</span>
@@ -245,47 +273,28 @@
       {% endif %}
     </section>
 
-    <div class="author-editor-actions">
-      {% if recommendation_is_editable %}
-      <button class="action" type="submit" name="workflow_action" value="save_draft">Сохранить в черновик</button>
-      <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить на модерацию</button>
-      <button class="action ghost" type="submit" name="workflow_action" value="schedule">Запланировать</button>
-      <button class="action ghost" type="submit" name="workflow_action" value="publish_now">Опубликовать</button>
-      {% if recommendation %}
-      <button class="action ghost" type="submit" name="workflow_action" value="close_idea">Закрыть идею</button>
-      <button class="action ghost" type="submit" name="workflow_action" value="cancel_idea">Отменить идею</button>
-      {% endif %}
-      {% else %}
-      <span class="pill">только чтение</span>
-      {% endif %}
-      <a class="action ghost" href="/author/recommendations">Отмена</a>
-    </div>
+    <section class="surface author-editor-section">
+      <div class="author-editor-section-copy">
+        <h2>Действия</h2>
+        <p class="muted">Выберите нужный workflow без отдельного action-блока в шапке.</p>
+      </div>
+      <div class="author-editor-actions">
+        {% if recommendation_is_editable %}
+        <button class="action" type="submit" name="workflow_action" value="save_draft">Сохранить в черновик</button>
+        <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить на модерацию</button>
+        <button class="action ghost" type="submit" name="workflow_action" value="schedule">Запланировать</button>
+        <button class="action ghost" type="submit" name="workflow_action" value="publish_now">Опубликовать</button>
+        {% if recommendation %}
+        <button class="action ghost" type="submit" name="workflow_action" value="close_idea">Закрыть идею</button>
+        <button class="action ghost" type="submit" name="workflow_action" value="cancel_idea">Отменить идею</button>
+        {% endif %}
+        {% else %}
+        <span class="pill">только чтение</span>
+        {% endif %}
+        <a class="action ghost" href="/author/recommendations">Отмена</a>
+      </div>
+    </section>
   </form>
-
-  {% if not embedded %}
-  <aside class="surface author-editor-aside">
-    <div class="eyebrow">подсказки редактора</div>
-    <h2>Что уже поддержано</h2>
-    <div class="author-editor-aside-list">
-      <div class="surface author-editor-aside-item">
-        <strong>Статусы идеи</strong>
-        <div class="muted">Черновик, на модерации, одобрено, запланировано, опубликовано, закрыто, отменено, в архиве.</div>
-      </div>
-      <div class="surface author-editor-aside-item">
-        <strong>Типы публикации</strong>
-        <div class="muted">Новая идея, обновление, закрытие, отмена.</div>
-      </div>
-      <div class="surface author-editor-aside-item">
-        <strong>Действия workflow</strong>
-        <div class="muted">Кнопки внизу формы переводят идею в черновик, на модерацию, в отложенную публикацию, в публикацию, в закрытие или в отмену.</div>
-      </div>
-      <div class="surface author-editor-aside-item">
-        <strong>Структура бумаг</strong>
-        <div class="muted">Первая бумага обязательна. Количество дополнительных бумаг не ограничено.</div>
-      </div>
-    </div>
-  </aside>
-  {% endif %}
 </section>
 
 <template id="leg-row-template">
@@ -293,7 +302,7 @@
     <div class="author-leg-card-head">
       <div class="author-leg-card-copy">
         <strong class="author-leg-card-title js-leg-title">Бумага __ROW_NUMBER__</strong>
-        <p class="muted author-leg-card-note">Дополнительная бумага. Удалите ее, если она не нужна в этой публикации.</p>
+        <p class="muted author-leg-card-note">Дополнительная бумага. Удалите, если она не нужна.</p>
       </div>
       <button class="action ghost js-remove-leg" type="button">Удалить</button>
     </div>
@@ -361,56 +370,56 @@
 <style>
   .author-editor-topbar {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     align-items: center;
     flex-wrap: wrap;
   }
 
-  .author-editor-hero {
-    padding: 28px;
+  .author-editor-head {
+    padding: 16px 18px;
     display: grid;
-    gap: 12px;
+    gap: 8px;
+    margin-bottom: 14px;
   }
 
-  .author-editor-hero-head {
+  .author-editor-head-row {
     display: flex;
     justify-content: space-between;
-    gap: 18px;
-    align-items: flex-end;
+    gap: 12px;
+    align-items: flex-start;
     flex-wrap: wrap;
   }
 
-  .author-editor-hero-copy h1 {
+  .author-editor-head-copy {
+    display: grid;
+    gap: 6px;
+  }
+
+  .author-editor-head-copy h1 {
     margin: 0;
-    font-size: clamp(2rem, 4vw, 3.4rem);
-    line-height: 0.96;
-    letter-spacing: -0.05em;
+    font-size: 1.55rem;
+    line-height: 1.06;
   }
 
-  .author-editor-hero-copy p {
-    margin: 16px 0 0;
-    max-width: 760px;
-    line-height: 1.65;
+  .author-editor-head-copy p,
+  .author-editor-head-note {
+    margin: 0;
+    line-height: 1.45;
   }
 
-  .author-editor-status-badges {
+  .author-editor-head-actions {
     display: flex;
     gap: 8px;
+    align-items: center;
     flex-wrap: wrap;
   }
 
-  .author-editor-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-    gap: 18px;
-    margin-top: 18px;
-    align-items: start;
-  }
+  .author-editor-shell { display: block; }
 
   .author-editor-form {
-    padding: 24px;
+    padding: 18px;
     display: grid;
-    gap: 18px;
+    gap: 14px;
   }
 
   .author-editor-form * {
@@ -418,8 +427,8 @@
   }
 
   .author-editor-error {
-    padding: 14px 16px;
-    border-radius: 18px;
+    padding: 10px 12px;
+    border-radius: 12px;
     background: rgba(191, 23, 54, 0.08);
     color: var(--red-600);
     border: 1px solid rgba(191, 23, 54, 0.18);
@@ -428,19 +437,23 @@
   .author-editor-grid,
   .author-leg-grid,
   .author-legs-list,
-  .author-editor-attachment-list,
-  .author-editor-aside-list {
+  .author-editor-attachment-list {
     display: grid;
-    gap: 14px;
+    gap: 12px;
   }
 
   .author-editor-grid--meta {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 
-  .author-editor-grid--schedule {
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    align-items: end;
+  .author-editor-grid--content {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .author-editor-grid--stack {
+    display: grid;
+    gap: 12px;
+    align-content: start;
   }
 
   .author-editor-field,
@@ -450,12 +463,13 @@
 
   .author-editor-field {
     display: grid;
-    gap: 8px;
+    gap: 6px;
   }
 
   .author-editor-field-title {
-    font-weight: 700;
-    color: var(--blue-800);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--staff-accent);
   }
 
   .author-editor-field input,
@@ -463,100 +477,106 @@
   .author-editor-field textarea {
     width: 100%;
     min-width: 0;
-    padding: 14px 16px;
-    border-radius: 18px;
-    border: 1px solid var(--line);
+    min-height: 34px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--staff-line-strong);
     font: inherit;
-    background: rgba(255, 255, 255, 0.88);
+    background: #fff;
   }
 
   .author-editor-field textarea {
+    min-height: 92px;
     resize: vertical;
   }
 
-  .author-editor-check {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    padding: 16px 18px;
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    background: rgba(20, 56, 166, 0.03);
+  .author-editor-field input.is-invalid,
+  .author-editor-field select.is-invalid,
+  .author-editor-field textarea.is-invalid {
+    border-color: var(--staff-danger);
+    background: #fff4f4;
   }
 
-  .author-editor-check small {
-    display: block;
-    margin-top: 4px;
-    line-height: 1.5;
+  .author-editor-field-error {
+    font-size: 0.78rem;
+    color: var(--staff-danger);
+    line-height: 1.35;
   }
 
   .author-editor-section {
-    padding: 20px;
-    border-radius: 24px;
-    background: var(--surface-strong);
+    padding: 14px;
+    border-radius: 14px;
+    background: var(--staff-surface-soft);
     box-shadow: none;
     display: grid;
-    gap: 16px;
+    gap: 12px;
   }
 
   .author-editor-section-head {
     display: flex;
     justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
     align-items: flex-start;
     flex-wrap: wrap;
-    margin-top: 8px;
   }
 
   .author-editor-section-copy {
     display: grid;
-    gap: 8px;
+    gap: 6px;
   }
 
-  .author-editor-section-copy h2,
-  .author-editor-aside h2 {
+  .author-editor-section-copy h2 {
     margin: 0;
-    font-size: 1.35rem;
+    font-size: 1.1rem;
   }
 
   .author-editor-section-copy p {
     margin: 0;
-    line-height: 1.6;
+    line-height: 1.45;
+  }
+
+  .author-editor-note {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--staff-line);
+    background: #fff;
+    display: grid;
+    gap: 4px;
   }
 
   .author-leg-card {
-    padding: 20px;
-    border: 1px solid var(--line);
-    border-radius: 24px;
-    background: rgba(20, 56, 166, 0.03);
+    padding: 14px;
+    border: 1px solid var(--staff-line);
+    border-radius: 12px;
+    background: #fff;
     display: grid;
-    gap: 16px;
+    gap: 12px;
     overflow: hidden;
   }
 
   .author-leg-card-head {
     display: flex;
     justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
     align-items: flex-start;
     flex-wrap: wrap;
   }
 
   .author-leg-card-copy {
     display: grid;
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
   }
 
   .author-leg-card-title {
-    font-size: 1.1rem;
-    color: var(--blue-900);
+    font-size: 1rem;
+    color: var(--staff-ink);
   }
 
   .author-leg-card-note {
     margin: 0;
     max-width: 48rem;
-    line-height: 1.6;
+    line-height: 1.4;
   }
 
   .author-leg-grid--primary {
@@ -571,11 +591,10 @@
     grid-column: span 2;
   }
 
-  .author-editor-attachment-item,
-  .author-editor-aside-item {
-    padding: 16px;
-    border-radius: 20px;
-    background: var(--surface-strong);
+  .author-editor-attachment-item {
+    padding: 12px;
+    border-radius: 12px;
+    background: #fff;
     box-shadow: none;
   }
 
@@ -595,31 +614,8 @@
 
   .author-editor-actions {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     flex-wrap: wrap;
-  }
-
-  .author-editor-aside {
-    padding: 24px;
-    display: grid;
-    gap: 14px;
-    position: sticky;
-    top: 24px;
-  }
-
-  .author-editor-aside-item .muted {
-    margin-top: 8px;
-    line-height: 1.55;
-  }
-
-  @media (max-width: 980px) {
-    .author-editor-shell {
-      grid-template-columns: 1fr;
-    }
-
-    .author-editor-aside {
-      position: static;
-    }
   }
 
   @media (max-width: 760px) {
@@ -652,8 +648,8 @@
 
         if (note) {
           note.textContent = index === 0
-            ? "Обязательная бумага для публикации. Заполните инструмент, направление и хотя бы один уровень входа или цели."
-            : "Дополнительная бумага. Удалите ее, если она не нужна в этой публикации.";
+            ? "Обязательная бумага для публикации."
+            : "Дополнительная бумага. Удалите, если она не нужна.";
         }
       });
 

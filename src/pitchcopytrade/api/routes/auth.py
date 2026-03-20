@@ -19,6 +19,8 @@ from pitchcopytrade.auth.roles import get_user_role_slugs
 from pitchcopytrade.auth.service import authenticate_user
 from pitchcopytrade.auth.staff_mode import get_staff_mode_cookie_name, resolve_staff_mode
 from pitchcopytrade.auth.session import (
+    build_staff_invite_bot_link,
+    build_staff_invite_help_bot_link,
     build_session_cookie_value,
     build_telegram_fallback_cookie_value,
     get_telegram_fallback_cookie_name,
@@ -363,6 +365,9 @@ def _build_login_template_context(
         "telegram_https_ready": parsed.scheme == "https",
         "telegram_bot_username": settings.telegram.bot_username,
         "subscriber_verify_url": "/verify/telegram",
+        "invite_link_url": f"{base_url}/login?invite_token={invite_token}" if invite_token else "",
+        "telegram_invite_bot_url": build_staff_invite_bot_link(invite_token) if invite_token else "",
+        "telegram_request_invite_url": build_staff_invite_help_bot_link(invite_token) if invite_token else "",
     }
 
 

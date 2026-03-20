@@ -112,9 +112,6 @@
           <td>
             <strong>{{ item.display_name }}</strong>
             <div class="muted">{{ item.email or "почта не задана" }}</div>
-            {% if item.invite_link %}
-            <div class="muted"><a href="{{ item.invite_link }}">{{ item.invite_link }}</a></div>
-            {% endif %}
             {% if item.is_current_user %}
             <div class="staff-inline-actions" style="margin-top:6px;"><span class="staff-badge">это вы</span></div>
             {% endif %}

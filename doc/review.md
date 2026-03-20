@@ -4,16 +4,11 @@
 
 ## Общий вывод
 
-Базовый продукт работает, тестовый пакет проходит, но текущий staff rollout еще не готов к следующему merge как завершенный operator contour.
-
-Причина теперь уже конкретная:
-- остался один governance-блокер в staff edit flow: через drawer edit можно обойти защиту последнего активного администратора.
+Базовый продукт работает, текущий governance blocker по `admin/authors` закрыт, и staff rollout больше не имеет открытых edit-flow обходов для последнего активного администратора.
 
 ## Текущие findings
 
-### [P1] Edit flow staff row обходит защиту последнего активного администратора
-
-Через drawer-редактирование staff row нельзя допускать снятие роли `admin` у последнего активного администратора. Эта защита уже существует в отдельном revoke-flow и должна быть полностью повторена в update-flow.
+- Активных governance findings на текущий момент нет.
 
 ## Что должно считаться готовностью следующего блока
 
@@ -26,7 +21,7 @@ Merge считается готовым только если одновреме
 5. onboarding нового `admin/author` больше не требует ручной пересылки invite link;
 6. control emails администраторам одинаково работают в `db` и `file` mode;
 7. UI статусы и labels переведены на русский;
-8. edit flow не может обойти правило последнего активного администратора.
+8. ни один edit flow не может обойти правило последнего активного администратора.
 
 ## Worker target
 
@@ -35,3 +30,16 @@ Merge считается готовым только если одновреме
 - [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 
 Исторические completed phases не использовать как источник правды.
+
+## Next UX block
+
+Следующий приоритет после закрытия текущего governance gate:
+- runtime resilience для Telegram bot;
+- deploy troubleshooting и smoke-check для connectivity к `api.telegram.org`;
+- автоматическое восстановление polling после временных сетевых ошибок.
+
+Следующий staff UX/onboarding block после этого:
+- fallback path для `/login?invite_token=...`, если Telegram widget не отрисовался;
+- deep-link / copy / resend сценарий вместо серого placeholder;
+- unclipped row menus в staff registries;
+- убрать raw invite URL из primary cell в `/admin/staff`.

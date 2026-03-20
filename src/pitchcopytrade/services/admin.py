@@ -1303,6 +1303,7 @@ async def create_admin_author(
 async def update_admin_author(
     session: AsyncSession | None,
     *,
+    actor_user_id: str,
     author_id: str,
     data: AdminAuthorUpdateData,
 ) -> AuthorProfile:
@@ -1321,6 +1322,13 @@ async def update_admin_author(
         profile = graph.authors.get(author_id)
         if profile is None or profile.user is None:
             raise ValueError("Автор не найден.")
+        await _validate_admin_author_governance_file(
+            graph,
+            actor_user_id=actor_user_id,
+            user=profile.user,
+            role_slugs=role_slugs,
+            is_active=data.is_active,
+        )
         _validate_staff_uniqueness_file(graph, email=normalized_email, telegram_user_id=data.telegram_user_id, current_user_id=profile.user.id)
         profile.display_name = normalized_display_name
         profile.requires_moderation = data.requires_moderation
@@ -1339,6 +1347,13 @@ async def update_admin_author(
     profile = result.scalar_one_or_none()
     if profile is None or profile.user is None:
         raise ValueError("Автор не найден.")
+    await _validate_admin_author_governance_sql(
+        session,
+        actor_user_id=actor_user_id,
+        user=profile.user,
+        role_slugs=role_slugs,
+        is_active=data.is_active,
+    )
     await _validate_staff_uniqueness_sql(session, email=normalized_email, telegram_user_id=data.telegram_user_id, current_user_id=profile.user.id)
     profile.display_name = normalized_display_name
     profile.requires_moderation = data.requires_moderation
@@ -1351,6 +1366,52 @@ async def update_admin_author(
     await session.commit()
     await session.refresh(profile)
     return profile
+
+
+async def _validate_admin_author_governance_file(
+    graph: FileDatasetGraph,
+    *,
+    actor_user_id: str,
+    user: User,
+    role_slugs: tuple[RoleSlug, ...],
+    is_active: bool,
+) -> None:
+    await _validate_admin_role_update_file(
+        graph,
+        actor_user_id=actor_user_id,
+        user=user,
+        role_slugs=role_slugs,
+    )
+    if RoleSlug.ADMIN not in _staff_role_slugs(user) or user.status != UserStatus.ACTIVE or is_active:
+        return
+    active_admins = _count_active_admins_file(graph)
+    if active_admins <= 1:
+        if user.id == actor_user_id:
+            raise ValueError("Нельзя деактивировать себя как последнего активного администратора.")
+        raise ValueError("Нельзя деактивировать последнего активного администратора.")
+
+
+async def _validate_admin_author_governance_sql(
+    session: AsyncSession,
+    *,
+    actor_user_id: str,
+    user: User,
+    role_slugs: tuple[RoleSlug, ...],
+    is_active: bool,
+) -> None:
+    await _validate_admin_role_update_sql(
+        session,
+        actor_user_id=actor_user_id,
+        user=user,
+        role_slugs=role_slugs,
+    )
+    if RoleSlug.ADMIN not in _staff_role_slugs(user) or user.status != UserStatus.ACTIVE or is_active:
+        return
+    active_admins = await _count_active_admins_sql(session)
+    if active_admins <= 1:
+        if user.id == actor_user_id:
+            raise ValueError("Нельзя деактивировать себя как последнего активного администратора.")
+        raise ValueError("Нельзя деактивировать последнего активного администратора.")
 
 
 async def resend_staff_invite(

@@ -1,42 +1,48 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="surface" style="max-width:460px;margin:60px auto;padding:40px;text-align:center;">
+<section class="surface auth-login-shell">
   {% if error %}
-  <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;">
+  <div class="auth-login-alert auth-login-alert--error">
     {{ error }}
   </div>
   {% endif %}
   {% if invite_token %}
-  <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(20,85,216,0.08);color:var(--blue-700);font-weight:600;line-height:1.5;">
+  <div class="auth-login-alert auth-login-alert--info">
     Приглашение сотрудника активно. Нажмите кнопку Telegram ниже, чтобы завершить вход.
   </div>
   {% endif %}
   {% if not telegram_https_ready %}
-  <div style="margin-bottom:20px;padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);font-weight:600;line-height:1.5;">
+  <div class="auth-login-alert auth-login-alert--error">
     Telegram Login Widget работает только через HTTPS. Проверьте `BASE_URL` и серверный TLS.
   </div>
   {% endif %}
-  <div class="brand-mark" style="margin:0 auto 24px;width:64px;height:64px;font-size:1.1rem;">PC</div>
-  <h2 style="margin:0 0 28px;font-size:1.6rem;">PitchCopyTrade</h2>
-  <div style="display:flex;flex-direction:column;gap:24px;text-align:left;">
-    <section style="text-align:center;">
-      <div class="muted" style="margin-bottom:14px;line-height:1.6;font-size:0.95rem;">
+  <div class="brand-mark auth-login-mark">PC</div>
+  <h2 class="auth-login-title">PitchCopyTrade</h2>
+  <div class="auth-login-stack">
+    <section class="auth-login-section auth-login-section--telegram">
+      <div class="muted auth-login-copy">
         {% if is_staff_invite %}
         Вход по приглашению сотрудника. Один шаг через Telegram.
         {% else %}
         Основной вход для сотрудников на сервере: через Telegram.
         {% endif %}
       </div>
-      <script async src="https://telegram.org/js/telegram-widget.js?22"
-        data-telegram-login="{{ bot_username }}"
-        data-size="large"
-        data-auth-url="{{ telegram_auth_url }}"
-        data-request-access="write">
-      </script>
-      <div class="muted" style="margin-top:16px;line-height:1.65;font-size:0.95rem;">
+      <div id="telegram-widget-slot" class="auth-login-widget-slot">
+        <script async src="https://telegram.org/js/telegram-widget.js?22"
+          data-telegram-login="{{ bot_username }}"
+          data-size="large"
+          data-auth-url="{{ telegram_auth_url }}"
+          data-request-access="write">
+        </script>
+      </div>
+      <div id="invite-fallback-alert" class="auth-login-alert auth-login-alert--fallback" {% if not is_staff_invite %}hidden{% endif %}>
+        <strong>Если кнопка Telegram не появилась, используйте fallback ниже.</strong>
+        <div class="muted">Откройте приглашение в Telegram, скопируйте ссылку или запросите новое приглашение без технических шагов.</div>
+      </div>
+      <div class="muted auth-login-hint">
         {% if is_staff_invite %}
-        Если кнопка не работает, запросите у администратора новое приглашение.
+        Если кнопка не работает, используйте fallback actions ниже.
         {% else %}
         Для работы входа через Telegram у бота в <strong>@BotFather</strong> должен быть установлен домен
         <strong>{{ telegram_login_domain }}</strong> через команду <code>/setdomain</code>.
@@ -44,19 +50,33 @@
       </div>
     </section>
 
+    {% if is_staff_invite %}
+    <section class="auth-login-section auth-login-section--fallback">
+      <div class="auth-login-fallback-head">
+        <strong>Fallback path</strong>
+        <div class="muted">Приглашение не должно зависеть только от Telegram Login Widget.</div>
+      </div>
+      <div class="auth-login-actions">
+        <a class="action" href="{{ telegram_invite_bot_url }}">Открыть Telegram</a>
+        <button class="action ghost" type="button" data-copy-text="{{ invite_link_url }}">Скопировать приглашение</button>
+        <a class="action ghost" href="{{ telegram_request_invite_url }}">Запросить новое приглашение</a>
+      </div>
+    </section>
+    {% endif %}
+
     {% if not is_staff_invite %}
-    <div style="display:flex;align-items:center;gap:12px;">
-      <div style="height:1px;background:rgba(24,46,120,0.12);flex:1;"></div>
-      <span class="muted" style="font-size:0.82rem;text-transform:uppercase;letter-spacing:0.12em;">или</span>
-      <div style="height:1px;background:rgba(24,46,120,0.12);flex:1;"></div>
+    <div class="auth-login-divider">
+      <div class="auth-login-divider-line"></div>
+      <span class="muted auth-login-divider-label">или</span>
+      <div class="auth-login-divider-line"></div>
     </div>
 
-    <form method="post" action="/login" style="display:flex;flex-direction:column;gap:14px;text-align:left;">
-      <div class="muted" style="line-height:1.6;font-size:0.95rem;">
+    <form method="post" action="/login" class="auth-login-password-form">
+      <div class="muted auth-login-copy">
         Резервный вход для локального demo-режима и тестовых пользователей с паролем.
       </div>
-    <label style="display:flex;flex-direction:column;gap:8px;">
-      <span style="font-weight:600;">Логин или email</span>
+    <label class="auth-login-field">
+      <span>Логин или email</span>
       <input
         type="text"
         name="identity"
@@ -64,30 +84,126 @@
         required
         autocomplete="username"
         placeholder="admin1 или author1"
-        style="width:100%;padding:14px 16px;border:1px solid rgba(24,46,120,0.16);border-radius:16px;background:#fff;font:inherit;"
       >
     </label>
-    <label style="display:flex;flex-direction:column;gap:8px;">
-      <span style="font-weight:600;">Пароль</span>
+    <label class="auth-login-field">
+      <span>Пароль</span>
       <input
         type="password"
         name="password"
         required
         autocomplete="current-password"
         placeholder="Введите пароль"
-        style="width:100%;padding:14px 16px;border:1px solid rgba(24,46,120,0.16);border-radius:16px;background:#fff;font:inherit;"
       >
     </label>
-    <button class="action" type="submit" style="width:100%;justify-content:center;">Войти</button>
+    <button class="action auth-login-submit" type="submit">Войти</button>
     </form>
     {% endif %}
   </div>
-  <div class="muted" style="margin-top:24px;line-height:1.65;font-size:0.95rem;">
+  <div class="muted auth-login-footer">
     Этот экран предназначен только для сотрудников: admin, author, moderator.
   </div>
-  <div class="muted" style="margin-top:12px;line-height:1.65;font-size:0.95rem;">
+  <div class="muted auth-login-footer auth-login-footer--secondary">
     Клиентам входить через Telegram-бота <strong>@{{ telegram_bot_username }}</strong> и Mini App.
     Если вы открыли сайт как подписчик, используйте <a href="{{ subscriber_verify_url }}">подтверждение через Telegram</a>.
   </div>
 </section>
+<script>
+  (function () {
+    const fallbackAlert = document.getElementById("invite-fallback-alert");
+    const widgetSlot = document.getElementById("telegram-widget-slot");
+    const isStaffInvite = {{ "true" if is_staff_invite else "false" }};
+    const httpsReady = {{ "true" if telegram_https_ready else "false" }};
+    if (!isStaffInvite || !fallbackAlert) return;
+
+    async function copyText(text, button) {
+      try {
+        await navigator.clipboard.writeText(text);
+        if (button) button.textContent = "Скопировано";
+      } catch (_error) {
+        if (button) button.textContent = "Не удалось";
+      }
+    }
+
+    document.querySelectorAll("[data-copy-text]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        copyText(button.getAttribute("data-copy-text") || "", button);
+      });
+    });
+
+    function showFallback(message) {
+      if (message) {
+        fallbackAlert.innerHTML = "<strong>" + message + "</strong><div class=\"muted\">Откройте Telegram, скопируйте ссылку или запросите новое приглашение.</div>";
+      }
+      fallbackAlert.hidden = false;
+    }
+
+    if (!httpsReady) {
+      showFallback("Widget не сможет загрузиться без HTTPS.");
+      return;
+    }
+
+    window.setTimeout(function () {
+      const widgetFrame = widgetSlot ? widgetSlot.querySelector("iframe") : null;
+      if (!widgetFrame) {
+        showFallback("Widget не загрузился или был заблокирован в браузере.");
+      }
+    }, 1600);
+  })();
+</script>
+<style>
+  .auth-login-shell {
+    max-width: 460px;
+    margin: 60px auto;
+    padding: 32px;
+    text-align: center;
+  }
+  .auth-login-alert {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    font-weight: 600;
+    line-height: 1.45;
+    text-align: left;
+  }
+  .auth-login-alert--error { background: rgba(191,23,54,0.08); color: var(--red-600); }
+  .auth-login-alert--info { background: rgba(20,85,216,0.08); color: var(--blue-700); }
+  .auth-login-alert--fallback {
+    margin-top: 14px;
+    background: rgba(24,46,120,0.06);
+    color: var(--ink);
+    border: 1px solid rgba(24,46,120,0.12);
+  }
+  .auth-login-mark { margin: 0 auto 20px; width: 64px; height: 64px; font-size: 1.1rem; }
+  .auth-login-title { margin: 0 0 24px; font-size: 1.6rem; }
+  .auth-login-stack { display: flex; flex-direction: column; gap: 20px; text-align: left; }
+  .auth-login-section--telegram { text-align: center; }
+  .auth-login-copy, .auth-login-hint, .auth-login-footer { line-height: 1.6; font-size: 0.95rem; }
+  .auth-login-copy { margin-bottom: 12px; }
+  .auth-login-hint { margin-top: 14px; }
+  .auth-login-fallback-head { display: grid; gap: 4px; }
+  .auth-login-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .auth-login-divider { display: flex; align-items: center; gap: 12px; }
+  .auth-login-divider-line { height: 1px; background: rgba(24,46,120,0.12); flex: 1; }
+  .auth-login-divider-label { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.12em; }
+  .auth-login-password-form { display: flex; flex-direction: column; gap: 14px; text-align: left; }
+  .auth-login-field { display: flex; flex-direction: column; gap: 8px; }
+  .auth-login-field span { font-weight: 600; }
+  .auth-login-field input {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1px solid rgba(24,46,120,0.16);
+    border-radius: 16px;
+    background: #fff;
+    font: inherit;
+  }
+  .auth-login-submit { width: 100%; justify-content: center; }
+  .auth-login-footer { margin-top: 20px; }
+  .auth-login-footer--secondary { margin-top: 10px; }
+  @media (max-width: 640px) {
+    .auth-login-shell { margin: 20px auto; padding: 22px; }
+    .auth-login-actions { flex-direction: column; }
+    .auth-login-actions .action { justify-content: center; width: 100%; }
+  }
+</style>
 {% endblock %}

@@ -1,7 +1,7 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+<div class="author-strategy-topbar">
   <a class="action ghost" href="/author/strategies">Стратегии</a>
   <a class="action ghost" href="/author/dashboard">Сводка</a>
   <a class="action ghost" href="/author/recommendations">Рекомендации</a>
@@ -11,66 +11,214 @@
 
 {% block content %}
 {% set is_editable = (not strategy) or strategy.status.value == "draft" %}
-<section class="surface" style="padding:28px;">
+<section class="surface author-compact-head">
   <div class="eyebrow">редактор стратегии</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.96;letter-spacing:-0.05em;">
-    {% if strategy %}Редактирование стратегии{% else %}Новая стратегия{% endif %}
-  </h1>
+  <div class="author-compact-head-row">
+    <div class="author-compact-head-copy">
+      <h1>{% if strategy %}Редактирование стратегии{% else %}Новая стратегия{% endif %}</h1>
+      <p class="muted">Короткая форма без лишнего intro: основные параметры и действия собраны в одном экране.</p>
+    </div>
+    <div class="author-compact-head-actions">
+      {% if strategy %}
+      <span class="pill">{{ strategy.status.value }}</span>
+      {% endif %}
+      {% if not is_editable %}
+      <span class="pill">только чтение</span>
+      {% endif %}
+    </div>
+  </div>
   {% if strategy and not is_editable %}
-  <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.6;">Эта стратегия доступна только для чтения. Редактирование разрешено только для `draft`.</p>
+  <p class="muted author-compact-note">Редактирование доступно только для `draft`.</p>
   {% endif %}
 </section>
 
-<form class="surface" method="post" action="{% if strategy %}/author/strategies/{{ strategy.id }}{% else %}/author/strategies{% endif %}" style="padding:24px;display:grid;gap:18px;margin-top:18px;">
+<form class="surface author-compact-form" method="post" action="{% if strategy %}/author/strategies/{{ strategy.id }}{% else %}/author/strategies{% endif %}">
   {% if error %}
-  <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
+  <div class="author-compact-error">
     {{ error }}
   </div>
   {% endif %}
 
-  <label style="display:grid;gap:8px;">
-    <strong>Название</strong>
-    <input type="text" name="title" value="{{ form_values.title }}" required {% if not is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-  </label>
+  <section class="surface author-compact-section">
+    <div class="author-compact-section-head">
+      <div>
+        <h2>Основное</h2>
+        <p class="muted">Те же компактные поля и ритмы, что и в редакторе рекомендаций.</p>
+      </div>
+    </div>
 
-  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-    <label style="display:grid;gap:8px;">
-      <strong>Слаг</strong>
-      <input type="text" name="slug" value="{{ form_values.slug }}" {% if not is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
+    <label class="author-compact-field">
+      <span>Название</span>
+      <input type="text" name="title" value="{{ form_values.title }}" required {% if not is_editable %}disabled{% endif %} />
     </label>
-    <label style="display:grid;gap:8px;">
-      <strong>Минимальный капитал, руб</strong>
-      <input type="number" min="0" name="min_capital_rub" value="{{ form_values.min_capital_rub }}" {% if not is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-    </label>
-  </div>
 
-  <label style="display:grid;gap:8px;">
-    <strong>Короткое описание</strong>
-    <textarea name="short_description" rows="5" {% if not is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.short_description }}</textarea>
-  </label>
+    <div class="author-compact-grid author-compact-grid--two">
+      <label class="author-compact-field">
+        <span>Слаг</span>
+        <input type="text" name="slug" value="{{ form_values.slug }}" {% if not is_editable %}disabled{% endif %} />
+      </label>
+      <label class="author-compact-field">
+        <span>Минимальный капитал, руб</span>
+        <input type="number" min="0" name="min_capital_rub" value="{{ form_values.min_capital_rub }}" {% if not is_editable %}disabled{% endif %} />
+      </label>
+    </div>
 
-  <label style="display:grid;gap:8px;max-width:280px;">
-    <strong>Риск</strong>
-    <select name="risk_level" {% if not is_editable %}disabled{% endif %} style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-      {% for item in risk_levels %}
-      <option value="{{ item }}" {% if form_values.risk_level == item %}selected{% endif %}>{{ item }}</option>
-      {% endfor %}
-    </select>
-  </label>
+    <div class="author-compact-grid author-compact-grid--two">
+      <label class="author-compact-field">
+        <span>Короткое описание</span>
+        <textarea name="short_description" rows="4" {% if not is_editable %}disabled{% endif %}>{{ form_values.short_description }}</textarea>
+      </label>
+      <label class="author-compact-field author-compact-field--narrow">
+        <span>Риск</span>
+        <select name="risk_level" {% if not is_editable %}disabled{% endif %}>
+          {% for item in risk_levels %}
+          <option value="{{ item }}" {% if form_values.risk_level == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+  </section>
 
-  <div style="display:flex;gap:12px;flex-wrap:wrap;">
-    {% if is_editable %}
-    <button class="action" type="submit">{% if strategy %}Сохранить{% else %}Создать{% endif %}</button>
-    {% else %}
-    <span class="pill">только чтение</span>
-    {% endif %}
-    <a class="action ghost" href="/author/strategies">Вернуться к списку</a>
-  </div>
+  <section class="surface author-compact-section">
+    <div class="author-compact-section-head">
+      <div>
+        <h2>Действия</h2>
+        <p class="muted">Сохранение и возврат к реестру без отдельного hero-screen.</p>
+      </div>
+    </div>
+
+    <div class="author-compact-actions">
+      {% if is_editable %}
+      <button class="action" type="submit">{% if strategy %}Сохранить{% else %}Создать{% endif %}</button>
+      {% else %}
+      <span class="pill">только чтение</span>
+      {% endif %}
+      <a class="action ghost" href="/author/strategies">Вернуться к списку</a>
+    </div>
+  </section>
 </form>
 
 <style>
+  .author-strategy-topbar,
+  .author-compact-head-actions,
+  .author-compact-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .author-compact-head {
+    margin-bottom: 14px;
+    padding: 16px 18px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .author-compact-head-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .author-compact-head-copy {
+    display: grid;
+    gap: 6px;
+  }
+
+  .author-compact-head-copy h1,
+  .author-compact-section-head h2 {
+    margin: 0;
+    font-size: 1.45rem;
+    line-height: 1.08;
+  }
+
+  .author-compact-head-copy p,
+  .author-compact-note,
+  .author-compact-section-head p {
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .author-compact-form {
+    padding: 18px;
+    display: grid;
+    gap: 14px;
+  }
+
+  .author-compact-error {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(191, 23, 54, 0.08);
+    color: var(--red-600);
+    border: 1px solid rgba(191, 23, 54, 0.18);
+  }
+
+  .author-compact-section {
+    padding: 14px;
+    display: grid;
+    gap: 12px;
+    background: var(--staff-surface-soft);
+    box-shadow: none;
+  }
+
+  .author-compact-section-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .author-compact-grid {
+    display: grid;
+    gap: 12px;
+  }
+
+  .author-compact-grid--two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .author-compact-field {
+    min-width: 0;
+    display: grid;
+    gap: 6px;
+  }
+
+  .author-compact-field span {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--staff-accent);
+  }
+
+  .author-compact-field input,
+  .author-compact-field select,
+  .author-compact-field textarea {
+    width: 100%;
+    min-width: 0;
+    min-height: 34px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--staff-line-strong);
+    background: #fff;
+    font: inherit;
+  }
+
+  .author-compact-field textarea {
+    min-height: 88px;
+    resize: vertical;
+  }
+
+  .author-compact-field--narrow {
+    max-width: 240px;
+  }
+
   @media (max-width: 720px) {
-    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+    .author-compact-grid--two {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 {% endblock %}

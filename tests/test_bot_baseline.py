@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from aiogram.exceptions import TelegramNetworkError, TelegramUnauthorizedError
+from aiogram.methods import GetMe
 import pytest
 
 from pitchcopytrade.core.config import reset_settings_cache
 from pitchcopytrade.bot.dispatcher import build_dispatcher
 from pitchcopytrade.bot.handlers.start import HELP_HANDLER, START_HANDLER, _main_keyboard, handle_help, handle_start
-from pitchcopytrade.bot.main import create_bot
+from pitchcopytrade.bot.main import (
+    _is_retryable_bot_transport_error,
+    create_bot,
+    run_bot_smoke_check,
+    run_polling_with_backoff,
+)
 
 
 @pytest.mark.asyncio
@@ -56,3 +64,49 @@ def test_build_dispatcher_registers_start_handler() -> None:
 def test_create_bot_uses_provided_token() -> None:
     bot = create_bot("123456:sample-token")
     assert bot.token == "123456:sample-token"
+
+
+@pytest.mark.asyncio
+async def test_run_polling_with_backoff_retries_transport_failures() -> None:
+    dp = AsyncMock()
+    bot = AsyncMock()
+    bot.get_me = AsyncMock(
+        side_effect=[
+            TelegramNetworkError(GetMe(), "temporary dns failure"),
+            SimpleNamespace(id=1, username="pct_test_bot"),
+        ]
+    )
+    sleep_calls: list[int] = []
+
+    async def fake_sleep(seconds: int) -> None:
+        sleep_calls.append(seconds)
+
+    await run_polling_with_backoff(dp, bot, sleep_func=fake_sleep)
+
+    assert sleep_calls == [2]
+    dp.start_polling.assert_awaited_once_with(bot, close_bot_session=False)
+
+
+@pytest.mark.asyncio
+async def test_run_polling_with_backoff_raises_fatal_errors_without_retry() -> None:
+    dp = AsyncMock()
+    bot = AsyncMock()
+    bot.get_me = AsyncMock(side_effect=TelegramUnauthorizedError(GetMe(), "invalid token"))
+    sleep = AsyncMock()
+
+    with pytest.raises(TelegramUnauthorizedError):
+        await run_polling_with_backoff(dp, bot, sleep_func=sleep)
+
+    sleep.assert_not_awaited()
+    dp.start_polling.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_bot_smoke_check_calls_get_me() -> None:
+    bot = AsyncMock()
+    bot.get_me = AsyncMock(return_value=SimpleNamespace(id=1, username="pct_test_bot"))
+
+    me = await run_bot_smoke_check(bot)
+
+    assert me.username == "pct_test_bot"
+    bot.get_me.assert_awaited_once()
