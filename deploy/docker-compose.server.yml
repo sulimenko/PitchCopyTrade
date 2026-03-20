@@ -20,6 +20,7 @@ services:
   bot:
     build:
       context: ..
+      dockerfile: deploy/Dockerfile.bot
     container_name: pct-bot
     restart: unless-stopped
     env_file:
