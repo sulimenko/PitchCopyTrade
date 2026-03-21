@@ -4,7 +4,7 @@
 
 ## Общий вывод
 
-Кодовая база MVP стабильна. Алембик удалён, схема переведена на `deploy/schema.sql`. UX-блоки A–Q закрыты. Обнаружены два критических инфраструктурных дефекта, блокирующих первый live run на сервере.
+Кодовая база MVP стабильна. Алембик удалён, схема переведена на `deploy/schema.sql`. UX-блоки A–Q закрыты. Система поднята на новом сервере (`cloud-001`), все три сервиса (api, bot, worker) запускаются штатно. Обнаружены инфраструктурные и UX дефекты, требующие устранения.
 
 ---
 
@@ -91,12 +91,29 @@ await arq_pool.enqueue_job("send_recommendation_notifications", recommendation_i
 
 ---
 
+## Новые findings (2026-03-21)
+
+### S2 — Mixed Content: статика генерирует HTTP-ссылки на HTTPS-сайте
+
+`request.url_for('static', ...)` в Starlette использует scheme входящего запроса. За nginx-proxy контейнер видит HTTP → генерирует `http://`-ссылки → браузер блокирует. Задача S2 в `task.md`.
+
+### U6 — Internal Server Error при «Создать» в рекомендациях
+
+`POST /author/recommendations` с `inline_mode=1` возвращает 500. Вероятные причины: отсутствие `kind` в inline форме, пустой `strategy_id`, FK constraint на `instrument_id`. Задача U6 в `task.md`.
+
+### U5 — Popup тикера обрезается внутри таблицы
+
+`id="inline-ticker-popup"` с `position: absolute` внутри контейнера с `overflow: hidden`. Задача U5.
+
+---
+
 ## Gate на следующий merge
 
-1. `pg_hba.conf` пофикшен, seeders запускаются без ошибок при `docker compose up`
-2. Notifications при немедленном publish доставляются (ARQ worker запущен ИЛИ переработан на единый путь)
-3. `aiohttp` заменён на `httpx` в `worker/jobs/notifications.py`
-4. Блоки F0–F3 закрыты
+1. Mixed Content устранён — статика отдаётся по HTTPS (S2)
+2. `POST /author/recommendations` inline не возвращает 500 (U6)
+3. Popup тикера виден целиком (U5)
+4. Notifications при немедленном publish доставляются (R2)
+5. Блоки F0–F3 закрыты
 
 ---
 

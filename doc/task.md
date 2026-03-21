@@ -11,6 +11,115 @@
 
 ---
 
+## Блок S — Инфраструктура: гибкое подключение к DB/Redis и HTTPS статика
+
+---
+
+### S1 — Параметризовать `docker-compose.server.yml` для двух моделей развёртки
+
+**Контекст:**
+Текущий `deploy/docker-compose.server.yml` захардкожен под конкретный сервер с внешней сетью `ptfin-backend`. До этого была захардкожена подсеть `172.20.0.0/24`. Нужна одна конфигурация, поддерживающая оба варианта без правки yml-файла.
+
+**Два варианта развёртки:**
+
+| | Вариант А — standalone | Вариант Б — shared backend |
+|---|---|---|
+| Сеть | Собственная Docker-сеть (создаётся compose) | Внешняя Docker-сеть (уже существует) |
+| Postgres | Локально на хосте | В сети как отдельный контейнер |
+| Redis | Локально на хосте | В сети как отдельный контейнер |
+| Порт API | Пробросить `127.0.0.1:8110:8000` | Не пробрасывать (nginx в той же сети) |
+| `extra_hosts` | `host.docker.internal:host-gateway` | Не нужен |
+| DNS aliases | Нет | `pct-api.ptfin.local`, `pct-bot.ptfin.local`, `pct-worker.ptfin.local` |
+
+**Текущий файл (база для задачи):**
+```yaml
+# Сеть: hardcoded ptfin-backend external
+# Aliases: pct-api/bot/worker.ptfin.local
+# Порты: закомментированы
+# extra_hosts: отсутствуют
+```
+
+**Что должен сделать worker:**
+
+- [ ] **S1** Переработать `docker-compose.server.yml` с поддержкой обоих вариантов через `.env.server`
+
+  Переменные в `.env.server`:
+  ```dotenv
+  # Сеть
+  DOCKER_NETWORK_EXTERNAL=true           # true = внешняя, false = создать новую
+  DOCKER_NETWORK_NAME=ptfin-backend      # имя сети
+
+  # Порт API (пусто = не пробрасывать)
+  API_PORT_BINDING=                      # пусто для shared, "127.0.0.1:8110:8000" для standalone
+
+  # DNS aliases (только для shared backend, пусто = не добавлять)
+  API_ALIAS=pct-api.ptfin.local
+  BOT_ALIAS=pct-bot.ptfin.local
+  WORKER_ALIAS=pct-worker.ptfin.local
+  ```
+
+  Compose должен использовать:
+  ```yaml
+  ports:
+    - "${API_PORT_BINDING}"              # пусто = раздел игнорируется compose
+  networks:
+    ${DOCKER_NETWORK_NAME}:
+      aliases:
+        - "${API_ALIAS:-}"
+  ```
+
+  Ограничение: Docker Compose не поддерживает условные секции (`if`), поэтому DNS aliases при пустом значении нужно либо оставить пустую строку (aliases: [""]) — протестировать, либо держать отдельные compose-overrides файлы.
+
+  **Предпочтительное решение:** два файла:
+  - `deploy/docker-compose.server.yml` — базовый, для standalone (Вариант А)
+  - `deploy/docker-compose.server.shared.yml` — override для shared backend (Вариант Б), merge через `docker compose -f base.yml -f shared.yml up`
+
+  Оба варианта с примерами документировать в `env.server.example` и `README.md`.
+
+  Acceptance:
+  - Standalone: `docker compose -f deploy/docker-compose.server.yml up` работает с postgres на хосте
+  - Shared: `docker compose -f deploy/docker-compose.server.yml -f deploy/docker-compose.server.shared.yml up` подключается к внешней сети
+
+---
+
+### S2 — Исправить Mixed Content: статика должна отдаваться по HTTPS
+
+**Симптом:**
+```
+Mixed Content: The page at 'https://pct.test.ptfin.ru/admin/subscriptions' was loaded over HTTPS,
+but requested an insecure stylesheet 'http://pct.test.ptfin.ru/static/vendor/ag-grid-community/ag-grid.min.css'
+```
+
+**Причина:**
+`request.url_for('static', path='...')` в Starlette/FastAPI строит URL на основе scheme входящего HTTP-запроса. Nginx терминирует TLS и проксирует в контейнер по HTTP. Контейнер видит `http://`, генерирует `http://`-ссылки на static — браузер блокирует как mixed content.
+
+**Что должен сделать worker:**
+
+- [ ] **S2** Настроить FastAPI для доверия proxy-заголовкам (`X-Forwarded-Proto`)
+
+  **В `api/main.py`** добавить middleware:
+  ```python
+  from starlette.middleware.trustedhost import TrustedHostMiddleware
+  # ИЛИ (предпочтительно для scheme propagation):
+  app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+  ```
+  Подходящий класс: `uvicorn.middleware.proxy_headers.ProxyHeadersMiddleware`
+
+  **В `deploy/docker-compose.server.yml`** команда uvicorn должна включать:
+  ```
+  --proxy-headers --forwarded-allow-ips='*'
+  ```
+
+  **В nginx** (на хосте, не в compose) обязательно:
+  ```nginx
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  ```
+
+  **Проверка:** открыть `https://pct.test.ptfin.ru/admin/subscriptions` — консоль не должна содержать Mixed Content ошибок. Ссылки на `/static/...` должны начинаться с `https://`.
+
+---
+
 ## Блок R — Инфраструктура и notification pipeline (найдено в review 2026-03-20)
 
 **Цель:** устранить два blocker'а, блокирующих первый live run на сервере.
@@ -39,6 +148,302 @@
 - `docker compose up` стартует без ERROR в логах api
 - seeders выполняются (инструменты и admin-user создаются)
 - немедленный publish → notification доставлена подписчику
+
+---
+
+---
+
+## Блок T — Staff shell: навигация и layout
+
+### Контекст по текущей структуре
+
+`staff_base.html` строит двухколонный layout:
+```
+[.staff-rail 238px] [.staff-main flex/grow]
+```
+
+`.staff-main` содержит сверху вниз:
+- `.staff-topline` — строка с breadcrumb, кнопкой «Назад», быстрыми actions и role-switch
+- `.staff-card` — один или несколько информационных блоков (счётчики, фильтры, summary)
+- `.staff-grid-shell` — обёртка AG Grid, занимает оставшееся место
+
+Сейчас все три слоя просто стекаются вертикально и страница растёт вниз вместе с grid. Нужно зафиксировать shell в viewport.
+
+---
+
+### T1 — Убрать «Авторы» из левой навигации
+
+**Проблема:** В `staff_base.html` левый рейл содержит отдельную nav-группу «Авторы» (`/admin/authors`). Это избыточно — авторы создаются и управляются через «Команда» (`/admin/staff`), выделять их в отдельный раздел нет смысла.
+
+**Что сделать:**
+- [ ] **T1** Удалить пункт «Авторы» из левого nav в `staff_base.html`
+  - Ссылка на `/admin/authors` убирается из `<nav>` в `.staff-rail`
+  - Доступ к авторам остаётся через `/admin/staff` (существующая вкладка «Команда»), страница авторов доступна по прямому URL
+  - `is-active` подсветка для `/admin/authors` удаляется из nav, но сами роуты не трогаются
+
+---
+
+### T2 — Layout: staff shell фиксирован по высоте viewport
+
+**Проблема:** Страница вертикально скроллируется целиком. AG Grid не заполняет оставшуюся высоту экрана. Это неудобно — оператор должен видеть весь реестр без прокрутки страницы, только внутри grid.
+
+**Целевое поведение:**
+- Страница НЕ скроллируется. Весь shell помещается в `100vh`.
+- `.staff-topline` — фиксированная высота (естественный размер, `flex-shrink: 0`)
+- `.staff-card` блоки — фиксированная высота (естественный размер, `flex-shrink: 0`)
+- Последний элемент (`.staff-grid-shell` или любой контейнер AG Grid) — занимает всё оставшееся пространство (`flex: 1; min-height: 0`)
+- AG Grid сам скроллируется внутри своего контейнера
+
+**Текущий CSS (в `staff_base.html` или `staff.css`):**
+```css
+.staff-main { display: grid; gap: 10px; padding: 12px; }
+/* нет height: 100vh, нет flex с fill */
+```
+
+**Целевой CSS:**
+```css
+.staff-shell {
+  height: 100vh;
+  overflow: hidden;          /* запрет scroll на уровне shell */
+}
+.staff-main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;              /* занять всё, что дала .staff-shell */
+  padding: 12px;
+  gap: 10px;
+  overflow: hidden;
+}
+.staff-topline {
+  flex-shrink: 0;            /* не сжимается */
+}
+.staff-card {
+  flex-shrink: 0;            /* не сжимается */
+}
+.staff-grid-shell {          /* последний контейнер */
+  flex: 1;
+  min-height: 0;             /* обязательно для flex overflow */
+  overflow: hidden;
+}
+```
+
+AG Grid требует явной высоты на контейнере. Если `height: 100%` не работает из-за flex, дополнительно:
+```css
+.staff-grid-shell .ag-root-wrapper { height: 100%; }
+```
+
+- [ ] **T2** Реализовать фиксированный viewport layout для staff shell
+  - Правки только в CSS (не трогать Python/роуты)
+  - Работает на всех staff экранах: `/admin/*`, `/author/*`, `/moderation/*`
+  - На мобилах (< 768px) поведение можно оставить как сейчас (вертикальный scroll)
+  - Проверить на экранах без grid (формы стратегий, detail views) — форма должна скроллироваться внутри `.staff-main`, а не распирать shell
+
+### Acceptance для Блока T
+- «Авторы» отсутствует в левом nav; `/admin/authors` продолжает работать по URL
+- На staff-экранах с grid страница не скроллируется целиком; grid занимает оставшуюся высоту
+- На экранах с формами (strategy_form, recommendation_form) scroll работает корректно
+
+---
+
+## Блок U — Author editor: стратегии и рекомендации
+
+### U1 — Redirect после создания стратегии → на список
+
+**Проблема:** После успешного `POST /author/strategies` (создание новой стратегии) происходит redirect на `/author/strategies/{id}/edit`. Пользователь сразу попадает в editor только что созданной стратегии. Нужно вернуть его на список.
+
+**Текущий код** (`api/routes/author.py`):
+```python
+# POST /author/strategies (create)
+return RedirectResponse(url=f"/author/strategies/{strategy.id}/edit", status_code=303)
+```
+
+**Нужно:**
+```python
+return RedirectResponse(url="/author/strategies", status_code=303)
+```
+
+**Важно:** Edit submit (`POST /author/strategies/{id}`) оставить как есть — после сохранения правки оставаться в editor.
+
+- [ ] **U1** Изменить redirect после создания стратегии: `/author/strategies/{id}/edit` → `/author/strategies`
+  - Только для create (новая стратегия); edit save redirect не менять
+
+---
+
+### U2 — Рекомендации: визуальные и функциональные правки
+
+**Контекст по текущей структуре** (`author/recommendations_list.html`):
+
+Inline shortcut — строка в таблице `id="inline-recommendation-shortcut"`. Содержит:
+- `<td>` → `<select>` стратегия
+- `<td>` → `<input name="title" placeholder="Идея">` и `<input name="instrument_query" placeholder="Бумага">` стоят **вертикально** внутри одного `<td>` (block/стек)
+- `<td>` → `<select>` направление (BUY/SELL)
+- ... цена, TP, стоп, кнопки
+
+Подсказка `"Создать добавит строку в реестр, а Детально откроет полный редактор..."` — отдельный элемент под строкой или в ней.
+
+Popup тикера `id="inline-ticker-popup"` — `position: absolute` внутри `<td>`, но таблица или shell имеет `overflow: hidden`. Popup обрезается.
+
+- [ ] **U2** Компактная таблица рекомендаций
+  - Уменьшить толщину borders в ag-grid до `1px` или сделать `hairline`
+  - Row height снизить до 28–30px если ещё не сделано
+  - Правки в `staff/ag-grid-theme.css`
+
+- [ ] **U3** «Идея» и «Бумага» в одну строку в inline shortcut
+  - В `<td>` где сейчас два input-а вертикально (Идея + Бумага), сделать `display: flex; flex-direction: row; gap: 6px`
+  - Оба инпута в одной строке, ширина делится пополам или `Идея` уже
+  - picker-state div (`id="inline-picker-state"`) выносится под инпуты как hint строка
+
+- [ ] **U4** Убрать/скрыть hint «Создать добавит строку...»
+  - Текст убирается из постоянной видимости
+  - Вариант А: tooltip на hover/focus кнопки «Создать» (HTML `title` атрибут достаточно)
+  - Вариант Б: `display: none` или очень мелкий `muted` текст под shortcut-строкой, видный только при фокусе
+  - Не удалять смысл — просто не занимать место на экране
+
+- [ ] **U5** Исправить popup тикера: обрезается внутри контейнера
+  - `id="inline-ticker-popup"` имеет `position: absolute` и обрезается parent с `overflow: hidden`
+  - Исправление: перевести popup в `position: fixed` с пересчётом координат через JS (getBoundingClientRect), или переместить popup в `<body>` через портал
+  - Popup должен открываться поверх grid и не клипаться ни таблицей, ни shell
+
+  **Текущий JS** (в конце `recommendations_list.html`): popup показывается через `hidden` toggle, позиционирование не пересчитывается. Нужно добавить:
+  ```js
+  // При показе popup:
+  const rect = triggerInput.getBoundingClientRect();
+  popup.style.position = 'fixed';
+  popup.style.top = (rect.bottom + 2) + 'px';
+  popup.style.left = rect.left + 'px';
+  popup.style.width = rect.width + 'px';
+  ```
+
+- [ ] **U6** Исправить Internal Server Error при «Создать» (inline рекомендация)
+  - `POST /author/recommendations` с `inline_mode=1` возвращает 500
+  - **Что проверить:**
+    1. `api/routes/author.py` — функция `author_recommendation_create_submit` — какое поле вызывает исключение
+    2. Смотреть traceback в `docker compose logs api` при нажатии «Создать»
+    3. Вероятные причины: `strategy_id` пустой UUID не конвертируется; `leg_1_instrument_id` пустой вызывает FK constraint; `recommendation_kind` не передаётся в inline form (нет поля) и сервис падает на `None`
+    4. Проверить: в `id="inline-recommendation-form"` есть ли `<input name="kind" value="new_idea">`
+  - Добавить `<input type="hidden" name="kind" value="new_idea">` в inline form если отсутствует
+  - Добавить явную валидацию в route: если `strategy_id` пустой — вернуть 422 с понятной ошибкой, а не 500
+
+---
+
+### U7 — «Сохранить в черновик» → Internal Server Error (root cause установлен)
+
+**Traceback из логов:**
+```
+sqlalchemy.exc.DBAPIError: invalid input for query argument $1: 'new'
+(invalid UUID 'new': length must be between 32..36 characters, got 3)
+[SQL: SELECT recommendations... WHERE recommendations.id = $1::UUID]
+[parameters: ('new', 'b463ac5c-...')]
+```
+
+**HTTP запрос из логов:**
+```
+GET /author/recommendations/new?embedded=1&next=%2Fauthor%2Frecommendations&strategy_id=e7137e04-...&title=...
+```
+
+**Анализ root cause:**
+
+В `recommendation_form.html` форма не имеет явного атрибута `action`:
+```html
+<form class="surface author-editor-form" method="post" enctype="multipart/form-data">
+```
+
+По стандарту HTML, форма без `action` отправляется на **текущий URL**. Текущий URL при создании новой рекомендации в iframe — `/author/recommendations/new?embedded=1&...`.
+
+Значит `POST /author/recommendations/new` попадает в маршрут `POST /author/recommendations/{recommendation_id}` с `recommendation_id='new'`. Этот маршрут пытается найти рекомендацию в БД с id='new' → `invalid UUID 'new'` → 500.
+
+**Что должен сделать worker:**
+
+- [ ] **U7** Добавить явный `action` в форму создания новой рекомендации
+
+  В `recommendation_form.html`, строка с `<form ...>`:
+  ```html
+  <form
+    class="surface author-editor-form"
+    method="post"
+    enctype="multipart/form-data"
+    action="{% if recommendation %}/author/recommendations/{{ recommendation.id }}{% else %}/author/recommendations{% endif %}"
+  >
+  ```
+
+  Это гарантирует:
+  - Новая рекомендация (`recommendation=None`) → POST на `/author/recommendations`
+  - Редактирование (`recommendation.id` = UUID) → POST на `/author/recommendations/{uuid}`
+  - Форма больше не делает self-submit на URL с `new` в пути
+
+  **Проверка:** Нажать «Сохранить в черновик» в embedded режиме (через «Детально») → рекомендация создаётся без 500.
+
+---
+
+### U8 — Модальное окно «Детально»: полная страница вместо core-блока
+
+**Проблема:**
+При нажатии «Детально» открывается `<dialog>` с `<iframe src="/author/recommendations/new?embedded=1&...">`. Параметр `embedded=1` уже учитывается в шаблоне, но убирает только узкие элементы (`.topbar { display: none }`). Полный `staff_base.html` layout — rail, topline, staff-shell — остаётся. Пользователь видит повторение всего интерфейса внутри модалки.
+
+**Текущий `embedded` режим (recommendation_form.html):**
+```html
+{% if embedded %}
+<style>
+  .topbar { display: none; }
+  .page-shell { width: min(1180px, calc(100% - 12px)); padding-top: 8px; }
+</style>
+{% endif %}
+```
+
+`staff_base.html` всё ещё является parent-шаблоном → rail + shell + topline рендерятся.
+
+**Целевое поведение:**
+Когда `embedded=True`, форма рендерится в **минималистичном** HTML-шелле: только `<html><head>...</head><body>{{ form }}</body></html>`, без staff-rail, без topline, без breadcrumb. Внутри остаётся только блок `.surface.author-editor-section` с полями формы и кнопками.
+
+**Что должен сделать worker:**
+
+- [ ] **U8** Создать минимальный base-шаблон для embedded-режима
+
+  1. Создать `src/pitchcopytrade/web/templates/embedded_base.html`:
+     ```html
+     <!doctype html>
+     <html lang="ru">
+     <head>
+       <meta charset="utf-8">
+       <meta name="viewport" content="width=device-width, initial-scale=1">
+       {% block head %}{% endblock %}
+     </head>
+     <body class="embedded-shell">
+       {% block content %}{% endblock %}
+     </body>
+     </html>
+     ```
+
+  2. В `recommendation_form.html` изменить выбор parent-шаблона:
+     ```jinja2
+     {% if embedded %}
+       {% extends "embedded_base.html" %}
+     {% else %}
+       {% extends "staff_base.html" %}
+     {% endif %}
+     ```
+
+  3. Этот же принцип применить ко **всем формам, которые открываются в modal**:
+     - `recommendation_form.html` — уже описано выше
+     - Любой другой шаблон с `?embedded=1` паттерном (проверить: grep по `embedded` в `templates/`)
+
+  4. В `embedded_base.html` подключить только необходимые CSS (формы, инпуты) без staff-rail стилей. AG Grid и staff-shell CSS не нужны.
+
+  **Acceptance:**
+  - Modal открывается → виден только блок формы с полями и кнопками
+  - Нет staff rail, нет topline, нет breadcrumb
+  - Форма корректно сабмитится (U7 уже исправляет action)
+  - После закрытия modal список рекомендаций обновляется (HTMX или JS reload)
+
+---
+
+### Acceptance для Блока U
+- После нажатия «Создать» стратегию → переход на список `/author/strategies`
+- Inline shortcut: «Идея» и «Бумага» в одной строке
+- Hint-текст не занимает место на экране постоянно
+- Popup тикера виден целиком, не обрезается
+- «Сохранить в черновик» не вызывает 500 (U7 + U8)
+- Модальное окно показывает только форму, без staff shell
 
 ---
 
