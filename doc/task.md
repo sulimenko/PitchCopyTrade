@@ -15,20 +15,21 @@
 
 **Цель:** устранить два blocker'а, блокирующих первый live run на сервере.
 
-- [ ] **R1** Добавить правило в `pg_hba.conf` для Docker-подсетей
-  - Добавить строку `host pct pct 172.0.0.0/8 md5` в `/var/lib/pgsql/data/pg_hba.conf`
-  - Перечитать конфиг: `sudo systemctl reload postgresql`
-  - Проверить: seeders запускаются без ошибок при `docker compose up`
+- [x] **R1** Поддержка двух режимов Docker-сети в `docker-compose.server.yml`
+  - `DOCKER_NETWORK_EXTERNAL=false` — создать новую сеть (standalone-сервер, postgres локально)
+  - `DOCKER_NETWORK_EXTERNAL=true` + `DOCKER_NETWORK_NAME=имя` — подключиться к существующей (shared backend с Redis/postgres в сети)
+  - Убрать хардкод подсети `172.20.0.0/24` из compose
+  - `POSTGRES_HOST` / `POSTGRES_PORT` вынесены в `.env.server` для `migrate.sh`
+  - Оба варианта задокументированы в `env.server.example`
+
+- [x] **R3** Заменить `aiohttp` на `httpx` в `worker/jobs/notifications.py`
+  - `import aiohttp` → `httpx.AsyncClient`; `aiohttp` не был объявлен в зависимостях
 
 - [ ] **R2** Запустить ARQ worker или консолидировать notification путь
   - Выбрать один из двух вариантов:
     - **A:** Добавить `arq`-сервис в `deploy/docker-compose.server.yml` (`python -m arq pitchcopytrade.worker.arq_worker.WorkerSettings`)
-    - **B:** Убрать ARQ-путь для notifications; routing при immediate publish направить через polling worker
+    - **B:** Убрать ARQ-путь для notifications; при немедленном publish вызывать `deliver_recommendation_notifications` напрямую без Redis
   - Проверить: после немедленного publish рекомендации Telegram-уведомление доставляется
-
-- [ ] **R3** Заменить `aiohttp` на `httpx` в `worker/jobs/notifications.py`
-  - Строка 93: `import aiohttp` → переписать на `httpx.AsyncClient`
-  - `aiohttp` отсутствует в `pyproject.toml`; `httpx` уже объявлен
 
 - [ ] **R4** Устранить дублирование notification кодпатей
   - `services/notifications.py` и `worker/jobs/notifications.py` делают одно и то же
@@ -38,7 +39,6 @@
 - `docker compose up` стартует без ERROR в логах api
 - seeders выполняются (инструменты и admin-user создаются)
 - немедленный publish → notification доставлена подписчику
-- `aiohttp` больше не используется без явного объявления в зависимостях
 
 ---
 

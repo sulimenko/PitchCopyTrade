@@ -7,9 +7,9 @@
 #   bash deploy/migrate.sh --reset  # полный сброс: БД + runtime JSON/blob → пересоздать
 #
 # Требования:
-#   - PostgreSQL установлен локально
+#   - PostgreSQL установлен локально или доступен по 127.0.0.1
 #   - Пользователь и база созданы (см. README.md Шаг 2)
-#   - .env.server содержит POSTGRES_USER и POSTGRES_DB
+#   - .env.server содержит POSTGRES_USER, POSTGRES_DB, POSTGRES_PASSWORD
 # =============================================================================
 
 set -euo pipefail
@@ -25,10 +25,12 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-# Читаем POSTGRES_USER и POSTGRES_DB из .env.server
+# Читаем POSTGRES_USER, POSTGRES_DB, POSTGRES_PASSWORD из .env.server
 PG_USER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
 PG_DB=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
 PG_PASS=$(grep -E '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
+PG_HOST=$(grep -E '^POSTGRES_HOST=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'" || echo "127.0.0.1")
+PG_PORT=$(grep -E '^POSTGRES_PORT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'" || echo "5432")
 
 if [ -z "$PG_USER" ] || [ -z "$PG_DB" ]; then
   echo "Ошибка: POSTGRES_USER и POSTGRES_DB должны быть заполнены в .env.server"
@@ -40,7 +42,7 @@ if [ "${1:-}" = "--reset" ]; then
   echo ""
 
   echo "1. Сбрасываем схему БД ($PG_DB)..."
-  sudo -u postgres psql -d "$PG_DB" << SQL
+  PGPASSWORD="$PG_PASS" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" << SQL
 DROP SCHEMA public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO "$PG_USER";
@@ -57,10 +59,8 @@ SQL
   echo "3. Применяем схему..."
 fi
 
-# sudo -u postgres psql -d "$PG_DB" -f "$SCHEMA_FILE"
-PGPASSWORD="$PG_PASS" psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -f "$SCHEMA_FILE"
+PGPASSWORD="$PG_PASS" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -f "$SCHEMA_FILE"
 
 echo ""
 echo "Готово. Таблицы в базе $PG_DB:"
-# sudo -u postgres psql -d "$PG_DB" -c "\dt" 2>/dev/null | grep -v "^$" || true
-PGPASSWORD="$PG_PASS" psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -c "\dt" 2>/dev/null | grep -v "^$" || true
+PGPASSWORD="$PG_PASS" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -c "\dt" 2>/dev/null | grep -v "^$" || true

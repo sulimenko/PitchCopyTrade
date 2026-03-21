@@ -7,15 +7,15 @@ services:
     env_file:
       - ../.env.server
     command: uvicorn pitchcopytrade.api.main:app --host 0.0.0.0 --port 8000
-    ports:
-      - "127.0.0.1:8110:8000"
+#    ports:
+#      - "127.0.0.1:8110:8000"
     volumes:
       - ../storage:/data/storage:Z
       - ../doc:/doc:ro
-    networks:
-      - pct_net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks: 
+      ptfin-backend:
+        aliases:
+          - pct-api.ptfin.local
 
   bot:
     build:
@@ -28,9 +28,9 @@ services:
     volumes:
       - ../storage:/data/storage:Z
     networks:
-      - pct_net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      ptfin-backend:
+        aliases:
+          - pct-bot.ptfin.local
 
   worker:
     build:
@@ -44,14 +44,11 @@ services:
       - ../storage:/data/storage:Z
       - ../doc:/doc:ro
     networks:
-      - pct_net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      ptfin-backend:
+        aliases:
+          - pct-worker.ptfin.local
 
 networks:
-  pct_net:
-    name: pct_net
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/24
+  ptfin-backend:
+    external: true
+    name: ptfin-backend
