@@ -382,6 +382,20 @@ def test_local_ag_grid_vendor_asset_is_served() -> None:
         assert "ag-Grid" in response.text
 
 
+def test_staff_ag_grid_bootstrap_uses_fixed_layout_on_desktop() -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    with _build_client(session, admin) as client:
+        response = client.get("/static/staff/ag-grid-bootstrap.js")
+
+        assert response.status_code == 200
+        assert 'window.matchMedia("(max-width: 768px)").matches' in response.text
+        assert 'host.style.height = "100%";' in response.text
+        assert 'domLayout: domLayout' in response.text
+
+
 def test_subscription_list_renders(monkeypatch) -> None:
     session = FakeAsyncSession()
     admin = _make_admin_user()
@@ -1073,6 +1087,7 @@ def test_author_registry_renders_active_and_inactive(monkeypatch) -> None:
         assert "Alpha Desk" in response.text
         assert "Beta Desk" in response.text
         assert "отключён" in response.text
+        assert 'class="staff-rail-link is-active" href="/admin/authors"' not in response.text
 
 
 def test_author_registry_filters_inactive(monkeypatch) -> None:
@@ -1211,6 +1226,10 @@ def test_staff_registry_renders_filters_and_actions(monkeypatch) -> None:
         assert "Снять роль администратора" in response.text
         assert "invite_token=" in response.text
         assert 'class="staff-row-menu-panel"' in response.text
+        assert 'class="staff-content"' in response.text
+        assert "height: 100vh;" in response.text
+        assert "flex-direction: column;" in response.text
+        assert 'class="staff-rail-link " href="/admin/authors"' not in response.text
 
 
 def test_staff_registry_invite_link_is_absolute(monkeypatch) -> None:

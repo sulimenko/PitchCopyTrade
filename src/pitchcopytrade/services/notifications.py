@@ -13,7 +13,7 @@ from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import BundleMember, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.content import Recommendation
+from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
 from pitchcopytrade.db.models.enums import PaymentStatus, SubscriptionStatus
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
@@ -77,6 +77,43 @@ def build_recommendation_notification_text(recommendation: Recommendation) -> st
     if recommendation.attachments:
         lines.append(f"Вложений: {len(recommendation.attachments)}")
     return "\n".join(lines)
+
+
+async def get_recommendation_for_notification(
+    session: AsyncSession,
+    recommendation_id: str,
+) -> Recommendation | None:
+    query = (
+        select(Recommendation)
+        .options(
+            selectinload(Recommendation.strategy),
+            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
+            selectinload(Recommendation.attachments),
+        )
+        .where(Recommendation.id == recommendation_id)
+    )
+    result = await session.execute(query)
+    return result.scalar_one_or_none()
+
+
+async def deliver_recommendation_notifications_by_id(
+    session: AsyncSession,
+    recommendation_id: str,
+    notifier,
+    *,
+    trigger: str = "publish",
+    attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
+) -> list[int] | None:
+    recommendation = await get_recommendation_for_notification(session, recommendation_id)
+    if recommendation is None:
+        return None
+    return await deliver_recommendation_notifications(
+        session,
+        recommendation,
+        notifier,
+        trigger=trigger,
+        attempts=attempts,
+    )
 
 
 async def deliver_recommendation_notifications(

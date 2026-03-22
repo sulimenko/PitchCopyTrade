@@ -86,13 +86,6 @@ async def _run_seeders(settings) -> None:
 
 
 async def _init_arq_pool(app: FastAPI, settings) -> None:
-    try:
-        from arq import create_pool
-        from arq.connections import RedisSettings
-
-        pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-        app.state.arq_pool = pool
-        logger.info("ARQ pool connected to %s", settings.redis_url)
-    except Exception as exc:
-        logger.warning("ARQ pool not available (%s), notifications will be skipped", exc)
-        app.state.arq_pool = None
+    del settings
+    app.state.arq_pool = None
+    logger.info("ARQ notification queue disabled: immediate publish uses direct delivery path")

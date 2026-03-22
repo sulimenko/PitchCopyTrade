@@ -1,21 +1,43 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from io import BytesIO
+from unittest.mock import AsyncMock
 
 import pytest
 from starlette.datastructures import FormData, Headers, UploadFile
 
+from pitchcopytrade.api.routes.author import _deliver_author_publish_notifications
+from pitchcopytrade.db.models.accounts import AuthorProfile, User
+from pitchcopytrade.db.models.catalog import Instrument, Strategy, SubscriptionProduct
+from pitchcopytrade.db.models.commerce import Subscription
 from pitchcopytrade.services.author import (
+    RecommendationFormData,
+    StructuredLegFormData,
     add_author_watchlist_instrument,
     build_leg_rows_from_form,
     build_recommendation_form_data,
+    create_author_recommendation,
     normalize_attachment_uploads,
     remove_recommendation_attachments,
     search_author_watchlist_candidates,
+    update_author_recommendation,
 )
 from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment
-from pitchcopytrade.db.models.catalog import Instrument
-from pitchcopytrade.db.models.enums import InstrumentType
+from pitchcopytrade.db.models.enums import (
+    BillingPeriod,
+    InstrumentType,
+    ProductType,
+    RecommendationKind,
+    RecommendationStatus,
+    RiskLevel,
+    StrategyStatus,
+    SubscriptionStatus,
+    TradeSide,
+    UserStatus,
+)
+from pitchcopytrade.repositories.author import FileAuthorRepository
+from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 
 
@@ -267,3 +289,185 @@ async def test_add_author_watchlist_instrument_raises_for_unknown_instrument() -
 
     with pytest.raises(ValueError, match="Инструмент не найден"):
         await add_author_watchlist_instrument(DummyRepository(), author, "unknown")
+
+
+@pytest.mark.asyncio
+async def test_file_mode_smoke_publish_notifies_active_subscriber(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = FileDataStore(root_dir=tmp_path / "runtime", seed_dir=tmp_path / "runtime")
+    repository = FileAuthorRepository(store)
+    graph = repository.graph
+
+    author_user = User(
+        id="author-user-1",
+        email="author@example.com",
+        username="author1",
+        full_name="Author One",
+        status=UserStatus.ACTIVE,
+        timezone="Europe/Moscow",
+    )
+    subscriber = User(
+        id="subscriber-1",
+        email="subscriber@example.com",
+        telegram_user_id=777000,
+        username="subscriber1",
+        full_name="Subscriber One",
+        status=UserStatus.ACTIVE,
+        timezone="Europe/Moscow",
+    )
+    author = AuthorProfile(
+        id="author-1",
+        user_id=author_user.id,
+        display_name="Author One",
+        slug="author-one",
+        is_active=True,
+    )
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    strategy = Strategy(
+        id="strategy-1",
+        author_id=author.id,
+        slug="momentum-ru",
+        title="Momentum RU",
+        short_description="desc",
+        full_description="full",
+        risk_level=RiskLevel.MEDIUM,
+        status=StrategyStatus.PUBLISHED,
+        min_capital_rub=150000,
+        is_public=True,
+    )
+    product = SubscriptionProduct(
+        id="product-1",
+        product_type=ProductType.STRATEGY,
+        slug="momentum-ru-month",
+        title="Momentum RU Monthly",
+        description="Monthly access",
+        strategy_id=strategy.id,
+        billing_period=BillingPeriod.MONTH,
+        price_rub=4900,
+        trial_days=0,
+        is_active=True,
+        autorenew_allowed=True,
+    )
+    subscription = Subscription(
+        id="subscription-1",
+        user_id=subscriber.id,
+        product_id=product.id,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=False,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+    )
+
+    for entity in (author_user, subscriber, author, instrument, strategy, product, subscription):
+        graph.add(entity)
+    graph.save(store)
+
+    repository = FileAuthorRepository(store)
+    author = repository.graph.authors["author-1"]
+
+    draft = RecommendationFormData(
+        strategy_id="strategy-1",
+        kind=RecommendationKind.NEW_IDEA,
+        status=RecommendationStatus.DRAFT,
+        title="Покупка SBER",
+        summary="Сильный спрос",
+        thesis="Рост оборотов",
+        market_context="Рынок подтверждает импульс",
+        requires_moderation=False,
+        scheduled_for=None,
+        legs=[
+            StructuredLegFormData(
+                instrument_id="instrument-1",
+                side=TradeSide.BUY,
+                entry_from=101.5,
+                entry_to=None,
+                stop_loss=99.9,
+                take_profit_1=106.2,
+                take_profit_2=None,
+                take_profit_3=None,
+                time_horizon="1-3 дня",
+                note="Основной вход",
+            )
+        ],
+        attachments=[],
+    )
+    recommendation = await create_author_recommendation(repository, author, draft, uploaded_by_user_id=author.user_id)
+
+    published = RecommendationFormData(
+        strategy_id="strategy-1",
+        kind=RecommendationKind.NEW_IDEA,
+        status=RecommendationStatus.PUBLISHED,
+        title="Покупка SBER",
+        summary="Сильный спрос",
+        thesis="Рост оборотов",
+        market_context="Рынок подтверждает импульс",
+        requires_moderation=False,
+        scheduled_for=None,
+        legs=draft.legs,
+        attachments=[],
+    )
+    recommendation = await update_author_recommendation(
+        repository,
+        recommendation,
+        published,
+        uploaded_by_user_id=author.user_id,
+    )
+    assert recommendation.status is RecommendationStatus.PUBLISHED
+    assert recommendation.published_at is not None
+
+    fake_bot = type(
+        "FakeBot",
+        (),
+        {
+            "send_message": AsyncMock(),
+            "session": type("FakeSession", (), {"close": AsyncMock()})(),
+        },
+    )()
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.create_bot", lambda _token: fake_bot)
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.get_settings",
+        lambda: type(
+            "Settings",
+            (),
+            {
+                "telegram": type(
+                    "Telegram",
+                    (),
+                    {"bot_token": type("Secret", (), {"get_secret_value": lambda self: "token"})()},
+                )(),
+            },
+        )(),
+    )
+
+    await _deliver_author_publish_notifications(
+        repository=repository,
+        author=author,
+        recommendation_id=recommendation.id,
+        trigger="author_publish_smoke",
+    )
+
+    fake_bot.send_message.assert_awaited_once()
+    chat_id, text = fake_bot.send_message.await_args.args
+    assert chat_id == 777000
+    assert "Покупка SBER" in text
+    fake_bot.session.close.assert_awaited_once()
+
+    reloaded = FileAuthorRepository(store)
+    delivery_events = [
+        item
+        for item in reloaded.graph.audit_events.values()
+        if item.action == "notification.delivery" and item.entity_id == recommendation.id
+    ]
+    assert len(delivery_events) == 1
+    assert delivery_events[0].payload["recipient_count"] == 1
+    assert delivery_events[0].payload["trigger"] == "author_publish_smoke"

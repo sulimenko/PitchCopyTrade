@@ -63,13 +63,16 @@ async def run_scheduled_publish() -> None:
             bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
             try:
                 for item in published:
-                    await deliver_recommendation_notifications_file(
-                        graph,
-                        store,
-                        item,
-                        bot,
-                        trigger="scheduled_publish",
-                    )
+                    try:
+                        await deliver_recommendation_notifications_file(
+                            graph,
+                            store,
+                            item,
+                            bot,
+                            trigger="scheduled_publish",
+                        )
+                    except Exception:
+                        logger.exception("Notification delivery failed for recommendation %s", item.id)
             finally:
                 await bot.session.close()
         logger.info("scheduled_publish tick(file): %s published", len(published))
@@ -81,7 +84,10 @@ async def run_scheduled_publish() -> None:
             bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
             try:
                 for item in published:
-                    await deliver_recommendation_notifications(session, item, bot, trigger="scheduled_publish")
+                    try:
+                        await deliver_recommendation_notifications(session, item, bot, trigger="scheduled_publish")
+                    except Exception:
+                        logger.exception("Notification delivery failed for recommendation %s", item.id)
             finally:
                 await bot.session.close()
     logger.info("scheduled_publish tick: %s published", len(published))

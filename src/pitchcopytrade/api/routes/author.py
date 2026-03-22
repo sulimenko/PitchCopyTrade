@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -7,8 +8,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from pitchcopytrade.api.deps.auth import require_author
 from pitchcopytrade.api.deps.repositories import get_author_repository
+from pitchcopytrade.bot.main import create_bot
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
+from pitchcopytrade.db.models.enums import RecommendationStatus
 from pitchcopytrade.repositories.contracts import AuthorRepository
+from pitchcopytrade.repositories.author import FileAuthorRepository, SqlAlchemyAuthorRepository
 from pitchcopytrade.services.author import (
     WatchlistCandidate,
     add_author_watchlist_instrument,
@@ -34,10 +39,15 @@ from pitchcopytrade.services.author import (
     update_author_recommendation,
     update_author_strategy,
 )
+from pitchcopytrade.services.notifications import (
+    deliver_recommendation_notifications,
+    deliver_recommendation_notifications_file,
+)
 from pitchcopytrade.web.templates import templates
 
 
 router = APIRouter(prefix="/author", tags=["author"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", include_in_schema=False)
@@ -172,7 +182,7 @@ async def author_strategy_create_submit(
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
-    return RedirectResponse(url=f"/author/strategies/{strategy.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/author/strategies", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/strategies/{strategy_id}/edit", response_class=HTMLResponse)
@@ -376,11 +386,24 @@ async def recommendation_create_submit(
         workflow_action=str(form.get("workflow_action", "") or ""),
     )
     inline_mode = str(form.get("inline_mode", "") or "") == "1"
+    strategy_id = str(form.get("strategy_id", "") or "")
+    if not strategy_id.strip():
+        return await _render_recommendation_create_error(
+            request=request,
+            user=user,
+            author=author,
+            repository=repository,
+            form=form,
+            resolved_status=resolved_status,
+            leg_rows=leg_rows,
+            inline_mode=inline_mode,
+            error_text="Выберите стратегию автора.",
+        )
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
         data = build_recommendation_form_data(
-            strategy_id=str(form.get("strategy_id", "") or ""),
-            kind_value=str(form.get("kind", "") or ""),
+            strategy_id=strategy_id,
+            kind_value=str(form.get("kind", "new_idea") or "new_idea"),
             status_value=resolved_status,
             title=str(form.get("title", "") or ""),
             summary=str(form.get("summary", "") or ""),
@@ -400,46 +423,23 @@ async def recommendation_create_submit(
             uploaded_by_user_id=user.id,
         )
     except ValueError as exc:
-        if inline_mode:
-            inline_feedback = _build_inline_recommendation_feedback(str(exc), leg_rows)
-            return await _render_recommendation_list(
-                request=request,
-                user=user,
-                author=author,
-                repository=repository,
-                q=str(form.get("q", "") or ""),
-                status_filter=str(form.get("status_filter", "all") or "all"),
-                sort_by=str(form.get("sort_by", "updated_at") or "updated_at"),
-                direction=str(form.get("direction", "desc") or "desc"),
-                inline_error=inline_feedback["error"],
-                inline_form_values=_build_inline_recommendation_form_values(form),
-                inline_field_errors=inline_feedback["field_errors"],
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            )
-        feedback = _build_recommendation_form_feedback(str(exc), leg_rows)
-        return await _render_recommendation_form(
+        return await _render_recommendation_create_error(
             request=request,
             user=user,
             author=author,
             repository=repository,
-            recommendation=None,
-            error=feedback["error"],
-            form_values={
-                "strategy_id": str(form.get("strategy_id", "") or ""),
-                "kind": str(form.get("kind", "") or ""),
-                "status": resolved_status,
-                "title": str(form.get("title", "") or ""),
-                "summary": str(form.get("summary", "") or ""),
-                "thesis": str(form.get("thesis", "") or ""),
-                "market_context": str(form.get("market_context", "") or ""),
-                "requires_moderation": author.requires_moderation,
-                "scheduled_for": str(form.get("scheduled_for", "") or ""),
-                "legs": leg_form_values_from_rows(leg_rows),
-            },
-            field_errors=feedback["field_errors"],
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            embedded=str(form.get("embedded", "") or "") == "1",
-            next_path=str(form.get("next_path", "") or ""),
+            form=form,
+            resolved_status=resolved_status,
+            leg_rows=leg_rows,
+            inline_mode=inline_mode,
+            error_text=str(exc),
+        )
+    if data.status == RecommendationStatus.PUBLISHED:
+        await _deliver_author_publish_notifications(
+            repository=repository,
+            author=author,
+            recommendation_id=recommendation.id,
+            trigger="author_publish_create",
         )
     next_path = _safe_author_next_path(str(form.get("next_path", "") or ""))
     if inline_mode:
@@ -516,6 +516,7 @@ async def recommendation_edit_submit(
         status_value=str(form.get("status", "") or ""),
         workflow_action=str(form.get("workflow_action", "") or ""),
     )
+    was_published = recommendation.status == RecommendationStatus.PUBLISHED
     remove_attachment_ids = [str(item) for item in form.getlist("remove_attachment_ids")]
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
@@ -566,6 +567,14 @@ async def recommendation_edit_submit(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             embedded=str(form.get("embedded", "") or "") == "1",
             next_path=str(form.get("next_path", "") or ""),
+        )
+    if data.status == RecommendationStatus.PUBLISHED:
+        await _deliver_author_publish_notifications(
+            repository=repository,
+            author=author,
+            recommendation_id=recommendation.id,
+            trigger="author_publish_update",
+            was_published=was_published,
         )
 
     return RedirectResponse(
@@ -674,6 +683,105 @@ async def _render_recommendation_list(
     )
 
 
+async def _render_recommendation_create_error(
+    *,
+    request: Request,
+    user: User,
+    author: AuthorProfile,
+    repository: AuthorRepository,
+    form,
+    resolved_status: str,
+    leg_rows: list[dict[str, str]],
+    inline_mode: bool,
+    error_text: str,
+) -> Response:
+    if inline_mode:
+        inline_feedback = _build_inline_recommendation_feedback(error_text, leg_rows)
+        return await _render_recommendation_list(
+            request=request,
+            user=user,
+            author=author,
+            repository=repository,
+            q=str(form.get("q", "") or ""),
+            status_filter=str(form.get("status_filter", "all") or "all"),
+            sort_by=str(form.get("sort_by", "updated_at") or "updated_at"),
+            direction=str(form.get("direction", "desc") or "desc"),
+            inline_error=inline_feedback["error"],
+            inline_form_values=_build_inline_recommendation_form_values(form),
+            inline_field_errors=inline_feedback["field_errors"],
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    feedback = _build_recommendation_form_feedback(error_text, leg_rows)
+    return await _render_recommendation_form(
+        request=request,
+        user=user,
+        author=author,
+        repository=repository,
+        recommendation=None,
+        error=feedback["error"],
+        form_values={
+            "strategy_id": str(form.get("strategy_id", "") or ""),
+            "kind": str(form.get("kind", "new_idea") or "new_idea"),
+            "status": resolved_status,
+            "title": str(form.get("title", "") or ""),
+            "summary": str(form.get("summary", "") or ""),
+            "thesis": str(form.get("thesis", "") or ""),
+            "market_context": str(form.get("market_context", "") or ""),
+            "requires_moderation": author.requires_moderation,
+            "scheduled_for": str(form.get("scheduled_for", "") or ""),
+            "legs": leg_form_values_from_rows(leg_rows),
+        },
+        field_errors=feedback["field_errors"],
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        embedded=str(form.get("embedded", "") or "") == "1",
+        next_path=str(form.get("next_path", "") or ""),
+    )
+
+
+async def _deliver_author_publish_notifications(
+    *,
+    repository: AuthorRepository,
+    author: AuthorProfile,
+    recommendation_id: str,
+    trigger: str,
+    was_published: bool = False,
+) -> None:
+    bot = None
+    try:
+        recommendation = await get_author_recommendation(repository, author, recommendation_id)
+        if recommendation is None or recommendation.status != RecommendationStatus.PUBLISHED or was_published:
+            return
+
+        bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
+        if isinstance(repository, FileAuthorRepository):
+            await deliver_recommendation_notifications_file(
+                repository.graph,
+                repository.store,
+                recommendation,
+                bot,
+                trigger=trigger,
+            )
+            return
+        if isinstance(repository, SqlAlchemyAuthorRepository):
+            await deliver_recommendation_notifications(
+                repository.session,
+                recommendation,
+                bot,
+                trigger=trigger,
+            )
+            return
+        logger.warning(
+            "Skipping immediate notification delivery for recommendation %s: unsupported repository %s",
+            recommendation_id,
+            type(repository).__name__,
+        )
+    except Exception:
+        logger.exception("Immediate notification delivery failed for recommendation %s", recommendation_id)
+    finally:
+        if bot is not None:
+            await bot.session.close()
+
+
 async def _get_author_or_403(repository: AuthorRepository, user: User) -> AuthorProfile:
     author = user.author_profile or await get_author_by_user(repository, user)
     if author is None:
@@ -718,6 +826,8 @@ def _build_recommendation_form_feedback(error_text: str, leg_rows: list[dict[str
         row_id=first_row_id,
         instrument_error="Выберите инструмент из списка",
     )
+    if error_text == "Выберите стратегию автора.":
+        field_errors["strategy_id"] = "Выберите стратегию автора"
     return {"error": _friendly_recommendation_error_message(error_text), "field_errors": field_errors}
 
 

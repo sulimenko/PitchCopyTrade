@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from pitchcopytrade import __version__
 from pitchcopytrade.api.lifespan import app_lifespan
@@ -22,6 +24,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         lifespan=app_lifespan,
     )
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
     app.state.service_name = settings.app.name
     app.state.environment = settings.app.env
     app.state.base_timezone = settings.app.base_timezone

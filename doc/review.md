@@ -1,126 +1,182 @@
 # PitchCopyTrade — Current Review Gate
-> Обновлено: 2026-03-20
+> Обновлено: 2026-03-22
 > Этот файл хранит только текущие findings и gate на следующий merge.
 
 ## Общий вывод
 
-Кодовая база MVP стабильна. Алембик удалён, схема переведена на `deploy/schema.sql`. UX-блоки A–Q закрыты. Система поднята на новом сервере (`cloud-001`), все три сервиса (api, bot, worker) запускаются штатно. Обнаружены инфраструктурные и UX дефекты, требующие устранения.
+Блоки S, R, T, U, V, W полностью закрыты. ARQ/Redis удалены из зависимостей и кода. Notification pipeline унифицирован на прямую доставку с per-item exception handling. Инфраструктура поддерживает два варианта развёртки. Staff shell viewport-фиксирован. Author editor работает без 500.
+
+Открытых production bug нет. Следующий приоритет: V3 (ручной smoke-test) → Блок F (governance parity).
 
 ---
 
-## Критические findings (блокируют продакшн)
+## Инвентарь проекта (снапшот 2026-03-22)
 
-### R1 — pg_hba.conf не пускает Docker-контейнеры в postgres **[BLOCKER]**
+### Сервисы
+| Сервис | Entry point | Статус |
+|--------|-------------|--------|
+| API | `api/main.py` — FastAPI, HTMX, Mini App | ✅ работает |
+| Bot | `bot/main.py` — aiogram 3, polling/webhook | ✅ работает |
+| Worker | `worker/main.py` — polling loop, 4 jobs | ✅ работает |
 
-**Симптом:**
+### Worker jobs (4 активных)
+| Job | Файл | Интервал |
+|-----|------|----------|
+| `scheduled_publish` | `placeholders.py` | 3600 сек |
+| `payment_expiry_sync` | `placeholders.py` | 3600 сек |
+| `subscription_expiry` | `placeholders.py` | 3600 сек |
+| `reminder_jobs` | `placeholders.py` | 3600 сек |
+
+### Режимы хранения
+- **`file`** (default/demo): JSON в `storage/runtime/json/`, blobs в `storage/runtime/blob/`
+- **`db`**: PostgreSQL через SQLAlchemy 2 async + asyncpg; схема в `deploy/schema.sql`
+
+### Маршруты (100+ endpoints)
+| Префикс | Назначение |
+|---------|-----------|
+| `/admin/*` | Административный кабинет (staff) |
+| `/cabinet/*` | Кабинет автора (HTMX, legacy path) |
+| `/author/*` | Кабинет автора (новый path, FileRepo + SqlAlchemy) |
+| `/moderation/*` | Очередь модерации |
+| `/app/*` | Telegram Mini App |
+| `/api/*` | JSON API (instruments, health, ready, meta) |
+| `/auth/*` | Аутентификация (Telegram Widget, WebApp, staff) |
+| `/` | Публичный каталог, checkout |
+
+### Тестовое покрытие
+| Модуль | Тестов |
+|--------|--------|
+| test_admin_ui.py | 50 |
+| test_auth_ui.py | 27 |
+| test_author_ui.py | 23 |
+| test_access_delivery.py | 19 |
+| test_public_catalog_checkout.py | 13 |
+| test_author_services.py | 11 |
+| test_worker_baseline.py | 9 |
+| test_bot_baseline.py | 9 |
+| прочие (17 файлов) | ~137 |
+| **Итого** | **~298** |
+
+### Зависимости (pyproject.toml)
 ```
-ERROR | Instrument seeder failed: в pg_hba.conf нет записи для компьютера "172.21.0.4",
-       пользователя "pct", базы "pct", SSL выкл.
+fastapi, uvicorn[standard], aiogram, sqlalchemy, greenlet,
+asyncpg, jinja2, pydantic-settings, python-multipart,
+email-validator, httpx, aiosmtplib
 ```
-
-**Причина:** Postgres на хосте слушает только `127.0.0.1/32`. Docker-контейнеры подключаются через `host.docker.internal`, но postgres видит source IP контейнера (`172.21.x.x` или `172.20.x.x` — зависит от конкретной docker-сети). Правила для этих подсетей в `pg_hba.conf` отсутствуют.
-
-**Примечание:** `docker-compose.server.yml` объявляет `subnet: 172.20.0.0/24`, но контейнер получил `172.21.0.4` — Docker выбрал следующую свободную подсеть. Правило должно покрывать оба диапазона.
-
-**Исправление:**
-```bash
-# Найти pg_hba.conf
-sudo -u postgres psql -c "SHOW hba_file;"
-
-# Добавить строку (пример для CentOS: /var/lib/pgsql/data/pg_hba.conf)
-echo "host    pct    pct    172.0.0.0/8    md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
-
-# Перечитать конфиг без перезапуска
-sudo systemctl reload postgresql
-```
-
-**Последствия пока не исправлено:** seeders падают при каждом старте, инструменты и admin-пользователь не создаются, DB не инициализируется.
+`arq` и `redis` удалены (Блок V1).
 
 ---
 
-### R2 — ARQ-worker не запущен, notifications при немедленном publish не доставляются **[BLOCKER]**
+## Закрытые блоки (подтверждено в коде)
 
-**Причина:** В системе два worker-пути:
+### Блок S — Инфраструктура ✅
 
-| Путь | Файл | Запущен? |
-|------|------|---------|
-| Polling loop (cron-like) | `worker/main.py` → `placeholders.py` | ✅ да (docker-compose) |
-| ARQ queue worker | `worker/arq_worker.py` | ❌ нет |
+**S1 — Docker-compose двухрежимный:**
+- `deploy/docker-compose.server.yml` параметризирован через `DOCKER_NETWORK_EXTERNAL`, `DOCKER_NETWORK_NAME`, `API_PORT_BINDING`
+- Standalone (Вариант А): postgres/redis на хосте через `host.docker.internal`
+- Shared backend (Вариант Б): внешняя сеть, DNS aliases, без проброса портов
+- `x-pct-service` YAML anchor убирает дублирование
+- `deploy/env.server.example` описывает оба варианта
+- `deploy/migrate.sh` использует `PGPASSWORD` + `-h/-p`; `POSTGRES_HOST/PORT` из `.env.server`
 
-`docker-compose.server.yml` запускает `python -m pitchcopytrade.worker.main` — это polling loop. ARQ-worker (`arq_worker.py`) не запускается.
-
-**Что ломается:** Когда автор публикует рекомендацию немедленно (не scheduled), `services/publishing.py` вызывает:
-```python
-await arq_pool.enqueue_job("send_recommendation_notifications", recommendation_id=...)
-```
-Задача попадает в Redis, но обработчик не работает — notifications молча теряются.
-
-**Что работает:** Scheduled-publish через polling worker доставляет notifications через `services/notifications.py` — этот путь исправен.
-
-**Исправление:** Запустить ARQ worker как отдельный сервис (добавить в docker-compose) ИЛИ убрать дублирование кодпатей и обрабатывать все notifications через polling.
+**S2 — HTTPS Mixed Content:**
+- Uvicorn запускается с `--proxy-headers --forwarded-allow-ips='*'`
+- FastAPI читает `X-Forwarded-Proto` → static URL генерируются с `https://`
 
 ---
 
-## Medium findings
+### Блок R — Notification pipeline ✅
 
-### R3 — `aiohttp` импортируется, но не объявлен в зависимостях
+- ARQ pool **отключён** в `api/lifespan.py` (`app.state.arq_pool = None`)
+- `services/notifications.py` — canonical path: `deliver_recommendation_notifications_by_id()` + `deliver_recommendation_notifications()`
+- Immediate publish (cabinet, author, moderation): прямой вызов `deliver_*` в route handler
+- Scheduled publish: polling worker через `run_scheduled_publish()` → `deliver_recommendation_notifications()`
+- Оба режима хранения (file/db) покрыты отдельными функциями
+- `aiohttp` удалён, используется `httpx`
 
-**Файл:** `worker/jobs/notifications.py`, строка 93: `import aiohttp`
-
-`aiohttp` отсутствует в `pyproject.toml`. В production-образе пакет может быть доступен как транзитивная зависимость `uvicorn[standard]`, но это ненадёжно. `httpx` уже объявлен явно и пригоден для того же.
-
-**Исправление:** Заменить `aiohttp` на `httpx` в `worker/jobs/notifications.py`.
-
----
-
-### R4 — Два параллельных кодпати для recommendation notifications
-
-`services/notifications.py` → вызывается polling worker, broadcast через direct Telegram bot call.
-`worker/jobs/notifications.py` → ARQ job, дополнительно отправляет email.
-
-Оба делают одно: рассылку при publish. Canonical path должен быть один. Для MVP достаточно polling-пути (`services/notifications.py`); ARQ-job можно либо удалить, либо сделать основным и убрать дублирование.
+**V1 cleanup:**
+- `worker/arq_worker.py` удалён
+- `arq` и `redis` удалены из `pyproject.toml`
+- `cabinet.py` publish: ARQ-блок заменён на `deliver_recommendation_notifications_by_id`
 
 ---
 
-## Housekeeping (не блокируют)
+### Блок T — Staff shell ✅
 
-- **Alembic удалён** — `alembic.ini`, `alembic/` папка, зависимость в `pyproject.toml` отсутствуют. Схема переведена на `deploy/schema.sql`. ✅
-- **Блоки F0–F3** (`task.md`) остаются открытыми — db/file parity для staff governance. Не блокируют первый запуск.
-- **`db/session.py`** создаёт engine на уровне импорта — нормально для production, усложняет unit-tests. Не критично для MVP.
-- **`worker/main.py`** спит 3600 секунд между циклами — для scheduled notifications достаточно, но задержка может быть до 1 часа от времени создания.
+- «Авторы» убраны из nav; управление через «Команда»
+- `.staff-shell { height: 100vh; overflow: hidden }` — viewport-фиксированный layout
+- `.staff-grid-shell { flex: 1; min-height: 0 }` — AG Grid заполняет оставшееся пространство
 
 ---
 
-## Новые findings (2026-03-21)
+### Блок U — Author editor ✅
 
-### S2 — Mixed Content: статика генерирует HTTP-ссылки на HTTPS-сайте
+- **U1**: После создания стратегии redirect на `/author/strategies` (список)
+- **U2**: Compact table: borders hairline, row height 28–30px
+- **U3**: «Идея» и «Бумага» в одной строке inline shortcut
+- **U5**: Ticker popup в `position: fixed`, не клипается shell
+- **U6**: `POST /author/recommendations` не возвращает 500; `kind=new_idea` добавлен
+- **U7**: `recommendation_form.html` имеет явный `action` — нет self-submit на `/new`
+- **U8**: `embedded_base.html` создан; dynamic extends `{% extends "embedded_base.html" if embedded else "staff_base.html" %}`
 
-`request.url_for('static', ...)` в Starlette использует scheme входящего запроса. За nginx-proxy контейнер видит HTTP → генерирует `http://`-ссылки → браузер блокирует. Задача S2 в `task.md`.
+---
 
-### U6 — Internal Server Error при «Создать» в рекомендациях
+## Закрытые findings (Блок W)
 
-`POST /author/recommendations` с `inline_mode=1` возвращает 500. Вероятные причины: отсутствие `kind` в inline форме, пустой `strategy_id`, FK constraint на `instrument_id`. Задача U6 в `task.md`.
+### Блок W — Code quality cleanup ✅
 
-### U5 — Popup тикера обрезается внутри таблицы
+**W1 — Notification loop per-item exception handling** ✅
+`worker/jobs/placeholders.py` — оба цикла (file mode строки 66–75, db mode строки 87–90) теперь обёрнуты в `try/except Exception: logger.exception(...)`. Ошибка Telegram для одной рекомендации не прерывает доставку остальных.
 
-`id="inline-ticker-popup"` с `position: absolute` внутри контейнера с `overflow: hidden`. Задача U5.
+**W2 — Enum comparison в moderation.py** ✅
+`moderation.py:104` — `updated.status == RecommendationStatus.PUBLISHED` (было `updated.status.value == "published"`).
+
+**W3 — Удалён мёртвый `worker/jobs/notifications.py`** ✅
+ARQ-handler удалён. Связанные тесты удалены из `test_worker_baseline.py`. `compileall` чистый.
+
+**W4 — env.server.example** ✅
+Комментарии "ARQ + Redis" заменены. `REDIS_URL` остаётся (нужен как поле конфига), с пояснением что ARQ не используется.
+
+**W5 — Unused import `func` в cabinet.py** ✅
+`from sqlalchemy import func, select` → `from sqlalchemy import select`.
+
+---
+
+## Открытые findings
+
+### F0 — Governance: последний активный администратор `[ ]` — не блокирует MVP
+
+`update_admin_staff_user` должен запрещать снятие роли `admin` у последнего активного администратора через edit-path (governance contract уже реализован для `roles/admin/remove`).
+
+### F1 — Control emails: db/file parity `[ ]`
+
+`db` и `file` path должны одинаково отправлять уведомления администраторам при staff onboarding.
+
+### F2 — db/file parity verification `[ ]`
+
+Проверить coverage: create, resend, oversight mail, audit log — одинаково в обоих режимах.
+
+### F3 — Regression coverage F0–F2 `[ ]`
+
+Тесты на: governance защита через edit, `active/inactive` flow, oversight emails в file mode.
 
 ---
 
 ## Gate на следующий merge
 
-1. Mixed Content устранён — статика отдаётся по HTTPS (S2)
-2. `POST /author/recommendations` inline не возвращает 500 (U6)
-3. Popup тикера виден целиком (U5)
-4. Notifications при немедленном publish доставляются (R2)
-5. Блоки F0–F3 закрыты
+Блоки S, R, T, U, V, W — закрыты. Следующий merge **не блокирован**.
+
+Открытых production bug нет.
+
+Блок F — не является production blocker для MVP. Закрыть до первого коммерческого запуска (реальные деньги).
+
+V3 (smoke-test) — ручная проверка на живом сервере. Не блокирует merge.
 
 ---
 
 ## Worker target
 
-Следующий исполнитель должен брать как canonical source:
-- `doc/blueprint.md` — архитектура MVP
-- `doc/task.md` — backlog задач
-
-Исторические completed phases не использовать как источник правды.
+Следующий исполнитель:
+- Canonical source: `doc/blueprint.md`, `doc/task.md`
+- **V3** — ручной smoke-test на живом сервере (создать подписчика → рекомендацию → опубликовать → проверить Telegram-уведомление)
+- После V3: **Блок F** (F0 — governance parity через staff edit)

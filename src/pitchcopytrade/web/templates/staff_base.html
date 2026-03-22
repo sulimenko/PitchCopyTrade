@@ -24,6 +24,7 @@
       * { box-sizing: border-box; }
       html, body { margin: 0; min-height: 100%; }
       body {
+        min-height: 100vh;
         font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
         color: var(--staff-ink);
         background:
@@ -33,7 +34,8 @@
       a { color: inherit; text-decoration: none; }
       button, input, select, textarea { font: inherit; }
       .staff-shell {
-        min-height: 100vh;
+        height: 100vh;
+        overflow: hidden;
         display: grid;
         grid-template-columns: var(--rail-width) minmax(0, 1fr);
       }
@@ -98,9 +100,13 @@
       }
       .staff-main {
         min-width: 0;
+        min-height: 0;
+        height: 100%;
         padding: 12px;
-        display: grid;
+        display: flex;
+        flex-direction: column;
         gap: 10px;
+        overflow: hidden;
       }
       .staff-topline {
         display: flex;
@@ -113,6 +119,28 @@
         border-radius: 12px;
         background: rgba(255, 255, 255, 0.82);
         box-shadow: var(--staff-shadow);
+        flex-shrink: 0;
+      }
+      .staff-content {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: auto;
+      }
+      .staff-content > * {
+        flex-shrink: 0;
+        min-height: 0;
+      }
+      .staff-content > *:has(.staff-grid-shell) {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .staff-content > *:has(.staff-grid-shell) .staff-grid-shell {
+        flex: 1;
       }
       .staff-topline-main {
         display: grid;
@@ -229,7 +257,14 @@
         color: var(--staff-danger);
       }
       .staff-grid-shell {
-        overflow: auto;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .staff-grid-shell .pct-ag-grid-host,
+      .staff-grid-shell .ag-root-wrapper,
+      .staff-grid-shell .ag-root-wrapper-body {
+        height: 100%;
+        min-height: 0;
       }
       .staff-grid {
         width: 100%;
@@ -475,14 +510,35 @@
         font-size: 0.8rem;
         line-height: 1.4;
       }
-      @media (max-width: 1080px) {
-        .staff-shell { grid-template-columns: 1fr; }
-        .staff-rail { position: static; height: auto; }
-      }
       @media (max-width: 960px) {
         .staff-detail-layout,
         .staff-form-grid.is-sidebar {
           grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 768px) {
+        .staff-shell {
+          min-height: 100vh;
+          height: auto;
+          overflow: visible;
+          grid-template-columns: 1fr;
+        }
+        .staff-rail {
+          position: static;
+          height: auto;
+        }
+        .staff-main {
+          height: auto;
+          overflow: visible;
+        }
+        .staff-content {
+          flex: none;
+          min-height: auto;
+          display: grid;
+          overflow: visible;
+        }
+        .staff-grid-shell {
+          overflow: auto;
         }
       }
       @media (max-width: 720px) {
@@ -508,7 +564,6 @@
     {% set admin_links = [
       ('dashboard', 'Дашборд', '/admin/dashboard'),
       ('staff', 'Команда', '/admin/staff'),
-      ('authors', 'Авторы', '/admin/authors'),
       ('strategies', 'Стратегии', '/admin/strategies'),
       ('products', 'Продукты', '/admin/products'),
       ('payments', 'Платежи', '/admin/payments'),
@@ -581,7 +636,9 @@
             {% block topbar_actions %}{% endblock %}
           </div>
         </div>
-        {% block content %}{% endblock %}
+        <div class="staff-content">
+          {% block content %}{% endblock %}
+        </div>
       </main>
     </div>
     {% include "app/_miniapp_bridge.html" %}

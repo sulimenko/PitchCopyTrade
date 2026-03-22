@@ -1,4 +1,4 @@
-{% extends "staff_base.html" %}
+{% extends "embedded_base.html" if embedded else "staff_base.html" %}
 
 {% block topbar_actions %}
 {% if not embedded %}
@@ -15,12 +15,6 @@
 
 {% block content %}
 {% set recommendation_is_editable = (not recommendation) or recommendation.status.value in ["draft", "review"] %}
-{% if embedded %}
-<style>
-  .topbar { display: none; }
-  .page-shell { width: min(1180px, calc(100% - 12px)); padding-top: 8px; }
-</style>
-{% endif %}
 <section class="surface author-editor-head">
   <div class="eyebrow">редактор рекомендации</div>
   <div class="author-editor-head-row">
@@ -47,7 +41,12 @@
 </section>
 
 <section class="author-editor-shell">
-  <form class="surface author-editor-form" method="post" enctype="multipart/form-data">
+  <form
+    class="surface author-editor-form"
+    method="post"
+    enctype="multipart/form-data"
+    action="{% if recommendation %}/author/recommendations/{{ recommendation.id }}{% else %}/author/recommendations{% endif %}"
+  >
     <input type="hidden" name="embedded" value="{% if embedded %}1{% else %}0{% endif %}" />
     <input type="hidden" name="next_path" value="{{ next_path }}" />
     {% if error %}
@@ -65,12 +64,15 @@
       <div class="author-editor-grid author-editor-grid--meta">
         <label class="author-editor-field">
           <span class="author-editor-field-title">Стратегия</span>
-          <select name="strategy_id" {% if not recommendation_is_editable %}disabled{% endif %}>
+          <select name="strategy_id" {% if field_errors.get("strategy_id") %}class="is-invalid"{% endif %} {% if not recommendation_is_editable %}disabled{% endif %}>
             <option value="">Выберите стратегию</option>
             {% for strategy in strategies %}
             <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("strategy_id") %}
+          <span class="author-editor-field-error">{{ field_errors.get("strategy_id") }}</span>
+          {% endif %}
         </label>
         <label class="author-editor-field">
           <span class="author-editor-field-title">Тип публикации</span>
@@ -430,7 +432,7 @@
     padding: 10px 12px;
     border-radius: 12px;
     background: rgba(191, 23, 54, 0.08);
-    color: var(--red-600);
+    color: var(--staff-danger);
     border: 1px solid rgba(191, 23, 54, 0.18);
   }
 

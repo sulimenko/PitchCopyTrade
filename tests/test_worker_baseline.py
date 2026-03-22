@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from pitchcopytrade.db.models.content import Recommendation
+from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus
 from pitchcopytrade.worker.jobs.placeholders import (
     WORKER_JOBS,
     WorkerJob,
@@ -87,6 +91,92 @@ async def test_run_scheduled_publish_delivers_notifications(monkeypatch: pytest.
     await run_scheduled_publish()
 
     notifier.assert_awaited_once()
+    fake_bot.session.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_publish_db_continues_after_delivery_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    recommendation_1 = SimpleNamespace(id="rec-1")
+    recommendation_2 = SimpleNamespace(id="rec-2")
+    fake_bot = AsyncMock()
+
+    class DummySessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    notifier = AsyncMock(side_effect=[RuntimeError("boom"), None])
+    logger_exception = MagicMock()
+
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.AsyncSessionLocal", lambda: DummySessionContext())
+    monkeypatch.setattr(
+        "pitchcopytrade.worker.jobs.placeholders.publish_due_recommendations",
+        lambda _session: _async_return([recommendation_1, recommendation_2]),
+    )
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.create_bot", lambda _token: fake_bot)
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.deliver_recommendation_notifications", notifier)
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.logger.exception", logger_exception)
+
+    await run_scheduled_publish()
+
+    assert notifier.await_count == 2
+    logger_exception.assert_called_once()
+    fake_bot.session.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_publish_file_continues_after_delivery_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    recommendation_1 = Recommendation(
+        id="rec-1",
+        strategy_id="strategy-1",
+        author_id="author-1",
+        kind=RecommendationKind.NEW_IDEA,
+        status=RecommendationStatus.SCHEDULED,
+        scheduled_for=datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc),
+    )
+    recommendation_2 = Recommendation(
+        id="rec-2",
+        strategy_id="strategy-2",
+        author_id="author-1",
+        kind=RecommendationKind.NEW_IDEA,
+        status=RecommendationStatus.SCHEDULED,
+        scheduled_for=datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc),
+    )
+    fake_bot = AsyncMock()
+
+    class DummyGraph:
+        def __init__(self) -> None:
+            self.recommendations = {
+                recommendation_1.id: recommendation_1,
+                recommendation_2.id: recommendation_2,
+            }
+            self.added = []
+            self.saved = 0
+
+        def add(self, item) -> None:
+            self.added.append(item)
+
+        def save(self, _store) -> None:
+            self.saved += 1
+
+    graph = DummyGraph()
+    notifier = AsyncMock(side_effect=[RuntimeError("boom"), None])
+    logger_exception = MagicMock()
+
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.AsyncSessionLocal", None)
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.FileDataStore", lambda: object())
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.FileDatasetGraph.load", lambda _store: graph)
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.create_bot", lambda _token: fake_bot)
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.deliver_recommendation_notifications_file", notifier)
+    monkeypatch.setattr("pitchcopytrade.worker.jobs.placeholders.logger.exception", logger_exception)
+
+    await run_scheduled_publish()
+
+    assert notifier.await_count == 2
+    logger_exception.assert_called_once()
+    assert graph.saved == 1
     fake_bot.session.close.assert_awaited_once()
 
 

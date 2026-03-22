@@ -139,7 +139,7 @@
       </div>
       <button class="action ghost" type="button" data-close-recommendation-modal>Закрыть</button>
     </div>
-    <iframe src="{{ recommendation_modal_url }}" title="Создание рекомендации" class="workspace-modal-frame"></iframe>
+    <iframe id="dashboard-recommendation-modal-frame" src="{{ recommendation_modal_url }}" title="Создание рекомендации" class="workspace-modal-frame"></iframe>
   </div>
 </dialog>
 
@@ -245,6 +245,7 @@
 <script>
   (function () {
     const modal = document.getElementById("dashboard-recommendation-modal");
+    const modalFrame = document.getElementById("dashboard-recommendation-modal-frame");
     const openButtons = document.querySelectorAll("[data-open-recommendation-modal]");
     const closeButtons = document.querySelectorAll("[data-close-recommendation-modal]");
     const searchInput = document.getElementById("watchlist-search-input");
@@ -264,12 +265,29 @@
       }
     }
 
+    function maybeReloadAfterModalSubmit() {
+      if (!modal || !modalFrame || !modal.open) return;
+      try {
+        const frameUrl = new URL(modalFrame.contentWindow.location.href);
+        const currentUrl = new URL(window.location.href);
+        if (frameUrl.pathname === currentUrl.pathname && frameUrl.search === currentUrl.search) {
+          closeModal();
+          window.location.reload();
+        }
+      } catch (_error) {
+        return;
+      }
+    }
+
     openButtons.forEach(function (button) {
       button.addEventListener("click", openModal);
     });
     closeButtons.forEach(function (button) {
       button.addEventListener("click", closeModal);
     });
+    if (modalFrame) {
+      modalFrame.addEventListener("load", maybeReloadAfterModalSubmit);
+    }
     if (modal) {
       modal.addEventListener("click", function (event) {
         if (event.target === modal) {

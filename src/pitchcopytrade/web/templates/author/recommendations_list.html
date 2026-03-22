@@ -19,7 +19,6 @@
     </div>
     <div class="staff-page-head-actions">
       <span class="staff-badge">{{ recommendations|length }} строк</span>
-      <span class="staff-page-note">Создать добавляет черновик в реестр, а Детально открывает тот же полный редактор с уже перенесёнными значениями из строки.</span>
     </div>
   </div>
   <div class="staff-toolbar">
@@ -42,7 +41,7 @@
       <input type="hidden" name="direction" value="{{ direction }}" />
       <button class="staff-btn" type="submit">Применить</button>
     </form>
-    <div class="staff-toolbar-note">Для быстрого старта выберите стратегию, бумагу и направление. Остальные поля можно заполнить уже в редакторе.</div>
+    <div class="staff-toolbar-note">Быстрый старт: стратегия, бумага и направление. Остальное можно заполнить позже.</div>
   </div>
   <form method="post" action="/author/recommendations" id="inline-recommendation-form" hidden>
     <input type="hidden" name="inline_mode" value="1" />
@@ -100,16 +99,6 @@
         {% else %}
         <tr><td colspan="9" class="muted">Нет рекомендаций.</td></tr>
         {% endfor %}
-        <tr data-ag-grid-skip="true" class="inline-create-hint-row">
-          <td colspan="9">
-            <div class="inline-create-hint">
-              Быстрый старт: заполните стратегию, бумагу и направление, затем выберите <strong>Создать</strong> для мгновенного черновика или <strong>Детально</strong> для полного редактора с теми же значениями.
-            </div>
-            {% if inline_error %}
-            <div class="inline-create-error" role="alert">{{ inline_error }}</div>
-            {% endif %}
-          </td>
-        </tr>
         <tr data-ag-grid-skip="true" id="inline-recommendation-shortcut">
             <td>
               <select form="inline-recommendation-form" name="strategy_id" {% if inline_field_errors.get("strategy_id") %}class="is-invalid"{% endif %}>
@@ -124,13 +113,18 @@
             </td>
             <td>
               <input type="hidden" form="inline-recommendation-form" name="leg_1_instrument_id" id="inline-instrument-id" value="{{ inline_form_values.leg_1_instrument_id }}" />
-              <input type="text" form="inline-recommendation-form" name="title" id="inline-title-input" value="{{ inline_form_values.title }}" placeholder="Идея" />
-              <input type="text" form="inline-recommendation-form" name="instrument_query" id="inline-ticker-input" value="{{ inline_form_values.instrument_query }}" placeholder="Бумага" autocomplete="off" {% if inline_field_errors.get("leg_1_instrument_id") %}class="is-invalid"{% endif %} />
+              <div class="inline-shortcut-fields">
+                <input type="text" form="inline-recommendation-form" name="title" id="inline-title-input" value="{{ inline_form_values.title }}" placeholder="Идея" />
+                <input type="text" form="inline-recommendation-form" name="instrument_query" id="inline-ticker-input" value="{{ inline_form_values.instrument_query }}" placeholder="Бумага" autocomplete="off" {% if inline_field_errors.get("leg_1_instrument_id") %}class="is-invalid"{% endif %} />
+              </div>
               <div id="inline-picker-state" class="inline-picker-state muted">Сначала выберите бумагу из подсказок.</div>
               {% if inline_field_errors.get("leg_1_instrument_id") %}
               <div class="inline-field-error">{{ inline_field_errors.get("leg_1_instrument_id") }}</div>
               {% endif %}
-              <div id="inline-ticker-popup" class="staff-card" hidden style="position:absolute;z-index:20;padding:8px;"></div>
+              {% if inline_error %}
+              <div class="inline-create-error" role="alert">{{ inline_error }}</div>
+              {% endif %}
+              <div id="inline-ticker-popup" class="staff-card inline-ticker-popup" hidden></div>
             </td>
             <td>
               <select form="inline-recommendation-form" name="leg_1_side" {% if inline_field_errors.get("leg_1_side") %}class="is-invalid"{% endif %}>
@@ -163,11 +157,11 @@
               {% endif %}
             </td>
             <td><span class="staff-badge ok">черновик</span></td>
-            <td class="muted">Создать добавит строку в реестр, а Детально откроет полный редактор с уже перенесёнными значениями.</td>
+            <td class="muted">—</td>
             <td class="actions">
               <div class="inline-create-actions">
-                <button class="staff-btn is-primary" type="submit" form="inline-recommendation-form">Создать</button>
-                <button class="ghost" type="button" data-open-recommendation-modal data-inline-detail data-modal-url="{{ recommendation_modal_url }}">Детально</button>
+                <button class="staff-btn is-primary" type="submit" form="inline-recommendation-form" title="Создать черновик и вернуться в реестр">Создать</button>
+                <button class="ghost" type="button" data-open-recommendation-modal data-inline-detail data-modal-url="{{ recommendation_modal_url }}" title="Открыть полный редактор с уже заполненными полями">Детально</button>
               </div>
             </td>
         </tr>
@@ -198,13 +192,17 @@
   #inline-recommendation-shortcut select { width: 100%; min-height: 32px; padding: 7px 10px; border: 1px solid var(--staff-line-strong); border-radius: 10px; }
   #inline-recommendation-shortcut input.is-invalid,
   #inline-recommendation-shortcut select.is-invalid { border-color: var(--staff-danger); background: #fff4f4; }
-  #inline-recommendation-shortcut td { position: relative; }
-  .inline-create-hint-row td { padding-top: 10px; padding-bottom: 6px; background: var(--staff-surface-soft); }
-  .inline-create-hint { font-size: 0.78rem; color: var(--staff-muted); }
+  #inline-recommendation-shortcut td { vertical-align: top; }
+  .inline-shortcut-fields { display: flex; gap: 6px; align-items: stretch; }
+  .inline-shortcut-fields > input { flex: 1 1 0; min-width: 0; }
   .inline-create-error { margin-top: 8px; font-size: 0.78rem; color: var(--staff-danger); }
   .inline-field-error { margin-top: 4px; font-size: 0.72rem; color: var(--staff-danger); line-height: 1.35; }
   .inline-create-actions { display: grid; gap: 6px; }
   .inline-picker-state { margin-top: 4px; font-size: 0.72rem; }
+  .inline-ticker-popup { position: fixed; z-index: 80; padding: 8px; display: grid; gap: 6px; max-height: min(320px, calc(100vh - 24px)); overflow: auto; }
+  .inline-ticker-popup[hidden] { display: none !important; }
+  .inline-ticker-option { width: 100%; justify-content: space-between; text-align: left; }
+  .inline-ticker-option small { color: var(--staff-muted); }
   .workspace-modal { border: 0; padding: 0; background: transparent; width: min(1220px, calc(100% - 24px)); }
   .workspace-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
 </style>
@@ -230,6 +228,19 @@
       if (modal && typeof modal.showModal === "function") modal.showModal();
     }
     function closeModal() { if (modal && modal.open) modal.close(); }
+    function maybeReloadAfterModalSubmit() {
+      if (!modal || !modalFrame || !modal.open) return;
+      try {
+        const frameUrl = new URL(modalFrame.contentWindow.location.href);
+        const currentUrl = new URL(window.location.href);
+        if (frameUrl.pathname === currentUrl.pathname && frameUrl.search === currentUrl.search) {
+          closeModal();
+          window.location.reload();
+        }
+      } catch (_error) {
+        return;
+      }
+    }
     function getInlineField(name) {
       return (inlineForm ? inlineForm.querySelector('[name="' + name + '"]') : null)
         || document.querySelector('[form="inline-recommendation-form"][name="' + name + '"]');
@@ -276,17 +287,51 @@
       });
     });
     closeButtons.forEach(function (button) { button.addEventListener("click", closeModal); });
+    if (modalFrame) {
+      modalFrame.addEventListener("load", maybeReloadAfterModalSubmit);
+    }
+    if (modal) {
+      modal.addEventListener("click", function (event) {
+        if (event.target === modal) closeModal();
+      });
+    }
     if (!inlineForm || !tickerInput || !tickerPopup || !instrumentIdInput) return;
 
     function hideTickerPopup() {
       tickerPopup.hidden = true;
       tickerPopup.innerHTML = "";
+      tickerPopup.style.top = "";
+      tickerPopup.style.left = "";
+      tickerPopup.style.width = "";
     }
 
     function setPickerState(text, isError) {
       if (!pickerState) return;
       pickerState.textContent = text;
       pickerState.style.color = isError ? "var(--staff-danger)" : "var(--staff-muted)";
+    }
+
+    function positionTickerPopup() {
+      if (tickerPopup.hidden) return;
+      const rect = tickerInput.getBoundingClientRect();
+      const gutter = 12;
+      const width = Math.min(Math.max(rect.width, 280), window.innerWidth - gutter * 2);
+      let left = rect.left;
+      if (left + width > window.innerWidth - gutter) {
+        left = window.innerWidth - width - gutter;
+      }
+      if (left < gutter) {
+        left = gutter;
+      }
+      tickerPopup.style.width = width + "px";
+      tickerPopup.style.left = left + "px";
+      tickerPopup.style.maxWidth = window.innerWidth - gutter * 2 + "px";
+      let top = rect.bottom + 4;
+      const popupHeight = tickerPopup.offsetHeight;
+      if (top + popupHeight > window.innerHeight - gutter) {
+        top = Math.max(gutter, rect.top - popupHeight - 4);
+      }
+      tickerPopup.style.top = top + "px";
     }
 
     function renderSuggestions(query) {
@@ -300,9 +345,7 @@
       matches.forEach(function (item) {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "ghost";
-        button.style.width = "100%";
-        button.style.justifyContent = "space-between";
+        button.className = "ghost inline-ticker-option";
         button.innerHTML = "<strong>" + item.ticker + "</strong><small>" + item.name + "</small>";
         button.addEventListener("click", function () {
           tickerInput.value = item.ticker;
@@ -313,6 +356,7 @@
         tickerPopup.appendChild(button);
       });
       tickerPopup.hidden = false;
+      positionTickerPopup();
     }
 
     tickerInput.addEventListener("input", function () {
@@ -327,6 +371,19 @@
         setPickerState("Выбрана бумага: " + selectedInstrument.ticker + " · " + selectedInstrument.name, false);
       }
     }
+
+    document.addEventListener("click", function (event) {
+      if (event.target === tickerInput || tickerPopup.contains(event.target)) return;
+      hideTickerPopup();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") hideTickerPopup();
+    });
+    tickerInput.addEventListener("focus", function () {
+      if (tickerInput.value.trim()) renderSuggestions(tickerInput.value);
+    });
+    window.addEventListener("resize", positionTickerPopup);
+    window.addEventListener("scroll", positionTickerPopup, true);
 
     inlineForm.addEventListener("submit", function (event) {
       const strategyValue = strategySelect ? strategySelect.value.trim() : "";

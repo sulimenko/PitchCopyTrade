@@ -1,4 +1,7 @@
+from fastapi import Request
+from fastapi.responses import PlainTextResponse
 from fastapi.testclient import TestClient
+import pytest
 
 from pitchcopytrade.api.main import create_app
 
@@ -44,3 +47,30 @@ def test_startup_shutdown_hooks_toggle_app_state() -> None:
 
     assert app.state.ready is False
     assert app.state.stopped_at is not None
+
+
+async def _async_noop(*_args, **_kwargs) -> None:
+    return None
+
+
+def test_proxy_headers_middleware_keeps_static_urls_https(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pitchcopytrade.api.lifespan._run_seeders", _async_noop)
+    monkeypatch.setattr("pitchcopytrade.api.lifespan._init_arq_pool", _async_noop)
+
+    app = create_app()
+
+    @app.get("/_test/static-url")
+    async def static_url(request: Request) -> PlainTextResponse:
+        return PlainTextResponse(str(request.url_for("static", path="staff/ag-grid-bootstrap.js")))
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/_test/static-url",
+            headers={
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-For": "10.0.0.7",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.text == "https://testserver/static/staff/ag-grid-bootstrap.js"

@@ -184,7 +184,7 @@ def test_author_strategy_create_redirects(monkeypatch) -> None:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/author/strategies/strategy-1/edit"
+        assert response.headers["location"] == "/author/strategies"
 
 
 def test_author_strategy_edit_page_renders(monkeypatch) -> None:
@@ -202,6 +202,7 @@ def test_author_strategy_edit_page_renders(monkeypatch) -> None:
         assert "Momentum RU" in response.text
         assert "Основное" in response.text
         assert "Действия" in response.text
+        assert 'class="staff-content"' in response.text
 
 
 def test_author_recommendation_list_renders(monkeypatch) -> None:
@@ -228,10 +229,14 @@ def test_author_recommendation_list_renders(monkeypatch) -> None:
         assert 'form="inline-recommendation-form"' in response.text
         assert 'name="kind" value="new_idea"' in response.text
         assert 'name="inline_mode" value="1"' in response.text
-        assert 'form="inline-recommendation-form">Создать</button>' in response.text
+        assert 'type="submit" form="inline-recommendation-form"' in response.text
         assert "data-inline-detail" in response.text
-        assert ">Детально</button>" in response.text
-        assert "Создать добавляет черновик в реестр" in response.text
+        assert 'title="Открыть полный редактор с уже заполненными полями">Детально</button>' in response.text
+        assert "inline-shortcut-fields" in response.text
+        assert 'title="Создать черновик и вернуться в реестр"' in response.text
+        assert "inline-create-hint-row" not in response.text
+        assert "Создать добавляет черновик в реестр" not in response.text
+        assert "position: fixed" in response.text
         assert "display: contents" not in response.text
         assert "inline-ticker-backdrop" in response.text
         assert "workspace-modal-frame" in response.text
@@ -332,6 +337,10 @@ def test_author_recommendation_embedded_create_page_renders(monkeypatch) -> None
         assert "+ Добавить бумагу" in response.text
         assert "Политика модерации" in response.text
         assert "Что уже поддержано" not in response.text
+        assert 'class="embedded-shell"' in response.text
+        assert 'class="staff-shell"' not in response.text
+        assert 'action="/author/recommendations"' in response.text
+        assert "staff-rail" not in response.text
 
 
 def test_author_recommendation_detail_prefills_editor(monkeypatch) -> None:
@@ -406,6 +415,62 @@ def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
         assert response.headers["location"] == "/author/recommendations"
 
 
+def test_author_recommendation_create_publish_now_delivers_notifications(monkeypatch) -> None:
+    author_user = _make_author_user()
+    strategy = _make_strategy()
+    recommendation = _make_recommendation()
+    recommendation.status = RecommendationStatus.PUBLISHED
+    instrument = _make_instrument()
+    delivered: dict[str, object] = {}
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.create_author_recommendation",
+        lambda _session, _author, _data, uploaded_by_user_id=None: _async_return(recommendation),
+    )
+
+    async def fake_deliver(*, repository, author, recommendation_id, trigger, was_published=False):
+        delivered["author_id"] = author.id
+        delivered["recommendation_id"] = recommendation_id
+        delivered["trigger"] = trigger
+        delivered["was_published"] = was_published
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author._deliver_author_publish_notifications", fake_deliver)
+
+    with _build_client(author_user) as client:
+        response = client.post(
+            "/author/recommendations",
+            data={
+                "strategy_id": "strategy-1",
+                "kind": "new_idea",
+                "status": "draft",
+                "workflow_action": "publish_now",
+                "title": "Покупка SBER",
+                "summary": "Кратко",
+                "thesis": "Тезис",
+                "market_context": "Контекст",
+                "leg_7_instrument_id": "instrument-1",
+                "leg_7_side": "buy",
+                "leg_7_entry_from": "101.5",
+                "leg_7_stop_loss": "99.9",
+                "leg_7_take_profit_1": "106.2",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/recommendations/rec-1/edit"
+        assert delivered == {
+            "author_id": "author-1",
+            "recommendation_id": "rec-1",
+            "trigger": "author_publish_create",
+            "was_published": False,
+        }
+
+
 def test_author_recommendation_inline_create_allows_minimal_fields(monkeypatch) -> None:
     author_user = _make_author_user()
     strategy = _make_strategy()
@@ -447,6 +512,41 @@ def test_author_recommendation_inline_create_allows_minimal_fields(monkeypatch) 
         assert captured["kind"] == "new_idea"
         assert captured["entry_from"] is None
         assert captured["instrument_id"] == "instrument-1"
+
+
+def test_author_recommendation_inline_create_requires_strategy_in_list(monkeypatch) -> None:
+    author_user = _make_author_user()
+    recommendation = _make_recommendation()
+    instrument = _make_instrument()
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.list_author_recommendations",
+        lambda _session, _author: _async_return([recommendation]),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([_make_strategy()]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+
+    with _build_client(author_user) as client:
+        response = client.post(
+            "/author/recommendations",
+            data={
+                "inline_mode": "1",
+                "kind": "new_idea",
+                "status": "draft",
+                "next_path": "/author/recommendations",
+                "title": "",
+                "leg_1_instrument_id": "instrument-1",
+                "leg_1_side": "buy",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "Рекомендации автора" in response.text
+        assert "Редактор рекомендации" not in response.text
+        assert "Выберите стратегию автора" in response.text
+        assert 'name="kind" value="new_idea"' in response.text
 
 
 def test_author_recommendation_inline_create_price_error_stays_in_list(monkeypatch) -> None:
@@ -566,6 +666,7 @@ def test_author_recommendation_edit_page_renders(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Редактирование рекомендации" in response.text
         assert "Покупка SBER" in response.text
+        assert 'action="/author/recommendations/rec-1"' in response.text
 
 
 def test_author_recommendation_create_marks_first_leg_instrument_error(monkeypatch) -> None:
@@ -634,6 +735,7 @@ def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
         )
     ]
     called = {}
+    delivered: dict[str, object] = {}
 
     monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
     monkeypatch.setattr(
@@ -646,6 +748,14 @@ def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
             called.setdefault("status", _data.status.value) or recommendation
         ),
     )
+
+    async def fake_deliver(*, repository, author, recommendation_id, trigger, was_published=False):
+        delivered["author_id"] = author.id
+        delivered["recommendation_id"] = recommendation_id
+        delivered["trigger"] = trigger
+        delivered["was_published"] = was_published
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author._deliver_author_publish_notifications", fake_deliver)
 
     with _build_client(author_user) as client:
         response = client.post(
@@ -674,6 +784,12 @@ def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
         assert response.headers["location"] == "/author/recommendations/rec-1/edit"
         assert called["status"] == "published"
         assert called["attachment_ids"] == ["att-1"]
+        assert delivered == {
+            "author_id": "author-1",
+            "recommendation_id": "rec-1",
+            "trigger": "author_publish_update",
+            "was_published": False,
+        }
 
 
 def test_author_recommendation_create_requires_datetime_for_scheduled(monkeypatch) -> None:

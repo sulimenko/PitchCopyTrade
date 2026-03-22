@@ -10,16 +10,19 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.api.deps.auth import require_author
+from pitchcopytrade.bot.main import create_bot
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
 from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, RiskLevel, StrategyStatus, TradeSide
 from pitchcopytrade.db.session import get_optional_db_session
+from pitchcopytrade.services.notifications import deliver_recommendation_notifications_by_id
 from pitchcopytrade.web.templates import templates
 
 router = APIRouter(prefix="/cabinet", tags=["cabinet"])
@@ -258,13 +261,15 @@ async def cabinet_recommendation_publish(
         )
         rec = rec_result.scalar_one()
 
-    # Enqueue ARQ job (fire-and-forget: публикация не блокируется если worker упал)
-    arq_pool = getattr(request.app.state, "arq_pool", None)
-    if arq_pool is not None:
+    # Прямая доставка уведомлений (ARQ отключён)
+    if session is not None:
+        bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
         try:
-            await arq_pool.enqueue_job("send_recommendation_notifications", str(rec.id))
+            await deliver_recommendation_notifications_by_id(session, str(rec.id), bot, trigger="cabinet_publish")
         except Exception as exc:
-            logger.error("ARQ enqueue failed for rec %s: %s", rec.id, exc)
+            logger.error("Notification delivery failed for rec %s: %s", rec.id, exc)
+        finally:
+            await bot.session.close()
 
     return templates.TemplateResponse(
         request,

@@ -9,12 +9,12 @@
 .pct-ag-theme.ag-theme-quartz {
   --ag-font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
   --ag-font-size: 13px;
-  --ag-grid-size: 6px;
-  --ag-list-item-height: 28px;
-  --ag-row-height: 30px;
-  --ag-header-height: 32px;
-  --ag-border-color: #d7dee7;
-  --ag-secondary-border-color: #e6ebf1;
+  --ag-grid-size: 5px;
+  --ag-list-item-height: 26px;
+  --ag-row-height: 28px;
+  --ag-header-height: 30px;
+  --ag-border-color: #dde4ec;
+  --ag-secondary-border-color: #edf2f7;
   --ag-background-color: #ffffff;
   --ag-odd-row-background-color: #fcfdff;
   --ag-header-background-color: #f7f9fb;
@@ -34,6 +34,13 @@
 .pct-ag-theme .ag-root-wrapper {
   border: 0;
   border-radius: 0;
+}
+
+.pct-ag-theme .ag-header,
+.pct-ag-theme .ag-row,
+.pct-ag-theme .ag-cell,
+.pct-ag-theme .ag-header-cell {
+  border-width: 1px;
 }
 
 .pct-ag-theme .ag-header-cell,

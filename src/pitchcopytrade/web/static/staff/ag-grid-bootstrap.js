@@ -34,6 +34,13 @@
     return agGrid.createGrid(container, options || {});
   }
 
+  function resolveDomLayout() {
+    if (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) {
+      return "autoHeight";
+    }
+    return "normal";
+  }
+
   function tableToGrid(table) {
     if (!table || table.dataset.agGridMounted === "true") {
       return null;
@@ -79,6 +86,11 @@
 
     var host = document.createElement("div");
     host.className = "pct-ag-grid-host";
+    host.style.width = "100%";
+    var domLayout = resolveDomLayout();
+    if (domLayout === "normal") {
+      host.style.height = "100%";
+    }
     table.parentNode.insertBefore(host, table);
     table.hidden = true;
     table.dataset.agGridMounted = "true";
@@ -93,7 +105,7 @@
         suppressHeaderMenuButton: true
       },
       animateRows: false,
-      domLayout: "autoHeight",
+      domLayout: domLayout,
       enableCellTextSelection: true,
       ensureDomOrder: true,
       suppressCellFocus: false

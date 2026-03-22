@@ -20,8 +20,6 @@ dependencies = [
   "python-multipart>=0.0.20,<1.0",
   "email-validator>=2.2,<3.0",
   "httpx>=0.28,<1.0",
-  "arq>=0.25,<1.0",
-  "redis>=5.0,<6.0",
   "aiosmtplib>=3.0,<4.0",
 ]
 

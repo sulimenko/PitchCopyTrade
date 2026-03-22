@@ -7,6 +7,7 @@ from pitchcopytrade.api.deps.auth import require_moderator
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
+from pitchcopytrade.db.models.enums import RecommendationStatus
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
@@ -100,7 +101,7 @@ async def moderation_approve_submit(
     if recommendation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
     updated = await approve_recommendation(session, recommendation, user, comment)
-    if updated.status.value == "published":
+    if updated.status == RecommendationStatus.PUBLISHED:
         bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
         try:
             if session is None:
