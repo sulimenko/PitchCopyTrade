@@ -26,7 +26,7 @@ from pitchcopytrade.db.models.enums import (
     SubscriptionStatus,
     UserStatus,
 )
-from pitchcopytrade.auth.session import build_staff_invite_link
+from pitchcopytrade.auth.session import build_staff_invite_bot_link, build_staff_invite_link, build_staff_invite_token
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
@@ -1424,8 +1424,23 @@ async def resend_staff_invite(
         user = await _require_staff_user(session, user_id)
 
     role_slugs = tuple(sorted((role.slug for role in user.roles), key=lambda item: item.value))
-    user.invite_token_version = max(int(getattr(user, "invite_token_version", 1) or 1) + 1, 1)
-    await _deliver_staff_invite(session, user, role_slugs=role_slugs, is_resend=True)
+    old_version = int(getattr(user, "invite_token_version", 1) or 1)
+    user.invite_token_version = max(old_version + 1, 1)
+    try:
+        await _deliver_staff_invite(session, user, role_slugs=role_slugs, is_resend=True)
+    except Exception:
+        # Y1: Rollback version increment if email delivery failed.
+        # Without this, the invite token would be invalidated but no new email sent.
+        user.invite_token_version = old_version
+        if session is None:
+            graph, store = _file_admin_graph()
+            persisted = graph.users.get(user.id)
+            if persisted is not None:
+                persisted.invite_token_version = old_version
+                graph.save(store)
+        else:
+            await session.rollback()
+        raise
     return user
 
 
@@ -1436,14 +1451,17 @@ async def _deliver_staff_invite(
     role_slugs: tuple[RoleSlug, ...],
     is_resend: bool = False,
 ) -> None:
+    # X3.1+X3.2: Use bot deep link as primary, web link as fallback
+    invite_token = build_staff_invite_token(user)
+    bot_link = build_staff_invite_bot_link(invite_token)
     invite_link = build_staff_invite_link(user)
     role_line = ", ".join(role.value for role in role_slugs)
     body = (
         f"Здравствуйте, {user.full_name or user.email or 'сотрудник'}!\n\n"
         "Для вас создан staff-доступ PitchCopyTrade.\n"
         f"Роли: {role_line}\n\n"
-        f"Открыть приглашение: {invite_link}\n"
-        f"Войти через Telegram: {invite_link}\n"
+        f"Основной способ - нажмите кнопку в Telegram: {bot_link}\n"
+        f"Альтернативно откройте через браузер: {invite_link}\n"
     )
     sent, error = await _send_email_message(
         to_email=user.email,
@@ -1540,6 +1558,7 @@ async def _send_email_message(*, to_email: str | None, subject: str, body: str) 
     if not smtp_password or smtp_password.startswith("__FILL_ME__"):
         return False, "smtp is not configured"
     try:
+        import asyncio
         import aiosmtplib
         from email.message import EmailMessage
 
@@ -1548,15 +1567,22 @@ async def _send_email_message(*, to_email: str | None, subject: str, body: str) 
         message["To"] = to_email
         message["Subject"] = subject
         message.set_content(body)
-        await aiosmtplib.send(
-            message,
-            hostname=settings.notifications.smtp_host,
-            port=settings.notifications.smtp_port,
-            use_tls=settings.notifications.smtp_ssl,
-            username=settings.notifications.smtp_user,
-            password=smtp_password,
+        # Y2: Add timeout to prevent hanging on unresponsive SMTP servers
+        await asyncio.wait_for(
+            aiosmtplib.send(
+                message,
+                hostname=settings.notifications.smtp_host,
+                port=settings.notifications.smtp_port,
+                use_tls=settings.notifications.smtp_ssl,
+                username=settings.notifications.smtp_user,
+                password=smtp_password,
+            ),
+            timeout=10.0,
         )
         return True, None
+    except asyncio.TimeoutError:
+        logger.warning("SMTP timeout for %s", to_email)
+        return False, "smtp timeout"
     except Exception as exc:
         logger.warning("email delivery failed for %s: %s", to_email, exc)
         return False, str(exc)

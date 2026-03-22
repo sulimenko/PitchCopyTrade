@@ -7,13 +7,16 @@ from pitchcopytrade.core.logging import configure_logging
 SERVICE_REQUIRED_SECRETS: dict[str, tuple[tuple[str, str | None], ...]] = {
     "api": (
         ("APP_SECRET_KEY", "app_secret_key"),
+        ("INTERNAL_API_SECRET", "internal_api_secret"),
     ),
     "bot": (
         ("APP_SECRET_KEY", "app_secret_key"),
         ("TELEGRAM_BOT_TOKEN", "telegram_bot_token"),
+        ("INTERNAL_API_SECRET", "internal_api_secret"),
     ),
     "worker": (
         ("APP_SECRET_KEY", "app_secret_key"),
+        ("INTERNAL_API_SECRET", "internal_api_secret"),
     ),
 }
 

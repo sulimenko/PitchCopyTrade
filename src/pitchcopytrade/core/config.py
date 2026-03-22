@@ -48,6 +48,10 @@ class EnvName:
     SMTP_FROM_NAME = "SMTP_FROM_NAME"
     ADMIN_TELEGRAM_ID = "ADMIN_TELEGRAM_ID"
     ADMIN_EMAIL = "ADMIN_EMAIL"
+    GOOGLE_CLIENT_ID = "GOOGLE_CLIENT_ID"
+    GOOGLE_CLIENT_SECRET = "GOOGLE_CLIENT_SECRET"
+    YANDEX_CLIENT_ID = "YANDEX_CLIENT_ID"
+    YANDEX_CLIENT_SECRET = "YANDEX_CLIENT_SECRET"
 
 
 def _normalize_secret(value: SecretStr | str) -> str:
@@ -200,6 +204,12 @@ class Settings(BaseSettings):
     smtp_from_name: str = Field(default="PitchCopyTrade", alias=EnvName.SMTP_FROM_NAME)
     admin_telegram_id: int | None = Field(default=None, alias=EnvName.ADMIN_TELEGRAM_ID)
     admin_email: str | None = Field(default=None, alias=EnvName.ADMIN_EMAIL)
+
+    # X4.2: OAuth configuration (optional, disabled if not set)
+    google_client_id: str | None = Field(default=None, alias=EnvName.GOOGLE_CLIENT_ID)
+    google_client_secret: SecretStr | None = Field(default=None, alias=EnvName.GOOGLE_CLIENT_SECRET)
+    yandex_client_id: str | None = Field(default=None, alias=EnvName.YANDEX_CLIENT_ID)
+    yandex_client_secret: SecretStr | None = Field(default=None, alias=EnvName.YANDEX_CLIENT_SECRET)
 
     @field_validator("app_env")
     @classmethod

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
@@ -36,6 +37,8 @@ from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
 from pitchcopytrade.web.templates import templates
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 
@@ -312,6 +315,260 @@ async def workspace_home(request: Request, repository: AuthRepository = Depends(
     )
 
 
+# X4: OAuth routes for Google and Yandex (disabled if credentials not configured)
+
+
+@router.get("/auth/google", include_in_schema=False)
+async def google_oauth_start(request: Request) -> Response:
+    """X4.4: Redirect to Google OAuth consent screen."""
+    from authlib.integrations.httpx_client import AsyncOAuth2Client
+
+    settings = get_settings()
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(status_code=404, detail="Google OAuth not configured")
+
+    # Calculate redirect URI
+    redirect_uri = f"{settings.app.base_url.rstrip('/')}/auth/google/callback"
+
+    client = AsyncOAuth2Client(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret.get_secret_value(),
+        redirect_uri=redirect_uri,
+    )
+
+    # Generate authorization URL
+    uri, state = client.create_authorization_url(
+        "https://accounts.google.com/o/oauth2/v2/auth",
+        scope=["openid", "email", "profile"],
+    )
+
+    # Store state in cookie for CSRF protection
+    response = RedirectResponse(url=uri, status_code=status.HTTP_302_FOUND)
+    response.set_cookie(
+        key="oauth_state",
+        value=state,
+        httponly=True,
+        max_age=600,
+        samesite="lax",
+        secure=settings.app.base_url.startswith("https://"),
+        path="/",
+    )
+    return response
+
+
+@router.get("/auth/google/callback", response_class=HTMLResponse, include_in_schema=False)
+async def google_oauth_callback(
+    request: Request,
+    code: str = None,
+    state: str = None,
+    repository: AuthRepository = Depends(get_auth_repository),
+) -> Response:
+    """X4.6: Handle Google OAuth callback."""
+    from authlib.integrations.httpx_client import AsyncOAuth2Client
+    import httpx
+
+    settings = get_settings()
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(status_code=404, detail="Google OAuth not configured")
+
+    # Verify state
+    stored_state = request.cookies.get("oauth_state")
+    if not state or state != stored_state:
+        return templates.TemplateResponse(
+            request,
+            "auth/login.html",
+            _build_login_template_context(title="PitchCopyTrade", error="OAuth validation failed"),
+        )
+
+    redirect_uri = f"{settings.app.base_url.rstrip('/')}/auth/google/callback"
+
+    client = AsyncOAuth2Client(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret.get_secret_value(),
+        redirect_uri=redirect_uri,
+    )
+
+    try:
+        # Exchange code for token
+        token = await client.fetch_token("https://oauth2.googleapis.com/token", code=code)
+
+        # Get user info
+        async with httpx.AsyncClient() as http_client:
+            resp = await http_client.get(
+                "https://openidconnect.googleapis.com/v1/userinfo",
+                headers={"Authorization": f"Bearer {token['access_token']}"},
+            )
+            user_info = resp.json()
+
+        email = user_info.get("email")
+        if not email:
+            return templates.TemplateResponse(
+                request,
+                "auth/login.html",
+                _build_login_template_context(title="PitchCopyTrade", error="Could not get email from Google"),
+            )
+
+        # X4.6: Find user by email in repository
+        user = await repository.get_user_by_identity(email)
+        if user is None:
+            return templates.TemplateResponse(
+                request,
+                "auth/login.html",
+                _build_login_template_context(title="PitchCopyTrade", error="Email not found in staff directory"),
+            )
+
+        # If inactive, mark as active and bind OAuth provider
+        if user.status != UserStatus.ACTIVE:
+            user.status = UserStatus.ACTIVE
+            await repository.commit()
+
+        # Create session and redirect
+        session_value = build_session_cookie_value(user)
+        response = RedirectResponse(url="/workspace", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(
+            key=settings.auth.session_cookie_name,
+            value=session_value,
+            httponly=True,
+            max_age=settings.auth.session_ttl_seconds,
+            samesite="lax",
+            secure=settings.app.base_url.startswith("https://"),
+            path="/",
+        )
+        response.delete_cookie("oauth_state", path="/")
+        return response
+
+    except Exception as exc:
+        logger.exception("Google OAuth error")
+        return templates.TemplateResponse(
+            request,
+            "auth/login.html",
+            _build_login_template_context(title="PitchCopyTrade", error=f"OAuth error: {str(exc)[:100]}"),
+        )
+
+
+@router.get("/auth/yandex", include_in_schema=False)
+async def yandex_oauth_start(request: Request) -> Response:
+    """X4.4: Redirect to Yandex OAuth consent screen."""
+    from authlib.integrations.httpx_client import AsyncOAuth2Client
+
+    settings = get_settings()
+    if not settings.yandex_client_id or not settings.yandex_client_secret:
+        raise HTTPException(status_code=404, detail="Yandex OAuth not configured")
+
+    redirect_uri = f"{settings.app.base_url.rstrip('/')}/auth/yandex/callback"
+
+    client = AsyncOAuth2Client(
+        client_id=settings.yandex_client_id,
+        client_secret=settings.yandex_client_secret.get_secret_value(),
+        redirect_uri=redirect_uri,
+    )
+
+    uri, state = client.create_authorization_url(
+        "https://oauth.yandex.ru/authorize",
+    )
+
+    response = RedirectResponse(url=uri, status_code=status.HTTP_302_FOUND)
+    response.set_cookie(
+        key="oauth_state",
+        value=state,
+        httponly=True,
+        max_age=600,
+        samesite="lax",
+        secure=settings.app.base_url.startswith("https://"),
+        path="/",
+    )
+    return response
+
+
+@router.get("/auth/yandex/callback", response_class=HTMLResponse, include_in_schema=False)
+async def yandex_oauth_callback(
+    request: Request,
+    code: str = None,
+    state: str = None,
+    repository: AuthRepository = Depends(get_auth_repository),
+) -> Response:
+    """X4.6: Handle Yandex OAuth callback."""
+    from authlib.integrations.httpx_client import AsyncOAuth2Client
+    import httpx
+
+    settings = get_settings()
+    if not settings.yandex_client_id or not settings.yandex_client_secret:
+        raise HTTPException(status_code=404, detail="Yandex OAuth not configured")
+
+    stored_state = request.cookies.get("oauth_state")
+    if not state or state != stored_state:
+        return templates.TemplateResponse(
+            request,
+            "auth/login.html",
+            _build_login_template_context(title="PitchCopyTrade", error="OAuth validation failed"),
+        )
+
+    redirect_uri = f"{settings.app.base_url.rstrip('/')}/auth/yandex/callback"
+
+    client = AsyncOAuth2Client(
+        client_id=settings.yandex_client_id,
+        client_secret=settings.yandex_client_secret.get_secret_value(),
+        redirect_uri=redirect_uri,
+    )
+
+    try:
+        # Exchange code for token
+        token = await client.fetch_token("https://oauth.yandex.ru/token", code=code)
+
+        # Get user info
+        async with httpx.AsyncClient() as http_client:
+            resp = await http_client.get(
+                "https://login.yandex.ru/info",
+                headers={"Authorization": f"OAuth {token['access_token']}"},
+            )
+            user_info = resp.json()
+
+        email = user_info.get("default_email")
+        if not email:
+            return templates.TemplateResponse(
+                request,
+                "auth/login.html",
+                _build_login_template_context(title="PitchCopyTrade", error="Could not get email from Yandex"),
+            )
+
+        # X4.6: Find user by email in repository
+        user = await repository.get_user_by_identity(email)
+        if user is None:
+            return templates.TemplateResponse(
+                request,
+                "auth/login.html",
+                _build_login_template_context(title="PitchCopyTrade", error="Email not found in staff directory"),
+            )
+
+        # If inactive, mark as active
+        if user.status != UserStatus.ACTIVE:
+            user.status = UserStatus.ACTIVE
+            await repository.save_user(user)
+
+        # Create session and redirect
+        session_value = build_session_cookie_value(user)
+        response = RedirectResponse(url="/workspace", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(
+            key=settings.auth.session_cookie_name,
+            value=session_value,
+            httponly=True,
+            max_age=settings.auth.session_ttl_seconds,
+            samesite="lax",
+            secure=settings.app.base_url.startswith("https://"),
+            path="/",
+        )
+        response.delete_cookie("oauth_state", path="/")
+        return response
+
+    except Exception as exc:
+        logger.exception("Yandex OAuth error")
+        return templates.TemplateResponse(
+            request,
+            "auth/login.html",
+            _build_login_template_context(title="PitchCopyTrade", error=f"OAuth error: {str(exc)[:100]}"),
+        )
+
+
 def _resolve_role_home(role_labels: list[str]) -> str:
     if RoleSlug.ADMIN.value in role_labels:
         return "Admin workspace"
@@ -337,6 +594,8 @@ def _resolve_role_redirect(user, requested_mode: str | None = None) -> tuple[str
 def _sanitize_subscriber_next_path(next_path: str | None) -> str:
     if not next_path:
         return "/app/status"
+    # Y4: Normalize path and prevent open redirect attacks
+    next_path = next_path.replace("\\", "/")
     if not next_path.startswith("/") or next_path.startswith("//"):
         return "/app/status"
     return next_path
@@ -356,6 +615,7 @@ def _build_login_template_context(
     telegram_auth_url = f"{base_url}/auth/telegram/callback"
     if invite_token:
         telegram_auth_url = f"{telegram_auth_url}?invite_token={invite_token}"
+    # X4.7: OAuth button visibility depends on credentials being configured
     return {
         "title": title,
         "error": error,
@@ -371,6 +631,8 @@ def _build_login_template_context(
         "invite_link_url": f"{base_url}/login?invite_token={invite_token}" if invite_token else "",
         "telegram_invite_bot_url": build_staff_invite_bot_link(invite_token) if invite_token else "",
         "telegram_request_invite_url": build_staff_invite_help_bot_link(invite_token) if invite_token else "",
+        "google_oauth_enabled": bool(settings.google_client_id and settings.google_client_secret),
+        "yandex_oauth_enabled": bool(settings.yandex_client_id and settings.yandex_client_secret),
     }
 
 

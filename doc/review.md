@@ -6,9 +6,9 @@
 
 ## Общий вывод
 
-Блоки S, R, T, U, V, W, X1 полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен. Inline-форма создания рекомендации восстановлена через fix AG Grid bootstrap.
+Блоки S, R, T, U, V, W, X1, Y, X3, X4 полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен. Inline-форма создания рекомендации восстановлена. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) реализован. Oversight emails реализованы.
 
-**Production bug-ов нет.** Два открытых finding не блокируют MVP: F1 (control emails) и invite token race condition.
+**Production bug-ов нет.** Merge не блокирован.
 
 ---
 
@@ -42,14 +42,22 @@
 | `/moderation/*` | Очередь модерации |
 | `/app/*` | Telegram Mini App (подписчики) |
 | `/api/*` | JSON API |
-| `/auth/*` | Аутентификация |
+| `/auth/*` | Аутентификация (Telegram Widget, OAuth 2.0) |
 | `/` | Публичный каталог, checkout |
+
+### Аутентификация (4 способа)
+| Способ | Роуты | Назначение |
+|--------|-------|-----------|
+| Telegram Login Widget | `/auth/telegram/callback` | Staff: привязка Telegram ID |
+| Telegram Mini App initData | `POST /tg-webapp/auth` | Подписчики: вход из бота |
+| Google OAuth 2.0 | `/auth/google` → `/auth/google/callback` | Staff: вход по email |
+| Яндекс OAuth 2.0 | `/auth/yandex` → `/auth/yandex/callback` | Staff: вход по email |
 
 ### Зависимости (pyproject.toml)
 ```
 fastapi, uvicorn[standard], aiogram, sqlalchemy, greenlet,
 asyncpg, jinja2, pydantic-settings, python-multipart,
-email-validator, httpx, aiosmtplib
+email-validator, httpx, aiosmtplib, authlib
 ```
 `arq` и `redis` удалены (Блок V1).
 
@@ -97,64 +105,45 @@ email-validator, httpx, aiosmtplib
 - AG Grid bootstrap: `data-ag-grid-skip` строки вставляются после grid-контейнера (inline-форма восстановлена)
 - AG Grid theme CSS: sort/filter иконки скрыты (no-font theme без юникод-артефактов)
 
-### Fixes этой сессии ✅
-- **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()` в `create_author_recommendation` — рекомендации создаются корректно
+### Блок Y — Security & reliability fixes ✅
+- **Y1**: Invite token race condition — rollback `invite_token_version` при SMTP failure в `resend_staff_invite` (admin.py:1431–1443)
+- **Y2**: SMTP timeout — `asyncio.wait_for(..., timeout=10.0)` в `_send_email_message`; при timeout → `FAILED` статус, не 500
+- **Y3**: Startup placeholder validation — `bootstrap_runtime()` → `validate_runtime_settings()` проверяет `APP_SECRET_KEY`, `TELEGRAM_BOT_TOKEN`, `INTERNAL_API_SECRET` через `_is_placeholder()`
+- **Y4**: Open redirect — `_sanitize_subscriber_next_path()` нормализует backslash, запрещает `//` пути и внешние URL
+
+### Блок X3 — Staff invite via bot deep link ✅
+- Invite email содержит `https://t.me/{bot}?start=staffinvite-XXX` как PRIMARY способ входа
+- Web-ссылка как альтернативный fallback
+- Бот `/start staffinvite-XXX` открывает WebApp с invite URL
+
+### Блок X4 — Google/Yandex OAuth 2.0 ✅ (код готов, credentials не настроены)
+- Config: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` (все optional, default None)
+- `authlib>=1.3` в зависимостях
+- Routes: `GET /auth/google` → consent → `GET /auth/google/callback`; аналогично для Яндекс
+- Callback: поиск user по email → если найден → session cookie → redirect; если не найден → ошибка
+- CSRF: state cookie с TTL 600 сек
+- Кнопки в login.html скрыты если credentials не заданы (`google_oauth_enabled`, `yandex_oauth_enabled`)
+- **X4.1 не закрыт**: нужна регистрация OAuth-приложений в Google Cloud Console и Яндекс ID
+
+### Fixes ✅
+- **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()` в `create_author_recommendation`
+- **F1 — Oversight emails**: `_send_admin_oversight_email()` реализован — при staff onboarding все активные админы получают email о новом сотруднике
 
 ---
 
 ## Открытые findings (по приоритету)
 
-### Y1 — Invite token race condition при resend `[ ]` — WARNING
+### X4.1 — Регистрация OAuth credentials `[ ]` — INFO
 
-**Файл:** `src/pitchcopytrade/services/admin.py`, функция resend_staff_invite
-**Проблема:** `invite_token_version` инкрементируется ДО отправки email. Если SMTP упал — старый токен инвалидирован, новый не доставлен. Пользователь заблокирован до следующего ручного resend.
-**Контекст:** UI в `/admin/staff/{id}` показывает статус доставки и кнопку «Переслать». Admin может исправить вручную, но это friction.
-**Severity:** WARNING — не падает, но UX плохой при SMTP проблемах.
-
----
-
-### Y2 — Нет SMTP retry при отправке invite `[ ]` — WARNING
-
-**Файл:** `src/pitchcopytrade/services/admin.py`, `_deliver_staff_invite()`
-**Проблема:** Email отправляется в одну попытку синхронно (в рамках HTTP request). Нет retry, нет async queue. При SMTP timeout — request висит 30+ сек, user создан, email не доставлен.
-**Severity:** WARNING для production с реальными пользователями.
-
----
-
-### Y3 — Нет валидации `__FILL_ME__` vars при startup `[ ]` — INFO
-
-**Файл:** `src/pitchcopytrade/core/config.py`
-**Проблема:** Если `APP_SECRET_KEY=__FILL_ME__` остаётся в `.env`, приложение стартует без ошибки. Падение произойдёт только при первом вызове JWT-функции (auth, tokens).
-**Рекомендация:** В lifespan добавить check на placeholder values для критических vars.
-
----
-
-### Y4 — Open redirect в miniapp_entry.html `[ ]` — INFO
-
-**Файл:** `src/pitchcopytrade/web/templates/app/miniapp_entry.html`, строка ~54
-**Код:** `window.location.href = data.redirect_url || "/app/status"`
-**Проблема:** `redirect_url` приходит от сервера `/tg-webapp/auth`. Если сервер вернёт абсолютный URL на внешний домен — браузер перейдёт туда. Сейчас сервер контролирует URL через `_sanitize_subscriber_next_path()`, но explicit validation в JS отсутствует.
-**Fix:** `if (!data.redirect_url || !data.redirect_url.startsWith('/')) { ... }` перед навигацией.
-
----
-
-### F0 — Governance: последний активный администратор ✅ (закрыто в коде)
-
-Подтверждено при review: `update_admin_staff_user()` вызывает `_validate_admin_role_update_file/sql()` (admin.py:874) — governance contract реализован через edit-path. Пометить как закрытое.
-
----
-
-### F1 — Control emails при staff onboarding `[ ]` — не блокирует MVP
-
-`_deliver_staff_invite()` отправляет письмо только самому сотруднику. Blueprint требует также уведомлять активных администраторов ("oversight email"). Не реализовано. Допустимо до первого коммерческого запуска.
-
----
+**Действие:** Заказчик должен зарегистрировать OAuth-приложение:
+- Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID
+- Яндекс ID → https://oauth.yandex.ru/ → Создать приложение
+- Redirect URIs: `https://{DOMAIN}/auth/google/callback`, `https://{DOMAIN}/auth/yandex/callback`
+- Записать client_id + client_secret в `.env`
 
 ### F2 — db/file parity verification `[ ]` — не блокирует MVP
 
 Базовые пути одинаковые. Риск drift при будущих изменениях. Нужен явный audit обоих путей.
-
----
 
 ### F3 — Regression coverage F1–F2 `[ ]` — не блокирует MVP
 
@@ -164,12 +153,12 @@ email-validator, httpx, aiosmtplib
 
 ## Gate на следующий merge
 
-**Блоки S, R, T, U, V, W, X1** — закрыты. Merge **не блокирован**.
+**Блоки S, R, T, U, V, W, X1, Y, X3, X4** — закрыты. Merge **не блокирован**.
 
 Открытых production bug-ов нет.
 
-Y1–Y3 — рекомендуется закрыть до коммерческого запуска.
-F1–F3 — не блокируют MVP.
+X4.1 (OAuth credentials) — операционная задача заказчика, не блокирует merge.
+F2–F3 — не блокируют MVP.
 
 V3 (smoke-test) — ручная проверка на сервере. Не блокирует merge.
 
@@ -178,8 +167,6 @@ V3 (smoke-test) — ручная проверка на сервере. Не бл
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **Блок Y** — fix invite token race (Y1–Y3), open redirect (Y4) — см. doc/task.md
-2. **Блок X3** — улучшить invite flow через бота (bot deep link в email)
-3. **V3** — ручной smoke-test: создать подписчика → рекомендацию → опубликовать → уведомление
-4. **Блок X4** — Google/Yandex OAuth (после настройки credentials у заказчика)
-5. **Блок F** — F1 oversight emails, F2–F3 parity + coverage
+1. **V3** — ручной smoke-test: создать подписчика → рекомендацию → опубликовать → уведомление
+2. **Блок F** — F2 parity audit, F3 regression coverage
+3. **X4.1** — регистрация OAuth credentials (заказчик)

@@ -51,7 +51,14 @@
       body: body.toString()
     })
       .then(function (r) { return r.json(); })
-      .then(function (data) { window.location.href = data.redirect_url || "/app/status"; })
+      .then(function (data) {
+        // Y4: Validate redirect URL to prevent open redirect attacks
+        var redirectUrl = data.redirect_url || "/app/status";
+        if (!redirectUrl || !redirectUrl.startsWith("/") || redirectUrl.startsWith("//") || redirectUrl.startsWith("/\\")) {
+          redirectUrl = "/app/status";
+        }
+        window.location.href = redirectUrl;
+      })
       .catch(showFallback);
   } else {
     showFallback();
