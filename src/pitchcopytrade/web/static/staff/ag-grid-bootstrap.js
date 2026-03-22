@@ -85,19 +85,20 @@
       return item;
     });
 
+    // Z7.2: Use autoHeight when skip rows present to show inline form
+    var hasSkipRows = skipRows.length > 0;
+
     var host = document.createElement("div");
     host.className = "pct-ag-grid-host";
     host.style.width = "100%";
     var domLayout = resolveDomLayout();
-    if (domLayout === "normal") {
+    // Z9.2.3: Don't set height when using autoHeight (hasSkipRows); AG Grid determines height itself
+    if (domLayout === "normal" && !hasSkipRows) {
       host.style.height = "100%";
     }
     table.parentNode.insertBefore(host, table);
     table.hidden = true;
     table.dataset.agGridMounted = "true";
-
-    // Z7.2: Use autoHeight when skip rows present to show inline form
-    var hasSkipRows = skipRows.length > 0;
 
     var grid = createGrid(host, {
       columnDefs: columnDefs,

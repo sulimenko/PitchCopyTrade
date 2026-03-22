@@ -26,7 +26,7 @@
 </section>
 
 <section class="staff-detail-layout">
-  <form class="staff-card staff-form-shell" method="post">
+  <form class="staff-card staff-form-shell" method="post" action="{% if promo_code %}/admin/promos/{{ promo_code.id }}{% else %}/admin/promos{% endif %}">
     {% if error %}
     <div class="staff-error">{{ error }}</div>
     {% endif %}

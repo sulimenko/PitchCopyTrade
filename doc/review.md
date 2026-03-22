@@ -8,7 +8,7 @@
 
 Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8) полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен, redirect на витрину, онбординг убран. Inline-форма восстановлена (autoHeight). AG Grid floating filters вместо сломанных иконок. UUID-валидация всех admin path-параметров. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) с кнопками на /login. Ghost user recovery. Oversight emails.
 
-**Production bug-ов нет.** Merge не блокирован.
+**Открыты 2 production бага (Z9.1, Z9.2).** Рекомендуется закрыть до deploy.
 
 ---
 
@@ -137,13 +137,21 @@ email-validator, httpx, aiosmtplib, authlib
 
 ## Открытые findings
 
+### Z9.1 — «Сохранить промокод» → 404 `[ ]` — BUG
+
+**Файл:** `src/pitchcopytrade/web/templates/admin/promo_form.html` (строка 29)
+**Проблема:** `<form method="post">` без `action` → POST идёт на текущий URL `/admin/promos/new` → матчит `POST /promos/{promo_code_id}` с `promo_code_id="new"` → Z6 UUID-валидация → 404.
+**Fix:** Добавить `action="{% if promo_code %}/admin/promos/{{ promo_code.id }}{% else %}/admin/promos{% endif %}"`. Проверить аналогичные формы (strategy_form, product_form, legal_form).
+
+### Z9.2 — Inline-форма рекомендаций обрезается `[ ]` — BUG
+
+**Файлы:** `staff_base.html` (строки 140, 261), `ag-grid-bootstrap.js` (строка 93)
+**Проблема:** `.staff-grid-shell { overflow: hidden }` + `.staff-content > *:has(.staff-grid-shell) { overflow: hidden }` + `host.style.height = "100%"` — три слоя обрезки. Wrapper-таблица с inline-формой вставлена после AG Grid host, но ей не остаётся места.
+**Fix:** overflow: auto вместо hidden, не ставить height:100% при autoHeight, проверить regression на таблицах без skip rows.
+
 ### F2 — db/file parity verification `[ ]` — не блокирует MVP
 
-Базовые пути одинаковые. Риск drift при будущих изменениях. Нужен явный audit обоих путей.
-
 ### F3 — Regression coverage `[ ]` — не блокирует MVP
-
-Тесты на: oversight emails в file mode, governance через edit path.
 
 ---
 
@@ -163,7 +171,7 @@ email-validator, httpx, aiosmtplib, authlib
 
 **Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8).**
 
-**Production bug-ов нет.** Merge не блокирован.
+**Открыты Z9.1 + Z9.2.** Рекомендуется закрыть до production deploy.
 
 F2–F3 — не блокируют MVP.
 
@@ -172,5 +180,7 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **V3** — ручной smoke-test: создать подписчика → рекомендацию → опубликовать → уведомление
-2. **Блок F** — F2 parity audit, F3 regression coverage
+1. **Z9.1** — `action` в promo_form.html (и аналогичных формах)
+2. **Z9.2** — overflow/height fix для inline-формы в staff_base.html + ag-grid-bootstrap.js
+3. **V3** — ручной smoke-test
+4. **Блок F** — F2 parity audit, F3 regression coverage
