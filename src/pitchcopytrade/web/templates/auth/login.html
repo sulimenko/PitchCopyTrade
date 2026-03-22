@@ -64,6 +64,26 @@
     </section>
     {% endif %}
 
+    {% if google_oauth_enabled or yandex_oauth_enabled %}
+    <section class="auth-login-section auth-login-section--oauth">
+      <div class="muted auth-login-copy">
+        Вход для сотрудников через корпоративный аккаунт.
+      </div>
+      <div class="auth-login-oauth-buttons">
+        {% if google_oauth_enabled %}
+        <a class="action auth-login-oauth-btn" href="/auth/google">
+          Войти через Google
+        </a>
+        {% endif %}
+        {% if yandex_oauth_enabled %}
+        <a class="action auth-login-oauth-btn" href="/auth/yandex">
+          Войти через Яндекс
+        </a>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+
     {% if not is_staff_invite %}
     <div class="auth-login-divider">
       <div class="auth-login-divider-line"></div>
@@ -198,6 +218,9 @@
     font: inherit;
   }
   .auth-login-submit { width: 100%; justify-content: center; }
+  .auth-login-section--oauth { text-align: center; }
+  .auth-login-oauth-buttons { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .auth-login-oauth-btn { width: 100%; justify-content: center; }
   .auth-login-footer { margin-top: 20px; }
   .auth-login-footer--secondary { margin-top: 10px; }
   @media (max-width: 640px) {

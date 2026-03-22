@@ -42,7 +42,7 @@
     try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || timezone; } catch (e) {}
     var body = new URLSearchParams();
     body.set("init_data", webApp.initData);
-    body.set("next", "/app/status");
+    body.set("next", "/app/catalog");
     body.set("timezone_name", timezone);
     fetch("/tg-webapp/auth", {
       method: "POST",
@@ -53,9 +53,9 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         // Y4: Validate redirect URL to prevent open redirect attacks
-        var redirectUrl = data.redirect_url || "/app/status";
+        var redirectUrl = data.redirect_url || "/app/catalog";
         if (!redirectUrl || !redirectUrl.startsWith("/") || redirectUrl.startsWith("//") || redirectUrl.startsWith("/\\")) {
-          redirectUrl = "/app/status";
+          redirectUrl = "/app/catalog";
         }
         window.location.href = redirectUrl;
       })

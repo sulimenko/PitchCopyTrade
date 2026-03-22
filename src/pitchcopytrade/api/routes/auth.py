@@ -124,7 +124,8 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
     tg_user = await get_user_from_telegram_fallback_cookie(repository, tg_token) if tg_token else None
     if tg_user is not None:
-        return RedirectResponse(url="/app/status", status_code=status.HTTP_303_SEE_OTHER)
+        # Z5: Redirect to catalog instead of status for better UX
+        return RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
     return templates.TemplateResponse(
         request,
@@ -228,7 +229,7 @@ async def telegram_auth_login(
 @router.post("/tg-webapp/auth", include_in_schema=False)
 async def telegram_webapp_auth(
     init_data: str = Form(...),
-    next: str = Form("/app/status"),
+    next: str = Form("/app/catalog"),  # Z5: Default to catalog for better UX
     timezone_name: str = Form("Europe/Moscow"),
     repository: PublicRepository = Depends(get_public_repository),
 ) -> Response:
@@ -275,7 +276,8 @@ async def app_home(request: Request, repository: AuthRepository = Depends(get_au
     if tg_token:
         subscriber = await get_user_from_telegram_fallback_cookie(repository, tg_token)
         if subscriber is not None:
-            return RedirectResponse(url="/app/status", status_code=status.HTTP_303_SEE_OTHER)
+            # Z5: Redirect to catalog instead of status for better UX
+            return RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
         user = await _require_authenticated_user(request, repository)
@@ -593,11 +595,12 @@ def _resolve_role_redirect(user, requested_mode: str | None = None) -> tuple[str
 
 def _sanitize_subscriber_next_path(next_path: str | None) -> str:
     if not next_path:
-        return "/app/status"
+        # Z5: Default to catalog instead of status for better UX
+        return "/app/catalog"
     # Y4: Normalize path and prevent open redirect attacks
     next_path = next_path.replace("\\", "/")
     if not next_path.startswith("/") or next_path.startswith("//"):
-        return "/app/status"
+        return "/app/catalog"
     return next_path
 
 

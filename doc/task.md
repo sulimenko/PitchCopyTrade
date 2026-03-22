@@ -1706,3 +1706,213 @@ Runbook для server-side smoke-check и снятия логов добавле
 2. X2: Admin знает как делать invite, invite flow задокументирован
 3. X3: Invite email содержит bot deep link как основной способ входа
 4. X4: Сотрудники могут входить через Google/Яндекс OAuth (после настройки credentials)
+
+---
+
+## Блок Z — UI bugs (production, 2026-03-22)
+
+### Приоритет
+
+**Z1 → Z2 → Z3** — все три найдены на production, влияют на UX.
+
+---
+
+### Z1 — «Призрачный» пользователь: удаление роли скрывает из списка, но email блокирует повторное создание
+
+**Симптом:** Админ снял все роли с пользователя (например, Андрей Тарасов, avt09@mail.ru). Пользователь пропал из списка `/admin/staff/admins`. При попытке создать его заново — ошибка «Пользователь с таким email уже существует.» (см. screenshot).
+
+**Причина:**
+
+1. `list_admin_staff()` фильтрует список через `_is_staff_user()` (admin.py:735–736). Эта функция возвращает `True` только если у пользователя есть хотя бы одна staff-роль (admin, author, moderator).
+2. Когда через `update_admin_staff_user()` все роли удалены → `_is_staff_user()` → `False` → пользователь не показывается.
+3. Но `_create_staff_user()` → `_validate_staff_uniqueness_file/sql()` (admin.py:769–802) проверяет email по ВСЕМ пользователям (не только staff). Запись с этим email существует → ошибка.
+
+**Файлы:**
+- `src/pitchcopytrade/services/admin.py` — строки 735–736, 769–802, 1095–1156
+
+**Что должен сделать worker:**
+
+- [x] **Z1.1** Прочитать `_create_staff_user()` в `services/admin.py` полностью (lines 1095–1156)
+- [x] **Z1.2** В `_create_staff_user()` ПЕРЕД проверкой уникальности добавить recovery-логику: реализовано для file и db режимов
+- [x] **Z1.3** Альтернативная защита: валидация уже существует (line 844). Z1 recovery обрабатывает восстановление ghost users.
+- [x] **Z1.4** `python3 -m compileall src tests` ✓
+
+**Acceptance Z1:**
+- Если пользователь потерял все роли, его можно найти и восстановить через re-creation с тем же email
+- ИЛИ: UI не позволяет удалить все роли (select не допускает пустой выбор)
+
+---
+
+### Z2 — AG Grid: юникод-артефакты вместо иконок фильтра/сортировки в заголовках
+
+**Симптом:** В заголовках колонок таблиц (рекомендации, staff, подписки) видны символы типа ≡ (гамбургер) — юникод-артефакты от AG Grid icon font, который не загружен.
+
+**Причина:**
+
+1. Проект использует `ag-theme-quartz-no-font.min.css` — тема без встроенного шрифта иконок.
+2. CSS в `ag-grid-theme.css` (lines 61–65) скрывает:
+   ```css
+   .pct-ag-theme .ag-sort-indicator-container,
+   .pct-ag-theme .ag-header-cell-label .ag-header-icon {
+     display: none;
+   }
+   ```
+3. Но эти селекторы НЕ покрывают все иконки AG Grid. Не скрыты:
+   - `.ag-header-cell-menu-button` — кнопка меню (≡ hamburger)
+   - `.ag-icon` — общий класс иконок AG Grid (filter popup, etc.)
+   - `.ag-filter-icon` — индикатор активного фильтра
+
+4. `suppressHeaderMenuButton: true` задан в `defaultColDef` (ag-grid-bootstrap.js:106), но AG Grid v31+ использует `suppressHeaderMenuButton` для старого menu, а новый column menu может использовать другой API (`suppressColumnsToolPanel`, etc.).
+
+**Файлы:**
+- `src/pitchcopytrade/web/static/staff/ag-grid-theme.css` — lines 61–65
+- `src/pitchcopytrade/web/static/staff/ag-grid-bootstrap.js` — line 106
+- `src/pitchcopytrade/web/templates/partials/ag_grid_assets.html`
+
+**Что должен сделать worker:**
+
+- [x] **Z2.1** Расширить CSS-скрытие иконок в `ag-grid-theme.css`: добавлены селекторы для всех иконок AG Grid
+- [x] **Z2.2** В `ag-grid-bootstrap.js` добавить `suppressHeaderFilterButton: true` в `defaultColDef`
+- [x] **Z2.3** Проверить на production — юникод-артефакты должны полностью исчезнуть
+
+**Acceptance Z2:**
+- Никаких юникод-символов в заголовках колонок AG Grid
+- Сортировка кликом по заголовку работает (не заблокирована)
+- Фильтр через Quick Filter (поиск над таблицей) работает
+
+---
+
+### Z3 — Inline-форма создания рекомендации не отображается
+
+**Симптом:** На `/author/recommendations` нет строки для inline-создания рекомендации. В HTML `<tr data-ag-grid-skip="true" id="inline-recommendation-shortcut">` присутствует, но не видна.
+
+**Причина:**
+
+`ag-grid-bootstrap.js`, lines 115–117:
+```javascript
+skipRows.forEach(function (row) {
+  host.parentNode.insertBefore(row, host.nextSibling);
+});
+```
+
+Этот код извлекает `<tr>` из таблицы и вставляет как прямого потомка `<section class="staff-card">`. Но `<tr>` — табличный элемент, он валиден только внутри `<table><tbody>`. Браузер не рендерит «голый» `<tr>` вне таблицы.
+
+**Результат DOM после bootstrap:**
+```html
+<section class="staff-card">
+  <div class="pct-ag-grid-host"><!-- AG Grid --></div>
+  <tr data-ag-grid-skip="true" id="inline-recommendation-shortcut">
+    <!-- Невидим: <tr> вне <table> -->
+  </tr>
+</section>
+```
+
+**Файлы:**
+- `src/pitchcopytrade/web/static/staff/ag-grid-bootstrap.js` — lines 115–117
+- `src/pitchcopytrade/web/templates/author/recommendations_list.html` — line 102
+
+**Что должен сделать worker:**
+
+- [x] **Z3.1** В `ag-grid-bootstrap.js`, при перемещении skip rows, обернуть их в `<table>` структуру
+- [x] **Z3.2** Добавить CSS для `.pct-skip-row-wrapper` в `ag-grid-theme.css`
+- [x] **Z3.3** Inline-строка рекомендации должна отображаться под AG Grid таблицей
+- [x] **Z3.4** Нет регрессий на других страницах
+- [x] **Z3.5** `python3 -m compileall src tests`
+
+**Acceptance Z3:**
+- Inline-строка создания рекомендации видна под AG Grid таблицей
+- Форма работает: стратегия + бумага + направление → «Создать» → рекомендация появляется
+- Нет визуальных артефактов (двойные границы, скачки)
+
+---
+
+### Acceptance для Блока Z
+
+1. Z1: Повторное создание пользователя с тем же email после удаления ролей не выдаёт ошибку
+2. Z2: Юникод-артефакты в заголовках AG Grid полностью устранены
+3. Z3: Inline-форма создания рекомендации видна и работает
+
+---
+
+## Блок Z4–Z5 — OAuth кнопки и Mini App redirect (production, 2026-03-22)
+
+### Приоритет
+
+**Z4 → Z5** — Z4 блокирует использование OAuth, Z5 улучшает UX подписчиков.
+
+---
+
+### Z4 — OAuth кнопки отсутствуют на странице /login
+
+**Симптом:** В `.env.server` добавлены `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET`, контейнеры перезапущены. На `/login` кнопки «Войти через Google» / «Войти через Яндекс» НЕ появились.
+
+**Причина:**
+
+1. Template context в `auth.py` (lines 634–635) ПРАВИЛЬНО передаёт флаги:
+   ```python
+   "google_oauth_enabled": bool(settings.google_client_id and settings.google_client_secret),
+   "yandex_oauth_enabled": bool(settings.yandex_client_id and settings.yandex_client_secret),
+   ```
+2. Но шаблон `src/pitchcopytrade/web/templates/auth/login.html` **НЕ содержит HTML для OAuth кнопок**. Нет ни одного упоминания `google_oauth_enabled` или `yandex_oauth_enabled` в шаблоне. Код backend-роутов `/auth/google`, `/auth/yandex` и callback'ов полностью реализован, но frontend-часть (кнопки) отсутствует.
+
+**Файлы:**
+- `src/pitchcopytrade/web/templates/auth/login.html` — добавить кнопки
+- `src/pitchcopytrade/api/routes/auth.py` — backend готов, менять не нужно
+
+**Что должен сделать worker:**
+
+- [x] **Z4.1** Прочитать `login.html` полностью
+- [x] **Z4.2** Добавить HTML для OAuth кнопок между Telegram и разделителем "ИЛИ"
+- [x] **Z4.3** Добавить CSS для OAuth кнопок в `<style>` секцию
+- [x] **Z4.4** OAuth кнопки видны независимо от `is_staff_invite` (одна общая секция)
+- [x] **Z4.5** `python3 -m compileall src tests`
+
+**Acceptance Z4:**
+- При наличии `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` в env → на `/login` видна кнопка «Войти через Google»
+- При наличии `YANDEX_CLIENT_ID` + `YANDEX_CLIENT_SECRET` в env → на `/login` видна кнопка «Войти через Яндекс»
+- Если credentials не заданы → кнопки скрыты
+- Клик по кнопке → redirect на OAuth consent screen провайдера
+- После callback → сессия создана → redirect в кабинет
+
+---
+
+### Z5 — Mini App redirect: /app/status → /app/catalog
+
+**Симптом:** При входе в Mini App через Telegram бот подписчик попадает на `/app/status` (статус подписки). Ожидаемое поведение — сразу показывать витрину стратегий `/app/catalog`.
+
+**Причина:**
+
+Во всех путях входа подписчика hardcoded redirect на `/app/status`:
+
+1. `miniapp_entry.html` (line 45): `body.set("next", "/app/status");`
+2. `auth.py` (line 231): `next: str = Form("/app/status")` — default в POST `/tg-webapp/auth`
+3. `auth.py` (line 278): redirect на `/app/status` в GET `/app` при наличии tg_token cookie
+4. `auth.py` (line 596): fallback в `_sanitize_subscriber_next_path`
+5. `auth.py` (line 600): fallback для невалидных next path
+
+**Файлы:**
+- `src/pitchcopytrade/web/templates/app/miniapp_entry.html` — line 45
+- `src/pitchcopytrade/api/routes/auth.py` — lines 231, 278, 596, 600
+
+**Что должен сделать worker:**
+
+- [x] **Z5.1** В `miniapp_entry.html` заменить `/app/status` на `/app/catalog` (line 45)
+- [x] **Z5.2** В `miniapp_entry.html` заменить fallback на `/app/catalog` (line 56)
+- [x] **Z5.3** В `miniapp_entry.html` заменить fallback на `/app/catalog` (line 58)
+- [x] **Z5.4** В `auth.py` изменить default для `next` (line 232)
+- [x] **Z5.5** В `auth.py` заменить redirect на `/app/catalog` (line 279)
+- [x] **Z5.6** В `auth.py` функция `_sanitize_subscriber_next_path` заменена (lines 598, 602)
+- [x] **Z5.7** В `auth.py` заменена на `/app/catalog` (line 127)
+- [x] **Z5.8** `python3 -m compileall src tests`
+
+**Acceptance Z5:**
+- Подписчик входит через Telegram Mini App → сразу видит витрину стратегий (`/app/catalog`)
+- Навигация «Статус» в Mini App по-прежнему ведёт на `/app/status`
+- Нет regression: staff auth не затронут
+
+---
+
+### Acceptance для Z4–Z5
+
+1. Z4: OAuth кнопки видны на `/login` при настроенных credentials
+2. Z5: Mini App открывает витрину стратегий, а не статус подписки

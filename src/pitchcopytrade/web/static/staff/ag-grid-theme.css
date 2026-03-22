@@ -58,8 +58,17 @@
   background: #fbfdff;
 }
 
-/* ag-icons шрифт не подключён (no-font тема): скрываем иконки сортировки/фильтра в заголовках */
+/* Z2: ag-icons шрифт не подключён (no-font тема): скрываем ВСЕ AG Grid иконки */
 .pct-ag-theme .ag-sort-indicator-container,
-.pct-ag-theme .ag-header-cell-label .ag-header-icon {
-  display: none;
+.pct-ag-theme .ag-header-cell-label .ag-header-icon,
+.pct-ag-theme .ag-header-cell-menu-button,
+.pct-ag-theme .ag-icon,
+.pct-ag-theme .ag-filter-icon {
+  display: none !important;
+}
+
+/* Z3: Skip row wrapper to maintain <tr> validity */
+.pct-skip-row-wrapper {
+  border-top: 0;
+  margin-top: -1px; /* убрать двойную границу между grid и формой */
 }

@@ -1105,8 +1105,22 @@ async def _create_staff_user(session: AsyncSession | None, data: StaffCreateData
 
     if session is None:
         graph, store = _file_admin_graph()
-        if any((item.email or "").lower() == normalized_email for item in graph.users.values()):
-            raise ValueError("Пользователь с таким email уже существует.")
+        # Z1: Check for ghost user (exists but has no staff roles) — recover instead of error
+        existing_user = next(
+            (item for item in graph.users.values() if (item.email or "").lower() == normalized_email),
+            None,
+        )
+        if existing_user is not None:
+            if _is_staff_user(existing_user):
+                raise ValueError("Пользователь с таким email уже существует.")
+            # Recovery: update existing user with no staff roles
+            existing_user.full_name = normalized_display_name
+            existing_user.telegram_user_id = data.telegram_user_id or None
+            existing_user.roles = [_ensure_graph_role(graph, role_slug) for role_slug in role_slugs]
+            if RoleSlug.AUTHOR in role_slugs and not existing_user.author_profile:
+                _create_file_author_profile(graph, existing_user, normalized_display_name)
+            graph.save(store)
+            return existing_user
         if data.telegram_user_id is not None and any(item.telegram_user_id == data.telegram_user_id for item in graph.users.values()):
             raise ValueError("Пользователь с таким Telegram ID уже существует.")
 
@@ -1125,9 +1139,32 @@ async def _create_staff_user(session: AsyncSession | None, data: StaffCreateData
         graph.save(store)
         return user
 
-    existing_user_by_email = await session.execute(select(User).where(func.lower(User.email) == normalized_email))
-    if existing_user_by_email.scalar_one_or_none() is not None:
-        raise ValueError("Пользователь с таким email уже существует.")
+    # Z1: Check for ghost user (exists but has no staff roles) — recover instead of error
+    existing_user_by_email = await session.execute(
+        select(User).options(selectinload(User.roles)).where(func.lower(User.email) == normalized_email)
+    )
+    existing_user = existing_user_by_email.scalar_one_or_none()
+    if existing_user is not None:
+        if _is_staff_user(existing_user):
+            raise ValueError("Пользователь с таким email уже существует.")
+        # Recovery: update existing user with no staff roles
+        existing_user.full_name = normalized_display_name
+        existing_user.telegram_user_id = data.telegram_user_id or None
+        # Clear old roles
+        await session.execute(delete(user_roles).where(user_roles.c.user_id == existing_user.id))
+        # Add new roles
+        for role_slug in role_slugs:
+            role = await _ensure_sql_role(session, role_slug)
+            await session.execute(insert(user_roles).values(user_id=existing_user.id, role_id=role.id))
+        if RoleSlug.AUTHOR in role_slugs:
+            # Create author profile if not exists
+            author_result = await session.execute(
+                select(AuthorProfile).where(AuthorProfile.user_id == existing_user.id)
+            )
+            if author_result.scalar_one_or_none() is None:
+                await _create_sql_author_profile(session, existing_user, normalized_display_name)
+        await session.commit()
+        return await _require_staff_user(session, existing_user.id)
     if data.telegram_user_id is not None:
         existing_user_by_tg = await session.execute(select(User).where(User.telegram_user_id == data.telegram_user_id))
         if existing_user_by_tg.scalar_one_or_none() is not None:

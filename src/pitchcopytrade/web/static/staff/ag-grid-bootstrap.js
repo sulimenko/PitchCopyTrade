@@ -103,7 +103,8 @@
         sortable: true,
         filter: true,
         resizable: true,
-        suppressHeaderMenuButton: true
+        suppressHeaderMenuButton: true,
+        suppressHeaderFilterButton: true  // Z2: no-font theme doesn't have icons
       },
       animateRows: false,
       domLayout: domLayout,
@@ -112,9 +113,18 @@
       suppressCellFocus: false
     });
 
-    skipRows.forEach(function (row) {
-      host.parentNode.insertBefore(row, host.nextSibling);
-    });
+    // Z3: Wrap skip rows in <table> to ensure <tr> elements render correctly
+    if (skipRows.length > 0) {
+      var wrapper = document.createElement("table");
+      wrapper.className = "staff-grid pct-skip-row-wrapper";
+      wrapper.style.width = "100%";
+      var wrapperBody = document.createElement("tbody");
+      wrapper.appendChild(wrapperBody);
+      skipRows.forEach(function (row) {
+        wrapperBody.appendChild(row);
+      });
+      host.parentNode.insertBefore(wrapper, host.nextSibling);
+    }
 
     return grid;
   }

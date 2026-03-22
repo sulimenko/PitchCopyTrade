@@ -6,7 +6,7 @@
 
 ## Общий вывод
 
-Блоки S, R, T, U, V, W, X1, Y, X3, X4 полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен. Inline-форма создания рекомендации восстановлена. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) реализован. Oversight emails реализованы.
+Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен, redirect на витрину. Inline-форма создания рекомендации восстановлена. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) реализован с кнопками на /login. Ghost user recovery реализован. AG Grid иконки скрыты. Oversight emails реализованы.
 
 **Production bug-ов нет.** Merge не блокирован.
 
@@ -99,53 +99,49 @@ email-validator, httpx, aiosmtplib, authlib
 - W5: unused `func` import в `cabinet.py` удалён
 
 ### Блок X1 — Mini App auth ✅
-- `GET /app` без аутентификации теперь рендерит `app/miniapp_entry.html`
+- `GET /app` без аутентификации рендерит `app/miniapp_entry.html`
 - JS: `Telegram.WebApp.initData` → POST `/tg-webapp/auth` → `redirect_url` → navigate
 - Fallback: кнопка «Войти» для браузерного контекста
-- AG Grid bootstrap: `data-ag-grid-skip` строки вставляются после grid-контейнера (inline-форма восстановлена)
-- AG Grid theme CSS: sort/filter иконки скрыты (no-font theme без юникод-артефактов)
 
 ### Блок Y — Security & reliability fixes ✅
-- **Y1**: Invite token race condition — rollback `invite_token_version` при SMTP failure в `resend_staff_invite` (admin.py:1431–1443)
-- **Y2**: SMTP timeout — `asyncio.wait_for(..., timeout=10.0)` в `_send_email_message`; при timeout → `FAILED` статус, не 500
-- **Y3**: Startup placeholder validation — `bootstrap_runtime()` → `validate_runtime_settings()` проверяет `APP_SECRET_KEY`, `TELEGRAM_BOT_TOKEN`, `INTERNAL_API_SECRET` через `_is_placeholder()`
-- **Y4**: Open redirect — `_sanitize_subscriber_next_path()` нормализует backslash, запрещает `//` пути и внешние URL
+- **Y1**: Invite token race condition — rollback `invite_token_version` при SMTP failure
+- **Y2**: SMTP timeout — `asyncio.wait_for(..., timeout=10.0)`; при timeout → `FAILED` статус, не 500
+- **Y3**: Startup placeholder validation — `bootstrap_runtime()` → `validate_runtime_settings()`
+- **Y4**: Open redirect — `_sanitize_subscriber_next_path()` нормализует backslash, запрещает `//`
 
 ### Блок X3 — Staff invite via bot deep link ✅
-- Invite email содержит `https://t.me/{bot}?start=staffinvite-XXX` как PRIMARY способ входа
-- Web-ссылка как альтернативный fallback
-- Бот `/start staffinvite-XXX` открывает WebApp с invite URL
+- Invite email: `https://t.me/{bot}?start=staffinvite-XXX` как PRIMARY способ
+- Web-ссылка как fallback
+- Бот `/start staffinvite-XXX` → WebApp с invite URL
 
-### Блок X4 — Google/Yandex OAuth 2.0 ✅ (код готов, credentials не настроены)
-- Config: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` (все optional, default None)
+### Блок X4 — Google/Yandex OAuth 2.0 ✅
+- Config: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET`
 - `authlib>=1.3` в зависимостях
-- Routes: `GET /auth/google` → consent → `GET /auth/google/callback`; аналогично для Яндекс
-- Callback: поиск user по email → если найден → session cookie → redirect; если не найден → ошибка
+- Routes: `/auth/google` → consent → callback; аналогично для Яндекс
+- Callback: поиск user по email → session cookie → redirect
 - CSRF: state cookie с TTL 600 сек
-- Кнопки в login.html скрыты если credentials не заданы (`google_oauth_enabled`, `yandex_oauth_enabled`)
-- **X4.1 не закрыт**: нужна регистрация OAuth-приложений в Google Cloud Console и Яндекс ID
+- **X4.1**: credentials настроены заказчиком в `.env.server`
+
+### Блок Z — UI bugs ✅
+- **Z1**: Ghost user recovery — `_create_staff_user()` при email collision с бесролевым user обновляет существующую запись вместо ошибки
+- **Z2**: AG Grid иконки — CSS скрывает `.ag-header-cell-menu-button`, `.ag-icon`, `.ag-filter-icon` + `suppressHeaderFilterButton: true`
+- **Z3**: Inline form — skip rows оборачиваются в `<table class="pct-skip-row-wrapper"><tbody>` при перемещении из AG Grid
+- **Z4**: OAuth кнопки — добавлена секция `auth-login-section--oauth` в `login.html` с условным отображением по `google_oauth_enabled`/`yandex_oauth_enabled`
+- **Z5**: Mini App redirect — default subscriber redirect изменён с `/app/status` на `/app/catalog` (витрина стратегий) в miniapp_entry.html и auth.py
 
 ### Fixes ✅
-- **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()` в `create_author_recommendation`
-- **F1 — Oversight emails**: `_send_admin_oversight_email()` реализован — при staff onboarding все активные админы получают email о новом сотруднике
+- **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()`
+- **F1 — Oversight emails**: `_send_admin_oversight_email()` — при staff onboarding все активные админы уведомляются
 
 ---
 
-## Открытые findings (по приоритету)
-
-### X4.1 — Регистрация OAuth credentials `[ ]` — INFO
-
-**Действие:** Заказчик должен зарегистрировать OAuth-приложение:
-- Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID
-- Яндекс ID → https://oauth.yandex.ru/ → Создать приложение
-- Redirect URIs: `https://{DOMAIN}/auth/google/callback`, `https://{DOMAIN}/auth/yandex/callback`
-- Записать client_id + client_secret в `.env`
+## Открытые findings
 
 ### F2 — db/file parity verification `[ ]` — не блокирует MVP
 
 Базовые пути одинаковые. Риск drift при будущих изменениях. Нужен явный audit обоих путей.
 
-### F3 — Regression coverage F1–F2 `[ ]` — не блокирует MVP
+### F3 — Regression coverage `[ ]` — не блокирует MVP
 
 Тесты на: oversight emails в file mode, governance через edit path.
 
@@ -153,11 +149,10 @@ email-validator, httpx, aiosmtplib, authlib
 
 ## Gate на следующий merge
 
-**Блоки S, R, T, U, V, W, X1, Y, X3, X4** — закрыты. Merge **не блокирован**.
+**Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z** — закрыты. Merge **не блокирован**.
 
 Открытых production bug-ов нет.
 
-X4.1 (OAuth credentials) — операционная задача заказчика, не блокирует merge.
 F2–F3 — не блокируют MVP.
 
 V3 (smoke-test) — ручная проверка на сервере. Не блокирует merge.
@@ -169,4 +164,3 @@ V3 (smoke-test) — ручная проверка на сервере. Не бл
 Следующий исполнитель (в порядке приоритета):
 1. **V3** — ручной smoke-test: создать подписчика → рекомендацию → опубликовать → уведомление
 2. **Блок F** — F2 parity audit, F3 regression coverage
-3. **X4.1** — регистрация OAuth credentials (заказчик)
