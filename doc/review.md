@@ -8,7 +8,7 @@
 
 Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8) полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен, redirect на витрину, онбординг убран. Inline-форма восстановлена (autoHeight). AG Grid floating filters вместо сломанных иконок. UUID-валидация всех admin path-параметров. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) с кнопками на /login. Ghost user recovery. Oversight emails.
 
-**Открыты 2 production бага (Z9.1, Z9.2).** Рекомендуется закрыть до deploy.
+**Production bug-ов нет.** Merge не блокирован.
 
 ---
 
@@ -128,6 +128,8 @@ email-validator, httpx, aiosmtplib, authlib
 - **Z7.1**: AG Grid floating filters — `floatingFilter: true` в defaultColDef, CSS скрывает `ag-floating-filter-button`
 - **Z7.2**: Inline-форма видимость — `domLayout: "autoHeight"` при наличии skip rows
 - **Z8**: Mini App entry — убран весь онбординг-текст, оставлены лого + спиннер + кнопка «Войти»
+- **Z9.1**: Promo form action — явный `action` в promo_form, strategy_form, product_form, legal_form (create → `/admin/{entity}`, edit → `/admin/{entity}/{id}`)
+- **Z9.2**: Inline-форма видимость — `overflow: auto` в `.staff-grid-shell` и parent, `height: 100%` conditional на `!hasSkipRows`
 
 ### Fixes ✅
 - **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()`
@@ -171,7 +173,7 @@ email-validator, httpx, aiosmtplib, authlib
 
 **Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8).**
 
-**Открыты Z9.1 + Z9.2.** Рекомендуется закрыть до production deploy.
+**Production bug-ов нет.** Merge не блокирован.
 
 F2–F3 — не блокируют MVP.
 
@@ -180,7 +182,5 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **Z9.1** — `action` в promo_form.html (и аналогичных формах)
-2. **Z9.2** — overflow/height fix для inline-формы в staff_base.html + ag-grid-bootstrap.js
-3. **V3** — ручной smoke-test
-4. **Блок F** — F2 parity audit, F3 regression coverage
+1. **V3** — ручной smoke-test: создать подписчика → рекомендацию → опубликовать → уведомление
+2. **Блок F** — F2 parity audit, F3 regression coverage
