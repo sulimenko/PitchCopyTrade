@@ -500,3 +500,79 @@ Canonical storage contract:
 - без поддержки старых UI patterns;
 - без сохранения устаревших вариантов “на всякий случай”;
 - docs должны отражать только текущее canonical решение и активный backlog.
+
+## 14. Subscriber auth: Telegram Mini App
+
+### 14.1 Canonical flow
+
+Подписчики входят исключительно через Telegram Mini App:
+- Bot `/start` → кнопка «Открыть приложение» → WebApp открывает `{BASE_URL}/app/`
+- `GET /app` без аутентификации → рендерит `app/miniapp_entry.html`
+- JS читает `window.Telegram.WebApp.initData` → POST `/tg-webapp/auth` → cookie → redirect `/app/status`
+- Telegram Login Widget (`oauth.telegram.org`) для Mini App **не используется** — работает только в десктопном браузере
+
+### 14.2 Fallback
+
+Если `window.Telegram.WebApp.initData` пустой (браузер, не WebApp):
+- Показывается кнопка «Войти через Telegram» → ведёт на `/login`
+- `/login` — только для staff (Telegram Widget, invite flow)
+
+### 14.3 Session management
+
+- Cookie: `pitchcopytrade_session_tg` (httpOnly, secure, SameSite=Lax)
+- TTL: `SESSION_TTL_SECONDS` (default 86400 сек)
+- Refresh: `_miniapp_bridge.html` инклудится в authenticated app-страницы и молча обновляет сессию при каждом визите
+
+### 14.4 Запреты
+
+- Staff `/login` никогда не должен появляться в Mini App WebView — он не работает там
+- `GET /app` никогда не должен редиректить на `/login` — только рендерить miniapp_entry
+
+## 15. Staff invite: операционный контракт
+
+### 15.1 Создание сотрудника
+
+- Admin создаёт staff user через `/admin/staff` с `display_name + email + roles`
+- `telegram_user_id` — опциональное поле; если не известно — оставить пустым
+- После создания система немедленно отправляет invite email
+- User создаётся в статусе `INVITED` (не ACTIVE, не INACTIVE)
+
+### 15.2 Invite email
+
+- Содержит ссылку вида `{BASE_URL}/login?invite_token=XXX`
+- Ссылку открывать в **браузере**, не через Mini App бота
+- При SMTP failure: user создан, delivery_status = FAILED, admin видит статус в UI
+- При failed delivery: `invite_token_version` **не должен** инкрементироваться (rollback)
+
+### 15.3 Bind flow
+
+- Сотрудник открывает invite link в браузере → Telegram Widget → `/auth/telegram/callback?invite_token=XXX&id=...`
+- Система проверяет invite_token version, привязывает telegram_user_id, ставит статус ACTIVE
+- **Первый вошедший по invite link получает bind автоматически** — дополнительной проверки Telegram ID не требуется
+- Если Telegram ID уже привязан к другому staff user → 409 с понятным сообщением
+
+### 15.4 Resend
+
+- Admin нажимает «Переслать приглашение» в `/admin/staff/{id}`
+- `invite_token_version` инкрементируется → старые ссылки становятся невалидными
+- Новое письмо отправляется
+- В случае SMTP failure: rollback version (старый токен остаётся рабочим)
+
+## 16. Reliability contracts
+
+### 16.1 SMTP timeout
+
+- Все SMTP вызовы обязаны иметь явный timeout ≤ 15 сек
+- При timeout: операция продолжается (user создан/action выполнен), delivery_status = FAILED
+- Не допускается: HTTP request висит > 15 сек из-за SMTP
+
+### 16.2 Startup validation
+
+- При старте приложения обязательно проверяются placeholder значения критических env vars
+- Если `APP_SECRET_KEY` или `TELEGRAM_BOT_TOKEN` содержит `__FILL_ME__` — startup завершается с явным сообщением об ошибке
+- Не допускается: приложение стартует с placeholder vars и падает при первом запросе
+
+### 16.3 Redirect safety
+
+- Все server-controlled redirect URLs проверяются на клиенте: начинаются с `/` и не начинаются с `//`
+- External redirect через Mini App JS не допускается

@@ -47,6 +47,7 @@
     }
 
     var headers = Array.prototype.slice.call(table.querySelectorAll("thead th"));
+    var skipRows = Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-ag-grid-skip='true']"));
     var bodyRows = Array.prototype.slice.call(table.querySelectorAll("tbody tr")).filter(function (row) {
       return row.dataset.agGridSkip !== "true";
     });
@@ -95,7 +96,7 @@
     table.hidden = true;
     table.dataset.agGridMounted = "true";
 
-    return createGrid(host, {
+    var grid = createGrid(host, {
       columnDefs: columnDefs,
       rowData: rowData,
       defaultColDef: {
@@ -110,6 +111,12 @@
       ensureDomOrder: true,
       suppressCellFocus: false
     });
+
+    skipRows.forEach(function (row) {
+      host.parentNode.insertBefore(row, host.nextSibling);
+    });
+
+    return grid;
   }
 
   function bootstrapTables() {

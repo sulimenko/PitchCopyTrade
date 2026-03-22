@@ -277,10 +277,13 @@ async def app_home(request: Request, repository: AuthRepository = Depends(get_au
     try:
         user = await _require_authenticated_user(request, repository)
     except HTTPException:
-        response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-        response.delete_cookie(settings.auth.session_cookie_name, path="/")
-        response.delete_cookie(get_telegram_fallback_cookie_name(), path="/")
-        return response
+        # Не перенаправляем на /login — в Telegram Mini App WebView он не работает.
+        # Показываем landing-страницу: JS автоматически шлёт initData → авторизует → перенаправляет.
+        return templates.TemplateResponse(
+            request,
+            "app/miniapp_entry.html",
+            {"title": "PitchCopyTrade", "login_url": "/login"},
+        )
 
     redirect_url, _staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)

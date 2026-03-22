@@ -449,11 +449,145 @@ GET /author/recommendations/new?embedded=1&next=%2Fauthor%2Frecommendations&stra
 
 ## Текущий program block
 
-**V3 → Блок F**
+**Блок Y → X3 → V3 → X4 → Блок F**
 
-Блоки S, R, T, U, V, W закрыты. Открытых production bug нет. Следующий исполнитель:
-1. V3 — ручной smoke-test на живом сервере
-2. Блок F — governance parity db/file (F0–F3)
+Блоки S, R, T, U, V, W, X1 закрыты. Открытых production bug нет. Следующий исполнитель:
+1. **Блок Y** — invite token race + SMTP retry + startup validation + open redirect fix
+2. **X3** — улучшить invite flow через бота (deep link в email)
+3. **V3** — ручной smoke-test на живом сервере
+4. **X4** — Google/Yandex OAuth (после настройки credentials)
+5. **Блок F** — F1 oversight emails, F2–F3 parity + regression coverage
+
+---
+
+## Блок Y — Reliability: invite token, SMTP, startup, open redirect
+
+### Контекст
+
+Архитектурный review выявил 4 проблемы, не являющихся production bug-ами сейчас, но блокирующих коммерческий запуск с реальными пользователями. Все 4 исправляемы изолированно.
+
+---
+
+### Y1 — Invite token race: инкремент версии до email delivery
+
+**Файл:** `src/pitchcopytrade/services/admin.py`, функция `resend_staff_invite` (найти по имени)
+
+**Проблема (точная):**
+При resend invite происходит следующая последовательность:
+1. `user.invite_token_version += 1` — старый токен инвалидирован
+2. `await repository.commit()` — новая версия зафиксирована в DB
+3. `await _send_invite_email(user, ...)` — SMTP вызов
+
+Если шаг 3 упал (SMTP timeout, DNS error) — старый токен уже недействителен, новое письмо не отправлено. Пользователь заблокирован, admin видит `invite_delivery_status=FAILED`.
+
+**Что делать:**
+
+- [ ] **Y1.1** Прочитать функцию `resend_staff_invite` в `services/admin.py` полностью — найти точный порядок операций
+- [ ] **Y1.2** Проверить: есть ли rollback `invite_token_version` при SMTP failure?
+- [ ] **Y1.3** Если rollback нет — добавить: при исключении в `_send_invite_email` делать `user.invite_token_version -= 1` + `await repository.commit()` в `except` блоке
+- [ ] **Y1.4** Написать inline-комментарий в коде о причине rollback
+- [ ] **Y1.5** `python3 -m compileall src tests`
+
+**Acceptance Y1:**
+- При SMTP failure версия возвращается к предыдущей — старый токен остаётся рабочим
+- `invite_delivery_status` выставляется в FAILED (информационно для admin)
+- Компиляция чистая
+
+---
+
+### Y2 — SMTP без таймаута: зависание HTTP request при invite creation
+
+**Файл:** `src/pitchcopytrade/services/admin.py`, функция `_deliver_staff_invite`
+
+**Проблема:**
+Email отправляется синхронно в рамках HTTP request на `POST /admin/staff`. Если SMTP сервер не отвечает — request висит до таймаута aiosmtplib (по умолчанию может быть 60+ сек). UX: admin видит «loading» без фидбека.
+
+**Что делать:**
+
+- [ ] **Y2.1** Прочитать `_deliver_staff_invite` в `services/admin.py` — найти как вызывается aiosmtplib
+- [ ] **Y2.2** Проверить: установлен ли `timeout` в вызове aiosmtplib? Найти `aiosmtplib.send(` или `SMTP(`.
+- [ ] **Y2.3** Если timeout не установлен или > 10 сек — добавить явный `timeout=10` (секунд) в вызов
+- [ ] **Y2.4** Обернуть SMTP вызов в `asyncio.wait_for(..., timeout=10.0)` если aiosmtplib не поддерживает timeout напрямую
+- [ ] **Y2.5** При `asyncio.TimeoutError` — логировать как WARNING, выставлять `invite_delivery_status = FAILED`, НЕ падать с 500
+- [ ] **Y2.6** `python3 -m compileall src tests`
+
+**Acceptance Y2:**
+- SMTP вызов не висит дольше 10-15 сек
+- При timeout: staff user создан, email failed, admin видит FAILED статус (не 500)
+- `docker logs pct-api` не показывает необработанные исключения aiosmtplib
+
+---
+
+### Y3 — Нет проверки placeholder vars при startup
+
+**Файл:** `src/pitchcopytrade/api/lifespan.py` + `src/pitchcopytrade/core/config.py`
+
+**Проблема:**
+Если `APP_SECRET_KEY=__FILL_ME__` в `.env.server` — приложение стартует без ошибки. Падение произойдёт при первом JWT вызове (auth), что трудно диагностировать в production.
+
+**Placeholder vars которые нужно проверить при startup:**
+- `APP_SECRET_KEY` — если `__FILL_ME__`, все токены невалидны
+- `TELEGRAM_BOT_TOKEN` — если `__FILL_ME__`, бот не запустится
+- `INTERNAL_API_SECRET` — если `__FILL_ME__`, internal auth сломан
+
+**Что делать:**
+
+- [ ] **Y3.1** Прочитать `src/pitchcopytrade/api/lifespan.py` полностью — найти startup checks
+- [ ] **Y3.2** Прочитать `src/pitchcopytrade/core/config.py` — найти как определены `APP_SECRET_KEY`, `TELEGRAM_BOT_TOKEN`, `INTERNAL_API_SECRET`; есть ли `_is_placeholder()` функция?
+- [ ] **Y3.3** В lifespan startup (после `settings = get_settings()`) добавить check:
+  ```python
+  CRITICAL_PLACEHOLDERS = [
+      ("app_secret_key", settings.app_secret_key.get_secret_value()),
+      ("telegram_bot_token", settings.telegram.bot_token.get_secret_value()),
+  ]
+  for name, value in CRITICAL_PLACEHOLDERS:
+      if value in ("__FILL_ME__", "", "changeme"):
+          raise RuntimeError(f"Critical config {name} is a placeholder — set real value in .env")
+  ```
+- [ ] **Y3.4** Добавить аналогичный check в `src/pitchcopytrade/bot/main.py` startup (если есть lifespan)
+- [ ] **Y3.5** `python3 -m compileall src tests`
+
+**Acceptance Y3:**
+- `docker compose up api` с placeholder `APP_SECRET_KEY` — контейнер завершается с явным сообщением об ошибке в логах
+- С правильными vars — стартует нормально
+
+---
+
+### Y4 — Open redirect в miniapp_entry.html
+
+**Файл:** `src/pitchcopytrade/web/templates/app/miniapp_entry.html`
+
+**Проблема:**
+```javascript
+window.location.href = data.redirect_url || "/app/status";
+```
+`data.redirect_url` приходит от сервера. Сервер контролирует через `_sanitize_subscriber_next_path()` (разрешает только пути начинающиеся с `/`). Но явной проверки в JS нет — если сервер вернёт внешний URL (например из-за bug или compromise), браузер перейдёт туда.
+
+**Что делать:**
+
+- [ ] **Y4.1** В `miniapp_entry.html` перед `window.location.href = ...` добавить проверку:
+  ```javascript
+  var redirectUrl = data.redirect_url;
+  if (!redirectUrl || !redirectUrl.startsWith('/') || redirectUrl.startsWith('//')) {
+      redirectUrl = "/app/status";
+  }
+  window.location.href = redirectUrl;
+  ```
+- [ ] **Y4.2** Проверить `_sanitize_subscriber_next_path` в `auth.py` — убедиться что она уже запрещает `//` пути и внешние URL
+
+**Acceptance Y4:**
+- Если сервер вернёт `{"redirect_url": "https://evil.com"}` — браузер останется на `/app/status`
+- Если сервер вернёт `{"redirect_url": "//evil.com"}` — то же самое
+
+---
+
+### Acceptance для Блока Y
+
+1. Y1: invite resend при SMTP failure не инвалидирует старый токен
+2. Y2: SMTP вызов имеет явный timeout ≤ 15 сек; при timeout — FAILED статус, не 500
+3. Y3: startup с placeholder vars завершается с явной ошибкой
+4. Y4: open redirect защищён в JS
+5. `python3 -m compileall src tests` — чисто
 
 ---
 
@@ -1501,3 +1635,88 @@ Runbook для server-side smoke-check и снятия логов добавле
 - bootstrap seeder корректно пропускается при наличии одного или более администраторов
 - startup не шумит ошибкой `Multiple rows were found...` на валидной рабочей базе
 - regression tests покрывают multi-admin state
+
+---
+
+## Блок X — Staff invite без Telegram ID + Mini App auth fix
+
+### X1 — Mini App: сломан вход через initData (ИСПРАВЛЕНО)
+
+**Контекст:**
+`GET /app` перенаправлял неаутентифицированных пользователей на `/login`. Страница `/login` показывает Telegram Login Widget, который открывает `oauth.telegram.org`. Внутри Telegram Mini App WebView это не работает — OAuth не может завершить поток.
+
+**Исправление (уже применено):**
+- `GET /app` теперь рендерит `app/miniapp_entry.html` вместо редиректа на `/login`
+- `miniapp_entry.html`: JS автоматически шлёт `initData` → POST `/tg-webapp/auth` → читает `redirect_url` → переходит
+- Fallback: если не Mini App контекст → кнопка «Войти через Telegram» → `/login`
+
+**Acceptance X1:**
+- Бот-кнопка «Открыть приложение» → Mini App открывается → автоматически входит → показывает `/app/status`
+- Без Telegram WebApp (браузер) → показывает кнопку для перехода на `/login`
+
+---
+
+### X2 — Staff invite без Telegram ID (текущий flow)
+
+**Как сейчас работает:**
+
+1. Admin создаёт сотрудника (`/admin/staff/create`) — вводит ФИО и email, `telegram_user_id` можно оставить пустым
+2. Система создаёт аккаунт в статусе **INACTIVE** и автоматически отправляет **invite email**
+3. Сотрудник получает письмо с ссылкой вида `https://pct.test.ptfin.ru/login?invite_token=XXX`
+4. Сотрудник открывает ссылку **в браузере** (не через Mini App бота)
+5. Нажимает «Войти через Telegram» → Widget → колбэк на `/auth/telegram/callback?invite_token=XXX&id=...`
+6. Система привязывает `telegram_user_id` к аккаунту, статус → **ACTIVE**
+7. Сотрудник попадает в кабинет
+
+**Важно:** ссылка из email должна открываться в **браузере**, не через кнопку бота. Кнопка бота ведёт в Mini App для подписчиков.
+
+**Если invite email не дошёл:**
+- В admin-панели `/admin/staff/{id}` есть кнопка **«Переслать приглашение»**
+- Там же видна прямая invite link для копирования и отправки вручную
+
+**Если ошибка "Пользователь не найден":**
+- Сотрудник открыл бота и нажал «Открыть приложение» — это Mini App для подписчиков
+- Нужно отправить им прямую invite link из admin-панели
+- Они должны открыть её в браузере и авторизоваться через Telegram Widget
+
+---
+
+### X3 — Задача: сделать invite flow через бота (staff deep link)
+
+**Контекст:**
+Сейчас invite приходит только по email. Если сотрудник не получил email или хочет войти через бота — flow ломается.
+
+**Уже частично реализовано:** при `/start staffinvite-XXX` бот показывает кнопку с invite URL (в `start.py`). Но email содержит ссылку на `/login?invite_token=`, не bot deep link.
+
+**Что улучшить:**
+- [ ] **X3.1** В invite email рядом со ссылкой добавить альтернативный способ: «Или откройте в Telegram бота @avt09_bot и отправьте команду /start»
+- [ ] **X3.2** В invite email добавить кнопку-ссылку `https://t.me/{bot_username}?start=staffinvite-XXX` как PRIMARY способ
+- [ ] **X3.3** При `/start staffinvite-XXX` бот должен открывать invite URL как Web App кнопку (не просто URL), чтобы Telegram Widget работал корректно в WebView
+
+---
+
+### X4 — Задача: OAuth через Google и Yandex для staff login
+
+**Контекст:**
+Пользователь запросил возможность входа сотрудников через Google OAuth 2.0 и Яндекс OAuth.
+
+**Объём задачи:**
+- [ ] **X4.1** Зарегистрировать OAuth-приложение в Google Cloud Console и Яндекс ID
+- [ ] **X4.2** Добавить config: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET`
+- [ ] **X4.3** Добавить зависимость: `python-jose` или `authlib>=1.3` для OAuth 2.0 flow
+- [ ] **X4.4** Роут `GET /auth/google` → redirect на Google OAuth → callback `GET /auth/google/callback`
+- [ ] **X4.5** Роут `GET /auth/yandex` → redirect на Яндекс OAuth → callback `GET /auth/yandex/callback`
+- [ ] **X4.6** В callback: искать user по email, если найден и INACTIVE → активировать и привязать, если ACTIVE → войти, если не найден → ошибка «не найден среди сотрудников»
+- [ ] **X4.7** Добавить кнопки на страницу `/login` (за `{% if google_oauth_enabled %}` флагом)
+- [ ] **X4.8** Добавить поля в `invite_token` flow для Google/Yandex binding
+
+**Prerequisite:** X4 не реализуется пока не установлен домен в BotFather и не настроены credentials в провайдерах.
+
+---
+
+### Acceptance для Блока X
+
+1. X1: Mini App открывается и автоматически авторизуется через initData
+2. X2: Admin знает как делать invite, invite flow задокументирован
+3. X3: Invite email содержит bot deep link как основной способ входа
+4. X4: Сотрудники могут входить через Google/Яндекс OAuth (после настройки credentials)

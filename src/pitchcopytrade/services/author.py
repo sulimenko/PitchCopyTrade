@@ -273,9 +273,9 @@ async def create_author_recommendation(
         scheduled_for=data.scheduled_for,
     )
     _apply_publish_state(recommendation)
+    _attach_legs(recommendation, data.legs)
     repository.add(recommendation)
     await repository.flush()
-    _attach_legs(recommendation, data.legs)
     if data.attachments:
         await _store_attachments(
             repository,
