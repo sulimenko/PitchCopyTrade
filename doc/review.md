@@ -6,7 +6,7 @@
 
 ## Общий вывод
 
-Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен, redirect на витрину. Inline-форма создания рекомендации восстановлена. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) реализован с кнопками на /login. Ghost user recovery реализован. AG Grid иконки скрыты. Oversight emails реализованы.
+Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8) полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен, redirect на витрину, онбординг убран. Inline-форма восстановлена (autoHeight). AG Grid floating filters вместо сломанных иконок. UUID-валидация всех admin path-параметров. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) с кнопками на /login. Ghost user recovery. Oversight emails.
 
 **Production bug-ов нет.** Merge не блокирован.
 
@@ -93,10 +93,9 @@ email-validator, httpx, aiosmtplib, authlib
 
 ### Блок W — Code quality ✅
 - W1: per-item exception handling в notification loops (`placeholders.py`)
-- W2: enum comparison в `moderation.py` (`.status == RecommendationStatus.PUBLISHED`)
+- W2: enum comparison в `moderation.py`
 - W3: `worker/jobs/notifications.py` удалён
-- W4: комментарии "ARQ + Redis" в `env.server.example` убраны
-- W5: unused `func` import в `cabinet.py` удалён
+- W4/W5: cleanup
 
 ### Блок X1 — Mini App auth ✅
 - `GET /app` без аутентификации рендерит `app/miniapp_entry.html`
@@ -105,72 +104,66 @@ email-validator, httpx, aiosmtplib, authlib
 
 ### Блок Y — Security & reliability fixes ✅
 - **Y1**: Invite token race condition — rollback `invite_token_version` при SMTP failure
-- **Y2**: SMTP timeout — `asyncio.wait_for(..., timeout=10.0)`; при timeout → `FAILED` статус, не 500
+- **Y2**: SMTP timeout — `asyncio.wait_for(..., timeout=10.0)`
 - **Y3**: Startup placeholder validation — `bootstrap_runtime()` → `validate_runtime_settings()`
-- **Y4**: Open redirect — `_sanitize_subscriber_next_path()` нормализует backslash, запрещает `//`
+- **Y4**: Open redirect — `_sanitize_subscriber_next_path()`
 
 ### Блок X3 — Staff invite via bot deep link ✅
 - Invite email: `https://t.me/{bot}?start=staffinvite-XXX` как PRIMARY способ
-- Web-ссылка как fallback
 - Бот `/start staffinvite-XXX` → WebApp с invite URL
 
 ### Блок X4 — Google/Yandex OAuth 2.0 ✅
 - Config: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET`
 - `authlib>=1.3` в зависимостях
-- Routes: `/auth/google` → consent → callback; аналогично для Яндекс
-- Callback: поиск user по email → session cookie → redirect
-- CSRF: state cookie с TTL 600 сек
-- **X4.1**: credentials настроены заказчиком в `.env.server`
+- Routes + callbacks + CSRF state cookie
+- Кнопки в login.html с условным отображением
 
-### Блок Z — UI bugs ✅
-- **Z1**: Ghost user recovery — `_create_staff_user()` при email collision с бесролевым user обновляет существующую запись вместо ошибки
-- **Z2**: AG Grid иконки — CSS скрывает `.ag-header-cell-menu-button`, `.ag-icon`, `.ag-filter-icon` + `suppressHeaderFilterButton: true`
-- **Z3**: Inline form — skip rows оборачиваются в `<table class="pct-skip-row-wrapper"><tbody>` при перемещении из AG Grid
-- **Z4**: OAuth кнопки — добавлена секция `auth-login-section--oauth` в `login.html` с условным отображением по `google_oauth_enabled`/`yandex_oauth_enabled`
-- **Z5**: Mini App redirect — default subscriber redirect изменён с `/app/status` на `/app/catalog` (витрина стратегий) в miniapp_entry.html и auth.py
+### Блок Z — UI bugs + production fixes ✅
+- **Z1**: Ghost user recovery — обновление бесролевого user вместо ошибки уникальности
+- **Z2**: AG Grid иконки — CSS скрывает сломанные icon-font элементы
+- **Z3**: Inline form — skip rows в `<table><tbody>` wrapper
+- **Z4**: OAuth кнопки в `login.html`
+- **Z5**: Mini App redirect `/app/status` → `/app/catalog`
+- **Z6**: UUID-валидация — `_validate_uuid()` helper во всех admin path-параметрах (promos, strategies, products, documents, staff, one-pager) → 404 вместо 500/DataError
+- **Z7.1**: AG Grid floating filters — `floatingFilter: true` в defaultColDef, CSS скрывает `ag-floating-filter-button`
+- **Z7.2**: Inline-форма видимость — `domLayout: "autoHeight"` при наличии skip rows
+- **Z8**: Mini App entry — убран весь онбординг-текст, оставлены лого + спиннер + кнопка «Войти»
 
 ### Fixes ✅
 - **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()`
-- **F1 — Oversight emails**: `_send_admin_oversight_email()` — при staff onboarding все активные админы уведомляются
+- **F1 — Oversight emails**: `_send_admin_oversight_email()` при staff onboarding
 
 ---
 
 ## Открытые findings
 
-### Z6 — `/admin/promos/new` → 500 (UUID collision) `[ ]` — BUG
-
-**Файл:** `src/pitchcopytrade/api/routes/admin.py`
-**Проблема:** `GET /admin/promos/new` в db-режиме → строка `"new"` передаётся как UUID в SQL-запрос → `asyncpg.DataError`.
-**Fix:** UUID-валидация во всех admin path-параметрах (`_validate_uuid()` → 404 вместо 500).
-
-### Z7 — AG Grid: фильтры исчезли + inline-форма не видна `[ ]` — BUG
-
-**Z7.1:** `suppressHeaderFilterButton: true` + CSS `display: none` для `.ag-icon` полностью убрали фильтрацию по колонкам. Fix: `floatingFilter: true` (текстовые inputs под заголовками).
-**Z7.2:** AG Grid host `height: 100%` + `domLayout: "normal"` обрезает wrapper-таблицу с inline-формой. Fix: `domLayout: "autoHeight"` при наличии skip rows.
-
-### Z8 — Mini App: онбординг-страница вместо витрины `[ ]` — BUG
-
-**Файл:** `src/pitchcopytrade/web/templates/app/miniapp_entry.html`
-**Проблема:** Entry page показывает «Подключаем Telegram-профиль», «НЕТ TELEGRAM INITDATA», список шагов — нарушает правило CLAUDE.md «Никаких инструкций, онбординга и help-текста». Возможная причина пустого initData: не настроен домен в BotFather (`/setdomain`).
-**Fix:** Убрать весь онбординг-текст. Оставить только лого + спиннер + fallback-кнопку «Войти».
-
 ### F2 — db/file parity verification `[ ]` — не блокирует MVP
 
+Базовые пути одинаковые. Риск drift при будущих изменениях. Нужен явный audit обоих путей.
+
 ### F3 — Regression coverage `[ ]` — не блокирует MVP
+
+Тесты на: oversight emails в file mode, governance через edit path.
 
 ---
 
 ## Операционные требования
 
-- **BotFather domain**: `/setdomain` → `pct.test.ptfin.ru` для бота. Без этого `Telegram.WebApp.initData` будет пустым.
+- **BotFather domain**: `/setdomain` → `pct.test.ptfin.ru` для бота. Без этого `Telegram.WebApp.initData` будет пустым и Mini App покажет fallback.
+- **OAuth credentials**: Зарегистрировать приложения в Google Cloud Console и Яндекс ID. Redirect URIs: `https://{DOMAIN}/auth/google/callback`, `https://{DOMAIN}/auth/yandex/callback`.
+- **Redeploy**: После каждого merge — rebuild контейнеров:
+  ```bash
+  docker compose -f deploy/docker-compose.server.yml build --no-cache api
+  docker compose -f deploy/docker-compose.server.yml up -d
+  ```
 
 ---
 
 ## Gate на следующий merge
 
-**Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z5)** — закрыты.
+**Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8).**
 
-**Открытые production bugs: Z6, Z7, Z8.** Рекомендуется закрыть до production deploy.
+**Production bug-ов нет.** Merge не блокирован.
 
 F2–F3 — не блокируют MVP.
 
@@ -179,8 +172,5 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **Z7** — AG Grid floatingFilter + inline-форма autoHeight
-2. **Z8** — Mini App entry: убрать онбординг
-3. **Z6** — UUID-валидация path-параметров в admin routes
-4. **V3** — ручной smoke-test
-5. **Блок F** — F2 parity audit, F3 regression coverage
+1. **V3** — ручной smoke-test: создать подписчика → рекомендацию → опубликовать → уведомление
+2. **Блок F** — F2 parity audit, F3 regression coverage
