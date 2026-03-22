@@ -137,30 +137,50 @@ email-validator, httpx, aiosmtplib, authlib
 
 ## Открытые findings
 
-### F2 — db/file parity verification `[ ]` — не блокирует MVP
+### Z6 — `/admin/promos/new` → 500 (UUID collision) `[ ]` — BUG
 
-Базовые пути одинаковые. Риск drift при будущих изменениях. Нужен явный audit обоих путей.
+**Файл:** `src/pitchcopytrade/api/routes/admin.py`
+**Проблема:** `GET /admin/promos/new` в db-режиме → строка `"new"` передаётся как UUID в SQL-запрос → `asyncpg.DataError`.
+**Fix:** UUID-валидация во всех admin path-параметрах (`_validate_uuid()` → 404 вместо 500).
+
+### Z7 — AG Grid: фильтры исчезли + inline-форма не видна `[ ]` — BUG
+
+**Z7.1:** `suppressHeaderFilterButton: true` + CSS `display: none` для `.ag-icon` полностью убрали фильтрацию по колонкам. Fix: `floatingFilter: true` (текстовые inputs под заголовками).
+**Z7.2:** AG Grid host `height: 100%` + `domLayout: "normal"` обрезает wrapper-таблицу с inline-формой. Fix: `domLayout: "autoHeight"` при наличии skip rows.
+
+### Z8 — Mini App: онбординг-страница вместо витрины `[ ]` — BUG
+
+**Файл:** `src/pitchcopytrade/web/templates/app/miniapp_entry.html`
+**Проблема:** Entry page показывает «Подключаем Telegram-профиль», «НЕТ TELEGRAM INITDATA», список шагов — нарушает правило CLAUDE.md «Никаких инструкций, онбординга и help-текста». Возможная причина пустого initData: не настроен домен в BotFather (`/setdomain`).
+**Fix:** Убрать весь онбординг-текст. Оставить только лого + спиннер + fallback-кнопку «Войти».
+
+### F2 — db/file parity verification `[ ]` — не блокирует MVP
 
 ### F3 — Regression coverage `[ ]` — не блокирует MVP
 
-Тесты на: oversight emails в file mode, governance через edit path.
+---
+
+## Операционные требования
+
+- **BotFather domain**: `/setdomain` → `pct.test.ptfin.ru` для бота. Без этого `Telegram.WebApp.initData` будет пустым.
 
 ---
 
 ## Gate на следующий merge
 
-**Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z** — закрыты. Merge **не блокирован**.
+**Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z5)** — закрыты.
 
-Открытых production bug-ов нет.
+**Открытые production bugs: Z6, Z7, Z8.** Рекомендуется закрыть до production deploy.
 
 F2–F3 — не блокируют MVP.
-
-V3 (smoke-test) — ручная проверка на сервере. Не блокирует merge.
 
 ---
 
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **V3** — ручной smoke-test: создать подписчика → рекомендацию → опубликовать → уведомление
-2. **Блок F** — F2 parity audit, F3 regression coverage
+1. **Z7** — AG Grid floatingFilter + inline-форма autoHeight
+2. **Z8** — Mini App entry: убрать онбординг
+3. **Z6** — UUID-валидация path-параметров в admin routes
+4. **V3** — ручной smoke-test
+5. **Блок F** — F2 parity audit, F3 regression coverage

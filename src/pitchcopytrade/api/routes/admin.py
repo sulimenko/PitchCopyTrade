@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -220,6 +221,7 @@ async def strategy_edit_page(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    strategy_id = _validate_uuid(strategy_id)  # Z6: Validate UUID
     strategy = await get_admin_strategy(session, strategy_id)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
@@ -249,6 +251,7 @@ async def strategy_edit_submit(
     min_capital_rub: str = Form(""),
     is_public: str | None = Form(default=None),
 ) -> Response:
+    strategy_id = _validate_uuid(strategy_id)  # Z6: Validate UUID
     strategy = await get_admin_strategy(session, strategy_id)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
@@ -419,6 +422,7 @@ async def promo_code_edit_page(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    promo_code_id = _validate_uuid(promo_code_id)  # Z6: Validate UUID
     promo_code = await get_admin_promo_code(session, promo_code_id)
     if promo_code is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found")
@@ -446,6 +450,7 @@ async def promo_code_edit_submit(
     expires_at: str = Form(""),
     is_active: str | None = Form(default=None),
 ) -> Response:
+    promo_code_id = _validate_uuid(promo_code_id)  # Z6: Validate UUID
     promo_code = await get_admin_promo_code(session, promo_code_id)
     if promo_code is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found")
@@ -549,6 +554,7 @@ async def product_edit_page(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    product_id = _validate_uuid(product_id)  # Z6: Validate UUID
     product = await get_admin_product(session, product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
@@ -581,6 +587,7 @@ async def product_edit_submit(
     is_active: str | None = Form(default=None),
     autorenew_allowed: str | None = Form(default=None),
 ) -> Response:
+    product_id = _validate_uuid(product_id)  # Z6: Validate UUID
     product = await get_admin_product(session, product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
@@ -851,6 +858,7 @@ async def legal_document_edit_page(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    document_id = _validate_uuid(document_id)  # Z6: Validate UUID
     document = await get_admin_legal_document(session, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
@@ -875,6 +883,7 @@ async def legal_document_edit_submit(
     title: str = Form(...),
     content_md: str = Form(...),
 ) -> Response:
+    document_id = _validate_uuid(document_id)  # Z6: Validate UUID
     document = await get_admin_legal_document(session, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
@@ -911,6 +920,7 @@ async def legal_document_activate_submit(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    document_id = _validate_uuid(document_id)  # Z6: Validate UUID
     document = await get_admin_legal_document(session, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
@@ -1075,6 +1085,16 @@ async def payment_manual_discount_submit(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     return RedirectResponse(url=f"/admin/payments/{payment.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _validate_uuid(value: str) -> str:
+    """Z6: Validate UUID path parameter to prevent non-UUID values (like 'new') from causing DataError.
+    Raises 404 for invalid UUIDs instead of 500 from SQLAlchemy."""
+    try:
+        UUID(value)
+        return value
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found")
 
 
 async def _render_strategy_form(
@@ -1588,6 +1608,7 @@ async def admin_staff_edit(
     telegram_user_id: str = Form(""),
     role_slugs: list[str] | None = Form(default=None),
 ) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
     try:
         tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
         await update_admin_staff_user(
@@ -1630,6 +1651,7 @@ async def admin_staff_grant_role(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
     try:
         await grant_staff_role(
             session,
@@ -1666,6 +1688,7 @@ async def admin_staff_revoke_role(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
     try:
         await revoke_staff_role(
             session,
@@ -1701,6 +1724,7 @@ async def admin_staff_activate(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
     try:
         await set_admin_staff_user_status(session, actor_user_id=user.id, user_id=target_user_id, is_active=True)
     except ValueError as exc:
@@ -1731,6 +1755,7 @@ async def admin_staff_deactivate(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
     try:
         await set_admin_staff_user_status(session, actor_user_id=user.id, user_id=target_user_id, is_active=False)
     except ValueError as exc:
@@ -1761,6 +1786,7 @@ async def admin_staff_resend_invite(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
     try:
         await resend_staff_invite(session, user_id=target_user_id)
     except ValueError as exc:
@@ -1834,6 +1860,7 @@ async def admin_onepager_edit(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    strategy_id = _validate_uuid(strategy_id)  # Z6: Validate UUID
     strategy = await get_admin_strategy_for_onepager(session, strategy_id)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стратегия не найдена")
@@ -1852,6 +1879,7 @@ async def admin_onepager_save(
     session: AsyncSession | None = Depends(get_optional_db_session),
     html_content: str = Form(""),
 ) -> Response:
+    strategy_id = _validate_uuid(strategy_id)  # Z6: Validate UUID
     try:
         await save_strategy_onepager(session, strategy_id, html_content)
     except ValueError:

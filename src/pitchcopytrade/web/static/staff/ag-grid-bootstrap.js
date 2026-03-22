@@ -96,18 +96,22 @@
     table.hidden = true;
     table.dataset.agGridMounted = "true";
 
+    // Z7.2: Use autoHeight when skip rows present to show inline form
+    var hasSkipRows = skipRows.length > 0;
+
     var grid = createGrid(host, {
       columnDefs: columnDefs,
       rowData: rowData,
       defaultColDef: {
         sortable: true,
         filter: true,
+        floatingFilter: true,  // Z7.1: text input fields instead of icon buttons
         resizable: true,
         suppressHeaderMenuButton: true,
         suppressHeaderFilterButton: true  // Z2: no-font theme doesn't have icons
       },
       animateRows: false,
-      domLayout: domLayout,
+      domLayout: hasSkipRows ? "autoHeight" : domLayout,  // Z7.2: shrink if skip rows follow
       enableCellTextSelection: true,
       ensureDomOrder: true,
       suppressCellFocus: false

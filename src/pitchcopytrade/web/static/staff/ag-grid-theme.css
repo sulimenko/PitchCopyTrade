@@ -67,6 +67,16 @@
   display: none !important;
 }
 
+/* Z7.1: Floating filter button and input styling */
+.pct-ag-theme .ag-floating-filter-button {
+  display: none !important;
+}
+
+.pct-ag-theme .ag-floating-filter-input input {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
 /* Z3: Skip row wrapper to maintain <tr> validity */
 .pct-skip-row-wrapper {
   border-top: 0;

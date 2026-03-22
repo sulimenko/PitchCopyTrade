@@ -1916,3 +1916,201 @@ skipRows.forEach(function (row) {
 
 1. Z4: OAuth кнопки видны на `/login` при настроенных credentials
 2. Z5: Mini App открывает витрину стратегий, а не статус подписки
+
+---
+
+## Блок Z6 — `/admin/promos/new` → 500 Internal Server Error (production, 2026-03-22)
+
+### Приоритет
+
+**Z6** — блокирует создание промокодов. Критичность высокая — функция недоступна.
+
+---
+
+### Z6 — UUID collision: path-параметр перехватывает `/new`
+
+**Симптом:** `GET /admin/promos/new` → 500 Internal Server Error в db-режиме.
+
+**Ошибка:**
+```
+sqlalchemy.exc.DBAPIError: asyncpg.exceptions.DataError:
+invalid input for query argument $1: 'new' (invalid UUID 'new')
+[SQL: SELECT ... FROM promo_codes WHERE promo_codes.id = $1::UUID]
+[parameters: ('new',)]
+```
+
+**Причина:**
+
+FastAPI матчит путь `/promos/new` к маршруту `GET /promos/{promo_code_id}/edit` или `POST /promos/{promo_code_id}` вместо статического `GET /promos/new`. Хотя в текущем коде порядок регистрации правильный (`/promos/new` на строке 354, `/promos/{promo_code_id}/edit` на строке 415), на production-сервере может быть развёрнута старая версия кода или есть edge case в FastAPI routing.
+
+**Два уровня fix:**
+
+**Уровень 1 — Redeploy (немедленный)**
+Перебилдить и перезапустить контейнеры с актуальным кодом:
+```bash
+docker compose -f deploy/docker-compose.server.yml build --no-cache api
+docker compose -f deploy/docker-compose.server.yml up -d api
+```
+
+**Уровень 2 — Defensive UUID validation (защита от повторения)**
+
+Даже при правильном порядке маршрутов, добавить UUID-валидацию в path-параметры, чтобы нестроковые значения вроде `"new"` отклонялись до SQL-запроса.
+
+**Файлы:**
+- `src/pitchcopytrade/api/routes/admin.py` — все маршруты с `{promo_code_id}`, `{strategy_id}`, `{product_id}`, `{document_id}`, `{user_id}`
+- `src/pitchcopytrade/services/promo_admin.py` — `get_admin_promo_code()`
+
+**Что должен сделать worker:**
+
+- [x] **Z6.1** Создать helper-функцию `_validate_uuid()` в `admin.py`: реализована, бросает HTTPException(404)
+- [x] **Z6.2** Добавить UUID-валидацию в promo code routes: проверка добавлена
+- [x] **Z6.3** Добавить UUID-валидацию во все admin routes с path-параметрами:
+  - strategies, products, documents, staff, onepager — все добавлены
+- [x] **Z6.4** `python3 -m compileall src tests` ✓
+- [x] **Z6.5** `/admin/promos/new` теперь возвращает 200 вместо 500
+
+**Acceptance Z6:**
+- `GET /admin/promos/new` → 200 с формой создания промокода (не 500)
+- `GET /admin/promos/{valid-uuid}/edit` → 200 с формой редактирования
+- `GET /admin/promos/invalid-string/edit` → 404 (не 500/DataError)
+- Аналогично для strategies, products, documents, staff
+
+---
+
+## Блок Z7 — AG Grid: фильтры исчезли + inline-форма не видна (production, 2026-03-22)
+
+### Приоритет
+
+**Z7** — блокирует работу автора с рекомендациями. Критичность высокая.
+
+---
+
+### Z7.1 — AG Grid: фильтры полностью отсутствуют
+
+**Симптом:** На `/author/recommendations` (и всех остальных staff-таблицах) AG Grid заголовки колонок не имеют никаких фильтров. Раньше были иконки фильтров (Z2 их спрятал), теперь нет ни иконок, ни текстовых фильтров — фильтрация по колонкам невозможна.
+
+**Причина:**
+
+Z2 fix сделал два действия:
+1. CSS: `display: none !important` для `.ag-icon`, `.ag-filter-icon`, `.ag-header-cell-menu-button` — скрыл все иконки
+2. JS: `suppressHeaderFilterButton: true` в `defaultColDef` — полностью отключил кнопку фильтра в заголовке
+
+Оба действия вместе **полностью убрали функциональность фильтрации**, а не только сломанные иконки.
+
+**Файлы:**
+- `src/pitchcopytrade/web/static/staff/ag-grid-bootstrap.js` — строка 107
+- `src/pitchcopytrade/web/static/staff/ag-grid-theme.css` — строки 61–68
+
+**Что должен сделать worker:**
+
+- [x] **Z7.1.1** В `ag-grid-bootstrap.js` — в `defaultColDef` добавить `floatingFilter: true`. Это создаёт текстовые input-поля прямо под заголовками колонок — они не используют иконочный шрифт и работают без него.
+- [x] **Z7.1.2** В `ag-grid-theme.css` — добавить CSS для скрытия кнопки `...` внутри floating filter (она тоже использует иконку):
+  ```css
+  .pct-ag-theme .ag-floating-filter-button {
+    display: none !important;
+  }
+  ```
+- [x] **Z7.1.3** В `ag-grid-theme.css` — стилизовать floating filter inputs:
+  ```css
+  .pct-ag-theme .ag-floating-filter-input input {
+    font-size: 12px;
+    padding: 2px 6px;
+  }
+  ```
+- [x] **Z7.1.4** Оставить `suppressHeaderMenuButton: true` и `suppressHeaderFilterButton: true` — они убирают сломанные иконки. `floatingFilter: true` заменяет их текстовыми полями.
+
+**Acceptance Z7.1:**
+- Под каждым заголовком колонки есть text input для фильтрации
+- Ввод текста фильтрует данные в таблице в реальном времени
+- Нет сломанных unicode-иконок (≡, ☰ и т.д.)
+- Колонки «Действия» и «Открыть» НЕ имеют фильтра (они уже `filter: false`)
+
+---
+
+### Z7.2 — Inline-форма создания рекомендации не видна
+
+**Симптом:** На `/author/recommendations` inline-строка с полями (Стратегия, Бумага, Направление, Вход, TP1, Стоп, кнопка «Создать») полностью отсутствует. Автор не может быстро создать рекомендацию.
+
+**Причина:**
+
+Z3 fix обернул skip-rows в `<table class="pct-skip-row-wrapper">` и вставил после AG Grid host элемента. Но AG Grid host использует `domLayout: "normal"` с `height: 100%`, и занимает всё пространство внутри `.staff-grid-shell`. Обёрточная таблица оказывается ЗА пределами видимой области или обрезается.
+
+Вторая проблема: AG Grid host `div` с `height: 100%` внутри flex-контейнера полностью занимает flex-пространство. Обёрточная таблица, вставленная после host, не получает места.
+
+**Файлы:**
+- `src/pitchcopytrade/web/static/staff/ag-grid-bootstrap.js` — строки 88–130
+- `src/pitchcopytrade/web/static/staff/ag-grid-theme.css` — строки 70–74
+
+**Что должен сделать worker:**
+
+- [x] **Z7.2.1** В `ag-grid-bootstrap.js`: перед вызовом `createGrid`, проверить наличие skip rows. Если `skipRows.length > 0`, использовать `domLayout: "autoHeight"` вместо вычисленного `domLayout`. Это позволяет AG Grid занять ровно столько места, сколько нужно для данных, и inline-форма отображается сразу под ним.
+  ```javascript
+  var hasSkipRows = skipRows.length > 0;
+  // в createGrid options:
+  domLayout: hasSkipRows ? "autoHeight" : domLayout,
+  ```
+- [x] **Z7.2.2** Убедиться что `pct-skip-row-wrapper` CSS не скрывает содержимое. Текущий CSS достаточен — `border-top: 0; margin-top: -1px;`.
+- [x] **Z7.2.3** Проверить что вложенные `<select>` и `<input>` с атрибутом `form="inline-recommendation-form"` корректно работают внутри wrapper-таблицы. Атрибут `form=""` позволяет элементам быть снаружи формы — это стандарт HTML5.
+
+**Acceptance Z7.2:**
+- На `/author/recommendations` под таблицей данных видна строка с полями: Стратегия (dropdown), Бумага (input), Направление (dropdown), Вход, TP1, Стоп, кнопка «Создать»
+- Выбор стратегии, ввод тикера (автодополнение), направление → нажатие «Создать» → рекомендация создаётся
+- Кнопка «Детально» открывает модальный редактор с предзаполненными полями
+- На десктопе таблица не скроллится бесконечно (autoHeight ограничен количеством данных)
+
+---
+
+## Блок Z8 — Mini App: онбординг-страница вместо витрины (production, 2026-03-22)
+
+### Приоритет
+
+**Z8** — блокирует UX подписчиков. Критичность высокая.
+
+---
+
+### Z8 — miniapp_entry.html показывает fallback вместо redirect на /app/catalog
+
+**Симптом:** При открытии Mini App из Telegram бота подписчик видит страницу «Подключаем Telegram-профиль» с текстом «НЕТ TELEGRAM INITDATA» и инструкцией (3 шага). Ожидаемое поведение: сразу открывается витрина стратегий `/app/catalog`.
+
+**Скриншот:** Кнопка «НЕТ TELEGRAM INITDATA» → fallback отображается → пользователь застревает на entry-странице.
+
+**Диагностика (2 уровня):**
+
+**Уровень 1 — BotFather domain не настроен:**
+
+`Telegram.WebApp.initData` будет ПУСТЫМ если у бота не настроен домен в BotFather через `/setdomain`. Без этого Telegram не передаёт initData в WebApp.
+
+Проверка: в BotFather → команда `/mybot` → выбрать бота → Bot Settings → Menu Button / Mini App → проверить что домен установлен на `pct.test.ptfin.ru`.
+
+**Уровень 2 — Entry-страница содержит текст онбординга, который не должен быть виден:**
+
+Даже когда fallback срабатывает корректно (нет initData), страница показывает:
+- Заголовок «Подключаем Telegram-профиль»
+- Описание «Mini App подтверждает ваш Telegram-профиль и открывает клиентский workspace...»
+- Список «Что будет дальше» (3 шага)
+
+По правилам проекта (CLAUDE.md): **«Никаких инструкций, онбординга и help-текста в интерфейсе»**.
+
+**Файлы:**
+- `src/pitchcopytrade/web/templates/app/miniapp_entry.html` — вся страница
+
+**Что должен сделать worker:**
+
+- [x] **Z8.1** Проверить настройку домена бота. Добавить в `doc/review.md` операционное требование:
+  ```
+  В BotFather: /setdomain для бота → домен pct.test.ptfin.ru
+  ```
+- [x] **Z8.2** Упростить `miniapp_entry.html` — убрать ВСЕ текстовые блоки:
+  - Удалить заголовок «Подключаем Telegram-профиль»
+  - Удалить описание «Mini App подтверждает ваш...»
+  - Удалить секцию «Что будет дальше» с 3 шагами
+  - Удалить кнопку «НЕТ TELEGRAM INITDATA»
+  - Оставить только: лого «PC», подпись «PitchCopyTrade», спиннер (на время авторизации), fallback-кнопку «Войти» (без объяснений)
+- [x] **Z8.3** Fallback-блок (когда нет initData) должен показывать ТОЛЬКО кнопку «Войти через Telegram» — без текста «Откройте в браузере или Telegram» и без инструкций.
+- [x] **Z8.4** `python3 -m compileall src tests`
+
+**Acceptance Z8:**
+- При наличии initData: спиннер → redirect на `/app/catalog` (уже работает по Z5)
+- При отсутствии initData: лого + кнопка «Войти» — без онбординга и инструкций
+- Страница не содержит текста «Подключаем Telegram-профиль», «Что будет дальше», списка шагов
+- Правило CLAUDE.md «Никаких инструкций, онбординга и help-текста» соблюдено
