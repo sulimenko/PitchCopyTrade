@@ -47,10 +47,7 @@
     }
 
     var headers = Array.prototype.slice.call(table.querySelectorAll("thead th"));
-    var skipRows = Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-ag-grid-skip='true']"));
-    var bodyRows = Array.prototype.slice.call(table.querySelectorAll("tbody tr")).filter(function (row) {
-      return row.dataset.agGridSkip !== "true";
-    });
+    var bodyRows = Array.prototype.slice.call(table.querySelectorAll("tbody tr"));
 
     var columnDefs = headers.map(function (headerCell, index) {
       var headerName = textFromHtml(headerCell.innerHTML) || ("Колонка " + (index + 1));
@@ -85,15 +82,11 @@
       return item;
     });
 
-    // Z7.2: Use autoHeight when skip rows present to show inline form
-    var hasSkipRows = skipRows.length > 0;
-
     var host = document.createElement("div");
     host.className = "pct-ag-grid-host";
     host.style.width = "100%";
     var domLayout = resolveDomLayout();
-    // Z9.2.3: Don't set height when using autoHeight (hasSkipRows); AG Grid determines height itself
-    if (domLayout === "normal" && !hasSkipRows) {
+    if (domLayout === "normal") {
       host.style.height = "100%";
     }
     table.parentNode.insertBefore(host, table);
@@ -112,24 +105,11 @@
         suppressHeaderFilterButton: true  // Z2: no-font theme doesn't have icons
       },
       animateRows: false,
-      domLayout: hasSkipRows ? "autoHeight" : domLayout,  // Z7.2: shrink if skip rows follow
+      domLayout: domLayout,
       enableCellTextSelection: true,
       ensureDomOrder: true,
       suppressCellFocus: false
     });
-
-    // Z3: Wrap skip rows in <table> to ensure <tr> elements render correctly
-    if (skipRows.length > 0) {
-      var wrapper = document.createElement("table");
-      wrapper.className = "staff-grid pct-skip-row-wrapper";
-      wrapper.style.width = "100%";
-      var wrapperBody = document.createElement("tbody");
-      wrapper.appendChild(wrapperBody);
-      skipRows.forEach(function (row) {
-        wrapperBody.appendChild(row);
-      });
-      host.parentNode.insertBefore(wrapper, host.nextSibling);
-    }
 
     return grid;
   }

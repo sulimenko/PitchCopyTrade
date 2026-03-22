@@ -77,8 +77,3 @@
   padding: 2px 6px;
 }
 
-/* Z3: Skip row wrapper to maintain <tr> validity */
-.pct-skip-row-wrapper {
-  border-top: 0;
-  margin-top: -1px; /* убрать двойную границу между grid и формой */
-}

@@ -129,7 +129,8 @@ email-validator, httpx, aiosmtplib, authlib
 - **Z7.2**: Inline-форма видимость — `domLayout: "autoHeight"` при наличии skip rows
 - **Z8**: Mini App entry — убран весь онбординг-текст, оставлены лого + спиннер + кнопка «Войти»
 - **Z9.1**: Promo form action — явный `action` в promo_form, strategy_form, product_form, legal_form (create → `/admin/{entity}`, edit → `/admin/{entity}/{id}`)
-- **Z9.2**: Inline-форма видимость — `overflow: auto` в `.staff-grid-shell` и parent, `height: 100%` conditional на `!hasSkipRows`
+- **Z9.2**: Inline-форма видимость — промежуточный fix (заменён Z10)
+- **Z10**: Inline-форма вынесена из `<table>` — отдельный `<div>` с CSS Grid после `.staff-grid-shell`. Skip row механизм удалён из JS. `overflow: hidden` восстановлен.
 
 ### Fixes ✅
 - **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()`

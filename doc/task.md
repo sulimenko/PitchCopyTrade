@@ -2246,3 +2246,151 @@ CSS в `staff_base.html` (строка 259–261):
 1. Создание промокода через форму работает (POST → correct route → redirect)
 2. Inline-форма рекомендации видна и функциональна
 3. Нет regression на таблицах без inline-формы
+
+---
+
+## Блок Z10 — Inline-форма рекомендаций: новый подход (production, 2026-03-22)
+
+### Приоритет
+
+**Z10** — блокирует быстрое создание рекомендаций автором. Критичность высокая.
+
+---
+
+### Почему предыдущие фиксы (Z3, Z7.2, Z9.2) не работают
+
+**Все предыдущие попытки** строились на одном подходе: JS извлекает `<tr data-ag-grid-skip>` из скрытой `<table>`, оборачивает в новую `<table class="pct-skip-row-wrapper">` и вставляет после AG Grid host внутри `.staff-grid-shell`.
+
+Этот подход **фундаментально конфликтует** с layout:
+
+1. `.staff-grid-shell` участвует в flex-layout (`.staff-content > *:has(.staff-grid-shell) { flex: 1; display: flex; flex-direction: column }`). AG Grid host с `autoHeight` определяет свою высоту по контенту, а shell с `flex: 1` заполняет оставшееся пространство. Wrapper-таблица вставляется ПОСЛЕ host, но shell не даёт ей дополнительного места.
+
+2. `overflow: auto` позволяет скроллить, но wrapper уходит за нижний край видимой области — пользователь не видит её без прокрутки, и на практике даже скролл не помогает из-за flex-расчётов.
+
+3. AG Grid 35.1.0 выбрасывает ошибку в `postProcessThemeChange` — не критичная (grid рендерится), но связана с `ag-theme-quartz-no-font` CSS без полного набора CSS variables.
+
+### Правильное решение: вынести inline-форму из `<table>` в HTML-шаблоне
+
+Inline-форму надо рендерить как **отдельный HTML-блок после `.staff-grid-shell`**, а не как `<tr>` внутри AG Grid таблицы. Все input-элементы используют `form="inline-recommendation-form"` — они не обязаны быть внутри `<table>`.
+
+**Файлы:**
+- `src/pitchcopytrade/web/templates/author/recommendations_list.html` — основной шаблон
+- `src/pitchcopytrade/web/static/staff/ag-grid-bootstrap.js` — удалить skip row логику
+- `src/pitchcopytrade/web/static/staff/ag-grid-theme.css` — удалить `.pct-skip-row-wrapper`
+- `src/pitchcopytrade/web/templates/staff_base.html` — вернуть `overflow: hidden` в grid-shell (regression fix)
+
+**Что должен сделать worker:**
+
+- [x] **Z10.1** В `recommendations_list.html`: удалить `<tr data-ag-grid-skip="true" id="inline-recommendation-shortcut">` (строки 102–167) из `<tbody>` таблицы. Вместо этого создать новый блок **ПОСЛЕ** закрывающего `</div>` от `.staff-grid-shell` (строка 170), но ВНУТРИ `<section class="staff-card">`:
+
+  ```html
+  </div><!-- /staff-grid-shell -->
+  <div class="inline-recommendation-row" id="inline-recommendation-shortcut">
+    <div class="inline-recommendation-fields">
+      <div class="inline-field">
+        <select form="inline-recommendation-form" name="strategy_id">...</select>
+      </div>
+      <div class="inline-field is-wide">
+        <input type="hidden" ... name="leg_1_instrument_id" />
+        <div class="inline-shortcut-fields">
+          <input type="text" ... name="title" placeholder="Идея" />
+          <input type="text" ... name="instrument_query" placeholder="Бумага" />
+        </div>
+        <div id="inline-picker-state" class="inline-picker-state muted">...</div>
+        <div id="inline-ticker-popup" ...></div>
+      </div>
+      <div class="inline-field">
+        <select form="inline-recommendation-form" name="leg_1_side">...</select>
+      </div>
+      <div class="inline-field">
+        <input type="text" ... name="leg_1_entry_from" placeholder="Вход" />
+      </div>
+      <div class="inline-field">
+        <input type="text" ... name="leg_1_take_profit_1" placeholder="TP1" />
+      </div>
+      <div class="inline-field">
+        <input type="text" ... name="leg_1_stop_loss" placeholder="Стоп" />
+      </div>
+      <div class="inline-field">
+        <span class="staff-badge ok">черновик</span>
+      </div>
+      <div class="inline-field inline-field--actions">
+        <button class="staff-btn is-primary" type="submit" form="inline-recommendation-form">Создать</button>
+        <button class="ghost" type="button" data-open-recommendation-modal data-inline-detail data-modal-url="...">Детально</button>
+      </div>
+    </div>
+  </div>
+  ```
+
+  Все `form="inline-recommendation-form"` атрибуты и `id` оставить как есть — JS для тикер-автодополнения и modal не менять.
+
+- [x] **Z10.2** Добавить CSS для `.inline-recommendation-row` в `{% block extra_head %}` (того же файла):
+  ```css
+  .inline-recommendation-row {
+    flex-shrink: 0;
+    border-top: 1px solid var(--staff-line);
+    padding: 10px 12px;
+    background: var(--staff-surface-dim, #f9fafb);
+  }
+  .inline-recommendation-fields {
+    display: grid;
+    grid-template-columns: 1.6fr 2fr 1fr 1fr 1fr 1fr auto 180px;
+    gap: 8px;
+    align-items: start;
+  }
+  .inline-recommendation-fields input:not([type="hidden"]),
+  .inline-recommendation-fields select {
+    width: 100%;
+    min-height: 32px;
+    padding: 7px 10px;
+    border: 1px solid var(--staff-line-strong);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  .inline-field--actions {
+    display: grid;
+    gap: 6px;
+  }
+  @media (max-width: 768px) {
+    .inline-recommendation-fields {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  ```
+
+- [x] **Z10.3** В `ag-grid-bootstrap.js`: **полностью удалить** логику skip rows:
+  - Удалить строку 50: `var skipRows = ...querySelectorAll("tbody tr[data-ag-grid-skip='true']")...`
+  - Удалить строку 51–53: фильтр bodyRows по `agGridSkip`
+  - Удалить строку 88–89: `var hasSkipRows = ...`
+  - Удалить строку 96: условие `&& !hasSkipRows` — вернуть безусловное `if (domLayout === "normal")`
+  - Удалить строки 114–115: тернарный `hasSkipRows ? "autoHeight" : domLayout` — вернуть просто `domLayout`
+  - Удалить строки 121–131: весь блок `if (skipRows.length > 0)` с wrapper
+  - `bodyRows` filter оставить без фильтрации по `agGridSkip` (или добавить простой фильтр чтобы inline-строка не попала в grid data, но inline-строка теперь вне `<table>` — фильтр не нужен)
+
+- [x] **Z10.4** В `ag-grid-theme.css`: удалить блок `.pct-skip-row-wrapper` CSS (строки 70–74).
+
+- [x] **Z10.5** В `staff_base.html`: вернуть `overflow: hidden` в `.staff-grid-shell` (строка 261) и `.staff-content > *:has(.staff-grid-shell)` (строка 140) — возврат к baseline, потому что skip row подход больше не используется. Таблицы без inline-формы должны заполнять viewport.
+
+- [x] **Z10.6** Проверить что JS в `{% block extra_scripts %}` (строки 213–417) по-прежнему находит элементы по id: `inline-recommendation-shortcut`, `inline-title-input`, `inline-ticker-input`, `inline-ticker-popup`, `inline-instrument-id`, `inline-picker-state`. Все id остаются прежними — JS менять не нужно.
+
+- [x] **Z10.7** Проверить что `form="inline-recommendation-form"` на всех input/select/button работает: браузер связывает элемент с формой по id формы, даже если элемент вне `<form>`. Это стандарт HTML5.
+
+- [x] **Z10.8** `python3 -m compileall src tests`
+
+- [x] **Z10.9** Визуально проверить: на `/author/recommendations` под AG Grid видна inline-строка с полями.
+
+**Acceptance Z10:**
+- На `/author/recommendations` под AG Grid (после floating-filter строки и данных) видна inline-строка: Стратегия, Бумага, Направление, Вход, TP1, Стоп, «Создать», «Детально»
+- Выбор стратегии + тикер (автодополнение) + направление → «Создать» → рекомендация создаётся и появляется в таблице
+- Кнопка «Детально» → открывает модальный редактор с предзаполненными полями
+- На таблицах БЕЗ inline-формы (admin/promos, admin/strategies) AG Grid заполняет весь viewport (regression нет)
+- Ошибка `postProcessThemeChange` в консоли — допустима (AG Grid 35 bug, не блокирует рендер), но не должно быть новых ошибок от bootstrap.js
+- Мобильная версия: inline-строка отображается в 2-колоночной сетке
+
+---
+
+### AG Grid console error — INFO (не блокирует)
+
+Ошибка `postProcessThemeChange` в AG Grid 35.1.0 при использовании `ag-theme-quartz-no-font` — это известная проблема AG Grid с partial CSS themes. Grid рендерится корректно. Ошибка безвредна. Возможные fix в будущем:
+- Обновить AG Grid до patch-версии с исправлением
+- Или использовать `ag-theme-quartz` с полным CSS (добавить icon font)
