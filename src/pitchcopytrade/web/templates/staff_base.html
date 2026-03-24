@@ -841,6 +841,16 @@
           });
         });
 
+        // P4.2: Event delegation for closing other dropdowns
+        document.addEventListener("toggle", function(e) {
+          if (!e.target.matches("details.staff-row-menu") || !e.target.open) return;
+          menus.forEach(function(menu) {
+            if (menu !== e.target) {
+              menu.removeAttribute("open");
+            }
+          });
+        }, true);
+
         document.addEventListener("click", function (event) {
           menus.forEach(function (menu) {
             if (!menu.contains(event.target)) {

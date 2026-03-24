@@ -28,6 +28,28 @@ def _enum_str(val) -> str:
     return str(val.value if hasattr(val, 'value') else val).upper()
 
 
+# P4.4: Russian status labels mapping
+_STATUS_LABELS = {
+    "ACTIVE": "Активен", "INACTIVE": "Неактивен", "INVITED": "Приглашён",
+    "BLOCKED": "Заблокирован", "TRIAL": "Пробный", "EXPIRED": "Истёк",
+    "PENDING": "Ожидание", "PAID": "Оплачен", "FAILED": "Ошибка",
+    "REFUNDED": "Возврат", "DRAFT": "Черновик", "REVIEW": "На модерации",
+    "APPROVED": "Одобрено", "SCHEDULED": "Запланировано",
+    "PUBLISHED": "Опубликовано", "CLOSED": "Закрыто",
+    "CANCELLED": "Отменено", "ARCHIVED": "Архив",
+    "BUY": "Покупка", "SELL": "Продажа",
+    "TRUE": "Да", "FALSE": "Нет",
+}
+
+
+def _label(val: str) -> str:
+    """Get Russian label for enum value."""
+    if val is None:
+        return ""
+    upper_val = val.upper() if isinstance(val, str) else _enum_str(val)
+    return _STATUS_LABELS.get(upper_val, upper_val)
+
+
 def serialize_strategies(strategies: list, request_url_for=None) -> str:
     """Serialize strategies for admin grid."""
     data = []
@@ -74,7 +96,7 @@ def serialize_authors(authors: list, request_url_for=None) -> str:
             "email": item.get("email", ""),
             "telegram_id": str(item.get("telegram_user_id")) if item.get("telegram_user_id") else "—",
             "moderation": f'<form method="post" action="/admin/authors/{item.get("id")}/moderation"><input type="checkbox" {"checked" if item.get("requires_moderation") else ""} onchange="this.form.submit()"></form>',
-            "status": _badge(status.upper(), status_class),
+            "status": _badge(_label(status), status_class),
             "invite": invite_status,
             "actions": actions_html,
         })
@@ -87,7 +109,7 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
     for item in staff:
         # item is a dict from _staff_row()
         roles = item.get("roles", [])
-        roles_html = " ".join(_badge(role.upper(), "ok") for role in roles)
+        roles_html = " ".join(_badge(_label(role), "ok") for role in roles)
         status = item.get("status", "active")
         status_class = "ok" if status == "active" else "danger"
 
@@ -98,12 +120,12 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
         elif item.get("invite_delivery_status") == "FAILED":
             invite_status = _badge("Ошибка", "danger")
 
-        # Staff actions dropdown
+        # Staff actions dropdown (P4.1: use data-open-staff-dialog instead of href)
         staff_id = item.get('id')
         actions_html = f'''<details class="staff-row-menu">
   <summary class="staff-btn ghost">⋮ Действия</summary>
   <div class="staff-row-menu-panel">
-    <a class="staff-btn ghost" href="/admin/staff/{staff_id}?action=edit">Редактировать</a>
+    <button type="button" class="staff-btn ghost" data-open-staff-dialog="staff-edit-{staff_id}">Редактировать</button>
     <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{staff_id}">Диалог</button>
   </div>
 </details>'''
@@ -111,7 +133,7 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
         data.append({
             "name": f"<strong>{item.get('display_name', '—')}</strong><br>{item.get('email', '')}{name_suffix}",
             "roles": roles_html,
-            "status": _badge(status.upper(), status_class),
+            "status": _badge(_label(status), status_class),
             "invite": invite_status,
             "telegram_id": str(item.get("telegram_user_id")) if item.get("telegram_user_id") else "—",
             "actions": actions_html,
@@ -261,7 +283,7 @@ def serialize_delivery(records: list, request_url_for=None) -> str:
         data.append({
             "publication": f"<strong>{rec.title if rec else '—'}</strong>",
             "strategy": f"{rec.strategy.title if rec and rec.strategy else '—'}",
-            "status": _badge(delivery_status.upper(), status_class),
+            "status": _badge(_label(delivery_status), status_class),
             "attempts": str(item.delivery_attempts) if item.delivery_attempts else "0",
             "delivered": _fmt_dt(latest_event_date) if latest_event_date else "—",
             "last_event": item.latest_delivery_event.payload.get("error") if item.latest_delivery_event and item.latest_delivery_event.payload else "—",
@@ -318,7 +340,8 @@ def serialize_recommendations(recommendations: list, request_url_for=None) -> st
             if leg.instrument:
                 instrument_text = leg.instrument.ticker
             side_val = _enum_str(leg.side)
-            side_text = side_val
+            # P4.3: Russian side labels
+            side_text = "Покупка" if side_val == "BUY" else "Продажа" if side_val == "SELL" else side_val
             side_class = "ok" if side_val == "BUY" else "danger"
             if leg.entry_from:
                 entry_text = f"{leg.entry_from:.2f}"
@@ -333,11 +356,11 @@ def serialize_recommendations(recommendations: list, request_url_for=None) -> st
         tp1_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="take_profit_1" data-value="{tp_text if tp_text != "—" else ""}" contenteditable="false" tabindex="0">{tp_text}</span>'
         stop_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="stop_loss" data-value="{stop_text if stop_text != "—" else ""}" contenteditable="false" tabindex="0">{stop_text}</span>'
 
-        # P3.2: Status as clickable select
+        # P3.2: Status as clickable select (P4.3: Russian labels)
         status_select = f'''<select class="inline-status-select" data-rec-id="{item.id}" data-field="status">
-  <option value="draft" {"selected" if status_val == "DRAFT" else ""}>DRAFT</option>
-  <option value="review" {"selected" if status_val == "REVIEW" else ""}>REVIEW</option>
-  <option value="published" {"selected" if status_val == "PUBLISHED" else ""}>PUBLISHED</option>
+  <option value="draft" {"selected" if status_val == "DRAFT" else ""}>Черновик</option>
+  <option value="review" {"selected" if status_val == "REVIEW" else ""}>На модерации</option>
+  <option value="published" {"selected" if status_val == "PUBLISHED" else ""}>Опубликовано</option>
 </select>'''
 
         data.append({

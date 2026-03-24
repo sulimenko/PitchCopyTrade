@@ -89,7 +89,7 @@
           <select name="status" {% if not recommendation_is_editable %}disabled{% endif %}>
             {% for item in recommendation_status_options %}
             <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>
-              {% if item == "draft" %}Черновик{% elif item == "review" %}На модерации{% elif item == "approved" %}Одобрено{% elif item == "scheduled" %}Запланировано{% elif item == "published" %}Опубликовано{% elif item == "closed" %}Закрыто{% elif item == "cancelled" %}Отменено{% elif item == "archived" %}В архиве{% else %}{{ item }}{% endif %}
+              {% if item == "draft" %}Черновик{% elif item == "review" %}На модерации{% elif item == "scheduled" %}Запланировано{% elif item == "published" %}Опубликовано{% elif item == "closed" %}Закрыто{% elif item == "cancelled" %}Отменено{% else %}{{ item }}{% endif %}
             </option>
             {% endfor %}
           </select>

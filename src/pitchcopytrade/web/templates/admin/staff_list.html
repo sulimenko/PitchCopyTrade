@@ -158,11 +158,12 @@
 
 {% block extra_scripts %}
 <script>
-  document.querySelectorAll("[data-open-staff-dialog]").forEach(function (button) {
-    button.addEventListener("click", function () {
-      var dialog = document.getElementById(button.getAttribute("data-open-staff-dialog"));
-      if (dialog && typeof dialog.showModal === "function") dialog.showModal();
-    });
+  // P4.1: Use event delegation for staff dialog opening
+  document.addEventListener("click", function (event) {
+    var btn = event.target.closest("[data-open-staff-dialog]");
+    if (!btn) return;
+    var dialog = document.getElementById(btn.getAttribute("data-open-staff-dialog"));
+    if (dialog && typeof dialog.showModal === "function") dialog.showModal();
   });
   document.querySelectorAll("[data-close-staff-dialog]").forEach(function (button) {
     button.addEventListener("click", function () {

@@ -3616,3 +3616,170 @@ Tabulator vendor CSS:
 3. Рекомендации: нет дублирующих фильтров — только Tabulator встроенные
 4. Delivery: понятное сообщение при 0 получателях
 5. Нет 404 для source maps в логах
+
+---
+
+## Блок P4 — Dropdown / dialog / русские статусы (production, 2026-03-24)
+
+### Приоритет
+
+**P4.1 → P4.2 → P4.3 → P4.4** — P4.1 критичен (действия не работают).
+
+---
+
+### P4.1 — Staff: «Редактировать» → 404, «Диалог» не работает
+
+**Симптом:**
+- `GET /admin/staff/{id}?action=edit` → 404 (нет GET-маршрута, только POST)
+- Клик «Диалог» → ничего (JS binding до Tabulator render)
+
+**Причина:**
+1. `_grid_serializers.py:106` — `<a href="/admin/staff/{id}?action=edit">` — нет такого маршрута
+2. `staff_list.html:161` — `querySelectorAll("[data-open-staff-dialog]")` биндит ДО Tabulator рендера → элементов нет в DOM
+
+**Файлы:** `_grid_serializers.py`, `staff_list.html`
+
+**Что должен сделать worker:**
+
+- [x] **P4.1.1** В `serialize_staff()` — заменить `<a href>` на `<button data-open-staff-dialog>`:
+  ```python
+  actions_html = f'''<details class="staff-row-menu">
+    <summary class="staff-btn ghost">⋮ Действия</summary>
+    <div class="staff-row-menu-panel">
+      <button type="button" class="staff-btn ghost" data-open-staff-dialog="staff-edit-{staff_id}">Редактировать</button>
+    </div>
+  </details>'''
+  ```
+
+- [x] **P4.1.2** В `staff_list.html` — заменить `querySelectorAll` на **event delegation**:
+  ```javascript
+  document.addEventListener("click", function(e) {
+    var btn = e.target.closest("[data-open-staff-dialog]");
+    if (!btn) return;
+    var dialog = document.getElementById(btn.getAttribute("data-open-staff-dialog"));
+    if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+  });
+  ```
+
+- [x] **P4.1.3** Проверить аналогичные проблемы в `serialize_authors()`, `serialize_subscriptions()`, `serialize_payments()`, `serialize_moderation_queue()` — все `data-open-*` и `<a href>` в dropdown-ах.
+
+- [x] **P4.1.4** `python3 -m compileall src tests`
+
+**Acceptance P4.1:**
+- «Редактировать» → открывает dialog
+- Dialog: сохранение работает (POST)
+
+---
+
+### P4.2 — Закрывать другие dropdown при открытии нового
+
+**Симптом:** Несколько `<details>` открыты одновременно.
+
+**Файл:** `staff_base.html`
+
+**Что должен сделать worker:**
+
+- [x] **P4.2.1** Добавить event delegation для `toggle`:
+  ```javascript
+  document.addEventListener("toggle", function(e) {
+    if (!e.target.matches("details.staff-row-menu") || !e.target.open) return;
+    document.querySelectorAll("details.staff-row-menu[open]").forEach(function(d) {
+      if (d !== e.target) d.removeAttribute("open");
+    });
+  }, true);
+  ```
+
+- [x] **P4.2.2** `python3 -m compileall src tests`
+
+---
+
+### P4.3 — Русские статусы в таблице рекомендаций
+
+**Симптом:** В grid: `DRAFT`, `REVIEW`, `PUBLISHED`. Должно быть: Черновик, На модерации, Опубликовано.
+
+**Файл:** `_grid_serializers.py` — `serialize_recommendations()`
+
+**Что должен сделать worker:**
+
+- [x] **P4.3.1** В status select options — русские label:
+  ```python
+  status_select = f'''<select class="inline-status-select" ...>
+    <option value="draft" ...>Черновик</option>
+    <option value="review" ...>На модерации</option>
+    <option value="published" ...>Опубликовано</option>
+  </select>'''
+  ```
+
+- [x] **P4.3.2** В `recommendations_list.html` headerFilter — фильтровать по тексту option (Черновик/На модерации/Опубликовано), а не по value.
+
+- [x] **P4.3.3** Side labels: `BUY` → `Покупка`, `SELL` → `Продажа`.
+
+- [x] **P4.3.4** `python3 -m compileall src tests`
+
+**Логика workflow (для справки):**
+```
+save_draft    → DRAFT (Черновик)
+send_to_review → REVIEW (На модерации)
+approve       → APPROVED / PUBLISHED (в зависимости от настроек)
+publish_now   → PUBLISHED (Опубликовано)
+close         → CLOSED (Закрыто)
+cancel        → CANCELLED (Отменено)
+```
+
+---
+
+### P4.4 — Русские статусы во ВСЕХ grid-ах
+
+**Файл:** `_grid_serializers.py`
+
+**Что должен сделать worker:**
+
+- [x] **P4.4.1** Создать маппинг:
+  ```python
+  _STATUS_LABELS = {
+      "ACTIVE": "Активен", "INACTIVE": "Неактивен", "INVITED": "Приглашён",
+      "BLOCKED": "Заблокирован", "TRIAL": "Пробный", "EXPIRED": "Истёк",
+      "PENDING": "Ожидание", "PAID": "Оплачен", "FAILED": "Ошибка",
+      "REFUNDED": "Возврат", "DRAFT": "Черновик", "REVIEW": "На модерации",
+      "APPROVED": "Одобрено", "SCHEDULED": "Запланировано",
+      "PUBLISHED": "Опубликовано", "CLOSED": "Закрыто",
+      "CANCELLED": "Отменено", "ARCHIVED": "Архив",
+      "BUY": "Покупка", "SELL": "Продажа",
+      "TRUE": "Да", "FALSE": "Нет",
+  }
+  def _label(val: str) -> str:
+      return _STATUS_LABELS.get(val.upper(), val)
+  ```
+
+- [x] **P4.4.2** Заменить `_badge(status.upper(), ...)` → `_badge(_label(status), ...)` во всех функциях.
+
+- [x] **P4.4.3** `python3 -m compileall src tests`
+
+---
+
+### P4 — пользовательские изменения (зафиксировать)
+
+Пользователь уже внёс следующие изменения в `recommendations_list.html`:
+- Убрана верхняя панель фильтров (P3.3 выполнена)
+- Добавлено поле «Статус» в inline-форму: select (Черновик / Опубликовать)
+- headerFilter для колонки Статус: select с русскими вариантами
+- P3.2 inline editing JS добавлен
+
+---
+
+### Acceptance P4 (общий)
+
+1. Staff: «Редактировать» → dialog, не переход по ссылке
+2. Dropdown-ы: при открытии нового — остальные закрываются
+3. Все статусы в grid-ах на русском
+4. Рекомендации: inline select статуса с русскими label-ами
+
+---
+
+## ⚠️ ВАЖНО: Правило P4 блоков
+
+**Блоки P4 НЕ коммитятся автоматически.** Пользователь сам делает commit после проверки.
+- Все изменения P4.1–P4.4 готовы к commit (документация обновлена, компиляция пройдена)
+- Пользователь проверяет изменения
+- Пользователь делает `git commit` самостоятельно
+- Это правило применяется ко всем задачам
