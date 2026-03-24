@@ -144,6 +144,7 @@ email-validator, httpx, aiosmtplib, authlib
   - moderation: queue
 - **TAB.7**: Tests обновлены (ag-grid references → tabulator), 0 ссылок на AG Grid в коде
 - **TAB-FIX**: Все 14 сериализаторов исправлены — правильные имена атрибутов моделей, `_enum_str()` helper для enum safety, dict `.get()` для staff/author rows
+- **TAB-FIX2**: Все URL в сериализаторах исправлены (добавлен `/edit` суффикс), серая область grid → белый фон, inline-форма рекомендаций работает
 - Bundle: 1.4 MB (AG Grid) → ~150 KB (Tabulator)
 - Console errors `postProcessThemeChange` полностью устранены
 
@@ -184,7 +185,7 @@ email-validator, httpx, aiosmtplib, authlib
 
 **Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z10), TAB, P2.**
 
-**TAB-FIX2 — CRITICAL.** Все ссылки «Открыть»/«Редактировать» в grid-ах → 404/405. Серая область в grid. Merge заблокирован.
+**Production bug-ов нет.** Merge не блокирован.
 
 F2–F3 — не блокируют MVP.
 
@@ -193,6 +194,5 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **TAB-FIX2** — исправить URL в 8 сериализаторах + CSS серая область + inline-форма
-2. **V3** — ручной smoke-test на сервере
-3. **Блок F** — F2 parity audit, F3 regression coverage
+1. **V3** — ручной smoke-test на сервере: redeploy → все 14 admin-страниц + inline-форма + ссылки
+2. **Блок F** — F2 parity audit, F3 regression coverage
