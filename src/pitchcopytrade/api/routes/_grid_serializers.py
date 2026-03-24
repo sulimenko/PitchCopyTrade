@@ -300,7 +300,7 @@ def serialize_metrics_strategies(stats: list, request_url_for=None) -> str:
 
 
 def serialize_recommendations(recommendations: list, request_url_for=None) -> str:
-    """Serialize recommendations for author grid."""
+    """Serialize recommendations for author grid. P3.2: with inline editing."""
     data = []
     for item in recommendations:
         status_val = _enum_str(item.status)
@@ -327,14 +327,27 @@ def serialize_recommendations(recommendations: list, request_url_for=None) -> st
             if leg.stop_loss:
                 stop_text = f"{leg.stop_loss:.2f}"
 
+        # P3.2: Make fields inline-editable
+        title_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="title" data-value="{item.title or ""}" contenteditable="false" tabindex="0"><strong>{item.title or "Без названия"}</strong></span><br>{instrument_text}'
+        entry_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="entry_from" data-value="{entry_text if entry_text != "—" else ""}" contenteditable="false" tabindex="0">{entry_text}</span>'
+        tp1_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="take_profit_1" data-value="{tp_text if tp_text != "—" else ""}" contenteditable="false" tabindex="0">{tp_text}</span>'
+        stop_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="stop_loss" data-value="{stop_text if stop_text != "—" else ""}" contenteditable="false" tabindex="0">{stop_text}</span>'
+
+        # P3.2: Status as clickable select
+        status_select = f'''<select class="inline-status-select" data-rec-id="{item.id}" data-field="status">
+  <option value="draft" {"selected" if status_val == "DRAFT" else ""}>DRAFT</option>
+  <option value="review" {"selected" if status_val == "REVIEW" else ""}>REVIEW</option>
+  <option value="published" {"selected" if status_val == "PUBLISHED" else ""}>PUBLISHED</option>
+</select>'''
+
         data.append({
             "strategy": item.strategy.title if item.strategy else "—",
-            "idea": f"<strong>{item.title or 'Без названия'}</strong><br>{instrument_text}",
+            "idea": title_html,
             "side": _badge(side_text, side_class if side_text != "—" else ""),
-            "entry": entry_text,
-            "tp1": tp_text,
-            "stop": stop_text,
-            "status": _badge(status_val, status_class),
+            "entry": entry_html,
+            "tp1": tp1_html,
+            "stop": stop_html,
+            "status": status_select,
             "updated": _fmt_dt(item.updated_at),
             "actions": _link(f"/author/recommendations/{item.id}/edit", "Открыть"),
         })

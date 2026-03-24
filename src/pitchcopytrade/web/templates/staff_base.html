@@ -604,6 +604,44 @@
         max-height: 220px;
         overflow-y: auto;
       }
+      /* P3.2: Inline editable field styles */
+      .inline-editable {
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 3px;
+        outline: 2px solid transparent;
+        outline-offset: 0px;
+        transition: outline-color 0.15s ease;
+      }
+      .inline-editable:hover {
+        background: rgba(51, 65, 85, 0.05);
+      }
+      .inline-editable:focus {
+        outline-color: #3b82f6;
+        background: #f0f8ff;
+      }
+      .inline-editable[contenteditable="true"] {
+        background: #fff8dc;
+        border-color: #f59e0b;
+      }
+      /* P3.2: Inline status select styling */
+      .inline-status-select {
+        appearance: none;
+        border: none;
+        background: transparent;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 3px;
+        outline: 2px solid transparent;
+        outline-offset: 0px;
+      }
+      .inline-status-select:hover {
+        background: rgba(51, 65, 85, 0.05);
+      }
+      .inline-status-select:focus {
+        outline-color: #3b82f6;
+      }
       @media (max-width: 720px) {
         .staff-main { padding: 12px; }
         .staff-topline,
@@ -733,6 +771,9 @@
         const menus = Array.from(document.querySelectorAll(".staff-row-menu"));
         if (!menus.length) return;
 
+        // Store original panel position for each menu
+        const panelParents = new WeakMap();
+
         function closeOtherMenus(currentMenu) {
           menus.forEach(function (menu) {
             if (menu !== currentMenu) {
@@ -773,10 +814,30 @@
         }
 
         menus.forEach(function (menu) {
+          const panel = menu.querySelector(".staff-row-menu-panel");
+          if (panel) {
+            panelParents.set(menu, menu);
+          }
+
           menu.addEventListener("toggle", function () {
-            if (!menu.open) return;
-            closeOtherMenus(menu);
-            positionMenu(menu);
+            const panel = menu.querySelector(".staff-row-menu-panel");
+            if (!panel) return;
+
+            if (menu.open) {
+              closeOtherMenus(menu);
+              // Fallback for browsers without :has() support: append panel to body
+              if (!document.body.contains(panel)) {
+                panel.style.position = "fixed";
+                document.body.appendChild(panel);
+              }
+              positionMenu(menu);
+            } else {
+              // Restore panel to menu on close
+              if (panelParents.has(menu)) {
+                menu.appendChild(panel);
+                panel.style.position = "";
+              }
+            }
           });
         });
 

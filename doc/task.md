@@ -3325,3 +3325,294 @@ def _enum_str(val) -> str:
 3. Dashboard: карточки рекомендаций с датой, тикером, направлением, ценами
 4. Реестр рекомендаций: фильтр по дате
 5. Inline-форма: подписи полей, визуальное выделение
+
+---
+
+## Блок P3 — Dropdown, inline editing, delivery (production, 2026-03-24)
+
+### Приоритет
+
+**P3.1 → P3.2 → P3.3 → P3.4 → P3.5** — P3.1 блокирует все action-кнопки, P3.2 улучшает workflow автора, P3.3 убирает дублирование UI, P3.4/P3.5 — delivery.
+
+---
+
+### P3.1 — Dropdown «Действия» обрезается ячейкой Tabulator
+
+**Симптом:** При клике на «⋮ Действия» в любой grid-странице (staff, authors, subscriptions, payments, moderation) выпадающее меню открывается **внутри** ячейки и обрезается. Невозможно кликнуть по пунктам меню.
+
+**Причина:**
+
+Tabulator vendor CSS:
+```css
+.tabulator-row .tabulator-cell {
+  overflow: hidden;  /* ← обрезает всё содержимое ячейки */
+}
+```
+
+`staff-row-menu-panel` использует `position: fixed` + JS позиционирование, но `overflow: hidden` на `.tabulator-cell` создаёт clipping boundary даже для fixed-элементов.
+
+**Файлы:**
+- `src/pitchcopytrade/web/static/staff/tabulator-theme.css` — нужен override
+- `src/pitchcopytrade/web/templates/staff_base.html` — JS позиционирование dropdown
+
+**Что должен сделать worker:**
+
+- [x] **P3.1.1** В `tabulator-theme.css` добавить:
+  ```css
+  /* P3.1: Allow dropdown menus to escape cell overflow */
+  .pct-tabulator .tabulator-cell:has(.staff-row-menu) {
+    overflow: visible !important;
+  }
+  .pct-tabulator .tabulator-frozen.tabulator-frozen-right .tabulator-cell {
+    overflow: visible !important;
+  }
+  ```
+
+- [x] **P3.1.2** Если `:has()` не поддерживается в целевых браузерах, альтернативный подход — переместить `<div class="staff-row-menu-panel">` в `<body>` через JS при открытии `<details>`:
+  ```javascript
+  document.addEventListener("toggle", function(e) {
+    var details = e.target;
+    if (!details.matches(".staff-row-menu")) return;
+    var panel = details.querySelector(".staff-row-menu-panel");
+    if (details.open) {
+      document.body.appendChild(panel);
+      // позиционировать panel через getBoundingClientRect()
+    } else {
+      details.appendChild(panel);
+    }
+  }, true);
+  ```
+
+- [x] **P3.1.3** Проверить на staff_list, authors_list, subscriptions_list, payments_list, moderation_queue — dropdown открывается поверх grid, пункты кликабельны.
+
+- [x] **P3.1.4** `python3 -m compileall src tests`
+
+**Acceptance P3.1:**
+- Dropdown «Действия» открывается поверх таблицы, не обрезается
+- Все пункты меню (Редактировать, Повторить, Открыть) кликабельны
+- При закрытии dropdown исчезает полностью
+
+---
+
+### P3.2 — Inline editing рекомендаций: редактирование в строке + смена статуса
+
+**Симптом:** Автор не может редактировать поля рекомендации прямо в таблице. Для изменения цены нужно открывать полную форму. Нет возможности сменить статус (отправить на публикацию) без перехода в карточку.
+
+**Требования:**
+1. Поля **Идея**, **Вход**, **TP1**, **Стоп** — редактируемые прямо в строке таблицы
+2. Поле **Статус** — кликабельный badge, при клике показывает select с вариантами (DRAFT → REVIEW, REVIEW → PUBLISHED для автора)
+3. Сохранение при blur (снятии фокуса) — PATCH запрос на сервер
+4. Inline-форма создания делает черновик, но должна позволять сразу выбрать статус
+5. Кнопки «Создать» / «Детально» — всегда справа, адаптивные размеры полей
+
+**Файлы:**
+- `src/pitchcopytrade/web/templates/author/recommendations_list.html` — шаблон
+- `src/pitchcopytrade/web/static/staff/tabulator-bootstrap.js` — Tabulator config
+- `src/pitchcopytrade/api/routes/author.py` — добавить PATCH endpoint
+- `src/pitchcopytrade/api/routes/_grid_serializers.py` — serialize_recommendations
+
+**Что должен сделать worker:**
+
+- [x] **P3.2.1** Добавить API endpoint `PATCH /author/recommendations/{id}/inline` в `author.py`:
+  ```python
+  @router.patch("/recommendations/{recommendation_id}/inline")
+  async def inline_update_recommendation(
+      recommendation_id: str,
+      request: Request,
+      user: User = Depends(require_author),
+      session: AsyncSession | None = Depends(get_optional_db_session),
+  ) -> JSONResponse:
+      body = await request.json()
+      # body: { "field": "title"|"entry_from"|"take_profit_1"|"stop_loss"|"status", "value": "..." }
+      # Обновить поле рекомендации/leg
+      # Вернуть { "ok": true, "field": ..., "value": ... }
+  ```
+
+- [x] **P3.2.2** В `serialize_recommendations()` — сделать ячейки Идея, Вход, TP1, Стоп редактируемыми:
+  Для каждого значения генерировать HTML:
+  ```html
+  <span class="inline-editable"
+        data-rec-id="{id}"
+        data-field="title"
+        data-value="{value}"
+        contenteditable="false"
+        tabindex="0">{display_value}</span>
+  ```
+
+- [x] **P3.2.3** В `serialize_recommendations()` — статус badge как clickable select:
+  ```html
+  <select class="inline-status-select" data-rec-id="{id}" data-field="status">
+    <option value="draft" selected>DRAFT</option>
+    <option value="review">REVIEW</option>
+  </select>
+  ```
+  Стилизовать select как badge (background по цвету статуса).
+
+- [x] **P3.2.4** Добавить JS в `recommendations_list.html` (блок `extra_scripts`):
+  ```javascript
+  // Inline editing: click → contenteditable → blur → PATCH
+  document.addEventListener("click", function(e) {
+    var el = e.target.closest(".inline-editable");
+    if (!el) return;
+    el.contentEditable = "true";
+    el.focus();
+  });
+
+  document.addEventListener("blur", function(e) {
+    var el = e.target.closest(".inline-editable");
+    if (!el || el.contentEditable !== "true") return;
+    el.contentEditable = "false";
+    var newValue = el.textContent.trim();
+    if (newValue === el.dataset.value) return; // не изменилось
+    fetch("/author/recommendations/" + el.dataset.recId + "/inline", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field: el.dataset.field, value: newValue })
+    }).then(function(r) {
+      if (r.ok) el.dataset.value = newValue;
+      else el.textContent = el.dataset.value; // revert
+    });
+  }, true);
+
+  // Status select: change → PATCH
+  document.addEventListener("change", function(e) {
+    var sel = e.target.closest(".inline-status-select");
+    if (!sel) return;
+    fetch("/author/recommendations/" + sel.dataset.recId + "/inline", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field: "status", value: sel.value })
+    }).then(function(r) {
+      if (!r.ok) location.reload();
+    });
+  });
+  ```
+
+- [x] **P3.2.5** В inline-форме создания — добавить select статуса:
+  ```html
+  <select form="inline-recommendation-form" name="status">
+    <option value="draft" selected>Черновик</option>
+    <option value="review">На модерацию</option>
+  </select>
+  ```
+
+- [x] **P3.2.6** CSS: `.inline-editable:focus { outline: 2px solid #3b82f6; border-radius: 3px; }` + `.inline-status-select { appearance: none; border: none; background: transparent; font-weight: 600; cursor: pointer; }`
+
+- [x] **P3.2.7** Адаптивные поля inline-формы: `@media (max-width: 1200px)` уменьшить `grid-template-columns`, скрыть лейблы, уменьшить padding.
+
+- [x] **P3.2.8** `python3 -m compileall src tests`
+
+**Acceptance P3.2:**
+- Клик по значению «Идея/Вход/TP1/Стоп» → ячейка становится редактируемой
+- Blur → PATCH запрос → значение сохранено
+- Клик по статусу → select → выбор нового статуса → PATCH → badge обновляется
+- Inline-форма: select статуса (Черновик / На модерацию)
+- На экранах < 1200px поля сжимаются, форма остаётся юзабельной
+
+---
+
+### P3.3 — Убрать дублирующие фильтры в `/author/recommendations`
+
+**Симптом:** Tabulator уже предоставляет floating filter под каждым заголовком колонки. Отдельная панель фильтров сверху (Тикер, С даты, По дату, Статус, Применить) дублирует функционал.
+
+**Решение:** Убрать верхнюю панель фильтров. Использовать только встроенные Tabulator фильтры. Для фильтра по дате — добавить date column filter.
+
+**Файлы:**
+- `src/pitchcopytrade/web/templates/author/recommendations_list.html`
+- `src/pitchcopytrade/api/routes/author.py` — убрать `date_from`, `date_to`, `status_filter`, `q` query params (или оставить для совместимости)
+
+**Что должен сделать worker:**
+
+- [x] **P3.3.1** В `recommendations_list.html` удалить блок с фильтрами (Тикер, С даты, По дату, Статус, Применить). Оставить только `.staff-grid-shell` с Tabulator.
+
+- [x] **P3.3.2** В Tabulator `columns` для колонки «Обновлено» — использовать `headerFilter: "date"` или `headerFilter: "input"` с placeholder `"дд.мм.гггг"`.
+
+- [x] **P3.3.3** Для колонки «Статус» — использовать `headerFilter: "select"` с вариантами:
+  ```javascript
+  headerFilter: "select",
+  headerFilterParams: { values: { "": "все", "draft": "DRAFT", "review": "REVIEW", "published": "PUBLISHED" } }
+  ```
+
+- [x] **P3.3.4** `python3 -m compileall src tests`
+
+**Acceptance P3.3:**
+- Нет отдельной панели фильтров над таблицей
+- Фильтр по статусу — select в заголовке колонки Tabulator
+- Фильтр по дате — input в заголовке колонки «Обновлено»
+- Текстовые фильтры для остальных колонок работают
+
+---
+
+### P3.4 — Telegram delivery: 0 получателей
+
+**Симптом:** «Повторить доставку в Telegram» на `/admin/delivery/{id}` → страница перезагружается, но `attempted_count: 0`, `recipient_count: 0`. 4 попытки — 0 получателей.
+
+**Причина (вероятная):**
+
+`deliver_recommendation_notifications()` ищет получателей через `list_recommendation_recipient_telegram_ids()`:
+- В **db mode**: JOIN User → Subscription → SubscriptionProduct → фильтр по status=ACTIVE, telegram_user_id IS NOT NULL, strategy/author match
+- В **file mode**: загрузка из `graph.subscriptions` → те же фильтры
+
+**Проблема:** На production-сервере нет ни одной АКТИВНОЙ подписки с привязанным Telegram ID. Это не баг кода — это отсутствие данных. Рекомендация публикуется, но нет подписчиков, которым доставлять.
+
+**Файлы:**
+- `src/pitchcopytrade/services/notifications.py` — `deliver_recommendation_notifications()`, `list_recommendation_recipient_telegram_ids()`
+
+**Что должен сделать worker:**
+
+- [x] **P3.4.1** Добавить INFO-лог в `deliver_recommendation_notifications()` ПЕРЕД отправкой:
+  ```python
+  logger.info("Delivery for rec %s: found %d recipients", recommendation.id, len(recipient_ids))
+  ```
+  Если `len(recipient_ids) == 0`:
+  ```python
+  logger.warning("No recipients for rec %s (strategy=%s): no active subscriptions with telegram_user_id",
+                  recommendation.id, recommendation.strategy_id)
+  ```
+
+- [x] **P3.4.2** В delivery_detail.html — показывать warning если `attempted_count == 0` и `recipient_count == 0`:
+  ```html
+  {% if record.delivery_attempts > 0 and record.delivered_recipients == 0 %}
+  <div class="staff-alert warn">
+    Нет подписчиков с активной подпиской и привязанным Telegram ID для стратегии этой рекомендации.
+  </div>
+  {% endif %}
+  ```
+
+- [x] **P3.4.3** `python3 -m compileall src tests`
+
+**Acceptance P3.4:**
+- Если нет получателей — в логах WARNING с причиной
+- На странице delivery detail — жёлтый alert объясняющий почему 0 получателей
+- Если есть получатели — delivery работает (отправляет Telegram сообщения)
+
+---
+
+### P3.5 — Source map 404: tabulator.min.js.map / .css.map
+
+**Симптом:** В логах API постоянные `404 Not Found` для `/static/vendor/tabulator/tabulator.min.js.map` и `tabulator.min.css.map`.
+
+**Причина:** Minified Tabulator файлы содержат `//# sourceMappingURL=tabulator.min.js.map` в конце. Браузер запрашивает map-файлы, но их нет.
+
+**Fix:**
+
+- [x] **P3.5.1** Один из вариантов:
+  - **A)** Скачать source maps: `tabulator.min.js.map` и `tabulator.min.css.map` из CDN и положить рядом с vendor файлами
+  - **B)** Удалить строку `//# sourceMappingURL=...` из конца `tabulator.min.js` и `tabulator.min.css`
+
+  Рекомендуется вариант **B** — source maps не нужны на production.
+
+- [x] **P3.5.2** `python3 -m compileall src tests`
+
+**Acceptance P3.5:**
+- В логах API нет 404 для `.map` файлов
+
+---
+
+### Acceptance P3 (общий)
+
+1. Dropdown «Действия» открывается поверх таблицы на всех grid-страницах
+2. Рекомендации: inline editing полей + inline смена статуса
+3. Рекомендации: нет дублирующих фильтров — только Tabulator встроенные
+4. Delivery: понятное сообщение при 0 получателях
+5. Нет 404 для source maps в логах

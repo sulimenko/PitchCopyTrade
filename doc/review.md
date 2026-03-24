@@ -163,6 +163,28 @@ email-validator, httpx, aiosmtplib, authlib
 
 ## Открытые findings
 
+### P3.1 — Dropdown «Действия» обрезается ячейкой `[ ]` — BUG
+
+**Файл:** `tabulator-theme.css`
+**Проблема:** `.tabulator-cell { overflow: hidden }` (vendor CSS) обрезает `position: fixed` dropdown.
+**Fix:** `overflow: visible !important` для ячеек с `.staff-row-menu`, или portal-подход (перемещение panel в `<body>`).
+
+### P3.2 — Inline editing рекомендаций `[ ]` — FEATURE
+
+Поля Идея/Вход/TP1/Стоп — редактируемые в строке. Статус — кликабельный select. Сохранение при blur через PATCH.
+
+### P3.3 — Дублирующие фильтры `[ ]` — UX
+
+Убрать верхнюю панель фильтров в `/author/recommendations` — Tabulator floating filters уже есть.
+
+### P3.4 — Telegram delivery: 0 получателей `[ ]` — DIAGNOSTICS
+
+Нет активных подписок → 0 recipients. Нужен WARNING в логах + alert в UI.
+
+### P3.5 — Source map 404 `[ ]` — CLEANUP
+
+Удалить `sourceMappingURL` из vendor файлов.
+
 ### F2 — db/file parity verification `[ ]` — не блокирует MVP
 
 ### F3 — Regression coverage `[ ]` — не блокирует MVP
@@ -185,7 +207,7 @@ email-validator, httpx, aiosmtplib, authlib
 
 **Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z10), TAB, P2.**
 
-**Production bug-ов нет.** Merge не блокирован.
+**P3.1 (dropdown clipping)** — блокирует использование action-кнопок. Рекомендуется закрыть до production использования.
 
 F2–F3 — не блокируют MVP.
 
@@ -194,5 +216,6 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **V3** — ручной smoke-test на сервере: redeploy → все 14 admin-страниц + inline-форма + ссылки
-2. **Блок F** — F2 parity audit, F3 regression coverage
+1. **Блок P3** — P3.1 dropdown fix (critical), P3.2 inline editing, P3.3 фильтры cleanup, P3.4 delivery diagnostics, P3.5 source maps
+2. **V3** — ручной smoke-test на сервере
+3. **Блок F** — F2 parity audit, F3 regression coverage

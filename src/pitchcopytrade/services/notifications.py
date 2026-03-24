@@ -125,6 +125,13 @@ async def deliver_recommendation_notifications(
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
 ) -> list[int]:
     recipients = await list_recommendation_recipient_telegram_ids(session, recommendation)
+
+    # P3.4: Log delivery information
+    logger.info("Delivery for rec %s: found %d recipients", recommendation.id, len(recipients))
+    if len(recipients) == 0:
+        logger.warning("No recipients for rec %s (strategy=%s): no active subscriptions with telegram_user_id",
+                      recommendation.id, recommendation.strategy_id)
+
     text = build_recommendation_notification_text(recommendation)
     delivered: list[int] = []
     for chat_id in recipients:

@@ -592,6 +592,58 @@ async def recommendation_edit_submit(
     )
 
 
+@router.patch("/recommendations/{recommendation_id}/inline")
+async def inline_update_recommendation(
+    recommendation_id: str,
+    request: Request,
+    user: User = Depends(require_author),
+    repository: AuthorRepository = Depends(get_author_repository),
+) -> JSONResponse:
+    """Update a single field of a recommendation inline."""
+    author = await _get_author_or_403(repository, user)
+    recommendation = await get_author_recommendation(repository, author, recommendation_id)
+    if recommendation is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    field = body.get("field", "")
+    value = body.get("value", "")
+
+    # Map field names to recommendation/leg attributes
+    try:
+        if field == "title":
+            recommendation.title = str(value).strip()
+        elif field == "entry_from":
+            if recommendation.legs and len(recommendation.legs) > 0:
+                recommendation.legs[0].entry_from = float(value) if value else None
+        elif field == "take_profit_1":
+            if recommendation.legs and len(recommendation.legs) > 0:
+                recommendation.legs[0].take_profit_1 = float(value) if value else None
+        elif field == "stop_loss":
+            if recommendation.legs and len(recommendation.legs) > 0:
+                recommendation.legs[0].stop_loss = float(value) if value else None
+        elif field == "status":
+            status_value = str(value).lower()
+            if status_value in ["draft", "review", "published", "closed", "cancelled"]:
+                recommendation.status = RecommendationStatus(status_value.upper())
+            else:
+                return JSONResponse({"error": "invalid_status"}, status_code=400)
+        else:
+            return JSONResponse({"error": "unknown_field"}, status_code=400)
+
+        # Commit the changes
+        await repository.commit()
+        await repository.refresh(recommendation)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    return JSONResponse({"ok": True, "field": field, "value": value})
+
+
 async def _render_recommendation_form(
     *,
     request: Request,

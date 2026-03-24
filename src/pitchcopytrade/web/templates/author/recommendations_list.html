@@ -20,36 +20,7 @@
       <span class="staff-badge">{{ recommendations|length }} строк</span>
     </div>
   </div>
-  <div class="staff-toolbar">
-    <form method="get" action="/author/recommendations" class="staff-form-row">
-      <label class="staff-field">
-        <span>Фильтр</span>
-        <input type="text" name="q" value="{{ q }}" placeholder="Тикер, заголовок, стратегия" />
-      </label>
-      <label class="staff-field">
-        <span>С даты</span>
-        <input type="date" name="date_from" value="{{ date_from or '' }}" />
-      </label>
-      <label class="staff-field">
-        <span>По дату</span>
-        <input type="date" name="date_to" value="{{ date_to or '' }}" />
-      </label>
-      <label class="staff-field">
-        <span>Статус</span>
-        <select name="status_filter">
-          {% for option in ["all", "draft", "review", "approved", "scheduled", "published", "closed", "cancelled", "archived"] %}
-          <option value="{{ option }}" {% if status_filter == option %}selected{% endif %}>
-            {% if option == "all" %}все{% elif option == "draft" %}черновик{% elif option == "review" %}на модерации{% elif option == "approved" %}одобрено{% elif option == "scheduled" %}запланировано{% elif option == "published" %}опубликовано{% elif option == "closed" %}закрыто{% elif option == "cancelled" %}отменено{% elif option == "archived" %}в архиве{% else %}{{ option }}{% endif %}
-          </option>
-          {% endfor %}
-        </select>
-      </label>
-      <input type="hidden" name="sort_by" value="{{ sort_by }}" />
-      <input type="hidden" name="direction" value="{{ direction }}" />
-      <button class="staff-btn" type="submit">Применить</button>
-    </form>
-    <div class="staff-toolbar-note">Быстрый старт: стратегия, бумага и направление. Остальное можно заполнить позже.</div>
-  </div>
+  <!-- P3.3: Removed toolbar - using Tabulator header filters instead -->
   <form method="post" action="/author/recommendations" id="inline-recommendation-form" hidden>
     <input type="hidden" name="inline_mode" value="1" />
     <input type="hidden" name="kind" value="{{ inline_form_values.kind }}" />
@@ -76,14 +47,14 @@
   <script>
   PCTTabulator.create("grid-host", {
     columns: [
-      { title: "Стратегия", field: "strategy", widthGrow: 1.6 },
-      { title: "Идея / тикер", field: "idea" },
-      { title: "Направление", field: "side" },
-      { title: "Вход", field: "entry" },
-      { title: "TP1", field: "tp1" },
-      { title: "Стоп", field: "stop" },
-      { title: "Статус", field: "status" },
-      { title: "Обновлено", field: "updated" },
+      { title: "Стратегия", field: "strategy", widthGrow: 1.6, headerFilter: "input" },
+      { title: "Идея / тикер", field: "idea", headerFilter: "input" },
+      { title: "Направление", field: "side", headerFilter: "input" },
+      { title: "Вход", field: "entry", headerFilter: "input" },
+      { title: "TP1", field: "tp1", headerFilter: "input" },
+      { title: "Стоп", field: "stop", headerFilter: "input" },
+      { title: "Статус", field: "status", headerFilter: "select", headerFilterParams: { values: { "": "все", "draft": "DRAFT", "review": "REVIEW", "published": "PUBLISHED" } } },
+      { title: "Обновлено", field: "updated", headerFilter: "input" },
       { title: "Открыть", field: "actions", frozen: true }
     ],
     data: {{ recommendations_json | safe }}
@@ -176,9 +147,13 @@
         {% endif %}
       </div>
 
-      <!-- Поле 8: Статус (всегда черновик при создании через inline форму) -->
+      <!-- Поле 8: Статус при создании -->
       <div class="inline-field">
-        <span class="staff-badge ok">черновик</span>
+        <label class="inline-label">Статус</label>
+        <select form="inline-recommendation-form" name="status">
+          <option value="draft" selected>Черновик</option>
+          <option value="review">На модерацию</option>
+        </select>
       </div>
 
       <!-- Поле 9: Кнопки действия -->
@@ -471,6 +446,67 @@
       if (entryInput && !entryInput.value.trim() && stopInput && !stopInput.value.trim() && tpInput && !tpInput.value.trim()) {
         setPickerState("Черновик сохранится в реестре. Уровни можно заполнить позже или через «Детально».", false);
       }
+    });
+  })();
+
+  // P3.2: Inline editing for recommendation fields
+  (function () {
+    // Inline editable fields (title, entry, tp1, stop)
+    document.addEventListener("click", function (e) {
+      var el = e.target.closest(".inline-editable");
+      if (!el) return;
+      el.contentEditable = "true";
+      el.focus();
+      // Select all text
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+
+    document.addEventListener("blur", function (e) {
+      var el = e.target.closest(".inline-editable");
+      if (!el || el.contentEditable !== "true") return;
+      el.contentEditable = "false";
+      var newValue = el.textContent.trim();
+      var oldValue = el.dataset.value;
+      if (newValue === oldValue) return; // not changed
+      var recId = el.dataset.recId;
+      var field = el.dataset.field;
+      fetch("/author/recommendations/" + recId + "/inline", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field: field, value: newValue })
+      }).then(function (r) {
+        if (r.ok) {
+          el.dataset.value = newValue;
+        } else {
+          el.textContent = oldValue; // revert
+        }
+      }).catch(function () {
+        el.textContent = oldValue; // revert on error
+      });
+    }, true);
+
+    // Status select dropdown
+    document.addEventListener("change", function (e) {
+      var sel = e.target.closest(".inline-status-select");
+      if (!sel) return;
+      var recId = sel.dataset.recId;
+      var newStatus = sel.value;
+      fetch("/author/recommendations/" + recId + "/inline", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field: "status", value: newStatus })
+      }).then(function (r) {
+        if (!r.ok) {
+          // Reload to restore correct status
+          location.reload();
+        }
+      }).catch(function () {
+        location.reload();
+      });
     });
   })();
 </script>
