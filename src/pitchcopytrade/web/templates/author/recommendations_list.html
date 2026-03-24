@@ -90,9 +90,11 @@
   });
   </script>
 
-  <!-- Z10: Inline recommendation form moved out of table -->
+  <!-- Z10: Inline recommendation form — быстрый ввод рекомендации -->
   <div class="inline-recommendation-row" id="inline-recommendation-shortcut">
     <div class="inline-recommendation-fields">
+
+      <!-- Поле 1: Выбор стратегии (обязательно) -->
       <div class="inline-field">
         <label class="inline-label">Стратегия</label>
         <select form="inline-recommendation-form" name="strategy_id" {% if inline_field_errors.get("strategy_id") %}class="is-invalid"{% endif %}>
@@ -106,36 +108,49 @@
         {% endif %}
       </div>
 
+      <!-- Поле 2: Поиск инструмента (бумаги) — с автозаполнением -->
       <div class="inline-field is-wide">
+        <!-- Hidden field для сохранения ID выбранного инструмента -->
         <input type="hidden" form="inline-recommendation-form" name="leg_1_instrument_id" id="inline-instrument-id" value="{{ inline_form_values.leg_1_instrument_id }}" />
-        <div class="inline-shortcut-fields">
-          <input type="text" form="inline-recommendation-form" name="title" id="inline-title-input" value="{{ inline_form_values.title }}" placeholder="Идея" />
-          <input type="text" form="inline-recommendation-form" name="instrument_query" id="inline-ticker-input" value="{{ inline_form_values.instrument_query }}" placeholder="Бумага" autocomplete="off" {% if inline_field_errors.get("leg_1_instrument_id") %}class="is-invalid"{% endif %} />
-        </div>
-        <div id="inline-picker-state" class="inline-picker-state muted">Сначала выберите бумагу из подсказок.</div>
+
+        <!-- Поисковое поле с подсказками -->
+        <label class="inline-label">Инструмент</label>
+        <input type="text" form="inline-recommendation-form" name="instrument_query" id="inline-ticker-input" value="{{ inline_form_values.instrument_query }}" placeholder="Введите тикер или название" autocomplete="off" {% if inline_field_errors.get("leg_1_instrument_id") %}class="is-invalid"{% endif %} />
+
+        <!-- Статус выбора бумаги (динамическое сообщение) -->
+        <div id="inline-picker-state" class="inline-picker-state muted">Начните вводить тикер для поиска.</div>
         {% if inline_field_errors.get("leg_1_instrument_id") %}
         <div class="inline-field-error">{{ inline_field_errors.get("leg_1_instrument_id") }}</div>
         {% endif %}
-        {% if inline_error %}
-        <div class="inline-create-error" role="alert">{{ inline_error }}</div>
-        {% endif %}
+
+        <!-- Всплывающее меню с вариантами (появляется при вводе) -->
         <div id="inline-ticker-popup" class="staff-card inline-ticker-popup" hidden></div>
       </div>
 
+      <!-- Поле 3: Описание идеи (рекомендации) — краткое обоснование -->
+      <div class="inline-field">
+        <label class="inline-label">Идея</label>
+        <input type="text" form="inline-recommendation-form" name="title" id="inline-title-input" value="{{ inline_form_values.title }}" placeholder="Краткое описание" />
+        <!-- Может быть заполнено автоматически как "Покупка {тикер}" при submit -->
+      </div>
+
+      <!-- Поле 4: Направление сделки (обязательно) — BUY или SELL -->
       <div class="inline-field">
         <label class="inline-label">Направление</label>
         <select form="inline-recommendation-form" name="leg_1_side" {% if inline_field_errors.get("leg_1_side") %}class="is-invalid"{% endif %}>
           <option value="">—</option>
-          <option value="buy" {% if inline_form_values.leg_1_side == "buy" %}selected{% endif %}>Покупка</option>
-          <option value="sell" {% if inline_form_values.leg_1_side == "sell" %}selected{% endif %}>Продажа</option>
+          <option value="buy" {% if inline_form_values.leg_1_side == "buy" %}selected{% endif %}>Покупка ↑</option>
+          <option value="sell" {% if inline_form_values.leg_1_side == "sell" %}selected{% endif %}>Продажа ↓</option>
         </select>
         {% if inline_field_errors.get("leg_1_side") %}
         <div class="inline-field-error">{{ inline_field_errors.get("leg_1_side") }}</div>
         {% endif %}
       </div>
 
+      <!-- Поле 5: Цена входа — нижний предел диапазона входа -->
       <div class="inline-field">
-        <input type="text" form="inline-recommendation-form" name="leg_1_entry_from" value="{{ inline_form_values.leg_1_entry_from }}" placeholder="Вход" {% if inline_field_errors.get("leg_1_entry_from") %}class="is-invalid"{% endif %} />
+        <label class="inline-label">Вход (от)</label>
+        <input type="text" form="inline-recommendation-form" name="leg_1_entry_from" value="{{ inline_form_values.leg_1_entry_from }}" placeholder="Цена" inputmode="decimal" {% if inline_field_errors.get("leg_1_entry_from") %}class="is-invalid"{% endif %} />
         {% if inline_field_errors.get("leg_1_entry_from") %}
         <div class="inline-field-error">{{ inline_field_errors.get("leg_1_entry_from") }}</div>
         {% elif inline_field_errors.get("leg_1_entry_to") %}
@@ -143,27 +158,33 @@
         {% endif %}
       </div>
 
+      <!-- Поле 6: Take Profit 1 — первый уровень фиксации прибыли -->
       <div class="inline-field">
-        <input type="text" form="inline-recommendation-form" name="leg_1_take_profit_1" value="{{ inline_form_values.leg_1_take_profit_1 }}" placeholder="TP1" {% if inline_field_errors.get("leg_1_take_profit_1") %}class="is-invalid"{% endif %} />
+        <label class="inline-label">TP 1</label>
+        <input type="text" form="inline-recommendation-form" name="leg_1_take_profit_1" value="{{ inline_form_values.leg_1_take_profit_1 }}" placeholder="Цена" inputmode="decimal" {% if inline_field_errors.get("leg_1_take_profit_1") %}class="is-invalid"{% endif %} />
         {% if inline_field_errors.get("leg_1_take_profit_1") %}
         <div class="inline-field-error">{{ inline_field_errors.get("leg_1_take_profit_1") }}</div>
         {% endif %}
       </div>
 
+      <!-- Поле 7: Stop Loss — уровень стопа для рисков -->
       <div class="inline-field">
-        <input type="text" form="inline-recommendation-form" name="leg_1_stop_loss" value="{{ inline_form_values.leg_1_stop_loss }}" placeholder="Стоп" {% if inline_field_errors.get("leg_1_stop_loss") %}class="is-invalid"{% endif %} />
+        <label class="inline-label">Стоп</label>
+        <input type="text" form="inline-recommendation-form" name="leg_1_stop_loss" value="{{ inline_form_values.leg_1_stop_loss }}" placeholder="Цена" inputmode="decimal" {% if inline_field_errors.get("leg_1_stop_loss") %}class="is-invalid"{% endif %} />
         {% if inline_field_errors.get("leg_1_stop_loss") %}
         <div class="inline-field-error">{{ inline_field_errors.get("leg_1_stop_loss") }}</div>
         {% endif %}
       </div>
 
+      <!-- Поле 8: Статус (всегда черновик при создании через inline форму) -->
       <div class="inline-field">
         <span class="staff-badge ok">черновик</span>
       </div>
 
+      <!-- Поле 9: Кнопки действия -->
       <div class="inline-field inline-field--actions">
-        <button class="staff-btn is-primary" type="submit" form="inline-recommendation-form" title="Создать черновик">Создать</button>
-        <button class="ghost" type="button" data-open-recommendation-modal data-inline-detail data-modal-url="{{ recommendation_modal_url }}" title="Открыть полный редактор">Детально</button>
+        <button class="staff-btn is-primary" type="submit" form="inline-recommendation-form" title="Создать черновик рекомендации">Создать</button>
+        <button class="ghost" type="button" data-open-recommendation-modal data-inline-detail data-modal-url="{{ recommendation_modal_url }}" title="Открыть полный редактор с дополнительными полями">Детально</button>
       </div>
     </div>
   </div>

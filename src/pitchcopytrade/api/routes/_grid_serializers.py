@@ -100,9 +100,9 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
 
         # Staff actions dropdown
         staff_id = item.get('id')
-        actions_html = f'''<details class="staff-dropdown">
+        actions_html = f'''<details class="staff-row-menu">
   <summary class="staff-btn ghost">⋮ Действия</summary>
-  <div class="staff-dropdown-menu">
+  <div class="staff-row-menu-panel">
     <a class="staff-btn ghost" href="/admin/staff/{staff_id}?action=edit">Редактировать</a>
     <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{staff_id}">Диалог</button>
   </div>

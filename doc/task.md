@@ -2857,7 +2857,7 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 
 **Что должен сделать worker:**
 - [x] **TAB-FIX2.1.1** Исправить все 8 URL (таблица выше)
-- [x] **TAB-FIX2.1.2** Для staff — заменить `_link(...)` кнопку dropdown, аналогичную старому шаблону
+- [x] **TAB-FIX2.1.2** Для staff — заменить `_link(...)` кнопку dropdown, аналогичную старому шаблону - теперь она открывается под таблицей, ее не видно, исправь css
 - [x] **TAB-FIX2.1.3** Для legal «Просмотр» — если маршрут `/docs/` не существует, заменить на ссылку на `source_path` если есть, иначе убрать
 - [x] **TAB-FIX2.1.4** `python3 -m compileall src tests`
 
@@ -2877,7 +2877,7 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
   .pct-tabulator .tabulator-placeholder { background: #fff; }
   ```
 - [x] **TAB-FIX2.2.3** Если `height: 100%` на `.pct-tabulator` — рассмотреть `max-height: 100%` + `height: auto` чтобы grid не растягивался больше данных
-- [x] **TAB-FIX2.2.4** в `class="inline-recommendation-row"` все элементы необходимо привести расопложение к средней линии относительно всего элемента
+- [x] **TAB-FIX2.2.4** в `class="inline-recommendation-row"` все элементы необходимо привести расопложение к средней линии относительно всего элемента 
 
 ---
 
