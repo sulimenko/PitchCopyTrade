@@ -146,6 +146,13 @@ email-validator, httpx, aiosmtplib, authlib
 - Bundle: 1.4 MB (AG Grid) → ~150 KB (Tabulator)
 - Console errors `postProcessThemeChange` полностью устранены
 
+### Блок P2 — Production UX fixes ✅
+- **P2.1**: Фильтр по роли — `onchange="this.form.submit()"` на `<select>` в staff_list и authors_list
+- **P2.2**: Дублирующие кнопки в топбаре убраны — остались только контекстные (Новая стратегия, Новый продукт, etc.)
+- **P2.3**: Dashboard автора — карточки рекомендаций расширены: дата, тикер, направление (↑/↓), цены (вход, TP, стоп)
+- **P2.4**: Фильтр по дате в `/author/recommendations` — поля `date_from`, `date_to` + серверная фильтрация
+- **P2.5**: Inline-форма рекомендации — лейблы, выделенный фон, кнопки «Создать» (primary) / «Детально» (ghost)
+
 ### Fixes ✅
 - **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()`
 - **F1 — Oversight emails**: `_send_admin_oversight_email()` при staff onboarding
@@ -153,18 +160,6 @@ email-validator, httpx, aiosmtplib, authlib
 ---
 
 ## Открытые findings
-
-### Z9.1 — «Сохранить промокод» → 404 `[ ]` — BUG
-
-**Файл:** `src/pitchcopytrade/web/templates/admin/promo_form.html` (строка 29)
-**Проблема:** `<form method="post">` без `action` → POST идёт на текущий URL `/admin/promos/new` → матчит `POST /promos/{promo_code_id}` с `promo_code_id="new"` → Z6 UUID-валидация → 404.
-**Fix:** Добавить `action="{% if promo_code %}/admin/promos/{{ promo_code.id }}{% else %}/admin/promos{% endif %}"`. Проверить аналогичные формы (strategy_form, product_form, legal_form).
-
-### Z9.2 — Inline-форма рекомендаций обрезается `[ ]` — BUG
-
-**Файлы:** `staff_base.html` (строки 140, 261), `ag-grid-bootstrap.js` (строка 93)
-**Проблема:** `.staff-grid-shell { overflow: hidden }` + `.staff-content > *:has(.staff-grid-shell) { overflow: hidden }` + `host.style.height = "100%"` — три слоя обрезки. Wrapper-таблица с inline-формой вставлена после AG Grid host, но ей не остаётся места.
-**Fix:** overflow: auto вместо hidden, не ставить height:100% при autoHeight, проверить regression на таблицах без skip rows.
 
 ### F2 — db/file parity verification `[ ]` — не блокирует MVP
 
@@ -186,7 +181,7 @@ email-validator, httpx, aiosmtplib, authlib
 
 ## Gate на следующий merge
 
-**Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8).**
+**Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z10), TAB, P2.**
 
 **Production bug-ов нет.** Merge не блокирован.
 
@@ -197,7 +192,5 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **Блок TAB** — миграция AG Grid → Tabulator 6 (7 задач, устраняет console error + уменьшает bundle 10x)
-2. **Блок P2** — production UX fixes (5 задач: фильтр по роли, топбар cleanup, dashboard карточки, фильтр по дате, inline form UX)
-3. **V3** — ручной smoke-test
-4. **Блок F** — F2 parity audit, F3 regression coverage
+1. **V3** — ручной smoke-test на сервере
+2. **Блок F** — F2 parity audit, F3 regression coverage
