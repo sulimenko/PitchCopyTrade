@@ -184,7 +184,7 @@ email-validator, httpx, aiosmtplib, authlib
 
 **Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z10), TAB, P2.**
 
-**Production bug-ов нет.** Merge не блокирован.
+**TAB-FIX2 — CRITICAL.** Все ссылки «Открыть»/«Редактировать» в grid-ах → 404/405. Серая область в grid. Merge заблокирован.
 
 F2–F3 — не блокируют MVP.
 
@@ -193,5 +193,6 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **V3** — ручной smoke-test на сервере: redeploy → проверить все 14 admin-страниц
-2. **Блок F** — F2 parity audit, F3 regression coverage
+1. **TAB-FIX2** — исправить URL в 8 сериализаторах + CSS серая область + inline-форма
+2. **V3** — ручной smoke-test на сервере
+3. **Блок F** — F2 parity audit, F3 regression coverage

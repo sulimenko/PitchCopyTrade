@@ -2825,6 +2825,85 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 
 ---
 
+## Блок TAB-FIX2 — Неправильные ссылки в сериализаторах + CSS inline-формы (2026-03-24, CRITICAL)
+
+### Приоритет
+
+**БЛОКЕР.** Все кнопки «Открыть» / «Редактировать» в Tabulator grid-ах ведут на 404/405. Inline-форма рекомендаций не работает.
+
+### Причина
+
+Сериализаторы генерируют ссылки вида `/admin/strategies/{id}`, но маршруты требуют `/admin/strategies/{id}/edit`. Это касается 7 из 14 сериализаторов.
+
+---
+
+### TAB-FIX2.1 — Исправить URL в сериализаторах
+
+**Файл:** `src/pitchcopytrade/api/routes/_grid_serializers.py`
+
+| Сериализатор | Строка | Сейчас (неправильно) | Должно быть |
+|---|---|---|---|
+| `serialize_strategies` | 48 | `/admin/strategies/{id}` | `/admin/strategies/{id}/edit` |
+| `serialize_products` | 130 | `/admin/products/{id}` | `/admin/products/{id}/edit` |
+| `serialize_promos` | 233 | `/admin/promos/{id}` | `/admin/promos/{id}/edit` |
+| `serialize_legal` | 205 | `/docs/{id}` (Просмотр) | Убрать или заменить на `/admin/legal/{id}/edit` |
+| `serialize_legal` | 206 | `/admin/legal/{id}` | `/admin/legal/{id}/edit` |
+| `serialize_recommendations` | 329 | `/author/recommendations/{id}` | `/author/recommendations/{id}/edit` |
+| `serialize_author_strategies` | 349 | `/author/strategies/{id}` | `/author/strategies/{id}/edit` |
+| `serialize_moderation_queue` | 374 | `/moderation/{id}` | `/moderation/recommendations/{id}` |
+
+**Staff — особый случай:**
+- Строка 107: `/admin/staff/{id}` — маршрут `GET /admin/staff/{id}/edit` **НЕ СУЩЕСТВУЕТ** (есть только POST). Вместо ссылки «Редактировать» использовать dropdown-кнопку с действиями (resend invite, deactivate, etc.).
+
+**Что должен сделать worker:**
+- [x] **TAB-FIX2.1.1** Исправить все 8 URL (таблица выше)
+- [x] **TAB-FIX2.1.2** Для staff — заменить `_link(...)` кнопку dropdown, аналогичную старому шаблону
+- [x] **TAB-FIX2.1.3** Для legal «Просмотр» — если маршрут `/docs/` не существует, заменить на ссылку на `source_path` если есть, иначе убрать
+- [x] **TAB-FIX2.1.4** `python3 -m compileall src tests`
+
+---
+
+### TAB-FIX2.2 — Серый блок под Tabulator grid (CSS)
+
+**Симптом:** На скриншоте видна большая серая область под данными в Tabulator grid на `/author/recommendations`. Tabulator пытает растянуться на 100% высоты контейнера, но данных мало — образуется серый фон.
+
+**Файл:** `src/pitchcopytrade/web/static/staff/tabulator-theme.css` или `src/pitchcopytrade/web/templates/staff_base.html`
+
+**Что должен сделать worker:**
+- [x] **TAB-FIX2.2.1** Прочитать текущий CSS для `.pct-tabulator` и `.staff-grid-shell .pct-tabulator`
+- [x] **TAB-FIX2.2.2** Tabulator пустая область: добавить CSS:
+  ```css
+  .pct-tabulator .tabulator-tableholder { background: #fff; }
+  .pct-tabulator .tabulator-placeholder { background: #fff; }
+  ```
+- [x] **TAB-FIX2.2.3** Если `height: 100%` на `.pct-tabulator` — рассмотреть `max-height: 100%` + `height: auto` чтобы grid не растягивался больше данных
+- [x] **TAB-FIX2.2.4** в `class="inline-recommendation-row"` все элементы необходимо привести расопложение к средней линии относительно всего элемента
+
+---
+
+### TAB-FIX2.3 — Inline-форма рекомендаций: кнопка «Создать» не работает
+
+**Симптом:** На скриншоте видна inline-форма внизу, но при нажатии «Создать» ничего не происходит (или 404).
+
+**Файлы:** `src/pitchcopytrade/web/templates/author/recommendations_list.html`
+
+**Что должен сделать worker:**
+- [x] **TAB-FIX2.3.1** Прочитать inline-форму в шаблоне — проверить что `<form id="inline-recommendation-form">` имеет правильный `action="/author/recommendations"` и `method="post"`
+- [x] **TAB-FIX2.3.2** Проверить что все `<input>`, `<select>` внутри inline div имеют `form="inline-recommendation-form"` атрибут
+- [x] **TAB-FIX2.3.3** Проверить что кнопка «Создать» имеет `type="submit"` и `form="inline-recommendation-form"`
+- [x] **TAB-FIX2.3.4** Тестировать: заполнить стратегию + название + направление → «Создать» → POST → redirect на edit page
+
+---
+
+### Acceptance TAB-FIX2
+
+1. Все ссылки «Открыть» / «Редактировать» в grid-ах ведут на рабочие страницы (не 404/405)
+2. Серая область под данными в Tabulator исчезла (белый фон или авто-высота)
+3. Inline-форма «Создать» на `/author/recommendations` работает — POST создаёт рекомендацию
+4. `python3 -m compileall src tests` — чисто
+
+---
+
 ## Блок TAB-FIX — Исправление сериализаторов Tabulator (2026-03-24, CRITICAL)
 
 ### Приоритет

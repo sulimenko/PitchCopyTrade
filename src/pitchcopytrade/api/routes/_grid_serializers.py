@@ -45,7 +45,7 @@ def serialize_strategies(strategies: list, request_url_for=None) -> str:
             "status": _badge(status_val, status_class),
             "is_public": "Да" if item.is_public else "Нет",
             "min_capital": f"{item.min_capital_rub:,.0f}" if item.min_capital_rub else "—",
-            "actions": _link(f"/admin/strategies/{item.id}", "Открыть"),
+            "actions": _link(f"/admin/strategies/{item.id}/edit", "Открыть"),
         })
     return json.dumps(data, default=str)
 
@@ -98,13 +98,23 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
         elif item.get("invite_delivery_status") == "FAILED":
             invite_status = _badge("Ошибка", "danger")
 
+        # Staff actions dropdown
+        staff_id = item.get('id')
+        actions_html = f'''<details class="staff-dropdown">
+  <summary class="staff-btn ghost">⋮ Действия</summary>
+  <div class="staff-dropdown-menu">
+    <a class="staff-btn ghost" href="/admin/staff/{staff_id}?action=edit">Редактировать</a>
+    <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{staff_id}">Диалог</button>
+  </div>
+</details>'''
+
         data.append({
             "name": f"<strong>{item.get('display_name', '—')}</strong><br>{item.get('email', '')}{name_suffix}",
             "roles": roles_html,
             "status": _badge(status.upper(), status_class),
             "invite": invite_status,
             "telegram_id": str(item.get("telegram_user_id")) if item.get("telegram_user_id") else "—",
-            "actions": _link(f"/admin/staff/{item.get('id')}", "Редактировать"),
+            "actions": actions_html,
         })
     return json.dumps(data, default=str)
 
@@ -127,7 +137,7 @@ def serialize_products(products: list, request_url_for=None) -> str:
             "price": f"{item.price_rub:,.0f} ₽" if item.price_rub else "—",
             "trial": f"{item.trial_days} дн" if item.trial_days else "—",
             "target": product_type,
-            "actions": _link(f"/admin/products/{item.id}", "Открыть"),
+            "actions": _link(f"/admin/products/{item.id}/edit", "Открыть"),
         })
     return json.dumps(data, default=str)
 
@@ -202,8 +212,8 @@ def serialize_legal(documents: list, request_url_for=None) -> str:
             "version": str(item.version) if item.version else "1",
             "status": _badge("Активен" if is_active else "Черновик", status_class),
             "consents": str(consents_count) if consents_count > 0 else "—",
-            "source": _link(f"/docs/{item.id}", "Просмотр"),
-            "actions": _link(f"/admin/legal/{item.id}", "Редактировать"),
+            "source": _link(f"/admin/legal/{item.id}", "Просмотр"),
+            "actions": _link(f"/admin/legal/{item.id}/edit", "Редактировать"),
         })
     return json.dumps(data, default=str)
 
@@ -230,7 +240,7 @@ def serialize_promos(promo_codes: list, request_url_for=None) -> str:
             "used": str(item.current_redemptions) if item.current_redemptions else "0",
             "limit": str(item.max_redemptions) if item.max_redemptions else "∞",
             "expires": _fmt_dt(item.expires_at) if item.expires_at else "—",
-            "actions": _link(f"/admin/promos/{item.id}", "Редактировать"),
+            "actions": _link(f"/admin/promos/{item.id}/edit", "Редактировать"),
         })
     return json.dumps(data, default=str)
 
@@ -326,7 +336,7 @@ def serialize_recommendations(recommendations: list, request_url_for=None) -> st
             "stop": stop_text,
             "status": _badge(status_val, status_class),
             "updated": _fmt_dt(item.updated_at),
-            "actions": _link(f"/author/recommendations/{item.id}", "Открыть"),
+            "actions": _link(f"/author/recommendations/{item.id}/edit", "Открыть"),
         })
     return json.dumps(data, default=str)
 
@@ -346,7 +356,7 @@ def serialize_author_strategies(strategies: list, request_url_for=None) -> str:
             "risk": _badge(risk_val, risk_class),
             "status": _badge(status_val, status_class),
             "min_capital": f"{item.min_capital_rub:,.0f}" if item.min_capital_rub else "—",
-            "actions": _link(f"/author/strategies/{item.id}", "Редактировать"),
+            "actions": _link(f"/author/strategies/{item.id}/edit", "Редактировать"),
         })
     return json.dumps(data, default=str)
 
@@ -371,6 +381,6 @@ def serialize_moderation_queue(items: list, request_url_for=None) -> str:
             "strategy": item.strategy.title if item.strategy else "—",
             "kind": _badge(kind_val, kind_class),
             "status": _badge(status_val, status_class),
-            "actions": _link(f"/moderation/{item.id}", "Редактировать"),
+            "actions": _link(f"/moderation/recommendations/{item.id}", "Редактировать"),
         })
     return json.dumps(data, default=str)
