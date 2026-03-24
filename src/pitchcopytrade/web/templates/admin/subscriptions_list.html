@@ -1,15 +1,6 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/strategies">Стратегии</a>
-  <a class="action ghost" href="/admin/products">Продукты</a>
-  <a class="action ghost" href="/admin/payments">Платежи</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Доставка</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
 {% endblock %}
 
 {% block content %}
@@ -66,83 +57,22 @@
     </article>
   </div>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Клиент</th>
-          <th>Продукт</th>
-          <th>Статус</th>
-          <th>Период</th>
-          <th>Область доступа</th>
-          <th>Источник</th>
-          <th>Действия</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for subscription in subscriptions %}
-        <tr>
-          <td>
-            <strong>{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</strong>
-            <div class="muted">{{ subscription.user.email or "почта не задана" }}</div>
-            {% if subscription.payment %}
-            <div class="muted">
-              Платеж:
-              {{ label_payment_status(subscription.payment.status) }}
-            </div>
-            {% endif %}
-          </td>
-          <td>
-            <strong>{{ subscription.product.title }}</strong>
-            <div class="muted">{{ label_product_type(subscription.product.product_type) }}</div>
-          </td>
-          <td>
-            <div class="staff-inline-actions">
-              <span class="staff-badge">
-                {{ label_subscription_status(subscription.status) }}
-              </span>
-              {% if subscription.is_trial %}<span class="staff-badge">пробная</span>{% endif %}
-            </div>
-          </td>
-          <td>{{ subscription.start_at }} → {{ subscription.end_at }}</td>
-          <td>
-            {% if subscription.product.strategy %}
-            <strong>Стратегия</strong>
-            <div class="muted">{{ subscription.product.strategy.title }}</div>
-            {% elif subscription.product.author %}
-            <strong>Автор</strong>
-            <div class="muted">{{ subscription.product.author.display_name }}</div>
-            {% elif subscription.product.bundle %}
-            <strong>Пакет</strong>
-            <div class="muted">{{ subscription.product.bundle.title }}</div>
-            {% else %}
-            —
-            {% endif %}
-          </td>
-          <td>{{ subscription.lead_source.name if subscription.lead_source else "—" }}</td>
-          <td class="actions">
-            <details class="staff-row-menu">
-              <summary class="ghost">Действия</summary>
-              <div class="staff-row-menu-panel">
-                <a class="ghost" href="/admin/subscriptions/{{ subscription.id }}">Открыть</a>
-                {% if subscription.status.value not in ["cancelled", "expired", "blocked"] and subscription.autorenew_enabled %}
-                <form method="post" action="/admin/subscriptions/{{ subscription.id }}/autorenew/disable">
-                  <button type="submit" class="ghost">Отключить автопродление</button>
-                </form>
-                {% endif %}
-                {% if subscription.status.value not in ["cancelled", "expired", "blocked"] %}
-                <form method="post" action="/admin/subscriptions/{{ subscription.id }}/cancel">
-                  <button type="submit" class="ghost">Отменить</button>
-                </form>
-                {% endif %}
-              </div>
-            </details>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="muted">Подписок пока нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div id="grid-host" class="pct-tabulator"></div>
   </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Клиент", field: "client", widthGrow: 1.6 },
+      { title: "Продукт", field: "product" },
+      { title: "Статус", field: "status" },
+      { title: "Период", field: "period" },
+      { title: "Область", field: "target" },
+      { title: "Источник", field: "source" },
+      { title: "Действия", field: "actions", frozen: true }
+    ],
+    data: {{ subscriptions_json | safe }}
+  });
+  </script>
 </section>
 {% endblock %}

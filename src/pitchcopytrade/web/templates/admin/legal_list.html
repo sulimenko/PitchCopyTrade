@@ -5,9 +5,6 @@
 {% block page_title %}Юридические документы{% endblock %}
 
 {% block topbar_actions %}
-<a class="ghost" href="/admin/subscriptions">Подписки</a>
-<a class="ghost" href="/admin/delivery">Доставка</a>
-<a class="ghost" href="/admin/payments">Платежи</a>
 <a class="staff-btn is-primary" href="/admin/legal/new">Новый документ</a>
 {% endblock %}
 
@@ -29,37 +26,24 @@
   </div>
 
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Документ</th>
-          <th>Тип</th>
-          <th>Версия</th>
-          <th>Статус</th>
-          <th>Согласия</th>
-          <th>Источник</th>
-          <th>Открыть</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for document in documents %}
-        <tr>
-          <td>
-            <strong>{{ document.title }}</strong>
-            <div class="muted">{{ document.published_at or "черновик" }}</div>
-          </td>
-          <td>{{ label_legal_document_type(document.document_type) }}</td>
-          <td>{{ document.version }}</td>
-          <td><span class="staff-badge {% if document.is_active %}ok{% else %}warn{% endif %}">{{ "активен" if document.is_active else "черновик" }}</span></td>
-          <td>{{ document.consents|length if document.consents is not none else 0 }}</td>
-          <td>{{ document.source_path or "будет создан автоматически" }}</td>
-          <td class="actions"><a class="ghost" href="/admin/legal/{{ document.id }}/edit">Открыть</a></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="muted">Юридических документов пока нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="staff-grid-shell">
+      <div id="grid-host" class="pct-tabulator"></div>
+    </div>
+
+    <script>
+    PCTTabulator.create("grid-host", {
+      columns: [
+        { title: "Название", field: "title", widthGrow: 1.6 },
+        { title: "Тип", field: "type" },
+        { title: "Версия", field: "version" },
+        { title: "Статус", field: "status" },
+        { title: "Согласия", field: "consents" },
+        { title: "Источник", field: "source" },
+        { title: "Действия", field: "actions", frozen: true }
+      ],
+      data: {{ legal_json | safe }}
+    });
+    </script>
   </div>
 </section>
 {% endblock %}

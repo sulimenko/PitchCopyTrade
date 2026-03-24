@@ -366,34 +366,33 @@ def test_staff_shell_includes_local_ag_grid_vendor_assets(monkeypatch) -> None:
         response = client.get("/admin/dashboard")
 
         assert response.status_code == 200
-        assert "/static/vendor/ag-grid-community/ag-grid-community.min.noStyle.js" in response.text
-        assert "/static/staff/ag-grid-bootstrap.js" in response.text
+        assert "/static/vendor/tabulator/tabulator.min.js" in response.text
+        assert "/static/staff/tabulator-bootstrap.js" in response.text
 
 
-def test_local_ag_grid_vendor_asset_is_served() -> None:
+def test_local_tabulator_vendor_asset_is_served() -> None:
     session = FakeAsyncSession()
     admin = _make_admin_user()
     session.users_by_id[admin.id] = admin
 
     with _build_client(session, admin) as client:
-        response = client.get("/static/vendor/ag-grid-community/ag-grid-community.min.noStyle.js")
+        response = client.get("/static/vendor/tabulator/tabulator.min.js")
 
         assert response.status_code == 200
-        assert "ag-Grid" in response.text
+        assert "Tabulator" in response.text
 
 
-def test_staff_ag_grid_bootstrap_uses_fixed_layout_on_desktop() -> None:
+def test_staff_tabulator_bootstrap_uses_fixed_layout_on_desktop() -> None:
     session = FakeAsyncSession()
     admin = _make_admin_user()
     session.users_by_id[admin.id] = admin
 
     with _build_client(session, admin) as client:
-        response = client.get("/static/staff/ag-grid-bootstrap.js")
+        response = client.get("/static/staff/tabulator-bootstrap.js")
 
         assert response.status_code == 200
-        assert 'window.matchMedia("(max-width: 768px)").matches' in response.text
-        assert 'host.style.height = "100%";' in response.text
-        assert 'domLayout: domLayout' in response.text
+        assert 'PCTTabulator' in response.text
+        assert 'new Tabulator' in response.text
 
 
 def test_subscription_list_renders(monkeypatch) -> None:

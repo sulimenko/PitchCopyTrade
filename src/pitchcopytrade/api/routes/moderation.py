@@ -23,6 +23,7 @@ from pitchcopytrade.services.moderation import (
 )
 from pitchcopytrade.services.notifications import deliver_recommendation_notifications, deliver_recommendation_notifications_file
 from pitchcopytrade.web.templates import templates
+from pitchcopytrade.api.routes._grid_serializers import serialize_moderation_queue
 
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
@@ -57,6 +58,7 @@ async def moderation_queue_page(
             "title": "Moderation Queue",
             "user": user,
             "items": items,
+            "queue_json": serialize_moderation_queue(items),
             "stats": stats,
             "query_text": q,
             "status_value": status_value,

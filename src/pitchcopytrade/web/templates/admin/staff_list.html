@@ -81,7 +81,7 @@
       </label>
       <label class="staff-field">
         <span>Роль</span>
-        <select name="role_filter">
+        <select name="role_filter" onchange="this.form.submit()">
           {% for option in ["all", "admin", "author", "moderator", "multi-role"] %}
           <option value="{{ option }}" {% if role_filter == option %}selected{% endif %}>
             {% if option == "all" %}все{% elif option == "admin" %}администратор{% elif option == "author" %}автор{% elif option == "moderator" %}модератор{% elif option == "multi-role" %}несколько ролей{% else %}{{ option }}{% endif %}
@@ -96,130 +96,63 @@
     <div class="staff-toolbar-note">Создание сразу выпускает приглашение. Telegram ID остаётся необязательным расширенным полем до bind.</div>
   </div>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Сотрудник</th>
-          <th>Роли</th>
-          <th>Статус</th>
-          <th>Приглашение</th>
-          <th>Telegram ID</th>
-          <th>Действия</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in staff %}
-        <tr>
-          <td>
-            <strong>{{ item.display_name }}</strong>
-            <div class="muted">{{ item.email or "почта не задана" }}</div>
-            {% if item.is_current_user %}
-            <div class="staff-inline-actions" style="margin-top:6px;"><span class="staff-badge">это вы</span></div>
-            {% endif %}
-          </td>
-          <td>
-            <div class="staff-inline-actions">
-              {% for role in item.roles %}
-              <span class="staff-badge">{{ label_role(role) }}</span>
-              {% endfor %}
-            </div>
-          </td>
-          <td>{{ status_badge(item.status) }}</td>
-          <td>
-            {{ delivery_badge(item.invite_delivery_status) }}
-            {% if item.invite_delivery_updated_at %}
-            <div class="muted">{{ item.invite_delivery_updated_at }}</div>
-            {% endif %}
-            {% if item.invite_delivery_error %}
-            <div class="muted">{{ item.invite_delivery_error }}</div>
-            {% endif %}
-          </td>
-          <td><span class="muted">{{ item.telegram_user_id or "—" }}</span></td>
-          <td class="actions">
-            <details class="staff-row-menu">
-              <summary class="ghost">Действия</summary>
-              <div class="staff-row-menu-panel">
-                <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{{ item.id }}">Редактировать</button>
-                {% if item.status == "inactive" %}
-                <form method="post" action="/admin/staff/{{ item.id }}/activate">
-                  <button type="submit" class="ghost">Активировать</button>
-                </form>
-                {% elif item.status == "active" %}
-                <form method="post" action="/admin/staff/{{ item.id }}/deactivate">
-                  <button type="submit" class="ghost">Деактивировать</button>
-                </form>
-                {% endif %}
-                {% if item.can_grant_admin %}
-                <form method="post" action="/admin/staff/{{ item.id }}/roles">
-                  <input type="hidden" name="role_slug" value="admin" />
-                  <button type="submit" class="ghost">Выдать роль администратора</button>
-                </form>
-                {% endif %}
-                {% if item.can_grant_author %}
-                <form method="post" action="/admin/staff/{{ item.id }}/roles">
-                  <input type="hidden" name="role_slug" value="author" />
-                  <button type="submit" class="ghost">Выдать роль автора</button>
-                </form>
-                {% endif %}
-                {% if item.can_revoke_admin %}
-                <form method="post" action="/admin/staff/{{ item.id }}/roles/admin/remove">
-                  <button type="submit" class="ghost">Снять роль администратора</button>
-                </form>
-                {% endif %}
-                <form method="post" action="/admin/staff/{{ item.id }}/invite/resend">
-                  <button type="submit" class="ghost">Отправить повторно</button>
-                </form>
-                {% if item.invite_link %}
-                <button type="button" class="ghost" data-copy-text="{{ item.invite_link }}">Скопировать ссылку</button>
-                <a class="ghost" href="{{ item.invite_link }}">Открыть Telegram invite</a>
-                {% endif %}
-              </div>
-            </details>
-            <dialog id="staff-edit-{{ item.id }}" class="staff-dialog">
-              <form method="dialog" class="staff-dialog-backdrop">
-                <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
-              </form>
-              <form method="post" action="/admin/staff/{{ item.id }}/edit" class="staff-drawer">
-                <div class="staff-drawer-head">
-                  <div>
-                    <div class="eyebrow">редактирование сотрудника</div>
-                    <strong>{{ item.display_name }}</strong>
-                  </div>
-                  <button type="button" class="ghost" data-close-staff-dialog>Закрыть</button>
-                </div>
-                <div class="staff-drawer-body">
-                  <label class="staff-field">
-                    <span>Имя</span>
-                    <input name="display_name" value="{{ item.display_name }}" required />
-                  </label>
-                  <label class="staff-field">
-                    <span>Почта</span>
-                    <input name="email" type="email" value="{{ item.email or '' }}" required />
-                  </label>
-                  <label class="staff-field">
-                    <span>Telegram ID</span>
-                    <input name="telegram_user_id" type="number" value="{{ item.telegram_user_id or '' }}" />
-                  </label>
-                  <div class="staff-field">
-                    <span>Роли</span>
-                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="admin" {% if item.has_admin_role %}checked{% endif %} /> <span>Администратор</span></label>
-                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="author" {% if item.has_author_role %}checked{% endif %} /> <span>Автор</span></label>
-                    <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="moderator" {% if item.has_moderator_role %}checked{% endif %} /> <span>Модератор</span></label>
-                  </div>
-                </div>
-                <div class="staff-drawer-actions">
-                  <button type="submit" class="staff-btn is-primary">Сохранить</button>
-                </div>
-              </form>
-            </dialog>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="6" class="muted">Нет сотрудников.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div id="grid-host" class="pct-tabulator"></div>
   </div>
+
+  <!-- Dialogs for editing staff -->
+  {% for item in staff %}
+  <dialog id="staff-edit-{{ item.id }}" class="staff-dialog">
+    <form method="dialog" class="staff-dialog-backdrop">
+      <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
+    </form>
+    <form method="post" action="/admin/staff/{{ item.id }}/edit" class="staff-drawer">
+      <div class="staff-drawer-head">
+        <div>
+          <div class="eyebrow">редактирование сотрудника</div>
+          <strong>{{ item.display_name }}</strong>
+        </div>
+        <button type="button" class="ghost" data-close-staff-dialog>Закрыть</button>
+      </div>
+      <div class="staff-drawer-body">
+        <label class="staff-field">
+          <span>Имя</span>
+          <input name="display_name" value="{{ item.display_name }}" required />
+        </label>
+        <label class="staff-field">
+          <span>Почта</span>
+          <input name="email" type="email" value="{{ item.email or '' }}" required />
+        </label>
+        <label class="staff-field">
+          <span>Telegram ID</span>
+          <input name="telegram_user_id" type="number" value="{{ item.telegram_user_id or '' }}" />
+        </label>
+        <div class="staff-field">
+          <span>Роли</span>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="admin" {% if item.has_admin_role %}checked{% endif %} /> <span>Администратор</span></label>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="author" {% if item.has_author_role %}checked{% endif %} /> <span>Автор</span></label>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="moderator" {% if item.has_moderator_role %}checked{% endif %} /> <span>Модератор</span></label>
+        </div>
+      </div>
+      <div class="staff-drawer-actions">
+        <button type="submit" class="staff-btn is-primary">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+  {% endfor %}
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Сотрудник", field: "name", widthGrow: 1.6 },
+      { title: "Роли", field: "roles" },
+      { title: "Статус", field: "status" },
+      { title: "Приглашение", field: "invite" },
+      { title: "Telegram ID", field: "telegram_id" },
+      { title: "Действия", field: "actions", frozen: true }
+    ],
+    data: {{ staff_json | safe }}
+  });
+  </script>
 </section>
 {% endblock %}
 

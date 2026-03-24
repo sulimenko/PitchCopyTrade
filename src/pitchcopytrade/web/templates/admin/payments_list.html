@@ -1,15 +1,6 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/strategies">Стратегии</a>
-  <a class="action ghost" href="/admin/products">Продукты</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Доставка</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
 {% endblock %}
 
 {% block content %}
@@ -48,63 +39,22 @@
     </article>
   </div>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Клиент</th>
-          <th>Продукт</th>
-          <th>Статус</th>
-          <th>Провайдер</th>
-          <th>Сумма</th>
-          <th>Подписки</th>
-          <th>Действия</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for payment in payments %}
-        <tr>
-          <td>
-            <strong>{{ payment.user.full_name or payment.user.email or payment.user.id }}</strong>
-            <div class="muted">{{ payment.user.email or "почта не задана" }}</div>
-            {% if payment.stub_reference %}
-            <div class="muted">{{ payment.stub_reference }}</div>
-            {% endif %}
-          </td>
-          <td>
-            <strong>{{ payment.product.title }}</strong>
-            <div class="muted">{{ label_product_type(payment.product.product_type) }}</div>
-          </td>
-          <td><span class="staff-badge {% if payment.status.value in ['created', 'pending'] %}warn{% elif payment.status.value == 'paid' %}ok{% else %}danger{% endif %}">
-            {{ label_payment_status(payment.status) }}
-          </span></td>
-          <td>{{ label_payment_provider(payment.provider) }}</td>
-          <td>{{ payment.final_amount_rub }} руб</td>
-          <td>
-            <strong>{{ payment.subscriptions|length }}</strong>
-            <div class="muted">связанных строк доступа</div>
-          </td>
-          <td class="actions">
-            <details class="staff-row-menu">
-              <summary class="ghost">Действия</summary>
-              <div class="staff-row-menu-panel">
-                <a class="ghost" href="/admin/payments/{{ payment.id }}">Открыть</a>
-                {% if payment.status.value == "pending" %}
-                <form method="post" action="/admin/payments/{{ payment.id }}/confirm">
-                  <button type="submit" class="ghost">Подтвердить</button>
-                </form>
-                {% endif %}
-                {% if payment.status.value in ["created", "pending"] and payment.provider.value != "tbank" %}
-                <a class="ghost" href="/admin/payments/{{ payment.id }}">Применить скидку</a>
-                {% endif %}
-              </div>
-            </details>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="muted">Платежей пока нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div id="grid-host" class="pct-tabulator"></div>
   </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Клиент", field: "client", widthGrow: 1.6 },
+      { title: "Продукт", field: "product" },
+      { title: "Статус", field: "status" },
+      { title: "Провайдер", field: "provider" },
+      { title: "Сумма", field: "amount" },
+      { title: "Подписки", field: "subs_count" },
+      { title: "Действия", field: "actions", frozen: true }
+    ],
+    data: {{ payments_json | safe }}
+  });
+  </script>
 </section>
 {% endblock %}

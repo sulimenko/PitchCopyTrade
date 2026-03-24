@@ -9,10 +9,6 @@
 {% block page_title %}Стратегии{% endblock %}
 
 {% block topbar_actions %}
-<a class="ghost" href="/admin/products">Продукты</a>
-<a class="ghost" href="/admin/subscriptions">Подписки</a>
-<a class="ghost" href="/admin/legal">Документы</a>
-<a class="ghost" href="/admin/payments">Платежи</a>
 <a class="staff-btn is-primary" href="/admin/strategies/new">Новая стратегия</a>
 {% endblock %}
 
@@ -41,43 +37,23 @@
   </div>
 
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th><a href="{{ sort_href('title') }}">Стратегия</a></th>
-          <th><a href="{{ sort_href('author') }}">Автор</a></th>
-          <th><a href="{{ sort_href('risk') }}">Риск</a></th>
-          <th><a href="{{ sort_href('status') }}">Статус</a></th>
-          <th>Публичность</th>
-          <th>Мин. капитал</th>
-          <th>Открыть</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for strategy in strategies %}
-        <tr>
-          <td>
-            <div class="strategy-cell">
-              <strong>{{ strategy.title }}</strong>
-              <div class="muted">{{ strategy.slug }}</div>
-              {% if strategy.short_description %}
-              <div class="muted strategy-cell-summary">{{ strategy.short_description }}</div>
-              {% endif %}
-            </div>
-          </td>
-          <td>{{ strategy.author.display_name }}</td>
-          <td><span class="staff-badge">{{ label_risk_level(strategy.risk_level) }}</span></td>
-          <td><span class="staff-badge {% if strategy.status.value == 'draft' %}ok{% else %}warn{% endif %}">{{ label_strategy_status(strategy.status) }}</span></td>
-          <td>{% if strategy.is_public %}публичная{% else %}закрытая{% endif %}</td>
-          <td>{{ strategy.min_capital_rub or "—" }}</td>
-          <td class="actions"><a class="ghost" href="/admin/strategies/{{ strategy.id }}/edit">Открыть</a></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="muted">Стратегий пока нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div id="grid-host" class="pct-tabulator"></div>
   </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Стратегия", field: "strategy", widthGrow: 1.6 },
+      { title: "Автор", field: "author" },
+      { title: "Риск", field: "risk" },
+      { title: "Статус", field: "status" },
+      { title: "Публичность", field: "is_public" },
+      { title: "Мин. капитал", field: "min_capital" },
+      { title: "Открыть", field: "actions", frozen: true }
+    ],
+    data: {{ strategies_json | safe }}
+  });
+  </script>
 </section>
 
 <style>

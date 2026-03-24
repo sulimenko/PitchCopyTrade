@@ -1,12 +1,6 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/author/strategies">Стратегии</a>
-  <button class="action" type="button" data-open-recommendation-modal>Новая рекомендация</button>
-  <a class="action ghost" href="/author/recommendations">Все рекомендации</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
 {% endblock %}
 
 {% block content %}
@@ -71,11 +65,30 @@
     </div>
     <div style="display:grid;gap:12px;">
       {% for recommendation in recommendations %}
+      {% set primary_leg = recommendation.legs[0] if recommendation.legs else None %}
       <a class="surface" href="/author/recommendations/{{ recommendation.id }}/edit" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
           <div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+              <small class="muted">{{ (recommendation.updated_at or recommendation.created_at).strftime("%d.%m.%Y") if recommendation.updated_at or recommendation.created_at else "—" }}</small>
+              {% if primary_leg and primary_leg.instrument %}
+              <span class="pill">{{ primary_leg.instrument.ticker }}</span>
+              {% endif %}
+              {% if primary_leg and primary_leg.side %}
+              <span class="pill {% if primary_leg.side.value == 'buy' %}ok{% else %}danger{% endif %}">
+                {% if primary_leg.side.value == 'buy' %}↑ покупка{% else %}↓ продажа{% endif %}
+              </span>
+              {% endif %}
+            </div>
             <strong>{{ recommendation.title or recommendation.strategy.title }}</strong>
-            <div class="muted" style="margin-top:8px;">{{ recommendation.strategy.title }}</div>
+            {% if primary_leg and (primary_leg.entry_from or primary_leg.take_profit_1 or primary_leg.stop_loss) %}
+            <div class="muted" style="margin-top:4px;font-size:0.9em;">
+              {% if primary_leg.entry_from %}Вход: {{ primary_leg.entry_from }}{% endif %}
+              {% if primary_leg.take_profit_1 %}→ TP: {{ primary_leg.take_profit_1 }}{% endif %}
+              {% if primary_leg.stop_loss %} | Стоп: {{ primary_leg.stop_loss }}{% endif %}
+            </div>
+            {% endif %}
+            <div class="muted" style="margin-top:6px;">Стратегия: {{ recommendation.strategy.title }}</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <span class="pill">{{ label_recommendation_kind(recommendation.kind) }}</span>
@@ -84,13 +97,6 @@
         </div>
         <div class="muted" style="margin-top:10px;line-height:1.6;">
           {{ recommendation.summary or recommendation.thesis or "Текст рекомендации пока не заполнен" }}
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
-          <span class="pill">{{ recommendation.legs|length }} ног</span>
-          <span class="pill">{{ recommendation.attachments|length }} вложений</span>
-          {% if recommendation.scheduled_for %}
-          <span class="pill">запланировано {{ recommendation.scheduled_for }}</span>
-          {% endif %}
         </div>
       </a>
       {% else %}

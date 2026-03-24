@@ -1,16 +1,7 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/strategies">Стратегии</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Доставка</a>
-  <a class="action ghost" href="/admin/payments">Платежи</a>
-  <a class="action" href="/admin/products/new">Новый продукт</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
+<a class="staff-btn is-primary" href="/admin/products/new">Новый продукт</a>
 {% endblock %}
 
 {% block content %}
@@ -30,58 +21,23 @@
     <div class="staff-toolbar-note">Новый продукт должен сразу отвечать на три вопроса: что покупают, на какой срок и какой именно scope доступа выдаётся после оплаты.</div>
   </div>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Продукт</th>
-          <th>Тип</th>
-          <th>Период</th>
-          <th>Статус</th>
-          <th>Цена</th>
-          <th>Пробный доступ</th>
-          <th>Область доступа</th>
-          <th>Открыть</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for product in products %}
-        <tr>
-          <td>
-            <strong>{{ product.title }}</strong>
-            <div class="muted">{{ product.slug }}</div>
-            <div class="muted">{{ product.description or "Описание пока не заполнено" }}</div>
-          </td>
-          <td>{{ label_product_type(product.product_type) }}</td>
-          <td>{{ label_billing_period(product.billing_period) }}</td>
-          <td>
-            <div class="staff-inline-actions">
-              <span class="staff-badge {% if product.is_active %}ok{% else %}danger{% endif %}">{{ "активен" if product.is_active else "выключен" }}</span>
-              {% if product.autorenew_allowed %}<span class="staff-badge">автопродление</span>{% endif %}
-            </div>
-          </td>
-          <td>{{ product.price_rub }} руб</td>
-          <td>{{ product.trial_days }} дней</td>
-          <td>
-            {% if product.strategy %}
-            <strong>{{ product.strategy.title }}</strong>
-            <div class="muted">стратегия</div>
-            {% elif product.author %}
-            <strong>{{ product.author.display_name }}</strong>
-            <div class="muted">автор</div>
-            {% elif product.bundle %}
-            <strong>{{ product.bundle.title }}</strong>
-            <div class="muted">пакет</div>
-            {% else %}
-            —
-            {% endif %}
-          </td>
-          <td class="actions"><a class="ghost" href="/admin/products/{{ product.id }}/edit">Открыть</a></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="8" class="muted">Продуктов пока нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div id="grid-host" class="pct-tabulator"></div>
   </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Продукт", field: "product", widthGrow: 1.6 },
+      { title: "Тип", field: "type" },
+      { title: "Период", field: "period" },
+      { title: "Статус", field: "status" },
+      { title: "Цена", field: "price" },
+      { title: "Пробный", field: "trial" },
+      { title: "Область", field: "target" },
+      { title: "Открыть", field: "actions", frozen: true }
+    ],
+    data: {{ products_json | safe }}
+  });
+  </script>
 </section>
 {% endblock %}

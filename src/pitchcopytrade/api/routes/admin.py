@@ -80,6 +80,19 @@ from pitchcopytrade.services.promo_admin import (
     update_admin_promo_code,
 )
 from pitchcopytrade.web.templates import templates
+from pitchcopytrade.api.routes._grid_serializers import (
+    serialize_strategies,
+    serialize_authors,
+    serialize_staff,
+    serialize_products,
+    serialize_subscriptions,
+    serialize_payments,
+    serialize_legal,
+    serialize_promos,
+    serialize_delivery,
+    serialize_lead_analytics,
+    serialize_metrics_strategies,
+)
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -137,6 +150,7 @@ async def strategy_list_page(
             "title": "Стратегии",
             "user": user,
             "strategies": strategies,
+            "strategies_json": serialize_strategies(strategies),
             "q": q,
             "sort_by": sort_by,
             "direction": direction,
@@ -310,6 +324,7 @@ async def product_list_page(
             "title": "Продукты подписки",
             "user": user,
             "products": products,
+            "products_json": serialize_products(products),
         },
     )
 
@@ -349,6 +364,7 @@ async def promo_code_list_page(
             "title": "Промокоды",
             "user": user,
             "promo_codes": promo_codes,
+            "promos_json": serialize_promos(promo_codes),
             "stats": stats,
         },
     )
@@ -649,6 +665,7 @@ async def payment_list_page(
             "title": "Платежи",
             "user": user,
             "payments": payments,
+            "payments_json": serialize_payments(payments),
             "review_stats": review_stats,
         },
     )
@@ -675,6 +692,7 @@ async def subscription_list_page(
             "title": "Подписки",
             "user": user,
             "subscriptions": subscriptions,
+            "subscriptions_json": serialize_subscriptions(subscriptions),
             "query_text": q,
             "stats": stats,
         },
@@ -776,6 +794,7 @@ async def lead_analytics_page(
             "title": "Lead source analytics",
             "user": user,
             "rows": rows,
+            "analytics_json": serialize_lead_analytics(rows),
             "stats": stats,
         },
     )
@@ -795,6 +814,7 @@ async def legal_document_list_page(
             "title": "Юридические документы",
             "user": user,
             "documents": documents,
+            "legal_json": serialize_legal(documents),
         },
     )
 
@@ -948,6 +968,7 @@ async def delivery_list_page(
             "title": "Delivery operations",
             "user": user,
             "records": records,
+            "delivery_json": serialize_delivery(records),
             "stats": stats,
         },
     )
@@ -1548,6 +1569,8 @@ async def admin_staff_list(
             "title": "Команда",
             "user": user,
             "staff": staff_rows,
+            "staff_json": serialize_staff(staff_rows, user.id),
+            "current_user_id": user.id,
             "role_filter": role_filter,
             "q": q,
             "sort_by": sort_by,
@@ -1897,7 +1920,7 @@ async def admin_metrics(
     return templates.TemplateResponse(
         request,
         "admin/metrics.html",
-        {"title": "Метрики", "user": user, "metrics": metrics},
+        {"title": "Метрики", "user": user, "metrics": metrics, "metrics_json": serialize_metrics_strategies(metrics)},
     )
 
 
@@ -2047,6 +2070,8 @@ async def _render_admin_authors_registry(
             "title": "Авторы",
             "user": user,
             "authors": author_rows,
+            "authors_json": serialize_authors(author_rows),
+            "current_user_id": user.id,
             "error": template_error,
             "status_filter": status_filter,
             "q": q,

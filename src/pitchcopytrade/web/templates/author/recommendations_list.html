@@ -5,8 +5,7 @@
 {% block page_title %}Рекомендации автора{% endblock %}
 
 {% block topbar_actions %}
-<button class="staff-btn is-primary" type="button" data-open-recommendation-modal data-modal-url="{{ recommendation_modal_url }}">Новая рекомендация</button>
-<a class="ghost" href="/author/strategies">Стратегии</a>
+<a class="staff-btn is-primary" href="/author/recommendations/new?modal=1">Новая рекомендация</a>
 {% endblock %}
 
 {% block content %}
@@ -26,6 +25,14 @@
       <label class="staff-field">
         <span>Фильтр</span>
         <input type="text" name="q" value="{{ q }}" placeholder="Тикер, заголовок, стратегия" />
+      </label>
+      <label class="staff-field">
+        <span>С даты</span>
+        <input type="date" name="date_from" value="{{ date_from or '' }}" />
+      </label>
+      <label class="staff-field">
+        <span>По дату</span>
+        <input type="date" name="date_to" value="{{ date_to or '' }}" />
       </label>
       <label class="staff-field">
         <span>Статус</span>
@@ -63,52 +70,33 @@
     <input type="hidden" name="leg_1_take_profit_3" value="{{ inline_form_values.leg_1_take_profit_3 }}" />
   </form>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Стратегия</th>
-          <th>Идея / тикер</th>
-          <th>Направление</th>
-          <th>Вход</th>
-          <th>TP1</th>
-          <th>Стоп</th>
-          <th>Статус</th>
-          <th>Обновлено</th>
-          <th>Открыть</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for recommendation in recommendations %}
-        {% set primary_leg = recommendation.legs[0] if recommendation.legs else None %}
-        <tr>
-          <td>{{ recommendation.strategy.title }}</td>
-          <td>
-            <strong>{{ recommendation.title or (primary_leg.instrument.ticker if primary_leg and primary_leg.instrument else recommendation.strategy.title) }}</strong>
-            <div class="muted">{% if primary_leg and primary_leg.instrument %}{{ primary_leg.instrument.ticker }} · {{ primary_leg.instrument.name }}{% else %}Без бумаги{% endif %}</div>
-          </td>
-          <td>{% if primary_leg and primary_leg.side %}{% if primary_leg.side.value == "buy" %}покупка{% else %}продажа{% endif %}{% else %}—{% endif %}</td>
-          <td>{{ primary_leg.entry_from if primary_leg and primary_leg.entry_from is not none else "—" }}</td>
-          <td>{{ primary_leg.take_profit_1 if primary_leg and primary_leg.take_profit_1 is not none else "—" }}</td>
-          <td>{{ primary_leg.stop_loss if primary_leg and primary_leg.stop_loss is not none else "—" }}</td>
-          <td><span class="staff-badge {% if recommendation.status.value in ['draft', 'review'] %}ok{% else %}warn{% endif %}">
-            {{ label_recommendation_status(recommendation.status) }}
-          </span></td>
-          <td class="muted">{{ recommendation.updated_at or recommendation.created_at }}</td>
-          <td class="actions"><a class="ghost" href="/author/recommendations/{{ recommendation.id }}/edit">Открыть</a></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="9" class="muted">Нет рекомендаций.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div id="grid-host" class="pct-tabulator"></div>
   </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Стратегия", field: "strategy", widthGrow: 1.6 },
+      { title: "Идея / тикер", field: "idea" },
+      { title: "Направление", field: "side" },
+      { title: "Вход", field: "entry" },
+      { title: "TP1", field: "tp1" },
+      { title: "Стоп", field: "stop" },
+      { title: "Статус", field: "status" },
+      { title: "Обновлено", field: "updated" },
+      { title: "Открыть", field: "actions", frozen: true }
+    ],
+    data: {{ recommendations_json | safe }}
+  });
+  </script>
 
   <!-- Z10: Inline recommendation form moved out of table -->
   <div class="inline-recommendation-row" id="inline-recommendation-shortcut">
     <div class="inline-recommendation-fields">
       <div class="inline-field">
+        <label class="inline-label">Стратегия</label>
         <select form="inline-recommendation-form" name="strategy_id" {% if inline_field_errors.get("strategy_id") %}class="is-invalid"{% endif %}>
-          <option value="">Стратегия</option>
+          <option value="">—</option>
           {% for strategy in strategies %}
           <option value="{{ strategy.id }}" {% if inline_form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
           {% endfor %}
@@ -135,8 +123,9 @@
       </div>
 
       <div class="inline-field">
+        <label class="inline-label">Направление</label>
         <select form="inline-recommendation-form" name="leg_1_side" {% if inline_field_errors.get("leg_1_side") %}class="is-invalid"{% endif %}>
-          <option value="">Покупка / продажа</option>
+          <option value="">—</option>
           <option value="buy" {% if inline_form_values.leg_1_side == "buy" %}selected{% endif %}>Покупка</option>
           <option value="sell" {% if inline_form_values.leg_1_side == "sell" %}selected{% endif %}>Продажа</option>
         </select>
@@ -201,9 +190,19 @@
   /* Z10: Inline recommendation row */
   .inline-recommendation-row {
     flex-shrink: 0;
-    border-top: 1px solid var(--staff-line);
-    padding: 10px 12px;
-    background: var(--staff-surface-dim, #f9fafb);
+    border-top: 2px solid var(--staff-line);
+    padding: 12px;
+    background: #f0f4f8;
+    margin-top: 12px;
+    border-radius: 0;
+  }
+  .inline-label {
+    font-size: 11px;
+    color: #667487;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    display: block;
   }
   .inline-recommendation-fields {
     display: grid;

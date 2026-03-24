@@ -1,8 +1,6 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<a href="/admin/dashboard" class="action ghost">Дашборд</a>
-<a href="/logout" class="action ghost">Выйти</a>
 {% endblock %}
 
 {% block content %}
@@ -27,22 +25,19 @@
   {% if metrics.strategy_stats %}
   <section class="surface" style="padding:24px;border-radius:24px;">
     <h3 style="margin:0 0 16px;">Подписчики по стратегиям</h3>
-    <table class="staff-grid" data-ag-grid-auto="true" style="width:100%;border-collapse:collapse;">
-      <thead>
-        <tr style="border-bottom:2px solid var(--line);">
-          <th style="text-align:left;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Стратегия</th>
-          <th style="text-align:right;padding:8px 12px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">Подписчиков</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in metrics.strategy_stats %}
-        <tr style="border-bottom:1px solid var(--line);">
-          <td style="padding:12px;">{{ row.title }}</td>
-          <td style="padding:12px;text-align:right;font-weight:700;">{{ row.sub_count }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="staff-grid-shell">
+      <div id="grid-host" class="pct-tabulator"></div>
+    </div>
+
+    <script>
+    PCTTabulator.create("grid-host", {
+      columns: [
+        { title: "Стратегия", field: "title", widthGrow: 1.6 },
+        { title: "Подписчики", field: "sub_count" }
+      ],
+      data: {{ metrics_json | safe }}
+    });
+    </script>
   </section>
   {% endif %}
 </div>

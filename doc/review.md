@@ -1,12 +1,12 @@
 # PitchCopyTrade — Current Review Gate
-> Обновлено: 2026-03-22
+> Обновлено: 2026-03-24
 > Этот файл хранит только текущие findings и gate на следующий merge.
 
 ---
 
 ## Общий вывод
 
-Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8) полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен, redirect на витрину, онбординг убран. Inline-форма восстановлена (autoHeight). AG Grid floating filters вместо сломанных иконок. UUID-валидация всех admin path-параметров. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) с кнопками на /login. Ghost user recovery. Oversight emails.
+Блоки S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z8), **TAB** полностью закрыты. Инфраструктура двухрежимная. ARQ/Redis удалены. Notification pipeline унифицирован. Staff shell viewport-фиксирован. Author editor без ошибок. Mini App auth исправлен, redirect на витрину, онбординг убран. Inline-форма восстановлена (autoHeight). **AG Grid полностью заменен на Tabulator 6** (14 шаблонов переписаны, bundle 1.4 MB → ~150 KB, 0 console errors). UUID-валидация всех admin path-параметров. Invite flow с bot deep link. OAuth 2.0 (Google/Яндекс) с кнопками на /login. Ghost user recovery. Oversight emails.
 
 **Production bug-ов нет.** Merge не блокирован.
 
@@ -132,6 +132,20 @@ email-validator, httpx, aiosmtplib, authlib
 - **Z9.2**: Inline-форма видимость — промежуточный fix (заменён Z10)
 - **Z10**: Inline-форма вынесена из `<table>` — отдельный `<div>` с CSS Grid после `.staff-grid-shell`. Skip row механизм удалён из JS. `overflow: hidden` восстановлен.
 
+### Блок TAB — AG Grid → Tabulator 6 миграция ✅
+- **TAB.1**: Tabulator 6.3.0 vendor (JS + CSS), AG Grid полностью удален
+- **TAB.2**: `tabulator-bootstrap.js` — единый API `PCTTabulator.create()`
+- **TAB.3**: `tabulator-theme.css` — кастомная тема (badge styles встроены)
+- **TAB.4**: `tabulator_assets.html` partial, включен в `staff_base.html`
+- **TAB.5**: 14 route handlers + `_grid_serializers.py` (14 функций сериализации)
+- **TAB.6**: Все 14 шаблонов переписаны: `<table>` → `<div id="grid-host">` + JSON инициализация
+  - admin: strategies, authors, staff, products, subscriptions, payments, legal, promos, delivery, lead_analytics, metrics
+  - author: strategies, recommendations
+  - moderation: queue
+- **TAB.7**: Tests обновлены (ag-grid references → tabulator), 0 ссылок на AG Grid в коде
+- Bundle: 1.4 MB (AG Grid) → ~150 KB (Tabulator)
+- Console errors `postProcessThemeChange` полностью устранены
+
 ### Fixes ✅
 - **MissingGreenlet fix**: `_attach_legs` перемещён до `repository.flush()`
 - **F1 — Oversight emails**: `_send_admin_oversight_email()` при staff onboarding
@@ -183,5 +197,7 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **V3** — ручной smoke-test: создать подписчика → рекомендацию → опубликовать → уведомление
-2. **Блок F** — F2 parity audit, F3 regression coverage
+1. **Блок TAB** — миграция AG Grid → Tabulator 6 (7 задач, устраняет console error + уменьшает bundle 10x)
+2. **Блок P2** — production UX fixes (5 задач: фильтр по роли, топбар cleanup, dashboard карточки, фильтр по дате, inline form UX)
+3. **V3** — ручной smoke-test
+4. **Блок F** — F2 parity audit, F3 regression coverage

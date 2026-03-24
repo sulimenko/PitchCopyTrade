@@ -1,12 +1,6 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/promos">Промокоды</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
 {% endblock %}
 
 {% block content %}
@@ -39,34 +33,24 @@
     </article>
   </div>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Источник</th>
-          <th>Тип</th>
-          <th>Пользователи</th>
-          <th>Подписки</th>
-          <th>Активные</th>
-          <th>Оплаченные платежи</th>
-          <th>Выручка</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-        <tr>
-          <td>{{ row.source_name }}</td>
-          <td>{{ row.source_type }}</td>
-          <td>{{ row.users_total }}</td>
-          <td>{{ row.subscriptions_total }}</td>
-          <td>{{ row.active_subscriptions }}</td>
-          <td>{{ row.paid_payments }}</td>
-          <td>{{ row.revenue_rub }} RUB</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="muted">Данных по источникам пока нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="staff-grid-shell">
+      <div id="grid-host" class="pct-tabulator"></div>
+    </div>
+
+    <script>
+    PCTTabulator.create("grid-host", {
+      columns: [
+        { title: "Источник", field: "source" },
+        { title: "Тип", field: "type" },
+        { title: "Пользователи", field: "users" },
+        { title: "Подписки", field: "subs" },
+        { title: "Активные", field: "active" },
+        { title: "Платные", field: "paid" },
+        { title: "Выручка", field: "revenue" }
+      ],
+      data: {{ analytics_json | safe }}
+    });
+    </script>
   </div>
 </section>
 {% endblock %}

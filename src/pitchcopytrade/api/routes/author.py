@@ -44,6 +44,10 @@ from pitchcopytrade.services.notifications import (
     deliver_recommendation_notifications_file,
 )
 from pitchcopytrade.web.templates import templates
+from pitchcopytrade.api.routes._grid_serializers import (
+    serialize_recommendations,
+    serialize_author_strategies,
+)
 
 
 router = APIRouter(prefix="/author", tags=["author"])
@@ -107,6 +111,7 @@ async def author_strategy_list_page(
             "user": user,
             "author": author,
             "strategies": strategies,
+            "strategies_json": serialize_author_strategies(strategies),
             "q": q,
             "sort_by": sort_by,
             "direction": direction,
@@ -330,6 +335,8 @@ async def recommendation_list_page(
     status_filter: str = "all",
     sort_by: str = "updated_at",
     direction: str = "desc",
+    date_from: str = "",
+    date_to: str = "",
     user: User = Depends(require_author),
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
@@ -343,6 +350,8 @@ async def recommendation_list_page(
         status_filter=status_filter,
         sort_by=sort_by,
         direction=direction,
+        date_from=date_from,
+        date_to=date_to,
     )
 
 
@@ -642,13 +651,30 @@ async def _render_recommendation_list(
     status_filter: str = "all",
     sort_by: str = "updated_at",
     direction: str = "desc",
+    date_from: str = "",
+    date_to: str = "",
     inline_error: str | None = None,
     inline_form_values: dict[str, str] | None = None,
     inline_field_errors: dict[str, str] | None = None,
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
+    from datetime import datetime
     recommendations = await list_author_recommendations(repository, author)
     recommendations = _filter_author_recommendations(recommendations, q=q, status_filter=status_filter)
+    # Date filtering
+    if date_from:
+        try:
+            df = datetime.fromisoformat(date_from).date()
+            recommendations = [r for r in recommendations if r.updated_at and r.updated_at.date() >= df]
+        except (ValueError, AttributeError):
+            pass
+    if date_to:
+        try:
+            from datetime import timedelta
+            dt = datetime.fromisoformat(date_to).date() + timedelta(days=1)
+            recommendations = [r for r in recommendations if r.updated_at and r.updated_at.date() < dt]
+        except (ValueError, AttributeError):
+            pass
     recommendations = _sort_author_recommendations(recommendations, sort_by=sort_by, direction=direction)
     strategies = await list_author_strategies(repository, author)
     instruments = await list_active_instruments(repository)
@@ -666,6 +692,7 @@ async def _render_recommendation_list(
             "user": user,
             "author": author,
             "recommendations": recommendations,
+            "recommendations_json": serialize_recommendations(recommendations),
             "strategies": strategies,
             "instruments": instruments,
             "instrument_items": [_instrument_payload(item) for item in instruments],
@@ -673,6 +700,8 @@ async def _render_recommendation_list(
             "status_filter": status_filter,
             "sort_by": sort_by,
             "direction": direction,
+            "date_from": date_from,
+            "date_to": date_to,
             "recommendation_modal_url": _recommendation_modal_url(next_path=current_list_path),
             "inline_next_path": current_list_path,
             "inline_error": inline_error,

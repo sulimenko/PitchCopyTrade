@@ -6,7 +6,6 @@
 
 {% block topbar_actions %}
 <a class="staff-btn is-primary" href="/author/strategies/new">Новая стратегия</a>
-<a class="ghost" href="/author/recommendations">Рекомендации</a>
 {% endblock %}
 
 {% block content %}
@@ -35,38 +34,21 @@
     <div class="staff-toolbar-note">Черновики можно редактировать, опубликованные и архивные строки остаются только для чтения.</div>
   </div>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Стратегия</th>
-          <th>Описание</th>
-          <th>Риск</th>
-          <th>Статус</th>
-          <th>Мин. капитал</th>
-          <th>Открыть</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for strategy in strategies %}
-        <tr>
-          <td><strong>{{ strategy.title }}</strong><div class="muted">{{ strategy.slug }}</div></td>
-          <td>{{ strategy.short_description or "—" }}</td>
-          <td><span class="staff-badge">{{ label_risk_level(strategy.risk_level) }}</span></td>
-          <td>
-            <span class="staff-badge {% if strategy.status.value == 'draft' %}ok{% else %}warn{% endif %}">
-              {{ label_strategy_status(strategy.status) }}
-            </span>
-          </td>
-          <td>{{ strategy.min_capital_rub or "—" }}</td>
-          <td class="actions">
-            <a class="ghost" href="/author/strategies/{{ strategy.id }}/edit">Открыть</a>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="6" class="muted">Стратегий пока нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div id="grid-host" class="pct-tabulator"></div>
   </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Стратегия", field: "title", widthGrow: 1.6 },
+      { title: "Описание", field: "description" },
+      { title: "Риск", field: "risk" },
+      { title: "Статус", field: "status" },
+      { title: "Мин. капитал", field: "min_capital" },
+      { title: "Открыть", field: "actions", frozen: true }
+    ],
+    data: {{ strategies_json | safe }}
+  });
+  </script>
 </section>
 {% endblock %}

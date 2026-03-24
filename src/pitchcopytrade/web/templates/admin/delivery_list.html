@@ -1,12 +1,6 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
 {% endblock %}
 
 {% block content %}
@@ -45,49 +39,24 @@
     </article>
   </div>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Публикация</th>
-          <th>Стратегия</th>
-          <th>Статус</th>
-          <th>Попытки</th>
-          <th>Доставлено</th>
-          <th>Последнее событие</th>
-          <th>Открыть</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for record in records %}
-        <tr>
-          <td>
-            <strong>{{ record.recommendation.title or record.recommendation.strategy.title }}</strong>
-            <div class="muted">{{ record.recommendation.author.display_name }}</div>
-          </td>
-          <td>
-            <strong>{{ record.recommendation.strategy.title }}</strong>
-            {% if record.recommendation.published_at %}
-            <div class="muted">{{ record.recommendation.published_at }}</div>
-            {% endif %}
-          </td>
-          <td><span class="staff-badge">{{ label_recommendation_status(record.recommendation.status) }}</span></td>
-          <td>{{ record.delivery_attempts }}</td>
-          <td>{{ record.delivered_recipients }}</td>
-          <td>
-            {% if record.latest_delivery_event %}
-            <div>{{ record.latest_delivery_event.created_at }}</div>
-            <div class="muted">{{ record.latest_delivery_event.payload.trigger if record.latest_delivery_event.payload else "публикация" }}</div>
-            {% else %}
-            <span class="muted">доставки еще не было</span>
-            {% endif %}
-          </td>
-          <td class="actions"><a class="ghost" href="/admin/delivery/{{ record.recommendation.id }}">Открыть</a></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="muted">Пока нет опубликованных рекомендаций.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="staff-grid-shell">
+      <div id="grid-host" class="pct-tabulator"></div>
+    </div>
+
+    <script>
+    PCTTabulator.create("grid-host", {
+      columns: [
+        { title: "Публикация", field: "publication", widthGrow: 1.6 },
+        { title: "Стратегия", field: "strategy" },
+        { title: "Статус", field: "status" },
+        { title: "Попытки", field: "attempts" },
+        { title: "Доставлено", field: "delivered" },
+        { title: "Последнее", field: "last_event" },
+        { title: "Действия", field: "actions", frozen: true }
+      ],
+      data: {{ delivery_json | safe }}
+    });
+    </script>
   </div>
 </section>
 {% endblock %}

@@ -39,120 +39,23 @@
     </form>
   </div>
   <div class="staff-grid-shell">
-    <table class="staff-grid" data-ag-grid-auto="true">
-      <thead>
-        <tr>
-          <th>Публикация</th>
-          <th>Автор</th>
-          <th>Стратегия</th>
-          <th>Тип</th>
-          <th>Статус</th>
-          <th>Действия</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in items %}
-        <tr>
-          <td>
-            <strong>{{ item.title or item.strategy.title }}</strong>
-            <div class="muted">{{ item.summary or item.thesis or "Без краткого описания" }}</div>
-          </td>
-          <td>{{ item.author.display_name }}</td>
-          <td>{{ item.strategy.title }}</td>
-          <td>
-            <span class="staff-badge">
-              {{ label_recommendation_kind(item.kind) }}
-            </span>
-          </td>
-          <td>
-            <span class="staff-badge {% if item.status.value == 'review' %}warn{% else %}ok{% endif %}">
-              {{ label_recommendation_status(item.status) }}
-            </span>
-          </td>
-          <td class="actions">
-            <details class="staff-row-menu">
-              <summary class="ghost">Действия</summary>
-              <div class="staff-row-menu-panel">
-                <button type="button" class="ghost" data-open-staff-dialog="moderation-item-{{ item.id }}">Открыть панель</button>
-                <a class="ghost" href="/moderation/recommendations/{{ item.id }}">Открыть экран</a>
-                {% if item.status.value == "review" %}
-                <form method="post" action="/moderation/recommendations/{{ item.id }}/approve">
-                  <input type="hidden" name="comment" value="" />
-                  <button type="submit" class="ghost">Быстро одобрить</button>
-                </form>
-                {% endif %}
-              </div>
-            </details>
-            <dialog id="moderation-item-{{ item.id }}" class="staff-dialog">
-              <form method="dialog" class="staff-dialog-backdrop">
-                <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
-              </form>
-              <div class="staff-drawer">
-                <div class="staff-drawer-head">
-                  <div>
-                    <div class="eyebrow">правая панель</div>
-                    <strong>{{ item.title or item.strategy.title }}</strong>
-                  </div>
-                  <button type="button" class="ghost" data-close-staff-dialog>Закрыть</button>
-                </div>
-                <div class="staff-drawer-body">
-                  <div class="staff-inline-actions">
-                    <span class="staff-badge">{{ label_recommendation_status(item.status) }}</span>
-                    <span class="staff-badge">{{ item.author.display_name }}</span>
-                    <span class="staff-badge">{{ item.strategy.title }}</span>
-                  </div>
-                  <div class="muted">{{ item.summary or item.thesis or "Без краткого описания" }}</div>
-                  <div class="staff-card" style="padding:14px;box-shadow:none;">
-                    <strong>Что увидит подписчик</strong>
-                    <div class="muted" style="margin-top:8px;line-height:1.6;">{{ item.thesis or item.market_context or "Дополнительного контекста пока нет." }}</div>
-                  </div>
-                  {% if item.legs %}
-                  <div class="staff-card" style="padding:14px;box-shadow:none;">
-                    <strong>Параметры сделки</strong>
-                    <div style="display:grid;gap:10px;margin-top:10px;">
-                      {% for leg in item.legs %}
-                      <div class="staff-card" style="padding:12px;box-shadow:none;background:var(--staff-surface-soft);">
-                        <strong>{{ leg.instrument.ticker if leg.instrument else "Инструмент" }}</strong>
-                        <div class="muted" style="margin-top:6px;line-height:1.6;">
-                          {% if leg.side %}{{ label_trade_side(leg.side) | lower }}{% else %}направление не указано{% endif %}
-                          · вход {{ leg.entry_from or "не указан" }}{% if leg.entry_to %} - {{ leg.entry_to }}{% endif %}
-                          · стоп {{ leg.stop_loss or "не указан" }}
-                          {% if leg.take_profit_1 %} · tp1 {{ leg.take_profit_1 }}{% endif %}
-                          {% if leg.take_profit_2 %} · tp2 {{ leg.take_profit_2 }}{% endif %}
-                          {% if leg.take_profit_3 %} · tp3 {{ leg.take_profit_3 }}{% endif %}
-                        </div>
-                      </div>
-                      {% endfor %}
-                    </div>
-                  </div>
-                  {% endif %}
-                  <div class="staff-card" style="padding:14px;box-shadow:none;">
-                    <strong>Решение модератора</strong>
-                    <div style="display:grid;gap:10px;margin-top:10px;">
-                      <form method="post" action="/moderation/recommendations/{{ item.id }}/approve" style="display:grid;gap:8px;">
-                        <textarea name="comment" rows="3" placeholder="Комментарий к одобрению" style="padding:10px 12px;border-radius:10px;border:1px solid var(--staff-line-strong);font:inherit;resize:vertical;"></textarea>
-                        <button class="staff-btn is-primary" type="submit">Одобрить</button>
-                      </form>
-                      <form method="post" action="/moderation/recommendations/{{ item.id }}/rework" style="display:grid;gap:8px;">
-                        <textarea name="comment" rows="3" placeholder="Что нужно доработать" style="padding:10px 12px;border-radius:10px;border:1px solid var(--staff-line-strong);font:inherit;resize:vertical;" required></textarea>
-                        <button class="ghost" type="submit">Вернуть на доработку</button>
-                      </form>
-                      <form method="post" action="/moderation/recommendations/{{ item.id }}/reject" style="display:grid;gap:8px;">
-                        <textarea name="comment" rows="3" placeholder="Причина отклонения" style="padding:10px 12px;border-radius:10px;border:1px solid var(--staff-line-strong);font:inherit;resize:vertical;" required></textarea>
-                        <button class="ghost" type="submit">Отклонить</button>
-                      </form>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </dialog>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="6" class="muted">Очередь пустая.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="staff-grid-shell">
+      <div id="grid-host" class="pct-tabulator"></div>
+    </div>
+
+    <script>
+    PCTTabulator.create("grid-host", {
+      columns: [
+        { title: "Публикация", field: "publication", widthGrow: 1.6 },
+        { title: "Автор", field: "author" },
+        { title: "Стратегия", field: "strategy" },
+        { title: "Тип", field: "kind" },
+        { title: "Статус", field: "status" },
+        { title: "Действия", field: "actions", frozen: true }
+      ],
+      data: {{ queue_json | safe }}
+    });
+    </script>
   </div>
 </section>
 {% endblock %}
