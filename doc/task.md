@@ -2825,6 +2825,267 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 
 ---
 
+## Блок TAB-FIX — Исправление сериализаторов Tabulator (2026-03-24, CRITICAL)
+
+### Приоритет
+
+**БЛОКЕР.** Все admin-страницы со списками выдают 500 Internal Server Error. Причина: сериализаторы в `_grid_serializers.py` используют НЕПРАВИЛЬНЫЕ имена атрибутов, не соответствующие реальным моделям данных.
+
+### Единый файл для исправления
+
+**`src/pitchcopytrade/api/routes/_grid_serializers.py`** — все 14 функций.
+
+### Метод работы
+
+Перед исправлением каждого сериализатора worker ОБЯЗАН:
+1. Прочитать route handler в admin.py/author.py/moderation.py, который вызывает сериализатор
+2. Проследить какой сервис/функция возвращает данные
+3. Прочитать модель/dataclass и проверить ТОЧНЫЕ имена атрибутов
+4. Если объекты — dict (как staff_row, author_row) — использовать `.get()` вместо прямого доступа
+
+---
+
+### TAB-FIX.1 — `serialize_strategies()` (строки 24–40)
+
+**Ошибки:**
+| Строка | Сейчас (неправильно) | Должно быть |
+|--------|---------------------|-------------|
+| 28 | `item.risk` | `item.risk_level` |
+| 34 | `item.risk.upper()` | `item.risk_level` (может быть enum — проверить) |
+| 37 | `item.min_capital` | `item.min_capital_rub` |
+
+**Что сделать:**
+- [x] Прочитать модель `Strategy` в `db/models/catalog.py` (строка ~63)
+- [x] Заменить `item.risk` → `item.risk_level` (2 места)
+- [x] Заменить `item.min_capital` → `item.min_capital_rub`
+- [x] Проверить тип `risk_level` — если enum, использовать `.value` перед `.upper()`
+- [x] Проверить тип `status` — если enum, использовать `.value`
+
+---
+
+### TAB-FIX.2 — `serialize_authors()` (строки 43–69)
+
+**Ошибки:**
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 49 | `item.invite_token_version` | Может не существовать на dict — проверить `_author_row()` |
+| 63 | `item.telegram_id` | `item.telegram_user_id` (или `item.get("telegram_user_id")` если dict) |
+
+**Что сделать:**
+- [ ] Прочитать `_author_row()` в `admin.py` — какие ключи в dict?
+- [ ] Исправить все обращения к атрибутам на правильные ключи dict
+- [ ] Использовать `.get()` для безопасного доступа
+
+---
+
+### TAB-FIX.3 — `serialize_staff()` (строки 72–94)
+
+**Ошибки:**
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 76 | `item.roles` (как attribute) | Объект может быть dict — использовать `item.get("roles", [])` |
+| 91 | `item.telegram_id` | `item.telegram_user_id` или `item.get("telegram_user_id")` |
+
+**Что сделать:**
+- [ ] Прочитать `_staff_row()` в `admin.py` — какие ключи в dict?
+- [ ] Если объекты — dict: заменить ВСЕ `item.attr` на `item.get("attr")`
+- [ ] Если `roles` — это list of dicts: `role.get("name")` вместо `role.name`
+- [ ] Для `status` — проверить тип значения (строка или enum)
+
+---
+
+### TAB-FIX.4 — `serialize_products()` (строки 97–113)
+
+**Ошибки:**
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 101 | `item.status` | `item.is_active` (bool, NOT string) |
+| 105 | `item.kind` / `item.type` | `item.product_type` |
+| 106 | `item.period_days` | `item.billing_period` (enum: MONTHLY, QUARTERLY, ANNUAL, LIFETIME) |
+| 110 | `item.target_type` | Не существует — нужно определить через relationships |
+
+**Что сделать:**
+- [ ] Прочитать модель `SubscriptionProduct` в `db/models/catalog.py`
+- [ ] `status` → `_badge("Активен", "ok") if item.is_active else _badge("Неактивен", "danger")`
+- [ ] `kind/type` → `item.product_type` (проверить тип — enum или строка)
+- [ ] `period_days` → `item.billing_period` (display human-readable: "Месяц", "Квартал", etc.)
+- [ ] `target_type` → определить через `item.strategy_id`, `item.author_id` или relationships
+
+---
+
+### TAB-FIX.5 — `serialize_subscriptions()` (строки 116–135)
+
+**Ошибки:**
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 127 | `item.subscriber` | `item.user` |
+| 123 | `item.period_start` / `item.period_end` | `item.start_at` / `item.end_at` |
+| 132 | `item.source` | `item.lead_source.name if item.lead_source else "—"` |
+
+**Что сделать:**
+- [ ] Прочитать модель `Subscription` в `db/models/commerce.py`
+- [ ] `subscriber` → `user` (2 места: строки 127, 145 в payments тоже)
+- [ ] `period_start/end` → `start_at/end_at`
+- [ ] `source` → `lead_source.name`
+
+---
+
+### TAB-FIX.6 — `serialize_payments()` (строки 138–153)
+
+**Ошибки:**
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 145 | `item.subscriber` | `item.user` |
+| 150 | `item.subscription_count` | `len(item.subscriptions)` если relationship loaded |
+
+**Что сделать:**
+- [ ] Прочитать модель `Payment` в `db/models/commerce.py`
+- [ ] `subscriber` → `user`
+- [ ] `subscription_count` → `len(item.subscriptions)` или `getattr(item, "subscriptions", [])` с защитой
+
+---
+
+### TAB-FIX.7 — `serialize_legal()` (строки 156–171)
+
+**Ошибки:**
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 160 | `item.status` | `item.is_active` (bool) |
+| 164 | `item.kind` | `item.document_type` |
+| 167 | `item.consent_count` | `len(item.consents)` если relationship, или 0 |
+| 168 | `item.slug` | Не существует — убрать ссылку или использовать `item.source_path` |
+
+**Что сделать:**
+- [ ] Прочитать модель `LegalDocument` в `db/models/commerce.py`
+- [ ] `status` → `_badge("Активен", "ok") if item.is_active else _badge("Черновик", "warn")`
+- [ ] `kind` → `item.document_type`
+- [ ] `slug` → убрать или заменить на `item.source_path`
+- [ ] `consent_count` → `len(item.consents) if item.consents else 0`
+
+---
+
+### TAB-FIX.8 — `serialize_promos()` (строки 174–189)
+
+**Ошибки:**
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 178 | `item.status` | `item.is_active` (bool) |
+| 183 | `item.discount_rub` | `item.discount_amount_rub` |
+| 184 | `item.uses_count` | `item.current_redemptions` |
+| 185 | `item.max_uses` | `item.max_redemptions` |
+
+**Что сделать:**
+- [ ] Прочитать модель `PromoCode` в `db/models/commerce.py`
+- [ ] `status` → `is_active` (bool → badge)
+- [ ] `discount_rub` → `discount_amount_rub`
+- [ ] `uses_count` → `current_redemptions`
+- [ ] `max_uses` → `max_redemptions`
+
+---
+
+### TAB-FIX.9 — `serialize_delivery()` (строки 192–207)
+
+**Ошибки:**
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 196 | `item.status` | Не существует на DeliveryRecord |
+| 202 | `item.attempt_count` | `item.delivery_attempts` |
+| 203 | `item.delivered_at` | `item.latest_delivery_event.created_at if item.latest_delivery_event else None` |
+| 204 | `item.last_error` | Не существует |
+
+**Что сделать:**
+- [ ] Прочитать dataclass `DeliveryRecord` в `services/delivery_admin.py`
+- [ ] Убрать `item.status` — вычислять из `delivery_attempts` / `delivered_recipients`
+- [ ] `attempt_count` → `delivery_attempts`
+- [ ] `delivered_at` → из `latest_delivery_event`
+- [ ] `last_error` → из `latest_delivery_event.payload` если есть
+
+---
+
+### TAB-FIX.10 — `serialize_lead_analytics()` (строки 210–223)
+
+**Ошибки:**
+Все `.get()` вызовы неправильны — объекты это dataclass `LeadSourceAnalyticsRow`, не dict.
+
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 215 | `row.get("source")` | `row.source_name` |
+| 216 | `row.get("type")` | `row.source_type` |
+| 217 | `row.get("users")` | `row.users_total` |
+| 218 | `row.get("subs")` | `row.subscriptions_total` |
+| 219 | `row.get("active")` | `row.active_subscriptions` |
+| 220 | `row.get("paid")` | `row.paid_payments` |
+
+**Что сделать:**
+- [ ] Прочитать dataclass `LeadSourceAnalyticsRow` в `services/lead_analytics.py`
+- [ ] Заменить все `row.get(...)` на прямой доступ к атрибутам dataclass
+
+---
+
+### TAB-FIX.11 — `serialize_moderation_queue()` (строки 295–310)
+
+**Ошибки:**
+Items — это объекты `Recommendation` напрямую, НЕ wrapper-объекты.
+
+| Строка | Сейчас | Должно быть |
+|--------|--------|-------------|
+| 303 | `item.recommendation.title` | `item.title` |
+| 304 | `item.recommendation.strategy.author.display_name` | `item.strategy.author.display_name if item.strategy and item.strategy.author` |
+| 305 | `item.recommendation.strategy.title` | `item.strategy.title if item.strategy` |
+| 306 | `item.kind` | Проверить — может быть enum |
+
+**Что сделать:**
+- [ ] Прочитать route handler `moderation_queue_page()` в `moderation.py` — какой тип items
+- [ ] Убрать `.recommendation` — обращаться к item напрямую
+- [ ] Добавить null-safety для вложенных relationship
+
+---
+
+### TAB-FIX.12 — `serialize_recommendations()` и `serialize_author_strategies()` (строки 237–292)
+
+**Вероятно корректны**, но требуют проверки:
+- [ ] Проверить что `item.legs` загружен (нет lazy loading → MissingGreenlet)
+- [ ] Проверить что `item.strategy` загружен
+- [ ] Если `status` / `side` — enum, использовать `.value` перед `.upper()`
+- [ ] `serialize_author_strategies`: проверить `item.risk` → может быть `item.risk_level` (та же модель Strategy)
+
+---
+
+### TAB-FIX.13 — Общий паттерн: enum safety
+
+**Во ВСЕХ сериализаторах:** если атрибут — enum (SQLAlchemy Enum column), при `.upper()` будет ошибка. Нужен helper:
+
+```python
+def _enum_str(val) -> str:
+    """Safely convert enum or string to uppercase string."""
+    if val is None:
+        return ""
+    return str(val.value if hasattr(val, 'value') else val).upper()
+```
+
+- [ ] Добавить `_enum_str()` helper
+- [ ] Использовать во всех местах где вызывается `.upper()` на полях моделей
+
+---
+
+### TAB-FIX.14 — Тест и проверка
+
+- [ ] `python3 -m compileall src tests`
+- [ ] Проверить что все 14 страниц открываются без 500:
+  `/admin/staff`, `/admin/strategies`, `/admin/products`, `/admin/legal`, `/admin/delivery`, `/admin/promos`, `/admin/subscriptions`, `/admin/payments`, `/admin/analytics/leads`, `/admin/metrics`, `/author/recommendations`, `/author/strategies`, `/moderation/queue`
+
+---
+
+### Acceptance TAB-FIX
+
+1. **Все 14 admin-страниц** открываются без 500 Internal Server Error
+2. Данные корректно отображаются в Tabulator grid
+3. Badges, ссылки, формы в ячейках — кликабельны
+4. `python3 -m compileall src tests` — чисто
+5. Ни одного `AttributeError` в логах при навигации по admin
+
+---
+
 ## Блок P2 — Production UX fixes (2026-03-23)
 
 ### Контекст

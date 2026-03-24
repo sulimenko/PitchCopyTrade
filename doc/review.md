@@ -161,6 +161,14 @@ email-validator, httpx, aiosmtplib, authlib
 
 ## Открытые findings
 
+### TAB-FIX — Все сериализаторы Tabulator используют неправильные имена атрибутов `[ ]` — CRITICAL BLOCKER
+
+**Файл:** `src/pitchcopytrade/api/routes/_grid_serializers.py` (все 14 функций)
+**Проблема:** Сериализаторы написаны с угаданными именами атрибутов, не совпадающими с реальными моделями. Все admin-страницы со списками выдают 500 Internal Server Error (AttributeError).
+**Масштаб:** 30+ неправильных имён атрибутов в 12 из 14 сериализаторов.
+**Примеры:** `item.risk` → `item.risk_level`, `item.subscriber` → `item.user`, `item.status` → `item.is_active` (bool), `item.telegram_id` → `item.telegram_user_id`, dict vs object access.
+**Подробная задача:** см. doc/task.md → Блок TAB-FIX (14 подзадач с таблицей ошибок для каждого сериализатора).
+
 ### F2 — db/file parity verification `[ ]` — не блокирует MVP
 
 ### F3 — Regression coverage `[ ]` — не блокирует MVP
@@ -183,7 +191,7 @@ email-validator, httpx, aiosmtplib, authlib
 
 **Все блоки закрыты: S, R, T, U, V, W, X1, Y, X3, X4, Z (Z1–Z10), TAB, P2.**
 
-**Production bug-ов нет.** Merge не блокирован.
+**TAB-FIX — CRITICAL BLOCKER.** Все admin-списки выдают 500. Merge заблокирован до исправления.
 
 F2–F3 — не блокируют MVP.
 
@@ -192,5 +200,6 @@ F2–F3 — не блокируют MVP.
 ## Worker target
 
 Следующий исполнитель (в порядке приоритета):
-1. **V3** — ручной smoke-test на сервере
-2. **Блок F** — F2 parity audit, F3 regression coverage
+1. **TAB-FIX** — CRITICAL: исправить 14 сериализаторов в `_grid_serializers.py` (30+ неправильных атрибутов)
+2. **V3** — ручной smoke-test на сервере
+3. **Блок F** — F2 parity audit, F3 regression coverage
