@@ -2872,9 +2872,9 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 63 | `item.telegram_id` | `item.telegram_user_id` (или `item.get("telegram_user_id")` если dict) |
 
 **Что сделать:**
-- [ ] Прочитать `_author_row()` в `admin.py` — какие ключи в dict?
-- [ ] Исправить все обращения к атрибутам на правильные ключи dict
-- [ ] Использовать `.get()` для безопасного доступа
+- [x] Прочитать `_author_row()` в `admin.py` — какие ключи в dict?
+- [x] Исправить все обращения к атрибутам на правильные ключи dict
+- [x] Использовать `.get()` для безопасного доступа
 
 ---
 
@@ -2887,10 +2887,10 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 91 | `item.telegram_id` | `item.telegram_user_id` или `item.get("telegram_user_id")` |
 
 **Что сделать:**
-- [ ] Прочитать `_staff_row()` в `admin.py` — какие ключи в dict?
-- [ ] Если объекты — dict: заменить ВСЕ `item.attr` на `item.get("attr")`
-- [ ] Если `roles` — это list of dicts: `role.get("name")` вместо `role.name`
-- [ ] Для `status` — проверить тип значения (строка или enum)
+- [x] Прочитать `_staff_row()` в `admin.py` — какие ключи в dict?
+- [x] Если объекты — dict: заменить ВСЕ `item.attr` на `item.get("attr")`
+- [x] Если `roles` — это list of dicts: `role.get("name")` вместо `role.name`
+- [x] Для `status` — проверить тип значения (строка или enum)
 
 ---
 
@@ -2905,11 +2905,11 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 110 | `item.target_type` | Не существует — нужно определить через relationships |
 
 **Что сделать:**
-- [ ] Прочитать модель `SubscriptionProduct` в `db/models/catalog.py`
-- [ ] `status` → `_badge("Активен", "ok") if item.is_active else _badge("Неактивен", "danger")`
-- [ ] `kind/type` → `item.product_type` (проверить тип — enum или строка)
-- [ ] `period_days` → `item.billing_period` (display human-readable: "Месяц", "Квартал", etc.)
-- [ ] `target_type` → определить через `item.strategy_id`, `item.author_id` или relationships
+- [x] Прочитать модель `SubscriptionProduct` в `db/models/catalog.py`
+- [x] `status` → `_badge("Активен", "ok") if item.is_active else _badge("Неактивен", "danger")`
+- [x] `kind/type` → `item.product_type` (проверить тип — enum или строка)
+- [x] `period_days` → `item.billing_period` (display human-readable: "Месяц", "Квартал", etc.)
+- [x] `target_type` → определить через `item.strategy_id`, `item.author_id` или relationships
 
 ---
 
@@ -2923,10 +2923,10 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 132 | `item.source` | `item.lead_source.name if item.lead_source else "—"` |
 
 **Что сделать:**
-- [ ] Прочитать модель `Subscription` в `db/models/commerce.py`
-- [ ] `subscriber` → `user` (2 места: строки 127, 145 в payments тоже)
-- [ ] `period_start/end` → `start_at/end_at`
-- [ ] `source` → `lead_source.name`
+- [x] Прочитать модель `Subscription` в `db/models/commerce.py`
+- [x] `subscriber` → `user` (2 места: строки 127, 145 в payments тоже)
+- [x] `period_start/end` → `start_at/end_at`
+- [x] `source` → `lead_source.name`
 
 ---
 
@@ -2939,9 +2939,9 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 150 | `item.subscription_count` | `len(item.subscriptions)` если relationship loaded |
 
 **Что сделать:**
-- [ ] Прочитать модель `Payment` в `db/models/commerce.py`
-- [ ] `subscriber` → `user`
-- [ ] `subscription_count` → `len(item.subscriptions)` или `getattr(item, "subscriptions", [])` с защитой
+- [x] Прочитать модель `Payment` в `db/models/commerce.py`
+- [x] `subscriber` → `user`
+- [x] `subscription_count` → `len(item.subscriptions)` или `getattr(item, "subscriptions", [])` с защитой
 
 ---
 
@@ -2956,11 +2956,11 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 168 | `item.slug` | Не существует — убрать ссылку или использовать `item.source_path` |
 
 **Что сделать:**
-- [ ] Прочитать модель `LegalDocument` в `db/models/commerce.py`
-- [ ] `status` → `_badge("Активен", "ok") if item.is_active else _badge("Черновик", "warn")`
-- [ ] `kind` → `item.document_type`
-- [ ] `slug` → убрать или заменить на `item.source_path`
-- [ ] `consent_count` → `len(item.consents) if item.consents else 0`
+- [x] Прочитать модель `LegalDocument` в `db/models/commerce.py`
+- [x] `status` → `_badge("Активен", "ok") if item.is_active else _badge("Черновик", "warn")`
+- [x] `kind` → `item.document_type`
+- [x] `slug` → убрать или заменить на `item.source_path`
+- [x] `consent_count` → `len(item.consents) if item.consents else 0`
 
 ---
 
@@ -2975,11 +2975,11 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 185 | `item.max_uses` | `item.max_redemptions` |
 
 **Что сделать:**
-- [ ] Прочитать модель `PromoCode` в `db/models/commerce.py`
-- [ ] `status` → `is_active` (bool → badge)
-- [ ] `discount_rub` → `discount_amount_rub`
-- [ ] `uses_count` → `current_redemptions`
-- [ ] `max_uses` → `max_redemptions`
+- [x] Прочитать модель `PromoCode` в `db/models/commerce.py`
+- [x] `status` → `is_active` (bool → badge)
+- [x] `discount_rub` → `discount_amount_rub`
+- [x] `uses_count` → `current_redemptions`
+- [x] `max_uses` → `max_redemptions`
 
 ---
 
@@ -2994,11 +2994,11 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 204 | `item.last_error` | Не существует |
 
 **Что сделать:**
-- [ ] Прочитать dataclass `DeliveryRecord` в `services/delivery_admin.py`
-- [ ] Убрать `item.status` — вычислять из `delivery_attempts` / `delivered_recipients`
-- [ ] `attempt_count` → `delivery_attempts`
-- [ ] `delivered_at` → из `latest_delivery_event`
-- [ ] `last_error` → из `latest_delivery_event.payload` если есть
+- [x] Прочитать dataclass `DeliveryRecord` в `services/delivery_admin.py`
+- [x] Убрать `item.status` — вычислять из `delivery_attempts` / `delivered_recipients`
+- [x] `attempt_count` → `delivery_attempts`
+- [x] `delivered_at` → из `latest_delivery_event`
+- [x] `last_error` → из `latest_delivery_event.payload` если есть
 
 ---
 
@@ -3017,8 +3017,8 @@ context["items_json"] = json.dumps([serialize(item) for item in items], default=
 | 220 | `row.get("paid")` | `row.paid_payments` |
 
 **Что сделать:**
-- [ ] Прочитать dataclass `LeadSourceAnalyticsRow` в `services/lead_analytics.py`
-- [ ] Заменить все `row.get(...)` на прямой доступ к атрибутам dataclass
+- [x] Прочитать dataclass `LeadSourceAnalyticsRow` в `services/lead_analytics.py`
+- [x] Заменить все `row.get(...)` на прямой доступ к атрибутам dataclass
 
 ---
 
@@ -3035,19 +3035,19 @@ Items — это объекты `Recommendation` напрямую, НЕ wrapper-
 | 306 | `item.kind` | Проверить — может быть enum |
 
 **Что сделать:**
-- [ ] Прочитать route handler `moderation_queue_page()` в `moderation.py` — какой тип items
-- [ ] Убрать `.recommendation` — обращаться к item напрямую
-- [ ] Добавить null-safety для вложенных relationship
+- [x] Прочитать route handler `moderation_queue_page()` в `moderation.py` — какой тип items
+- [x] Убрать `.recommendation` — обращаться к item напрямую
+- [x] Добавить null-safety для вложенных relationship
 
 ---
 
 ### TAB-FIX.12 — `serialize_recommendations()` и `serialize_author_strategies()` (строки 237–292)
 
 **Вероятно корректны**, но требуют проверки:
-- [ ] Проверить что `item.legs` загружен (нет lazy loading → MissingGreenlet)
-- [ ] Проверить что `item.strategy` загружен
-- [ ] Если `status` / `side` — enum, использовать `.value` перед `.upper()`
-- [ ] `serialize_author_strategies`: проверить `item.risk` → может быть `item.risk_level` (та же модель Strategy)
+- [x] Проверить что `item.legs` загружен (нет lazy loading → MissingGreenlet)
+- [x] Проверить что `item.strategy` загружен
+- [x] Если `status` / `side` — enum, использовать `.value` перед `.upper()`
+- [x] `serialize_author_strategies`: проверить `item.risk` → может быть `item.risk_level` (та же модель Strategy)
 
 ---
 
@@ -3063,15 +3063,15 @@ def _enum_str(val) -> str:
     return str(val.value if hasattr(val, 'value') else val).upper()
 ```
 
-- [ ] Добавить `_enum_str()` helper
-- [ ] Использовать во всех местах где вызывается `.upper()` на полях моделей
+- [x] Добавить `_enum_str()` helper
+- [x] Использовать во всех местах где вызывается `.upper()` на полях моделей
 
 ---
 
 ### TAB-FIX.14 — Тест и проверка
 
-- [ ] `python3 -m compileall src tests`
-- [ ] Проверить что все 14 страниц открываются без 500:
+- [x] `python3 -m compileall src tests`
+- [x] Проверить что все 14 страниц открываются без 500:
   `/admin/staff`, `/admin/strategies`, `/admin/products`, `/admin/legal`, `/admin/delivery`, `/admin/promos`, `/admin/subscriptions`, `/admin/payments`, `/admin/analytics/leads`, `/admin/metrics`, `/author/recommendations`, `/author/strategies`, `/moderation/queue`
 
 ---
