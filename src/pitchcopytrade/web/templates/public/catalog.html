@@ -22,14 +22,14 @@
       <h1 style="margin:0;font-size:clamp(2.2rem,4.8vw,4rem);line-height:0.94;letter-spacing:-0.06em;">Витрина стратегий</h1>
       <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
         {% if miniapp_mode %}
-        Выберите стратегию, изучите подход автора и подключите подписку. Это основной клиентский контур внутри Telegram Mini App.
+        Выберите сценарий, сравните риск и тариф, и переходите к checkout без лишних экранов.
         {% else %}
-        Выберите стратегию, изучите подход автора и подключите подписку. Основной путь клиента проходит внутри Telegram Mini App.
+        Выберите сценарий, сравните риск и тариф, и переходите к checkout.
         {% endif %}
       </p>
       {% if miniapp_mode %}
       <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">
-        Профиль подтвержден по Telegram ID и открывает разделы подписок, ленты, оплат и каталога без отдельного входа.
+        Профиль подтвержден по Telegram ID. Каталог открыт первым, а статус и помощь доступны внутри того же webview.
       </p>
       {% if miniapp_snapshot %}
       <div class="surface" style="padding:18px;margin-top:16px;background:rgba(255,255,255,0.85);">
@@ -69,12 +69,14 @@
       </div>
       <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
     </div>
-    <p class="muted" style="margin:16px 0 0;line-height:1.65;">{{ strategy.short_description }}</p>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+    <p class="muted" style="margin:16px 0 0;line-height:1.65;">{{ strategy.story.hero_summary if strategy.story else strategy.short_description }}</p>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px;">
+      <div class="pill" style="justify-content:flex-start;">{{ strategy.story.holding_period_note if strategy.story else "Горизонт уточняется" }}</div>
+      <div class="pill" style="justify-content:flex-start;">{{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}</div>
       {% if strategy.min_capital_rub %}
-      <span class="pill">от {{ strategy.min_capital_rub }} руб</span>
+      <div class="pill" style="justify-content:flex-start;">от {{ strategy.min_capital_rub }} руб</div>
       {% endif %}
-      <span class="pill">{{ strategy.subscription_products|length }} продукт</span>
+      <div class="pill" style="justify-content:flex-start;">{{ strategy.subscription_products|length }} тариф{% if strategy.subscription_products|length != 1 %}ов{% endif %}</div>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
       <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}">Открыть стратегию</a>

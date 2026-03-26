@@ -17,6 +17,7 @@ from pitchcopytrade.services.acl import (
 )
 from pitchcopytrade.services.public import (
     TelegramSubscriberProfile,
+    build_strategy_story,
     create_telegram_stub_checkout,
     get_public_product,
     get_public_strategy_by_slug,
@@ -62,6 +63,8 @@ async def app_catalog(
         return user
 
     strategies = await list_public_strategies(public_repository)
+    for strategy in strategies:
+        strategy.story = build_strategy_story(strategy)
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
@@ -89,12 +92,14 @@ async def app_strategy_detail(
     strategy = await get_public_strategy_by_slug(public_repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    strategy.story = build_strategy_story(strategy)
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
         {
             "title": strategy.title,
             "strategy": strategy,
+            "billing_period_label": billing_period_label,
             **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
         },
     )

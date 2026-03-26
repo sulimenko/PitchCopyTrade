@@ -218,6 +218,9 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert "Momentum RU" in response.text
         assert product.title in response.text
         assert f"/checkout/{product.id}" in response.text
+        assert "Короткий тезис" in response.text
+        assert "Тарифы и CTA" in response.text
+        assert "FAQ и документы" in response.text
 
 
 def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
@@ -242,6 +245,8 @@ def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert f"/app/checkout/{product.id}" in response.text
+        assert "Короткий тезис" in response.text
+        assert "Выбрать подписку" in response.text
 
 
 def test_checkout_page_renders_documents(monkeypatch) -> None:

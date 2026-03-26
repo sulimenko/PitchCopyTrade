@@ -16,11 +16,13 @@ from pitchcopytrade.services.payment_sync import process_tbank_callback
 from pitchcopytrade.services.public import (
     CheckoutRequest,
     create_stub_checkout,
+    build_strategy_story,
     get_public_product,
     get_public_strategy_by_slug,
     list_active_checkout_documents,
     list_public_strategies,
 )
+from pitchcopytrade.services.subscriber import billing_period_label
 from pitchcopytrade.web.templates import templates
 
 
@@ -77,6 +79,8 @@ async def catalog_page(
     repository: PublicRepository = Depends(get_public_repository),
 ) -> Response:
     strategies = await list_public_strategies(repository)
+    for strategy in strategies:
+        strategy.story = build_strategy_story(strategy)
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
@@ -98,6 +102,7 @@ async def strategy_detail_page(
     strategy = await get_public_strategy_by_slug(repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    strategy.story = build_strategy_story(strategy)
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
@@ -105,6 +110,7 @@ async def strategy_detail_page(
             "title": strategy.title,
             "strategy": strategy,
             "miniapp_mode": False,
+            "billing_period_label": billing_period_label,
         },
     )
 

@@ -110,12 +110,12 @@ Acceptance:
 
 ### Задачи
 
-- [ ] **D1** Пересобрать hero каталога Mini App
+- [x] **D1** Пересобрать hero каталога Mini App
   - меньше онбординга;
   - больше карточек стратегии;
   - быстрее переход к выбору.
 
-- [ ] **D2** Пересобрать карточку стратегии
+- [x] **D2** Пересобрать карточку стратегии
   - автор;
   - value proposition;
   - риск;
@@ -124,7 +124,7 @@ Acceptance:
   - главный CTA;
   - без перегруза вторичными действиями.
 
-- [ ] **D3** Пересобрать `strategy_detail` под структурный narrative
+- [x] **D3** Пересобрать `strategy_detail` под структурный narrative
   - hero;
   - thesis;
   - mechanics;
@@ -132,16 +132,16 @@ Acceptance:
   - tariffs;
   - FAQ/documents.
 
-- [ ] **D4** Подготовить content contract для strategy detail
+- [x] **D4** Подготовить content contract для strategy detail
   - решить, что живет в structured fields;
   - что временно допустимо держать в `full_description`;
   - как это редактируется staff/author контуром.
 
-- [ ] **D5** Использовать `Straddle.pdf` как один из reference-материалов
+- [x] **D5** Использовать `Straddle.pdf` как один из reference-материалов
   - взять сильные части narrative;
   - не копировать презентационный стиль как есть.
 
-- [ ] **D6** Проверить mobile-first behavior для Mini App
+- [x] **D6** Проверить mobile-first behavior для Mini App
   - 390x844 / 430x932;
   - один доминирующий CTA;
   - читаемая длина блоков;

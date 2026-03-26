@@ -36,6 +36,17 @@ def test_preview_miniapp_catalog_is_self_contained(monkeypatch) -> None:
         assert 'href="/app/status"' not in response.text
 
 
+def test_preview_strategy_detail_has_structured_narrative(monkeypatch) -> None:
+    with _build_client(monkeypatch) as client:
+        response = client.get("/preview/app/strategies/straddle-pro")
+
+        assert response.status_code == 200
+        assert "Короткий тезис" in response.text
+        assert "Механика" in response.text
+        assert "Тарифы и CTA" in response.text
+        assert "FAQ и документы" in response.text
+
+
 def test_preview_staff_dashboards_render(monkeypatch) -> None:
     with _build_client(monkeypatch) as client:
         admin_response = client.get("/preview/admin/dashboard")
