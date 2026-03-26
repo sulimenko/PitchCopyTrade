@@ -24,6 +24,7 @@ async def test_start_handler_sends_message() -> None:
     message.from_user = None
     await handle_start(message)
     message.answer.assert_awaited_once()
+    assert "каталог стратегий" in message.answer.await_args.args[0]
 
 
 @pytest.mark.asyncio
@@ -31,6 +32,7 @@ async def test_help_handler_sends_message() -> None:
     message = AsyncMock()
     await handle_help(message)
     message.answer.assert_awaited_once()
+    assert "справк" in message.answer.await_args.args[0]
 
 
 def test_main_keyboard_returns_none_for_http_base_url(monkeypatch) -> None:
@@ -48,7 +50,9 @@ def test_main_keyboard_returns_keyboard_for_https(monkeypatch) -> None:
     markup = _main_keyboard()
     assert markup is not None
     labels = [button.text for row in markup.inline_keyboard for button in row]
-    assert "Открыть приложение" in labels
+    urls = [button.web_app.url for row in markup.inline_keyboard for button in row if button.web_app is not None]
+    assert "Открыть каталог" in labels
+    assert any(url.endswith("/app/catalog") for url in urls)
 
 
 def test_build_dispatcher_registers_start_handler() -> None:

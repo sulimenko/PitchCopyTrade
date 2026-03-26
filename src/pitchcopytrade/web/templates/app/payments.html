@@ -4,6 +4,7 @@
 
 {% block content %}
 {% include "app/_miniapp_nav.html" %}
+{% set miniapp_root = "/preview/app" if preview_mode else "/app" %}
 
 <section class="surface" style="padding:28px;">
   <div class="eyebrow">мои оплаты</div>
@@ -35,12 +36,12 @@
           {% endif %}
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
             {% if payment.status.value == "pending" %}
-            <form method="post" action="/app/payments/{{ payment.id }}/refresh">
+            <form method="post" action="{{ miniapp_root }}/payments/{{ payment.id }}/refresh">
               <button class="action ghost" type="submit">Обновить статус</button>
             </form>
             {% endif %}
             {% if payment.status.value in ["failed", "expired", "cancelled"] %}
-            <form method="post" action="/app/payments/{{ payment.id }}/retry" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <form method="post" action="{{ miniapp_root }}/payments/{{ payment.id }}/retry" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
               <input type="text" name="promo_code_value" placeholder="Промокод" style="padding:10px 12px;border-radius:999px;border:1px solid var(--line);font:inherit;width:140px;" />
               <button class="action" type="submit">Повторить</button>
             </form>
@@ -49,7 +50,7 @@
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <span class="pill">{{ payment.stub_reference or payment.external_id or payment.id }}</span>
-          <a class="action ghost" href="/app/payments/{{ payment.id }}">Детали</a>
+          <a class="action ghost" href="{{ miniapp_root }}/payments/{{ payment.id }}">Детали</a>
         </div>
       </div>
     </article>

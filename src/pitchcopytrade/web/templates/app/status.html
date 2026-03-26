@@ -33,12 +33,18 @@
   <article class="surface" style="padding:24px;">
     <strong>Быстрые действия</strong>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-      <a class="action" href="/app/feed">Открыть ленту</a>
-      <a class="action ghost" href="/app/subscriptions">Мои подписки</a>
-      <a class="action ghost" href="/app/payments">Мои оплаты</a>
-      <a class="action ghost" href="/app/reminders">Напоминания</a>
-      <a class="action ghost" href="/app/timeline">История</a>
-      <a class="action ghost" href="/app/catalog">Открыть каталог</a>
+      {% set miniapp_root = "/preview/app" if preview_mode else "/app" %}
+      {% if preview_mode %}
+      <a class="action" href="{{ miniapp_root }}/catalog">Открыть каталог</a>
+      <a class="action ghost" href="{{ miniapp_root }}/help">Открыть помощь</a>
+      {% else %}
+      <a class="action" href="{{ miniapp_root }}/feed">Открыть ленту</a>
+      <a class="action ghost" href="{{ miniapp_root }}/subscriptions">Мои подписки</a>
+      <a class="action ghost" href="{{ miniapp_root }}/payments">Мои оплаты</a>
+      <a class="action ghost" href="{{ miniapp_root }}/reminders">Напоминания</a>
+      <a class="action ghost" href="{{ miniapp_root }}/timeline">История</a>
+      <a class="action ghost" href="{{ miniapp_root }}/catalog">Открыть каталог</a>
+      {% endif %}
     </div>
   </article>
 </section>

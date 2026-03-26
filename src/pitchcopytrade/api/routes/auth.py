@@ -124,7 +124,6 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
     tg_user = await get_user_from_telegram_fallback_cookie(repository, tg_token) if tg_token else None
     if tg_user is not None:
-        # Z5: Redirect to catalog instead of status for better UX
         return RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
     return templates.TemplateResponse(
@@ -271,12 +270,10 @@ async def telegram_webapp_auth(
 
 @router.get("/app", response_class=HTMLResponse)
 async def app_home(request: Request, repository: AuthRepository = Depends(get_auth_repository)) -> Response:
-    settings = get_settings()
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
     if tg_token:
         subscriber = await get_user_from_telegram_fallback_cookie(repository, tg_token)
         if subscriber is not None:
-            # Z5: Redirect to catalog instead of status for better UX
             return RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
@@ -595,7 +592,6 @@ def _resolve_role_redirect(user, requested_mode: str | None = None) -> tuple[str
 
 def _sanitize_subscriber_next_path(next_path: str | None) -> str:
     if not next_path:
-        # Z5: Default to catalog instead of status for better UX
         return "/app/catalog"
     # Y4: Normalize path and prevent open redirect attacks
     next_path = next_path.replace("\\", "/")

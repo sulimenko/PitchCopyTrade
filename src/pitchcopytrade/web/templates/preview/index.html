@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block topbar_actions %}{% endblock %}
+
+{% block content %}
+<section class="surface" style="padding:30px;">
+  <div class="eyebrow">local preview</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2.2rem,4.8vw,4rem);line-height:0.94;letter-spacing:-0.06em;">Preview surfaces without auth friction</h1>
+  <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
+    This local mode is for browser layout only. It keeps the Mini App and staff surfaces reachable without Telegram tokens, cookies, or manual login links.
+  </p>
+</section>
+
+<section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">mini app</div>
+    <h2 style="margin:10px 0 0;font-size:1.5rem;">Subscriber preview</h2>
+    <p class="muted" style="margin:12px 0 0;line-height:1.65;">
+      Catalog-first entry, strategy detail, checkout and help screens rendered in the same browser session.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
+      <a class="action" href="/preview/app/catalog">Catalog</a>
+      <a class="action ghost" href="/preview/app/status">Status</a>
+      <a class="action ghost" href="/preview/app/help">Help</a>
+    </div>
+  </article>
+
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">staff</div>
+    <h2 style="margin:10px 0 0;font-size:1.5rem;">Staff preview</h2>
+    <p class="muted" style="margin:12px 0 0;line-height:1.65;">
+      Layout-first admin and author dashboards without session cookies or Telegram invite flow.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
+      <a class="action" href="/preview/admin/dashboard">Admin</a>
+      <a class="action ghost" href="/preview/author/dashboard">Author</a>
+    </div>
+  </article>
+</section>
+
+<section class="surface" style="padding:24px;margin-top:18px;">
+  <strong>Canonical local smoke path</strong>
+  <p class="muted" style="margin:12px 0 0;line-height:1.65;">
+    The smoke profile targets the preview routes above, so you can validate layout changes without minting demo auth cookies.
+  </p>
+</section>
+
+<style>
+  @media (max-width: 840px) {
+    section[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

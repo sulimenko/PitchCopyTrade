@@ -678,7 +678,7 @@ async def _get_subscriber_snapshot_or_redirect(
         return user, None
     snapshot = await get_subscriber_status_snapshot(access_repository, telegram_user_id=user.telegram_user_id or 0)
     if snapshot is None:
-        return RedirectResponse(url="/verify/telegram?next=/app/status", status_code=status.HTTP_303_SEE_OTHER), None
+        return RedirectResponse(url="/verify/telegram?next=/app/catalog", status_code=status.HTTP_303_SEE_OTHER), None
     return user, snapshot
 
 

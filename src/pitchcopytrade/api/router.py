@@ -7,6 +7,7 @@ from pitchcopytrade.api.routes.auth import router as auth_router
 from pitchcopytrade.api.routes.instruments import router as instruments_router
 from pitchcopytrade.api.routes.moderation import router as moderation_router
 from pitchcopytrade.api.routes.public import router as public_router
+from pitchcopytrade.api.routes.preview import router as preview_router
 from pitchcopytrade.api.routes.system import router as system_router
 
 api_router = APIRouter()
@@ -17,4 +18,5 @@ api_router.include_router(admin_router)
 api_router.include_router(author_router)
 api_router.include_router(instruments_router)
 api_router.include_router(moderation_router)
+api_router.include_router(preview_router)
 api_router.include_router(system_router)

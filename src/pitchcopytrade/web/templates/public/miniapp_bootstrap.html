@@ -5,9 +5,9 @@
 {% block content %}
 <section class="surface" style="padding:30px;">
   <div class="eyebrow">telegram mini app</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.94;letter-spacing:-0.05em;">Подключаем Telegram-профиль</h1>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.94;letter-spacing:-0.05em;">Открываем каталог стратегий</h1>
   <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.7;">
-    Mini App подтверждает ваш Telegram-профиль и открывает клиентский workspace без отдельного входа.
+    Mini App подтверждает ваш Telegram-профиль и сразу открывает витрину стратегий. Статус и помощь остаются внутри приложения.
   </p>
   <div id="miniapp-bootstrap-status" class="pill" style="margin-top:16px;">
     {% if webapp_enabled %}Ожидаем подтверждение Telegram{% else %}Mini App требует HTTPS{% endif %}
@@ -20,7 +20,7 @@
     <ol class="muted" style="margin:14px 0 0;padding-left:20px;line-height:1.8;">
       <li>Mini App проверит Telegram initData.</li>
       <li>Backend создаст или обновит профиль подписчика по Telegram ID.</li>
-      <li>После этого откроется стартовый экран Mini App со статусом доступа.</li>
+      <li>После этого откроется каталог стратегий, а статус и помощь будут доступны внутри того же webview.</li>
     </ol>
   </article>
 

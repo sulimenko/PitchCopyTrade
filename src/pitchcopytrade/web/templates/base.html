@@ -82,6 +82,13 @@
         backdrop-filter: blur(14px);
       }
 
+      .preview-banner {
+        margin-bottom: 18px;
+        padding: 14px 18px;
+        border: 1px dashed rgba(20, 56, 166, 0.22);
+        background: rgba(20, 56, 166, 0.06);
+      }
+
       .muted { color: var(--muted); }
 
       .pill {
@@ -131,6 +138,12 @@
   </head>
   <body>
     <div class="page-shell">
+      {% if preview_mode %}
+      <section class="surface preview-banner">
+        <strong>Local preview mode</strong>
+        <div class="muted">Preview pages are available without Telegram tokens or cookies while `APP_PREVIEW_ENABLED=true`.</div>
+      </section>
+      {% endif %}
       <header class="topbar">
         <div class="brand">
           <div class="brand-mark">PC</div>

@@ -65,11 +65,9 @@
 - Telegram Login Widget требует корректный `BASE_URL` и `@BotFather /setdomain`
 - для staff onboarding по email должны быть заполнены `SMTP_*` поля в `.env.server`
 - если `SMTP_PASSWORD` пустой или начинается с `__FILL_ME__`, invite email не отправится
-- `guide.pdf` и `guide.html` описывают текущий операторский flow:
-  - [guide.html](/Users/alexey/site/PitchCopyTrade/doc/guide.html)
-  - [guide.pdf](/Users/alexey/site/PitchCopyTrade/doc/guide.pdf)
-- staff redesign и onboarding redesign описаны в:
+- staff redesign, current review gate и local preview/runbook описаны в:
   - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
+  - [review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
   - [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 
 ## SMTP quick check

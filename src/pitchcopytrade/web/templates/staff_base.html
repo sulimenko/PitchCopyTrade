@@ -200,6 +200,13 @@
         line-height: 1.05;
       }
       .staff-page-head p { margin: 6px 0 0; color: var(--staff-muted); line-height: 1.45; max-width: 760px; }
+      .preview-banner {
+        margin: 0 0 12px;
+        padding: 12px 14px;
+        border: 1px dashed rgba(34, 74, 122, 0.22);
+        border-radius: 12px;
+        background: rgba(34, 74, 122, 0.05);
+      }
       .staff-toolbar {
         display: flex;
         justify-content: space-between;
@@ -694,6 +701,12 @@
     {% set moderation_links = [('queue', 'Очередь', '/moderation/queue')] %}
     <div class="staff-shell">
       <aside class="staff-rail">
+        {% if preview_mode %}
+        <div class="preview-banner">
+          <strong>Local preview mode</strong>
+          <div class="staff-breadcrumbs" style="margin-top:6px;">No auth cookies or Telegram tokens required.</div>
+        </div>
+        {% endif %}
         <div class="staff-brand">
           <div class="staff-brand-mark">PC</div>
           <div>

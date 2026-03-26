@@ -1,212 +1,34 @@
 # PitchCopyTrade
 
-Telegram-first платформа для подписок на авторские стратегии и доставки торговых рекомендаций.
+Текущий цикл проекта сфокусирован на чистке MVP subscriber contour:
+- Mini App должен открываться с витрины стратегий;
+- help должен жить как экран приложения;
+- описание стратегий должно стать сильнее и структурнее;
+- real-time данные по инструментам должны приходить через backend adapter;
+- checkout/navigation defects должны быть разобраны до implementation pass.
 
-## Документы
+## С чего начинать
 
-- [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md) — серверный запуск
-- [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md) — канонический продуктовый и UI-контракт
-- [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md) — только активный backlog
-- [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md) — текущий review gate
-- [doc/guide.html](/Users/alexey/site/PitchCopyTrade/doc/guide.html)
-- [doc/guide.pdf](/Users/alexey/site/PitchCopyTrade/doc/guide.pdf)
+Канонический набор документов:
+- `doc/README.md` — старт исследования и локальный runbook без Docker
+- `doc/blueprint.md` — текущий продуктовый контракт
+- `doc/task.md` — только активный backlog
+- `doc/review.md` — текущие findings и merge gate
 
-## Текущий продуктовый контур
+## Быстрый практический выбор
 
-- `subscriber` работает через Telegram bot + Mini App
-- `admin` работает через staff web
-- `author` работает через staff web
-- `moderation` остается staff operator surface
+Если цель:
+- быстро поднять проект локально без Docker;
+- смотреть GET/POST;
+- редактировать public и Mini App view в браузере;
+- открыть Mini App и staff без ручных токенов;
 
-Сервисы:
-- `api` — FastAPI
-- `bot` — aiogram
-- `worker` — фоновые задачи и уведомления
+используйте `APP_DATA_MODE=file` и runbook из `doc/README.md`.
 
-Runtime:
-- storage только локальный под `APP_STORAGE_ROOT`
-- PostgreSQL и Redis могут жить либо на хосте, либо в общей Docker-сети
-- staff auth primary path: Telegram Login Widget
-- password login — только local/demo fallback
+## Что важно помнить
 
-## Текущие роли
-
-- `admin`
-  - создает `author`
-  - создает стратегии за любого автора
-  - управляет staff, платежами, подписками, документами и delivery
-- `author`
-  - работает только со своими стратегиями и рекомендациями
-- `subscriber`
-  - только Telegram / Mini App
-
-Если один пользователь имеет роли `admin + author`, это один `User`. Он переключает режим работы внутри staff UI.
-
-## Текущий governance contract
-
-- новый `admin` и `author` создаются из продукта, без SQL
-- обязательные поля создания staff user: `display_name + email`
-- `telegram_user_id` не должен быть primary полем onboarding
-- новый staff user создается в статусе `invited`
-- staff user становится `active` только после invite/bind через Telegram
-- invite links строятся как абсолютные URL от `BASE_URL`
-- clean bootstrap через `deploy/schema.sql` обязан совпадать с runtime model
-
-Текущий открытый UX/runtime block:
-- remaining staff density pass для admin/moderation/author surfaces
-- runtime resilience `bot` до `api.telegram.org` без ручного redeploy
-
-## UI priorities
-
-- `public` и Mini App: дизайн и product feel первичны
-- `admin`, `author`, `moderation`: usability первична, дизайн вторичен
-
-Для staff UI канонический следующий контракт:
-- компактный layout
-- мелкие контролы
-- минимум карточек и декоративных блоков
-- левая навигация
-- breadcrumb
-- кнопка назад
-- единый `AG Grid Community` layer
-- редактирование через right drawer
-- сложные формы через modal / fullscreen modal
-- row menus не клипуются контейнером таблицы
-- raw invite URL не рендерится как основной текст строки в staff registry
-
-Для staff invite screen:
-- Telegram Login Widget остается primary path
-- но invite page обязана иметь fallback, если widget не загрузился или заблокирован
-
-## Язык интерфейса
-
-Весь текст, который видит пользователь или сотрудник в интерфейсе, должен быть на русском:
-- статусы
-- labels
-- hints
-- actions
-- table headers
-- empty states
-
-Внутренние enum/value имена в коде могут оставаться английскими, но UI-копия должна быть русской.
-
-## Текущий review focus
-
-Следующий крупный блок не про новые сущности, а про чистку staff UX:
-
-1. единый compact staff shell
-2. `AG Grid Community` для всех list/registry/queue screens
-3. unified CRUD pattern для `admin` и `author`
-4. mutability rules по статусам
-5. быстрый onboarding staff через email invite + Telegram bind
-6. закрытие staff CRUD gaps для existing rows
-
-Подробно:
-- [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
-- [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
-- [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
-
-Сейчас уже реализовано:
-- `AG Grid Community` подключен локально
-- invite token versioning и collision-check по `telegram_user_id`
-- reset schema синхронизирована с текущей staff model
-- `admin/staff` и `admin/authors` получили existing-row edit
-- `active/inactive` вынесен в явные actions
-- control emails администраторам работают в `db` и `file` mode
-- compact staff shell уплотнен
-- `admin/strategies` и `admin/legal` переведены в более компактный registry language
-- `admin`-редактор стратегии переведен в compact section layout
-- inline recommendation shortcut использует явный CTA `Создать и открыть`
-- raw enum values убраны из user-facing author editor copy и edit-guard ошибок
-
-Server deploy:
-- standalone и shared-backend режимы документированы в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md)
-- server compose использует proxy headers для корректных `https://` static URL за reverse proxy
-
-## Staff invite email
-
-Когда письма должны отправляться:
-- при создании нового `admin`
-- при создании нового `author`
-- при `resend invite`
-- контрольное письмо всем активным администраторам при создании `admin/author`
-- контрольное письмо всем активным администраторам при ошибке отправки invite
-
-Что должно быть настроено:
-
-```dotenv
-SMTP_HOST=
-SMTP_PORT=
-SMTP_SSL=true
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_FROM=
-SMTP_FROM_NAME=
-```
-
-Минимальные условия:
-- `SMTP_PASSWORD` не пустой и не `__FILL_ME__`
-- `SMTP_FROM` совпадает с разрешенным отправителем SMTP-сервера
-- серверу доступен SMTP host и порт
-
-Как проверить:
-1. создать нового `author` или `admin` из `/admin/authors` или `/admin/staff`
-2. убедиться, что в реестре появился badge `отправлено` или `отправлено повторно`
-3. проверить письмо у нового сотрудника
-4. проверить контрольное письмо у действующих активных администраторов
-5. если badge `ошибка отправки`, проверить текст ошибки в строке и логи `api`
-
-## Быстрый запуск
-
-Локальный и серверный runbook вынесен в:
-- [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md)
-
-Tester/operator guide:
-- [doc/guide.html](/Users/alexey/site/PitchCopyTrade/doc/guide.html)
-- [doc/guide.pdf](/Users/alexey/site/PitchCopyTrade/doc/guide.pdf)
-
-## Основные env-поля
-
-```dotenv
-APP_SECRET_KEY=
-BASE_URL=
-ADMIN_BASE_URL=
-
-APP_DATA_MODE=db
-APP_STORAGE_ROOT=/data/storage
-
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_BOT_USERNAME=
-TELEGRAM_USE_WEBHOOK=true
-TELEGRAM_WEBHOOK_SECRET=
-
-DATABASE_URL=
-REDIS_URL=
-
-SMTP_HOST=
-SMTP_PORT=
-SMTP_SSL=true
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_FROM=
-SMTP_FROM_NAME=
-
-ADMIN_EMAIL=
-ADMIN_TELEGRAM_ID=
-```
-
-## Что считать каноническим сейчас
-
-- нет MinIO и `MINIO_*`
-- нет object-storage fallback
-- нет второго author contour
-- нет subscriber web-auth вне Telegram
-- нет разрастания docs историческими фазами
-
-Документы должны поддерживаться так:
-- `README` — короткий overview
-- `blueprint` — только текущий canonical contract
-- `task` — только активные блоки работ
-- `review` — только текущие gates и findings
-
-Старые completed фазы не накапливать как историю. Когда блок завершен и больше не влияет на текущие решения, его нужно вычищать из `task.md` и оставлять только в коде и git history.
+- `file`-mode читает `storage/runtime/*`, а не напрямую `storage/seed/*`;
+- перед воспроизводимыми локальными тестами runtime лучше чистить через `bash scripts/clean_storage.sh --apply --fresh-runtime`;
+- browser preview Mini App полезен для верстки, но финальную проверку webview/navigation надо делать внутри Telegram на HTTPS;
+- first-class preview mode доступен через `APP_PREVIEW_ENABLED=true` и `http://127.0.0.1:8011/preview`;
+- старые фазы проекта сознательно не хранятся в текущих документах. Их архив — только git history.

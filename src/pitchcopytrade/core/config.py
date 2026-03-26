@@ -34,6 +34,7 @@ class EnvName:
     AUTH_SESSION_TTL_SECONDS = "AUTH_SESSION_TTL_SECONDS"
     AUTH_SESSION_COOKIE_NAME = "AUTH_SESSION_COOKIE_NAME"
     APP_STORAGE_ROOT = "APP_STORAGE_ROOT"
+    APP_PREVIEW_ENABLED = "APP_PREVIEW_ENABLED"
     LOG_LEVEL = "LOG_LEVEL"
     LOG_JSON = "LOG_JSON"
     INTERNAL_API_SECRET = "INTERNAL_API_SECRET"
@@ -77,6 +78,7 @@ class AppSettings(BaseModel):
     admin_base_url: str
     base_timezone: str
     data_mode: str
+    preview_enabled: bool
 
 
 class TelegramSettings(BaseModel):
@@ -188,6 +190,7 @@ class Settings(BaseSettings):
     auth_session_ttl_seconds: int = Field(default=60 * 60 * 24, alias=EnvName.AUTH_SESSION_TTL_SECONDS)
     auth_session_cookie_name: str = Field(default="pitchcopytrade_session", alias=EnvName.AUTH_SESSION_COOKIE_NAME)
     app_storage_root: str = Field(default="storage", alias=EnvName.APP_STORAGE_ROOT)
+    app_preview_enabled: bool = Field(default=False, alias=EnvName.APP_PREVIEW_ENABLED)
 
     log_level: str = Field(default="INFO", alias=EnvName.LOG_LEVEL)
     log_json: bool = Field(default=False, alias=EnvName.LOG_JSON)
@@ -270,6 +273,11 @@ class Settings(BaseSettings):
             raise ValueError("APP_STORAGE_ROOT must not be empty")
         return normalized
 
+    @field_validator("app_preview_enabled")
+    @classmethod
+    def validate_preview_enabled(cls, value: bool) -> bool:
+        return bool(value)
+
     @field_validator("telegram_webhook_secret")
     @classmethod
     def validate_webhook_secret(cls, value: SecretStr, info: ValidationInfo) -> SecretStr:
@@ -289,6 +297,7 @@ class Settings(BaseSettings):
             admin_base_url=self.admin_base_url,
             base_timezone=self.base_timezone,
             data_mode=self.app_data_mode,
+            preview_enabled=self.app_preview_enabled,
         )
 
     @property

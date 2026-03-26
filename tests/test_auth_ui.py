@@ -16,6 +16,7 @@ from pitchcopytrade.auth.staff_mode import resolve_staff_mode
 from pitchcopytrade.auth.session import (
     build_staff_invite_token,
     build_session_cookie_value,
+    build_telegram_fallback_cookie_value,
     build_telegram_login_link_token,
     get_telegram_fallback_cookie_name,
 )
@@ -272,8 +273,21 @@ def test_app_requires_session_cookie() -> None:
     with _build_client(repository) as client:
         response = client.get("/app", follow_redirects=False)
 
+        assert response.status_code == 200
+        assert "Открываем каталог стратегий" in response.text
+
+
+def test_app_redirects_tg_fallback_user_to_catalog() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set(get_telegram_fallback_cookie_name(), build_telegram_fallback_cookie_value(user))
+        response = client.get("/app", follow_redirects=False)
+
         assert response.status_code == 303
-        assert response.headers["location"] == "/login"
+        assert response.headers["location"] == "/app/catalog"
 
 
 def test_app_home_renders_for_valid_session() -> None:
@@ -520,7 +534,7 @@ def test_tg_auth_sets_session_cookie_and_redirects_to_feed() -> None:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/app/status"
+        assert response.headers["location"] == "/app/catalog"
         assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
 
 
@@ -557,13 +571,14 @@ def test_verify_telegram_page_renders() -> None:
     repository = FakeAuthRepository()
 
     with _build_client(repository) as client:
-        response = client.get("/verify/telegram?next=/app/feed")
+        response = client.get("/verify/telegram")
 
         assert response.status_code == 200
         assert "Подтвердите доступ через Telegram" in response.text
         assert "Mini App автоматически подтвердит" in response.text
         assert "Открыть бота" in response.text
-        assert "Открыть экран запуска Mini App" in response.text
+        assert "/app/catalog" in response.text
+        assert "Открыть Mini App" in response.text
 
 
 def test_tg_webapp_auth_sets_cookie_and_returns_redirect(monkeypatch) -> None:

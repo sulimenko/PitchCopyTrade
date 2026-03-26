@@ -3,9 +3,9 @@
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   {% if product.strategy %}
-  <a class="action ghost" href="{% if miniapp_mode %}/app/strategies/{{ product.strategy.slug }}{% else %}/catalog/strategies/{{ product.strategy.slug }}{% endif %}">К стратегии</a>
+  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ product.strategy.slug }}{% else %}/app/strategies/{{ product.strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ product.strategy.slug }}{% endif %}">К стратегии</a>
   {% endif %}
-  <a class="action ghost" href="{% if miniapp_mode %}/app/catalog{% else %}/catalog{% endif %}">Каталог</a>
+  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}">Каталог</a>
 </div>
 {% endblock %}
 
@@ -92,7 +92,7 @@
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
       <button class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Создать заявку на оплату</button>
-      <a class="action ghost" href="{% if miniapp_mode %}/app/catalog{% else %}/catalog{% endif %}">Вернуться в каталог</a>
+      <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}">Вернуться в каталог</a>
     </div>
   </form>
 

@@ -47,6 +47,7 @@ storage/runtime/
 
 # Documentation source artifacts
 doc/*
+!doc/README.md
 !doc/blueprint.md
 !doc/task.md
 !doc/review.md

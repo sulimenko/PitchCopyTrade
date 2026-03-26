@@ -29,8 +29,13 @@
     <div class="muted" style="margin-top:12px;line-height:1.7;">
       Если Mini App открыт некорректно, вернитесь в Telegram и заново нажмите кнопку запуска.
     </div>
-    <div style="margin-top:16px;">
-      <a class="action" href="https://t.me/{{ telegram_bot_username }}">Открыть бота</a>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+      {% if preview_mode %}
+      <a class="action" href="/preview/app/catalog">Открыть каталог preview</a>
+      {% else %}
+      <a class="action" href="/app/catalog">Открыть каталог</a>
+      {% endif %}
+      <a class="action ghost" href="https://t.me/{{ telegram_bot_username }}">Открыть бота</a>
     </div>
   </article>
 </section>

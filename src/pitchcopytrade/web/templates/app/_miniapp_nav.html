@@ -1,3 +1,4 @@
+{% set miniapp_root = "/preview/app" if preview_mode else "/app" %}
 <section class="surface" style="padding:16px 18px;margin-bottom:18px;">
   <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;">
     <div>
@@ -18,13 +19,23 @@
     {% endif %}
   </div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
-    <a class="action {% if miniapp_active != 'status' %}ghost{% endif %}" href="/app/status">Статус</a>
-    <a class="action {% if miniapp_active != 'subscriptions' %}ghost{% endif %}" href="/app/subscriptions">Подписки</a>
-    <a class="action {% if miniapp_active != 'payments' %}ghost{% endif %}" href="/app/payments">Оплаты</a>
-    <a class="action {% if miniapp_active != 'reminders' %}ghost{% endif %}" href="/app/reminders">Напоминания</a>
-    <a class="action {% if miniapp_active != 'timeline' %}ghost{% endif %}" href="/app/timeline">История</a>
-    <a class="action {% if miniapp_active != 'feed' %}ghost{% endif %}" href="/app/feed">Лента</a>
-    <a class="action {% if miniapp_active != 'catalog' %}ghost{% endif %}" href="/app/catalog">Каталог</a>
-    <a class="action {% if miniapp_active != 'help' %}ghost{% endif %}" href="/app/help">Помощь</a>
+    {% if preview_mode %}
+    <a class="action {% if miniapp_active != 'catalog' %}ghost{% endif %}" href="{{ miniapp_root }}/catalog">Каталог</a>
+    <a class="action {% if miniapp_active != 'status' %}ghost{% endif %}" href="{{ miniapp_root }}/status">Статус</a>
+    <a class="action {% if miniapp_active != 'help' %}ghost{% endif %}" href="{{ miniapp_root }}/help">Помощь</a>
+    {% else %}
+    <a class="action {% if miniapp_active != 'catalog' %}ghost{% endif %}" href="{{ miniapp_root }}/catalog">Каталог</a>
+    <a class="action {% if miniapp_active != 'status' %}ghost{% endif %}" href="{{ miniapp_root }}/status">Статус</a>
+    <a class="action {% if miniapp_active != 'help' %}ghost{% endif %}" href="{{ miniapp_root }}/help">Помощь</a>
+    {% endif %}
   </div>
+  {% if not preview_mode %}
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+    <a class="action {% if miniapp_active != 'subscriptions' %}ghost{% endif %}" href="{{ miniapp_root }}/subscriptions">Подписки</a>
+    <a class="action {% if miniapp_active != 'payments' %}ghost{% endif %}" href="{{ miniapp_root }}/payments">Оплаты</a>
+    <a class="action {% if miniapp_active != 'feed' %}ghost{% endif %}" href="{{ miniapp_root }}/feed">Лента</a>
+    <a class="action {% if miniapp_active != 'reminders' %}ghost{% endif %}" href="{{ miniapp_root }}/reminders">Напоминания</a>
+    <a class="action {% if miniapp_active != 'timeline' %}ghost{% endif %}" href="{{ miniapp_root }}/timeline">История</a>
+  </div>
+  {% endif %}
 </section>

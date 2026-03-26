@@ -1,0 +1,87 @@
+{% extends "staff_base.html" %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <a class="staff-btn is-primary" href="/preview/admin/dashboard">Admin preview</a>
+  <a class="staff-btn" href="/preview/author/dashboard">Author preview</a>
+  <a class="staff-btn" href="/preview">Preview home</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">admin preview</div>
+      <h1>Operational center</h1>
+      <p>Static local preview for spacing, hierarchy and card density in the admin workspace.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      <span class="staff-page-note">{{ user.full_name }} · {{ user.email }}</span>
+    </div>
+  </div>
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">authors</div>
+      <strong>{{ stats.authors_total }}</strong>
+      <div class="staff-metric-note">active author profiles</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">strategies</div>
+      <strong>{{ stats.strategies_total }}</strong>
+      <div class="staff-metric-note">catalog entries</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">public</div>
+      <strong>{{ stats.strategies_public }}</strong>
+      <div class="staff-metric-note">visible to subscribers</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">subscriptions</div>
+      <strong>{{ stats.active_subscriptions }}</strong>
+      <div class="staff-metric-note">active or trial</div>
+    </article>
+  </div>
+</section>
+
+<section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">recent strategies</div>
+    <div style="display:grid;gap:12px;margin-top:16px;">
+      {% for strategy in recent_strategies %}
+      <article class="surface" style="padding:16px;border-radius:18px;background:var(--staff-surface);box-shadow:none;">
+        <strong>{{ strategy.title }}</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ strategy.short_description }}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <span class="pill">{{ strategy.author.display_name }}</span>
+          <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
+          <span class="pill">{% if strategy.is_public %}public{% else %}private{% endif %}</span>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">payments</div>
+    <div style="display:grid;gap:12px;margin-top:16px;">
+      {% for payment in recent_payments %}
+      <article class="surface" style="padding:16px;border-radius:18px;background:var(--staff-surface);box-shadow:none;">
+        <strong>{{ payment.user.full_name }}</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ payment.product.title }} · {{ payment.final_amount_rub }} руб</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <span class="pill">{{ label_payment_status(payment.status) }}</span>
+          <span class="pill">{{ payment.stub_reference }}</span>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<style>
+  @media (max-width: 840px) {
+    section[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

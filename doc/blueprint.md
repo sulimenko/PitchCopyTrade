@@ -1,578 +1,274 @@
 # PitchCopyTrade — Blueprint
-> Обновлено: 2026-03-20
-> Статус: canonical current contract
+> Обновлено: 2026-03-26
+> Статус: canonical current contract for MVP clean-up
 
 ## 1. Политика документа
 
-Этот файл не хранит историю фаз.
-
-Он должен описывать только:
-- текущий продуктовый контракт;
-- согласованный target для следующего крупного блока;
-- правила, которые обязательны для всех следующих изменений.
-
-Если решение уже устарело, спорная развилка закрыта или completed phase больше не влияет на следующие шаги, ее нужно удалять из этого файла, а не копить как архив.
-
-## 2. Границы продукта
-
-В продукт входят:
-- staff web для `admin`
-- staff web для `author`
-- staff surface для `moderation`
-- subscriber flow через Telegram bot + Mini App
-- локальный storage под `APP_STORAGE_ROOT`
-
-Не входят в текущий canonical contract:
-- MinIO и любой object storage
-- отдельная subscriber web-registration
-- password-first staff auth как основной path
-- исторические UI patterns, если для них уже выбран новый canonical слой
-
-## 3. Роли и доступ
-
-### 3.1 Роли
-
-- `admin`
-- `author`
-- `moderation`
-- `subscriber`
-
-### 3.2 Staff user
-
-Staff user — это один `User`.
-
-Если у пользователя есть роли `admin + author`, это:
-- один аккаунт;
-- один staff session;
-- одно переключение active mode;
-- не два разных логина.
-
-### 3.3 Права
-
-`admin`:
-- создает staff users;
-- создает автора;
-- создает стратегию за любого автора;
-- управляет платежами, подписками, документами, delivery, moderation и staff settings.
-
-`author`:
-- работает только со своими стратегиями;
-- создает и редактирует только свои рекомендации;
-- не управляет своими author-permissions.
-
-`admin` в admin-mode:
-- не создает рекомендации.
-
-Если `admin` хочет работать как автор:
-- он переключается в `author` mode;
-- видит только свои author entities.
-
-## 4. Staff auth и onboarding
-
-### 4.1 Current contract
-
-- основной вход staff — через Telegram Login Widget;
-- password login остается только как demo/local fallback;
-- новый staff user создается как `invited`;
-- доступ в staff UI появляется только после подтвержденного bind через Telegram.
-
-### 4.2 Canonical onboarding
-
-Основной путь:
-1. admin вводит `display_name + email + roles`;
-2. система создает `invited` staff user;
-3. система отправляет email invite;
-4. сотрудник открывает invite;
-5. сотрудник завершает bind через Telegram;
-6. user получает `active`.
-
-Invite page contract:
-- staff invite page не может зависеть только от Telegram Login Widget;
-- если widget не загрузился, не инициализировался или заблокирован, пользователь должен увидеть fallback path;
-- preferred fallback: deep-link в Telegram bot с invite context;
-- допустимые secondary actions:
-  - `Открыть Telegram`
-  - `Скопировать приглашение`
-  - `Запросить новое приглашение`
-- серый placeholder без рабочего следующего шага не является допустимым состоянием UI.
-
-### 4.3 Статусы staff user
-
-Для продукта и UI canonical vocabulary:
-- `invited`
-- `active`
-- `inactive`
-
-`inactive` нужен вместо отдельного `blocked` языка в product layer, чтобы не расходиться с будущим SuiteCRM contour.
-
-### 4.4 Приглашения
-
-Invite contract:
-- invite links абсолютные, от `BASE_URL`;
-- resend инвалидирует старые invite links;
-- это должно быть реализовано не только на уровне UI, а на уровне token/bind contract;
-- failed invite delivery не отменяет создание staff user;
-- failed delivery создает log entry;
-- failed delivery отправляет email всем активным администраторам для контроля;
-- bootstrap admin seeder должен быть идемпотентным, если в базе уже есть один или несколько `admin`;
-- multi-admin рабочее состояние не должно приводить к startup noise или исключению seeder-а.
-- создание нового `admin` и нового `author` также отправляет контрольное письмо всем администраторам.
-- поведение по control emails должно совпадать в `db` и `file` mode.
-
-### 4.5 `telegram_user_id`
-
-`telegram_user_id`:
-- не primary UX field;
-- может существовать как advanced field;
-- после bind может редактироваться администратором;
-- при ручной смене сохраняется сразу, без forced re-invite.
-
-### 4.6 Hardening rules
-
-Bind по invite обязан:
-- до commit проверять, не привязан ли этот `telegram_user_id` к другому staff user;
-- завершаться контролируемой бизнес-ошибкой, а не DB `500`;
-- одинаково корректно работать в `db` и `file` mode.
-
-Invite token обязан:
-- иметь механизм отзыва старых токенов после resend;
-- не оставаться валидным просто до `exp`, если уже был выпущен новый invite.
-
-Governance rule:
-- row edit не может обходить governance-ограничения отдельных actions;
-- нельзя снять `admin` у последнего активного администратора ни через `/admin/staff`, ни через `/admin/authors`, ни через другой bulk/update path.
-
-### 4.7 Telegram bot runtime contract
-
-`bot` — это устойчивый runtime contour, а не одноразовый startup script.
-
-Правила:
-- временная недоступность `api.telegram.org` не должна требовать ручного redeploy;
-- DNS, timeout и TLS handshake failures должны считаться retryable transport errors;
-- polling должен восстанавливаться автоматически через backoff loop;
-- deploy/runbook обязан содержать отдельный troubleshooting path для connectivity из контейнера;
-- bot logs должны явно отличать network/TLS проблему от ошибки токена или неправильной конфигурации.
-
-## 5. Staff UI shell
-
-Canonical staff shell:
-- узкая левая вертикальная навигация;
-- верхняя строка:
-  - `Назад`
-  - breadcrumb
-  - быстрые действия
-  - переключение роли
-- основной рабочий контент почти всегда grid;
-- row edit открывается в right drawer;
-- сложные формы остаются modal или fullscreen modal.
-
-Навигация:
-- `back` = browser history fallback -> parent route.
-
-Приоритет:
-- desktop-first;
-- mobile fallback допустим, но не primary target для `admin` и `moderation`.
-
-Density rules:
-- page-head в staff UI не должен быть большим hero-блоком ради декоративного copy;
-- заголовок экрана = короткий title + 1 короткая helper line + actions;
-- крупные пустые зоны между topline, page-head и первым рабочим блоком не являются допустимым паттерном;
-- если экран является реестром, первый экран должен сразу показывать рабочие данные, а не large intro surface.
-- `/author/dashboard` считается текущим референсом по плотности верхнего shell для author-mode;
-- `/author/strategies`, `/author/recommendations`, `/admin/staff`, `/admin/products`, `/admin/legal`, `/admin/payments`, `/admin/subscriptions`, `/admin/delivery`, `/admin/promos`, `/admin/analytics/leads` обязаны быть приведены к той же компактной плотности без аномально больших верхних белых блоков;
-- если экрану не нужен KPI/summary block, верхняя пустая surface должна быть схлопнута, а не оставлена как декоративный контейнер.
-
-## 6. Grid layer
-
-### 6.1 Canonical choice
-
-Для `admin`, `author` и `moderation` canonical table layer = `AG Grid Community`.
-
-Primary staff registries не должны оставаться на handcrafted HTML tables как final contract.
-
-### 6.2 Scope
-
-На `AG Grid` переводятся все staff list/registry/queue screens:
-- `/admin/staff`
-- `/admin/authors`
-- `/admin/strategies`
-- `/admin/products`
-- `/admin/promos`
-- `/admin/payments`
-- `/admin/subscriptions`
-- `/admin/legal`
-- `/admin/delivery`
-- `/admin/analytics/*` там, где есть табличный слой
-- `/author/strategies`
-- `/author/recommendations`
-- watchlist в `/author/dashboard`
-- `/moderation/queue`
-
-### 6.3 Design contract
-
-Staff grid не должен выглядеть как public UI.
-
-Требования:
-- компактная тема;
-- маленькие кнопки;
-- маленькие row/header heights;
-- слабые границы;
-- минимум теней;
-- минимум декоративных поверхностей;
-- максимум плотности и читаемости.
-
-Это professional operator UI, а не маркетинговая поверхность.
-
-### 6.4 Interaction contract
-
-Grid должен поддерживать:
-- sorting;
-- filtering;
-- quick filter;
-- keyboard navigation;
-- pinned action column;
-- row menu;
-- inline edit для простых полей;
-- right drawer для сложных полей и multi-step actions.
-
-Для `admin/staff` и `admin/authors` canonical CRUD contract дополнительно требует:
-- редактирование existing rows, а не только create/action forms;
-- правку `display_name`, `email`, `telegram_user_id`, ролей и статусных actions;
-- отсутствие второго параллельного handcrafted registry как fallback.
-- status column не может быть только информативной; для `staff user` нужен рабочий action flow `active/inactive`.
-- row edit не может обходить governance-ограничения отдельных actions; любые изменения ролей и статуса обязаны уважать правило последнего активного администратора.
-- route `/admin/authors` не может завершаться raw `500` из-за неполных связанных данных, нестандартного набора ролей или частично заполненных invite/staff полей; registry обязан либо рендериться, либо отдавать controlled business-state без падения шаблона.
-
-Registry readability rules:
-- ключевые поля записи должны быть видны в grid до открытия detail/edit;
-- допустимы 1-2 compact secondary lines внутри ячейки;
-- оператор не должен открывать карточку только чтобы увидеть `slug`, короткое описание, автора, риск или базовый статус, если эти поля уже помещаются в реестр.
-
-## 7. Unified CRUD pattern
-
-### 7.1 Simple entities
-
-Для простых сущностей primary pattern:
-- grid row
-- inline edit простых полей
-- drawer для расширенного редактирования
-
-Сюда относятся:
-- staff users
-- authors
-- strategies
-- products
-- promos
-
-Grid/popup rules:
-- row action menu не может клиповаться scroll-container'ом таблицы;
-- popup/menu/drawer actions должны открываться в unclipped layer поверх viewport или shell popup-layer;
-- raw operational URL не должен рендериться как основной cell content в compact operator grid;
-- для invite flow в grid primary content = status/badge/date, а не длинный tokenized link.
-
-### 7.2 Operational entities
-
-Для operational entities primary pattern:
-- grid row
-- read-only detail drawer
-- только разрешенные row actions
-
-Сюда относятся:
-- payments
-- subscriptions
-- delivery
-- moderation items
-
-### 7.3 Complex content entities
-
-Для сложных контентных сущностей:
-- grid как primary list layer;
-- full edit через modal / fullscreen modal.
-
-Сюда относятся:
-- recommendations
-- legal document versions
-- one pager / long-form content
-
-### 7.4 Recommendation editor contract
-
-`/author/recommendations` и `/author/recommendations/{id}/edit` обязаны работать как один связанный contour, а не как два независимых способа ввода.
-
-Правила:
-- inline add в grid не может работать на свободном `ticker` text без нормализованного `instrument_id`;
-- если оператор вводит бумагу через shortcut-строку, detail editor обязан открываться уже с сохраненным `instrument_id` и тем же `ticker`;
-- full editor не должен терять выбранную бумагу при переходе из inline add;
-- ошибка по первой бумаге допустима только если у нее реально нет валидного инструмента из разрешенного списка, но user-facing copy при этом должна оставаться русской и не светить внутренний parser token `Leg 1`.
-
-UX rules:
-- recommendation editor должен быть compact operator form, а не большой hero-screen;
-- giant intro block и длинный explanatory copy не являются primary pattern;
-- первая зона экрана должна помещать основную metadata и первую бумагу без длинного скролла;
-- help text должен быть коротким, secondary и не забирать высоту у формы;
-- field errors должны показываться рядом с конкретным полем, а не только в общем alert.
-- user-facing validation copy не должна показывать внутренние parser-тексты вроде `Leg 1`, `entry_to` и другие semi-technical сообщения; в интерфейсе допустимы только русские формулировки уровня `Бумага 1`, `цена входа`, `цена «до»`, `стоп`;
-- inline operator shortcut в `/author/recommendations` должен иметь два разных действия, а не одну двусмысленную кнопку:
-  - `Создать` — валидирует обязательные поля shortcut-строки и создает черновик прямо из inline-ввода;
-  - `Детально` — открывает полный create-flow рекомендации;
-- если пользователь нажимает `Детально` после частичного или полного заполнения shortcut-строки, уже введенные значения должны быть перенесены в full editor как prefill;
-- header action `Новая рекомендация` и inline action `Детально` должны вести в один и тот же canonical detailed create flow;
-- shortcut create flow не должен обещать открытие редактора, если действие по смыслу создает запись inline без немедленного перехода.
-- inline shortcut-строка в recommendation grid должна использовать валидную HTML-разметку; `<form>` не может быть прямым child-узлом `<tr>`, иначе browser-dependent DOM drift снова ломает operator UX.
-
-Strategy editor должен использовать тот же compact visual language, что и recommendation editor.
-Admin strategy editor и связанные admin forms должны использовать тот же compact section language без больших hero-блоков и правой декоративной панели как обязательного паттерна.
-
-## 8. Mutability rules
-
-### 8.1 Staff user
-
-До bind:
-- можно менять `display_name`
-- `email`
-- роли
-- `telegram_user_id`
-
-После bind:
-- можно менять `display_name`
-- `email`
-- роли
-- `telegram_user_id`
-- нельзя редактировать статус свободным inline-изменением; статус меняется только через явные actions.
-
-Governance rule:
-- нельзя снять роль `admin` у последнего активного администратора ни через отдельный row action, ни через drawer edit, ни через bulk update path.
-
-### 8.1.2 Staff status actions
-
-Для `staff user` должен существовать явный operator flow:
-- `Активировать`
-- `Деактивировать`
-
-`inactive` не может оставаться только badge в grid без action path.
-
-### 8.1.1 Staff status vocabulary
-
-Product/UI vocabulary:
-- `invited`
-- `active`
-- `inactive`
-
-`blocked` не должен оставаться в canonical staff contract.
-
-### 8.2 Author
-
-Editable:
-- `display_name`
-- `email`
-- roles
-- `telegram_user_id`
-- `requires_moderation`
-- `active/inactive`
-
-### 8.3 Strategy
-
-Editable:
-- только `draft`
-
-Read-only:
-- `published`
-- `archived`
-
-### 8.4 Recommendation
-
-Editable:
-- `draft`
-- `review`
-
-Read-only:
-- `approved`
-- `scheduled`
-- `published`
-- `closed`
-- `cancelled`
-- `archived`
-
-### 8.5 Payment
-
-Editable/actionable:
-- `created`
-- `pending`
-
-Read-only:
-- `paid`
-- `failed`
-- `expired`
-- `cancelled`
-- `refunded`
-
-### 8.6 Subscription
-
-Grid shows all rows.
-
-Editable free-form fields — нет.
-
-Допустимы только actions:
-- `Открыть`
-- `Отключить автопродление`
-- `Отменить`
-
-Read-only:
-- terminal states и все завершенные исторические записи.
-
-### 8.7 Legal
-
-Editable:
-- draft version
-
-Read-only:
-- active version
-
-Изменение active doc идет только через новую версию и `activate`.
-
-### 8.8 Moderation
-
-`/moderation/queue` идет в тот же grid language.
-
-Pattern:
-- queue в `AG Grid`
-- detail в right drawer
-- approve/rework/reject как row actions
-
-## 9. Runtime consistency
-
-Обязательные правила текущего блока:
-- `db` и `file` mode должны одинаково поддерживать agreed onboarding/governance contract;
-- control emails администраторам не должны зависеть от выбранного storage mode;
-- review всегда проверяет не только UI, но и parity между `db` и `file` path.
-- row actions:
-  - `approve`
-  - `rework`
-  - `reject`
-- published/archived entries read-only
-
-## 9. Recommendations editor
-
-Grid layer и editor coexist.
-
-Canonical contract:
-- список рекомендаций живет в grid;
-- create/edit сложной рекомендации открывается в modal/fullscreen modal;
-- быстрый inline add остается в рекомендациях как operator shortcut;
-- первая бумага обязательна;
-- дополнительные бумаги добавляются динамически.
-
-## 10. Watchlist
-
-Watchlist автора:
-- живет в grid language;
-- поддерживает search/filter/sort;
-- поддерживает добавление;
-- поддерживает удаление;
-- не редактирует сам инструмент как справочник.
-
-## 11. Русский язык интерфейса
-
-Весь staff и subscriber UI должен использовать русский язык:
-- статусы;
-- labels;
-- action names;
-- breadcrumbs;
-- drawer titles;
-- modal titles;
-- empty states;
-- errors;
-- help-copy.
-
-Английские enum/value имена допустимы только в коде и БД.
-
-## 12. Local-only storage
-
-Canonical storage contract:
-- только локальная файловая система;
-- attachments и legal files только локально;
-- никаких `MINIO_*`;
-- никаких fallback branches под object storage.
-
-## 13. Правило на будущее
-
-Если новый canonical contour уже согласован:
-- код меняется крупными блоками;
-- без поддержки старых UI patterns;
-- без сохранения устаревших вариантов “на всякий случай”;
-- docs должны отражать только текущее canonical решение и активный backlog.
-
-## 14. Subscriber auth: Telegram Mini App
-
-### 14.1 Canonical flow
-
-Подписчики входят исключительно через Telegram Mini App:
-- Bot `/start` → кнопка «Открыть приложение» → WebApp открывает `{BASE_URL}/app/`
-- `GET /app` без аутентификации → рендерит `app/miniapp_entry.html`
-- JS читает `window.Telegram.WebApp.initData` → POST `/tg-webapp/auth` → cookie → redirect `/app/status`
-- Telegram Login Widget (`oauth.telegram.org`) для Mini App **не используется** — работает только в десктопном браузере
-
-### 14.2 Fallback
-
-Если `window.Telegram.WebApp.initData` пустой (браузер, не WebApp):
-- Показывается кнопка «Войти через Telegram» → ведёт на `/login`
-- `/login` — только для staff (Telegram Widget, invite flow)
-
-### 14.3 Session management
-
-- Cookie: `pitchcopytrade_session_tg` (httpOnly, secure, SameSite=Lax)
-- TTL: `SESSION_TTL_SECONDS` (default 86400 сек)
-- Refresh: `_miniapp_bridge.html` инклудится в authenticated app-страницы и молча обновляет сессию при каждом визите
-
-### 14.4 Запреты
-
-- Staff `/login` никогда не должен появляться в Mini App WebView — он не работает там
-- `GET /app` никогда не должен редиректить на `/login` — только рендерить miniapp_entry
-
-## 15. Staff invite: операционный контракт
-
-### 15.1 Создание сотрудника
-
-- Admin создаёт staff user через `/admin/staff` с `display_name + email + roles`
-- `telegram_user_id` — опциональное поле; если не известно — оставить пустым
-- После создания система немедленно отправляет invite email
-- User создаётся в статусе `INVITED` (не ACTIVE, не INACTIVE)
-
-### 15.2 Invite email
-
-- Содержит ссылку вида `{BASE_URL}/login?invite_token=XXX`
-- Ссылку открывать в **браузере**, не через Mini App бота
-- При SMTP failure: user создан, delivery_status = FAILED, admin видит статус в UI
-- При failed delivery: `invite_token_version` **не должен** инкрементироваться (rollback)
-
-### 15.3 Bind flow
-
-- Сотрудник открывает invite link в браузере → Telegram Widget → `/auth/telegram/callback?invite_token=XXX&id=...`
-- Система проверяет invite_token version, привязывает telegram_user_id, ставит статус ACTIVE
-- **Первый вошедший по invite link получает bind автоматически** — дополнительной проверки Telegram ID не требуется
-- Если Telegram ID уже привязан к другому staff user → 409 с понятным сообщением
-
-### 15.4 Resend
-
-- Admin нажимает «Переслать приглашение» в `/admin/staff/{id}`
-- `invite_token_version` инкрементируется → старые ссылки становятся невалидными
-- Новое письмо отправляется
-- В случае SMTP failure: rollback version (старый токен остаётся рабочим)
-
-## 16. Reliability contracts
-
-### 16.1 SMTP timeout
-
-- Все SMTP вызовы обязаны иметь явный timeout ≤ 15 сек
-- При timeout: операция продолжается (user создан/action выполнен), delivery_status = FAILED
-- Не допускается: HTTP request висит > 15 сек из-за SMTP
-
-### 16.2 Startup validation
-
-- При старте приложения обязательно проверяются placeholder значения критических env vars
-- Если `APP_SECRET_KEY` или `TELEGRAM_BOT_TOKEN` содержит `__FILL_ME__` — startup завершается с явным сообщением об ошибке
-- Не допускается: приложение стартует с placeholder vars и падает при первом запросе
-
-### 16.3 Redirect safety
-
-- Все server-controlled redirect URLs проверяются на клиенте: начинаются с `/` и не начинаются с `//`
-- External redirect через Mini App JS не допускается
+Этот файл описывает только:
+- текущее состояние продукта;
+- целевой контракт ближайшего цикла;
+- правила, обязательные для следующих изменений.
+
+Исторические блоки, закрытые фазы и старые решения сюда не переносятся. Их архивом считается git history.
+
+## 2. Текущее состояние
+
+### 2.1 Поверхности продукта
+
+В проекте есть пять рабочих контуров:
+- `public web` на `/catalog`, `/catalog/strategies/{slug}`, `/checkout/{product_id}`;
+- `miniapp web` на `/app/*`;
+- `staff admin` на `/admin/*`;
+- `staff author` на `/author/*`;
+- `bot` и `worker` как отдельные runtime-сервисы.
+
+### 2.2 Технологический контур
+
+- backend: `FastAPI` + `Jinja2`;
+- bot: `aiogram`;
+- worker: polling loop;
+- storage modes:
+  - `file` для локального запуска и MVP-исследования;
+  - `db` для серверного контура и production-like сценариев.
+
+### 2.3 Важные факты для текущего цикла
+
+- локальный запуск без Docker реально возможен в `APP_DATA_MODE=file`;
+- для старта `api` обязательны `APP_SECRET_KEY` и `INTERNAL_API_SECRET`;
+- `file`-mode читает состояние из `storage/runtime/*`, а не напрямую из `storage/seed/*`;
+- `storage/runtime/*` считается изменяемым runtime-слоем и перед воспроизводимыми проверками должен сбрасываться;
+- текущий public/Mini App слой уже рендерит HTML-экраны, но информационная архитектура и UX еще не соответствуют целевому MVP;
+- текущий `/api/instruments` не отдает real-time quotes: `last_price` и `change_pct` сейчас заглушены;
+- `bot /help` пока не открывает in-app help-screen, а просто отправляет еще одно сообщение;
+- внутри docs до этого цикла были устаревшие утверждения уровня "production bug-ов нет" и "все закрыто" — они больше не считаются допустимой формой документации.
+
+## 3. Цель текущего цикла
+
+Текущий цикл не про расширение сущностей. Он про чистку MVP subscriber contour:
+- сделать Mini App понятным и быстрым;
+- перенести первый экран на витрину стратегий;
+- вынести помощь в отдельный `/help` сценарий;
+- усилить описание стратегий как продающий и объясняющий экран;
+- подключить real-time market data по тикерам;
+- убрать основные product/runtime сбои вокруг подписки, оплаты и навигации.
+
+## 4. Canonical subscriber contract
+
+### 4.1 Стартовый сценарий Mini App
+
+Основной вход клиента:
+1. пользователь открывает Mini App из Telegram;
+2. Mini App подтверждает профиль по Telegram;
+3. первым экраном открывается витрина стратегий на `/app/catalog`;
+4. помощь открывается отдельным экраном `/app/help`;
+5. дальнейшая навигация остается внутри одного webview.
+
+Не является целевым поведением:
+- старт с `/app/status` как основного entry point;
+- повторный онбординг на первом экране;
+- bot-команды, которые создают новый message-thread вместо перехода в существующий in-app сценарий;
+- помощь в виде еще одного текстового bot message без перехода в UI.
+
+### 4.2 Навигация в одной вкладке / одном webview
+
+Canonical rule:
+- Mini App должен ощущаться как одно приложение, а не как набор внешних ссылок.
+
+Это означает:
+- из бота открывается один основной web_app entry;
+- далее пользователь ходит по внутренним маршрутам приложения;
+- `/help` и витрина открываются внутри того же webview;
+- повторные bot-команды не должны быть обязательным способом навигации;
+- если нужен возврат, используется browser/webview history внутри приложения, а не новое сообщение в чате.
+
+## 5. Canonical contract для витрины и страницы стратегии
+
+### 5.1 Главная страница Mini App
+
+Главная страница Mini App = витрина стратегий.
+
+Она должна отвечать на три вопроса еще до первого scroll:
+- какие стратегии доступны;
+- чем они различаются;
+- куда нажать, чтобы увидеть детали и тарифы.
+
+Первый экран витрины должен содержать:
+- ясный заголовок без техничного онбординга;
+- компактный trust/context layer:
+  - автор;
+  - риск;
+  - горизонт;
+  - минимальный капитал;
+  - доступные тарифы или стартовая цена;
+- один основной CTA на карточке;
+- вторичный CTA только если он не конкурирует с главным действием.
+
+### 5.2 Страница стратегии
+
+Текущая `strategy_detail` недостаточна как продающий и объясняющий экран. Целевой контракт:
+
+1. Hero block:
+- название стратегии;
+- автор;
+- короткое value proposition в 1-2 строках;
+- риск;
+- горизонт;
+- минимальный капитал;
+- основной CTA на подписку;
+- secondary CTA на помощь/документы только ниже главного действия.
+
+2. Thesis block:
+- в чем идея стратегии;
+- на каком типе движений рынка она зарабатывает;
+- что является сигналом к действию;
+- какой сценарий для нее неблагоприятен.
+
+3. Mechanics block:
+- как работает стратегия на человеческом языке;
+- какие инструменты использует;
+- какой expected holding period;
+- как выглядит типовая сделка или сетап.
+
+4. Risk block:
+- что считается риском;
+- что ограничивает убыток;
+- что может пойти не так;
+- для кого стратегия не подходит.
+
+5. Commercial block:
+- тарифы;
+- trial/промо, если есть;
+- что входит в подписку;
+- как поступают рекомендации;
+- какие документы нужно принять.
+
+6. FAQ / operational block:
+- как часто приходят идеи;
+- как открыть оплату;
+- что делать, если оплата зависла;
+- где смотреть статус подписки.
+
+### 5.3 Материалы-референсы
+
+`Straddle.pdf` и приложенные Figma-screen'ы считаются reference materials, а не эталоном.
+
+Из них допустимо брать:
+- четкую структуру "идея -> механизм -> риск -> сценарии";
+- сильный one-thesis hero;
+- ясную визуальную иерархию;
+- ощущение продукта, а не набора форм.
+
+Нельзя слепо переносить:
+- слайдовый формат презентации;
+- длинные серые текстовые простыни;
+- дублирующиеся CTA;
+- QR-only платежный сценарий как основной mobile flow;
+- макет как есть без адаптации к Mini App и browser preview.
+
+### 5.4 Контентный контракт для strategy detail
+
+Для следующего implementation pass стратегия должна иметь не только `short_description` и `full_description`, но и структурируемый контентный набор. Минимальный целевой набор полей:
+- `hero_summary`;
+- `market_scope`;
+- `holding_period_note`;
+- `entry_logic`;
+- `risk_rule`;
+- `instrument_examples`;
+- `who_is_it_for`;
+- `who_is_it_not_for`;
+- `faq_items`.
+
+Если отдельные поля пока не заведены в модели, MVP допускает first step через server-side sections в `full_description`, но итоговая цель — структурированный контент, а не один большой текстовый blob.
+
+## 6. Straddle как reference-стратегия
+
+Тема `Straddle` задает полезный пример для PitchCopyTrade:
+- стратегия продается не тикером, а механизмом заработка;
+- ключевая ценность формулируется как доступ к рыночному сценарию;
+- ограничение риска должно быть объяснено отдельно от обещания доходности.
+
+Для карточки/деталей стратегии этого типа целевой narrative:
+1. когда стратегия уместна;
+2. на чем именно она пытается заработать;
+3. чем ограничен риск;
+4. как инвестор получает идеи и какие действия от него ожидаются.
+
+В MVP это должно быть изложено на русском, короткими блоками, без презентационного мусора и без ощущения "PDF вставили в web".
+
+## 7. Real-time market data contract
+
+### 7.1 Источник
+
+Новый canonical source для real-time quote data:
+- `https://meta.pbull.kz/api/marketData/forceDataSymbol?symbol={ticker}`
+
+Пример структуры подтвержден файлом `NVTK.json`.
+
+### 7.2 Нормализованный backend contract
+
+Backend не должен прокидывать ответ поставщика в шаблон как есть.
+
+Нужен нормализованный слой с полями уровня продукта:
+- `symbol`;
+- `display_name`;
+- `last_price`;
+- `currency`;
+- `change_abs`;
+- `change_pct`;
+- `open_price`;
+- `high_price`;
+- `low_price`;
+- `prev_close_price`;
+- `volume`;
+- `updated_at`.
+
+### 7.3 Правила интеграции
+
+- источником тикера считается локальный `Instrument.ticker`;
+- provider-adapter живет на backend, не в шаблонах;
+- сетевой сбой или пустой ответ не должен валить страницу стратегии или форму рекомендации;
+- UI должен уметь показать controlled fallback:
+  - нет данных;
+  - данные устарели;
+  - источник временно недоступен;
+- нужен короткий cache TTL, чтобы не бить внешний API на каждый рендер страницы.
+
+## 8. Надежность checkout и подписок
+
+### 8.1 Canonical expectation
+
+Нажатие `Создать заявку на оплату` должно:
+- одинаково работать в desktop browser, mobile browser и Telegram Mini App;
+- либо создавать `payment + subscription` и отдавать ожидаемый следующий экран;
+- либо возвращать controlled business error без `500`.
+
+### 8.2 Недопустимые состояния
+
+Недопустимы:
+- кнопка не делает ничего на desktop, но работает на mobile;
+- `Internal Server Error` при оформлении подписки;
+- созданный `payment` без ожидаемого subscriber-facing follow-up;
+- "успех" без фактически созданной подписки;
+- raw JSON parse error после staff login redirect.
+
+## 9. Локальный preview contract для исследования
+
+Для локальной работы без Docker canonical research mode = `file`.
+
+Он должен поддерживать:
+- публичные GET/POST;
+- browser preview public views;
+- browser preview Mini App views через demo subscriber link;
+- быстрый reset runtime данных.
+
+Для Mini App важно различать:
+- `browser preview` для верстки и быстрого редактирования;
+- `real Telegram WebApp check` для финальной валидации initData, webview-поведения и deeplink-сценариев.
+
+## 10. Что не входит в текущий цикл
+
+В текущий цикл не входят:
+- новый большой staff redesign;
+- расширение CRM-like сущностей;
+- новая авторизация для subscriber вне Telegram как primary path;
+- рефакторинг ради рефакторинга без влияния на MVP subscriber flow.

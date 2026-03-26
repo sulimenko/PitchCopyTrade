@@ -4,6 +4,7 @@
 
 {% block content %}
 {% include "app/_miniapp_nav.html" %}
+{% set miniapp_root = "/preview/app" if preview_mode else "/app" %}
 
 <section class="surface" style="padding:28px;">
   <div class="eyebrow">оплата</div>
@@ -33,20 +34,20 @@
     <a class="action" href="{{ payment.provider_payload.get('payment_url') }}">Открыть оплату</a>
     {% endif %}
     {% if payment.status.value == "pending" %}
-    <form method="post" action="/app/payments/{{ payment.id }}/refresh">
-      <button class="action ghost" type="submit">Обновить статус</button>
-    </form>
-    <form method="post" action="/app/payments/{{ payment.id }}/cancel">
-      <button class="action ghost" type="submit">Отменить заявку</button>
-    </form>
-    {% endif %}
-    {% if payment.status.value in ["failed", "expired", "cancelled"] %}
-    <form method="post" action="/app/payments/{{ payment.id }}/retry" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <input type="text" name="promo_code_value" placeholder="Новый промокод" style="padding:10px 12px;border-radius:999px;border:1px solid var(--line);font:inherit;width:170px;" />
-      <button class="action" type="submit">Повторить оплату</button>
-    </form>
-    {% endif %}
-    <a class="action ghost" href="/app/payments">Назад к оплатам</a>
+      <form method="post" action="{{ miniapp_root }}/payments/{{ payment.id }}/refresh">
+        <button class="action ghost" type="submit">Обновить статус</button>
+      </form>
+      <form method="post" action="{{ miniapp_root }}/payments/{{ payment.id }}/cancel">
+        <button class="action ghost" type="submit">Отменить заявку</button>
+      </form>
+      {% endif %}
+      {% if payment.status.value in ["failed", "expired", "cancelled"] %}
+      <form method="post" action="{{ miniapp_root }}/payments/{{ payment.id }}/retry" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" name="promo_code_value" placeholder="Новый промокод" style="padding:10px 12px;border-radius:999px;border:1px solid var(--line);font:inherit;width:170px;" />
+        <button class="action" type="submit">Повторить оплату</button>
+      </form>
+      {% endif %}
+    <a class="action ghost" href="{{ miniapp_root }}/payments">Назад к оплатам</a>
   </div>
 </section>
 

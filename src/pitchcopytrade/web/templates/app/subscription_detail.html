@@ -4,6 +4,7 @@
 
 {% block content %}
 {% include "app/_miniapp_nav.html" %}
+{% set miniapp_root = "/preview/app" if preview_mode else "/app" %}
 
 <section class="surface" style="padding:28px;">
   <div class="eyebrow">подписка</div>
@@ -26,7 +27,7 @@
   </div>
 
   {% if subscription.status.value not in ["cancelled", "blocked"] %}
-  <form method="post" action="/app/subscriptions/{{ subscription.id }}/autorenew" style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;">
+  <form method="post" action="{{ miniapp_root }}/subscriptions/{{ subscription.id }}/autorenew" style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;">
     {% if subscription.autorenew_enabled %}
     <input type="hidden" name="enabled" value="0" />
     <button class="action ghost" type="submit">Выключить автопродление</button>
@@ -38,14 +39,14 @@
   {% endif %}
 
   {% if subscription.product %}
-  <form method="post" action="/app/subscriptions/{{ subscription.id }}/renew" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+  <form method="post" action="{{ miniapp_root }}/subscriptions/{{ subscription.id }}/renew" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
     <input type="text" name="promo_code_value" placeholder="Новый промокод" style="padding:10px 12px;border-radius:999px;border:1px solid var(--line);font:inherit;width:180px;" />
     <button class="action" type="submit">Продлить подписку</button>
-    <a class="action ghost" href="/app/subscriptions">Назад к подпискам</a>
+    <a class="action ghost" href="{{ miniapp_root }}/subscriptions">Назад к подпискам</a>
   </form>
   {% endif %}
   {% if subscription.status.value in ["active", "trial", "pending"] %}
-  <form method="post" action="/app/subscriptions/{{ subscription.id }}/cancel" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
+  <form method="post" action="{{ miniapp_root }}/subscriptions/{{ subscription.id }}/cancel" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
     <button class="action ghost" type="submit">Отменить подписку</button>
   </form>
   {% endif %}

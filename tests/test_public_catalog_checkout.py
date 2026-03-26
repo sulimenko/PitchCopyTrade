@@ -154,8 +154,8 @@ def test_miniapp_renders_bootstrap_page() -> None:
         response = client.get("/miniapp")
 
         assert response.status_code == 200
-        assert "Подключаем Telegram-профиль" in response.text
-        assert "Mini App подтверждает ваш Telegram-профиль" in response.text
+        assert "Открываем каталог стратегий" in response.text
+        assert "Mini App подтверждает ваш Telegram-профиль и сразу открывает витрину стратегий" in response.text
 
 
 def test_catalog_renders_strategies(monkeypatch) -> None:
@@ -196,7 +196,9 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert "Lead User" in response.text
+        assert "/app/catalog" in response.text
         assert "/app/status" in response.text
+        assert "/app/help" in response.text
         assert "/app/subscriptions" in response.text
         assert "/app/payments" in response.text
         assert "/tg-webapp/auth" in response.text

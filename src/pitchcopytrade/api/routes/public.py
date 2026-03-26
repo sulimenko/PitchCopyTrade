@@ -49,7 +49,7 @@ async def miniapp_root(request: Request) -> Response:
         {
             "title": "PitchCopyTrade Mini App",
             "telegram_bot_username": get_settings().telegram.bot_username,
-            "next_path": "/app/status",
+            "next_path": "/app/catalog",
             "base_url": get_settings().app.base_url,
             "webapp_enabled": get_settings().app.base_url.startswith("https://"),
         },
@@ -64,7 +64,7 @@ async def telegram_verify_page(request: Request) -> Response:
         {
             "title": "Подтверждение через Telegram",
             "telegram_bot_username": get_settings().telegram.bot_username,
-            "surface_next": request.query_params.get("next", "/app/status"),
+            "surface_next": request.query_params.get("next", "/app/catalog"),
             "base_url": get_settings().app.base_url,
             "webapp_enabled": get_settings().app.base_url.startswith("https://"),
         },

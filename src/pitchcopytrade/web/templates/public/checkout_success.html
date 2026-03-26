@@ -2,7 +2,7 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="{% if miniapp_mode %}/app/payments{% else %}/catalog{% endif %}">{% if miniapp_mode %}Оплаты{% else %}Каталог{% endif %}</a>
+  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/status{% else %}/app/payments{% endif %}{% else %}/catalog{% endif %}">{% if miniapp_mode %}{% if preview_mode %}Preview status{% else %}Оплаты{% endif %}{% else %}Каталог{% endif %}</a>
 </div>
 {% endblock %}
 

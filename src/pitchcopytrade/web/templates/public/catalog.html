@@ -3,7 +3,7 @@
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   {% if miniapp_mode %}
-  <a class="action ghost" href="/app/status">Мой Mini App</a>
+  <a class="action ghost" href="{% if preview_mode %}/preview/app/status{% else %}/app/status{% endif %}">Статус</a>
   {% else %}
   <a class="action ghost" href="https://t.me/{{ telegram_bot_username }}">Открыть Telegram</a>
   {% endif %}
@@ -48,8 +48,8 @@
           </div>
         </div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-          <a class="action" href="/app/status">Открыть статус</a>
-          <a class="action ghost" href="/app/feed">Открыть ленту</a>
+          <a class="action" href="{% if preview_mode %}/preview/app/status{% else %}/app/status{% endif %}">Открыть статус</a>
+          <a class="action ghost" href="{% if preview_mode %}/preview/app/help{% else %}/app/feed{% endif %}">{% if preview_mode %}Открыть помощь{% else %}Открыть ленту{% endif %}</a>
         </div>
       </div>
       {% endif %}
@@ -77,9 +77,9 @@
       <span class="pill">{{ strategy.subscription_products|length }} продукт</span>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
-      <a class="action" href="{% if miniapp_mode %}/app/strategies/{{ strategy.slug }}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}">Открыть стратегию</a>
+      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}">Открыть стратегию</a>
       {% if strategy.subscription_products %}
-      <a class="action ghost" href="{% if miniapp_mode %}/app/checkout/{{ strategy.subscription_products[0].id }}{% else %}/checkout/{{ strategy.subscription_products[0].id }}{% endif %}">Открыть подписку</a>
+      <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].id }}{% else %}/app/checkout/{{ strategy.subscription_products[0].id }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].id }}{% endif %}">Открыть подписку</a>
       {% endif %}
     </div>
   </article>
