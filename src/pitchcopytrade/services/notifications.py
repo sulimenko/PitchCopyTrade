@@ -13,7 +13,7 @@ from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import BundleMember, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
+from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg, RecommendationMessage
 from pitchcopytrade.db.models.enums import PaymentStatus, SubscriptionStatus
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
@@ -59,14 +59,36 @@ async def list_recommendation_recipient_telegram_ids(
 
 def build_recommendation_notification_text(recommendation: Recommendation) -> str:
     title = recommendation.title or recommendation.strategy.title
+    payload = recommendation.recommendation_payload or {}
+    first_message = recommendation.messages[0] if getattr(recommendation, "messages", None) else None
     lines = [
         "Новая публикация по вашей подписке",
         f"{title}",
         f"Стратегия: {recommendation.strategy.title}",
         f"Тип: {recommendation.kind.value}",
     ]
-    if recommendation.summary:
+    if payload.get("mode") == "text" and payload.get("text"):
+        lines.append(str(payload["text"]))
+    elif payload.get("mode") == "document" and payload.get("document_caption"):
+        lines.append(str(payload["document_caption"]))
+    elif payload.get("mode") == "structured":
+        structured_bits = []
+        if payload.get("instrument_id"):
+            structured_bits.append(f"instrument={payload['instrument_id']}")
+        if payload.get("side"):
+            structured_bits.append(f"side={payload['side']}")
+        if payload.get("price"):
+            structured_bits.append(f"price={payload['price']}")
+        if payload.get("quantity"):
+            structured_bits.append(f"qty={payload['quantity']}")
+        if payload.get("amount"):
+            structured_bits.append(f"sum={payload['amount']}")
+        if structured_bits:
+            lines.append("Structured: " + ", ".join(structured_bits))
+    elif recommendation.summary:
         lines.append(recommendation.summary)
+    elif first_message and first_message.body:
+        lines.append(first_message.body)
     if recommendation.legs:
         first_leg = recommendation.legs[0]
         instrument = first_leg.instrument.ticker if first_leg.instrument else "инструмент"
@@ -89,6 +111,7 @@ async def get_recommendation_for_notification(
             selectinload(Recommendation.strategy),
             selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
             selectinload(Recommendation.attachments),
+            selectinload(Recommendation.messages).selectinload(RecommendationMessage.created_by_user),
         )
         .where(Recommendation.id == recommendation_id)
     )

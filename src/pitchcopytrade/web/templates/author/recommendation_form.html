@@ -15,20 +15,18 @@
 
 {% block content %}
 {% set recommendation_is_editable = (not recommendation) or recommendation.status.value in ["draft", "review"] %}
+{% set message_mode = form_values.message_mode or "structured" %}
 <section class="surface author-editor-head">
   <div class="eyebrow">редактор рекомендации</div>
   <div class="author-editor-head-row">
     <div class="author-editor-head-copy">
       <h1>{% if recommendation %}Редактирование рекомендации{% else %}Новая рекомендация{% endif %}</h1>
-      <p class="muted">Основное, первая бумага и workflow-сценарии собраны в компактном операторском экране.</p>
+      <p class="muted">Один экран для переписки, документа и structured сделки. История сверху, composer снизу.</p>
     </div>
     <div class="author-editor-head-actions">
       {% if recommendation %}
       <span class="pill">{{ label_recommendation_kind(recommendation.kind) }}</span>
       <span class="pill">{{ label_recommendation_status(recommendation.status) }}</span>
-      {% endif %}
-      {% if recommendation and not embedded %}
-      <a class="action ghost" href="/author/recommendations/{{ recommendation.id }}/preview">Предпросмотр</a>
       {% endif %}
       {% if not recommendation_is_editable %}
       <span class="pill">только чтение</span>
@@ -41,659 +39,348 @@
 </section>
 
 <section class="author-editor-shell">
-  <form
-    class="surface author-editor-form"
-    method="post"
-    enctype="multipart/form-data"
-    action="{% if recommendation %}/author/recommendations/{{ recommendation.id }}{% else %}/author/recommendations{% endif %}"
-  >
-    <input type="hidden" name="embedded" value="{% if embedded %}1{% else %}0{% endif %}" />
-    <input type="hidden" name="next_path" value="{{ next_path }}" />
-    {% if error %}
-    <div class="author-editor-error">{{ error }}</div>
-    {% endif %}
-
-    <section class="surface author-editor-section">
+  <div class="author-editor-layout">
+    <aside class="surface author-editor-history">
       <div class="author-editor-section-head">
         <div class="author-editor-section-copy">
-          <h2>Основное</h2>
-          <p class="muted">Базовые параметры идеи и короткие контекстные подсказки без длинного intro-блока.</p>
+          <h2>История сообщений</h2>
+          <p class="muted">Сюда попадают все сообщения по рекомендации: текст, документ и structured payload.</p>
         </div>
       </div>
-
-      <div class="author-editor-grid author-editor-grid--meta">
-        <label class="author-editor-field">
-          <span class="author-editor-field-title">Стратегия</span>
-          <select name="strategy_id" {% if field_errors.get("strategy_id") %}class="is-invalid"{% endif %} {% if not recommendation_is_editable %}disabled{% endif %}>
-            <option value="">Выберите стратегию</option>
-            {% for strategy in strategies %}
-            <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
-            {% endfor %}
-          </select>
-          {% if field_errors.get("strategy_id") %}
-          <span class="author-editor-field-error">{{ field_errors.get("strategy_id") }}</span>
+      <div class="message-thread">
+        {% if messages %}
+        {% for message in messages %}
+        <article class="message-card">
+          <div class="message-card-head">
+            <strong>{{ message.mode|upper }}</strong>
+            <span class="pill">{{ message.created_at.strftime("%d.%m %H:%M") if message.created_at else "—" }}</span>
+          </div>
+          <div class="muted" style="margin-top:8px;line-height:1.6;">{{ message.body or "—" }}</div>
+          {% if message.payload %}
+          <pre class="message-json">{{ message.payload | tojson(indent=2) }}</pre>
           {% endif %}
-        </label>
-        <label class="author-editor-field">
-          <span class="author-editor-field-title">Тип публикации</span>
-          <select name="kind" {% if not recommendation_is_editable %}disabled{% endif %}>
-            {% for item in recommendation_kind_options %}
-            <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>
-              {% if item == "new_idea" %}Новая идея{% elif item == "update" %}Обновление{% elif item == "close" %}Закрытие{% elif item == "cancel" %}Отмена{% else %}{{ item }}{% endif %}
-            </option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="author-editor-field">
-          <span class="author-editor-field-title">Статус</span>
-          <select name="status" {% if not recommendation_is_editable %}disabled{% endif %}>
-            {% for item in recommendation_status_options %}
-            <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>
-              {% if item == "draft" %}Черновик{% elif item == "review" %}На модерации{% elif item == "scheduled" %}Запланировано{% elif item == "published" %}Опубликовано{% elif item == "closed" %}Закрыто{% elif item == "cancelled" %}Отменено{% else %}{{ item }}{% endif %}
-            </option>
-            {% endfor %}
-          </select>
-        </label>
+        </article>
+        {% endfor %}
+        {% else %}
+        <div class="muted">Пока сообщений нет. Первое сообщение создаст composer ниже.</div>
+        {% endif %}
       </div>
 
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Заголовок</span>
-        <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER от уровня" {% if not recommendation_is_editable %}disabled{% endif %} />
-      </label>
+      <div class="author-editor-section-head" style="margin-top:24px;">
+        <div class="author-editor-section-copy">
+          <h2>Вложения</h2>
+          <p class="muted">PDF и JPG. Для document mode можно прикрепить один или несколько файлов.</p>
+        </div>
+      </div>
+      {% if recommendation and recommendation.attachments %}
+      <div class="message-thread">
+        {% for attachment in recommendation.attachments %}
+        <div class="message-card">
+          <strong>{{ attachment.original_filename }}</strong>
+          <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} байт</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="muted">Вложений нет.</div>
+      {% endif %}
+    </aside>
 
-      <div class="author-editor-grid author-editor-grid--content">
+    <form
+      class="surface author-editor-form author-editor-composer"
+      method="post"
+      enctype="multipart/form-data"
+      action="{% if recommendation %}/author/recommendations/{{ recommendation.id }}{% else %}/author/recommendations{% endif %}"
+    >
+      <input type="hidden" name="embedded" value="{% if embedded %}1{% else %}0{% endif %}" />
+      <input type="hidden" name="next_path" value="{{ next_path }}" />
+      {% if error %}
+      <div class="author-editor-error">{{ error }}</div>
+      {% endif %}
+
+      <section class="author-editor-section">
+        <div class="author-editor-section-head">
+          <div class="author-editor-section-copy">
+            <h2>Composer</h2>
+            <p class="muted">Выберите режим сообщения и заполните только нужные поля.</p>
+          </div>
+        </div>
+
+        <div class="author-editor-grid author-editor-grid--meta">
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Стратегия</span>
+            <select name="strategy_id" {% if field_errors.get("strategy_id") %}class="is-invalid"{% endif %} {% if not recommendation_is_editable %}disabled{% endif %}>
+              <option value="">Выберите стратегию</option>
+              {% for strategy in strategies %}
+              <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
+              {% endfor %}
+            </select>
+            {% if field_errors.get("strategy_id") %}
+            <span class="author-editor-field-error">{{ field_errors.get("strategy_id") }}</span>
+            {% endif %}
+          </label>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Режим сообщения</span>
+            <select name="message_mode" data-message-mode {% if not recommendation_is_editable %}disabled{% endif %}>
+              {% for item in recommendation_message_modes %}
+              <option value="{{ item }}" {% if message_mode == item %}selected{% endif %}>
+                {% if item == "structured" %}Structured{% elif item == "document" %}Документ{% else %}Текст{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Тип публикации</span>
+            <select name="kind" {% if not recommendation_is_editable %}disabled{% endif %}>
+              {% for item in recommendation_kind_options %}
+              <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>
+                {% if item == "new_idea" %}Новая идея{% elif item == "update" %}Обновление{% elif item == "close" %}Закрытие{% elif item == "cancel" %}Отмена{% else %}{{ item }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Статус</span>
+            <select name="status" {% if not recommendation_is_editable %}disabled{% endif %}>
+              {% for item in recommendation_status_options %}
+              <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>
+                {% if item == "draft" %}Черновик{% elif item == "review" %}На модерации{% elif item == "scheduled" %}Запланировано{% elif item == "published" %}Опубликовано{% elif item == "closed" %}Закрыто{% elif item == "cancelled" %}Отменено{% else %}{{ item }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+
         <label class="author-editor-field">
-          <span class="author-editor-field-title">Краткое описание</span>
+          <span class="author-editor-field-title">Заголовок</span>
+          <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER" {% if not recommendation_is_editable %}disabled{% endif %} />
+        </label>
+
+        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="text" {% if message_mode != "text" %}hidden{% endif %}>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Текст сообщения</span>
+            <textarea name="message_text" rows="8" placeholder="Неструктурированное сообщение для подписчиков" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.message_text }}</textarea>
+          </label>
+        </div>
+
+        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="document" {% if message_mode != "document" %}hidden{% endif %}>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Подпись к документу</span>
+            <textarea name="document_caption" rows="6" placeholder="Коротко: что внутри файла и зачем его открыть" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.document_caption }}</textarea>
+          </label>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Файл</span>
+            <input type="file" name="attachment_files" accept=".pdf,image/jpeg" multiple {% if not recommendation_is_editable %}disabled{% endif %} />
+          </label>
+        </div>
+
+        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="structured" {% if message_mode != "structured" %}hidden{% endif %}>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Инструмент</span>
+            <select name="structured_instrument_id" {% if not recommendation_is_editable %}disabled{% endif %}>
+              <option value="">Выберите инструмент</option>
+              {% for instrument in instruments %}
+              <option value="{{ instrument.id }}" {% if form_values.structured_instrument_id == instrument.id %}selected{% endif %}>{{ instrument.ticker }} · {{ instrument.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Buy / Sell</span>
+            <select name="structured_side" {% if not recommendation_is_editable %}disabled{% endif %}>
+              <option value="">Выберите действие</option>
+              <option value="buy" {% if form_values.structured_side == "buy" %}selected{% endif %}>Купить</option>
+              <option value="sell" {% if form_values.structured_side == "sell" %}selected{% endif %}>Продать</option>
+            </select>
+          </label>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Цена</span>
+            <input type="text" name="structured_price" value="{{ form_values.structured_price }}" inputmode="decimal" placeholder="0.00" {% if not recommendation_is_editable %}disabled{% endif %} />
+          </label>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Количество</span>
+            <input type="text" name="structured_quantity" value="{{ form_values.structured_quantity }}" inputmode="decimal" placeholder="0" {% if not recommendation_is_editable %}disabled{% endif %} data-structured-quantity />
+          </label>
+        </div>
+
+        <div class="structured-summary-card surface" data-structured-summary>
+          <div>
+            <div class="eyebrow">structured summary</div>
+            <strong>Сумма считается автоматически</strong>
+          </div>
+          <div class="structured-summary-values">
+            <span class="pill" data-structured-price-label>{{ form_values.structured_price or "—" }}</span>
+            <span class="pill" data-structured-quantity-label>{{ form_values.structured_quantity or "—" }}</span>
+            <span class="pill" data-structured-amount-label>—</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="author-editor-section">
+        <div class="author-editor-section-head">
+          <div class="author-editor-section-copy">
+            <h2>Публикация</h2>
+            <p class="muted">Статус, расписание и заметка для модерации остаются рядом с composer.</p>
+          </div>
+        </div>
+
+        <label class="author-editor-field">
+          <span class="author-editor-field-title">Расписание</span>
+          <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" {% if not recommendation_is_editable %}disabled{% endif %} />
+        </label>
+
+        <label class="author-editor-field">
+          <span class="author-editor-field-title">Заметка для модерации</span>
           <textarea name="summary" rows="3" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.summary }}</textarea>
         </label>
         <label class="author-editor-field">
-          <span class="author-editor-field-title">Тезис идеи</span>
-          <textarea name="thesis" rows="4" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.thesis }}</textarea>
+          <span class="author-editor-field-title">Тезис / контекст</span>
+          <textarea name="thesis" rows="3" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.thesis }}</textarea>
         </label>
-      </div>
-
-      <div class="author-editor-grid author-editor-grid--content">
         <label class="author-editor-field">
-          <span class="author-editor-field-title">Контекст рынка</span>
-          <textarea name="market_context" rows="4" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.market_context }}</textarea>
+          <span class="author-editor-field-title">Рыночный контекст</span>
+          <textarea name="market_context" rows="3" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.market_context }}</textarea>
         </label>
-        <div class="author-editor-grid author-editor-grid--stack">
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Дата публикации</span>
-            <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-          </label>
-          <div class="author-editor-note">
-            <strong>Политика модерации</strong>
-            <div class="muted">
-              {% if author.requires_moderation %}
-              Публикации этого автора автоматически идут на модерацию.
-              {% else %}
-              Для этого автора дополнительная модерация не требуется.
-              {% endif %}
-            </div>
+      </section>
+
+      <section class="author-editor-section author-editor-section--actions">
+        <div class="author-editor-section-head">
+          <div class="author-editor-section-copy">
+            <h2>Действия</h2>
+            <p class="muted">Сохранение обновляет JSONB payload и добавляет запись в message thread.</p>
           </div>
         </div>
-      </div>
-    </section>
-
-    <section class="surface author-editor-section author-editor-section--legs">
-      <div class="author-editor-section-head">
-        <div class="author-editor-section-copy">
-          <h2>Бумаги</h2>
-          <p class="muted">Первая бумага обязательна. Остальные добавляйте через <strong>+ Добавить бумагу</strong>.</p>
+        <div class="author-inline-actions">
+          {% if recommendation_is_editable %}
+          <button class="action" type="submit">Сохранить</button>
+          <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить на модерацию</button>
+          <button class="action ghost" type="submit" name="workflow_action" value="publish_now">Опубликовать</button>
+          {% endif %}
+          <a class="action ghost" href="/author/recommendations">К списку</a>
         </div>
-        {% if recommendation_is_editable %}
-        <button class="action ghost" type="button" id="add-leg-button">+ Добавить бумагу</button>
-        {% else %}
-        <span class="pill">состав позиции зафиксирован</span>
-        {% endif %}
-      </div>
-
-      <div id="leg-list" class="author-legs-list" data-next-index="{{ next_leg_index }}">
-        {% for leg in form_values.legs %}
-        <article class="author-leg-card" data-row-id="{{ leg.row_id }}">
-          <div class="author-leg-card-head">
-            <div class="author-leg-card-copy">
-              <strong class="author-leg-card-title js-leg-title">Бумага {{ loop.index }}</strong>
-              <p class="muted author-leg-card-note">
-                {% if loop.first %}
-                Обязательная бумага для публикации.
-                {% else %}
-                Дополнительная бумага. Удалите, если она не нужна.
-                {% endif %}
-              </p>
-            </div>
-            <button class="action ghost js-remove-leg" type="button" {% if form_values.legs|length == 1 %}disabled{% endif %}>
-              Удалить
-            </button>
-          </div>
-
-          <div class="author-leg-grid author-leg-grid--primary">
-            <label class="author-editor-field">
-              {% set instrument_field_name = "leg_" ~ leg.row_id ~ "_instrument_id" %}
-              <span class="author-editor-field-title">Инструмент</span>
-              <select
-                name="{{ instrument_field_name }}"
-                {% if field_errors.get(instrument_field_name) %}class="is-invalid"{% endif %}
-                {% if not recommendation_is_editable %}disabled{% endif %}
-              >
-                <option value="">Выберите инструмент</option>
-                {% for instrument in instruments %}
-                <option value="{{ instrument.id }}" {% if leg.instrument_id == instrument.id %}selected{% endif %}>{{ instrument.ticker }} · {{ instrument.name }}</option>
-                {% endfor %}
-              </select>
-              {% if field_errors.get(instrument_field_name) %}
-              <span class="author-editor-field-error">{{ field_errors.get(instrument_field_name) }}</span>
-              {% endif %}
-            </label>
-            <label class="author-editor-field">
-              {% set side_field_name = "leg_" ~ leg.row_id ~ "_side" %}
-              <span class="author-editor-field-title">Направление</span>
-              <select
-                name="{{ side_field_name }}"
-                {% if field_errors.get(side_field_name) %}class="is-invalid"{% endif %}
-                {% if not recommendation_is_editable %}disabled{% endif %}
-              >
-                <option value="">Выберите направление</option>
-                <option value="buy" {% if leg.side == "buy" %}selected{% endif %}>Покупка</option>
-                <option value="sell" {% if leg.side == "sell" %}selected{% endif %}>Продажа</option>
-              </select>
-              {% if field_errors.get(side_field_name) %}
-              <span class="author-editor-field-error">{{ field_errors.get(side_field_name) }}</span>
-              {% endif %}
-            </label>
-            <label class="author-editor-field">
-              <span class="author-editor-field-title">Горизонт</span>
-              <input type="text" name="leg_{{ leg.row_id }}_time_horizon" value="{{ leg.time_horizon }}" placeholder="1-3 дня / swing / intraday" {% if not recommendation_is_editable %}disabled{% endif %} />
-            </label>
-          </div>
-
-          <div class="author-leg-grid author-leg-grid--secondary">
-            <label class="author-editor-field">
-              <span class="author-editor-field-title">Вход от</span>
-              <input type="text" name="leg_{{ leg.row_id }}_entry_from" value="{{ leg.entry_from }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-            </label>
-            <label class="author-editor-field">
-              <span class="author-editor-field-title">Вход до</span>
-              <input type="text" name="leg_{{ leg.row_id }}_entry_to" value="{{ leg.entry_to }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-            </label>
-            <label class="author-editor-field">
-              <span class="author-editor-field-title">Стоп-лосс</span>
-              <input type="text" name="leg_{{ leg.row_id }}_stop_loss" value="{{ leg.stop_loss }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-            </label>
-            <label class="author-editor-field">
-              <span class="author-editor-field-title">TP1</span>
-              <input type="text" name="leg_{{ leg.row_id }}_take_profit_1" value="{{ leg.take_profit_1 }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-            </label>
-          </div>
-
-          <div class="author-leg-grid author-leg-grid--secondary">
-            <label class="author-editor-field">
-              <span class="author-editor-field-title">TP2</span>
-              <input type="text" name="leg_{{ leg.row_id }}_take_profit_2" value="{{ leg.take_profit_2 }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-            </label>
-            <label class="author-editor-field">
-              <span class="author-editor-field-title">TP3</span>
-              <input type="text" name="leg_{{ leg.row_id }}_take_profit_3" value="{{ leg.take_profit_3 }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-            </label>
-            <label class="author-editor-field author-editor-field--wide">
-              <span class="author-editor-field-title">Комментарий сделки</span>
-              <input type="text" name="leg_{{ leg.row_id }}_note" value="{{ leg.note }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-            </label>
-          </div>
-        </article>
-        {% endfor %}
-      </div>
-    </section>
-
-    <section class="surface author-editor-section author-editor-section--attachments">
-      <div class="author-editor-section-copy">
-        <h2>Вложения</h2>
-        <p class="muted">PDF, JPG, PNG и WEBP. Файл добавится после сохранения формы.</p>
-      </div>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Добавить PDF или изображение</span>
-        <input type="file" name="attachment_files" accept=".pdf,image/png,image/jpeg,image.webp" multiple {% if not recommendation_is_editable %}disabled{% endif %} />
-      </label>
-      {% if recommendation and recommendation.attachments %}
-      <div class="author-editor-attachment-list">
-        {% for attachment in recommendation.attachments %}
-        <label class="surface author-editor-attachment-item">
-          <div class="author-editor-attachment-row">
-            <div>
-              <strong>{{ attachment.original_filename }}</strong>
-              <div class="muted">{{ attachment.content_type }} · {{ attachment.size_bytes }} байт</div>
-            </div>
-            <span class="author-editor-remove-attachment">
-              <input type="checkbox" name="remove_attachment_ids" value="{{ attachment.id }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-              <span class="muted">Удалить</span>
-            </span>
-          </div>
-        </label>
-        {% endfor %}
-      </div>
-      {% endif %}
-    </section>
-
-    <section class="surface author-editor-section">
-      <div class="author-editor-section-copy">
-        <h2>Действия</h2>
-        <p class="muted">Выберите нужный workflow без отдельного action-блока в шапке.</p>
-      </div>
-      <div class="author-editor-actions">
-        {% if recommendation_is_editable %}
-        <button class="action" type="submit" name="workflow_action" value="save_draft">Сохранить в черновик</button>
-        <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить на модерацию</button>
-        <button class="action ghost" type="submit" name="workflow_action" value="schedule">Запланировать</button>
-        <button class="action ghost" type="submit" name="workflow_action" value="publish_now">Опубликовать</button>
-        {% if recommendation %}
-        <button class="action ghost" type="submit" name="workflow_action" value="close_idea">Закрыть идею</button>
-        <button class="action ghost" type="submit" name="workflow_action" value="cancel_idea">Отменить идею</button>
-        {% endif %}
-        {% else %}
-        <span class="pill">только чтение</span>
-        {% endif %}
-        <a class="action ghost" href="/author/recommendations">Отмена</a>
-      </div>
-    </section>
-  </form>
+      </section>
+    </form>
+  </div>
 </section>
 
-<template id="leg-row-template">
-  <article class="author-leg-card" data-row-id="__ROW_ID__">
-    <div class="author-leg-card-head">
-      <div class="author-leg-card-copy">
-        <strong class="author-leg-card-title js-leg-title">Бумага __ROW_NUMBER__</strong>
-        <p class="muted author-leg-card-note">Дополнительная бумага. Удалите, если она не нужна.</p>
-      </div>
-      <button class="action ghost js-remove-leg" type="button">Удалить</button>
-    </div>
-
-    <div class="author-leg-grid author-leg-grid--primary">
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Инструмент</span>
-        <select name="leg___ROW_ID___instrument_id">
-          <option value="">Выберите инструмент</option>
-          {% for instrument in instruments %}
-          <option value="{{ instrument.id }}">{{ instrument.ticker }} · {{ instrument.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Направление</span>
-        <select name="leg___ROW_ID___side">
-          <option value="">Выберите направление</option>
-          <option value="buy">Покупка</option>
-          <option value="sell">Продажа</option>
-        </select>
-      </label>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Горизонт</span>
-        <input type="text" name="leg___ROW_ID___time_horizon" placeholder="1-3 дня / swing / intraday" />
-      </label>
-    </div>
-
-    <div class="author-leg-grid author-leg-grid--secondary">
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Вход от</span>
-        <input type="text" name="leg___ROW_ID___entry_from" />
-      </label>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Вход до</span>
-        <input type="text" name="leg___ROW_ID___entry_to" />
-      </label>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">Стоп-лосс</span>
-        <input type="text" name="leg___ROW_ID___stop_loss" />
-      </label>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">TP1</span>
-        <input type="text" name="leg___ROW_ID___take_profit_1" />
-      </label>
-    </div>
-
-    <div class="author-leg-grid author-leg-grid--secondary">
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">TP2</span>
-        <input type="text" name="leg___ROW_ID___take_profit_2" />
-      </label>
-      <label class="author-editor-field">
-        <span class="author-editor-field-title">TP3</span>
-        <input type="text" name="leg___ROW_ID___take_profit_3" />
-      </label>
-      <label class="author-editor-field author-editor-field--wide">
-        <span class="author-editor-field-title">Комментарий сделки</span>
-        <input type="text" name="leg___ROW_ID___note" />
-      </label>
-    </div>
-  </article>
-</template>
-
 <style>
-  .author-editor-topbar {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .author-editor-head {
-    padding: 16px 18px;
+  .author-editor-layout {
     display: grid;
-    gap: 8px;
-    margin-bottom: 14px;
+    grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
+    gap: 18px;
   }
 
-  .author-editor-head-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: flex-start;
-    flex-wrap: wrap;
+  .author-editor-history,
+  .author-editor-composer {
+    padding: 24px;
   }
 
-  .author-editor-head-copy {
-    display: grid;
-    gap: 6px;
-  }
-
-  .author-editor-head-copy h1 {
-    margin: 0;
-    font-size: 1.55rem;
-    line-height: 1.06;
-  }
-
-  .author-editor-head-copy p,
-  .author-editor-head-note {
-    margin: 0;
-    line-height: 1.45;
-  }
-
-  .author-editor-head-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .author-editor-shell { display: block; }
-
-  .author-editor-form {
-    padding: 18px;
-    display: grid;
-    gap: 14px;
-  }
-
-  .author-editor-form * {
-    box-sizing: border-box;
-  }
-
-  .author-editor-error {
-    padding: 10px 12px;
-    border-radius: 12px;
-    background: rgba(191, 23, 54, 0.08);
-    color: var(--staff-danger);
-    border: 1px solid rgba(191, 23, 54, 0.18);
-  }
-
-  .author-editor-grid,
-  .author-leg-grid,
-  .author-legs-list,
-  .author-editor-attachment-list {
+  .message-thread {
     display: grid;
     gap: 12px;
   }
 
-  .author-editor-grid--meta {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  }
-
-  .author-editor-grid--content {
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  }
-
-  .author-editor-grid--stack {
-    display: grid;
-    gap: 12px;
-    align-content: start;
-  }
-
-  .author-editor-field,
-  .author-editor-check {
-    min-width: 0;
-  }
-
-  .author-editor-field {
-    display: grid;
-    gap: 6px;
-  }
-
-  .author-editor-field-title {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--staff-accent);
-  }
-
-  .author-editor-field input,
-  .author-editor-field select,
-  .author-editor-field textarea {
-    width: 100%;
-    min-width: 0;
-    min-height: 34px;
-    padding: 7px 10px;
-    border-radius: 10px;
-    border: 1px solid #aebac9;
-    font: inherit;
-    background: #fff;
-  }
-
-  .author-editor-field textarea {
-    min-height: 92px;
-    resize: vertical;
-  }
-
-  .author-editor-field input.is-invalid,
-  .author-editor-field select.is-invalid,
-  .author-editor-field textarea.is-invalid {
-    border-color: var(--staff-danger);
-    background: #fff4f4;
-  }
-
-  .author-editor-field-error {
-    font-size: 0.78rem;
-    color: var(--staff-danger);
-    line-height: 1.35;
-  }
-
-  .author-editor-section {
-    padding: 14px;
-    border-radius: 14px;
-    background: var(--staff-surface-soft);
+  .message-card {
+    padding: 16px;
+    border-radius: 20px;
+    background: var(--surface-strong);
     box-shadow: none;
-    display: grid;
-    gap: 12px;
   }
 
-  .author-editor-section-head {
+  .message-card-head {
     display: flex;
     justify-content: space-between;
-    gap: 12px;
-    align-items: flex-start;
+    gap: 10px;
+    align-items: center;
     flex-wrap: wrap;
   }
 
-  .author-editor-section-copy {
-    display: grid;
-    gap: 6px;
-  }
-
-  .author-editor-section-copy h2 {
-    margin: 0;
-    font-size: 1.1rem;
-  }
-
-  .author-editor-section-copy p {
-    margin: 0;
-    line-height: 1.45;
-  }
-
-  .author-editor-note {
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid var(--staff-line);
-    background: #fff;
-    display: grid;
-    gap: 4px;
-  }
-
-  .author-leg-card {
-    padding: 14px;
-    border: 1px solid var(--staff-line);
-    border-radius: 12px;
-    background: #fff;
-    display: grid;
-    gap: 12px;
-    overflow: hidden;
-  }
-
-  .author-leg-card-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .author-leg-card-copy {
-    display: grid;
-    gap: 4px;
-    min-width: 0;
-  }
-
-  .author-leg-card-title {
-    font-size: 1rem;
-    color: var(--staff-ink);
-  }
-
-  .author-leg-card-note {
-    margin: 0;
-    max-width: 48rem;
-    line-height: 1.4;
-  }
-
-  .author-leg-grid--primary {
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  }
-
-  .author-leg-grid--secondary {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  }
-
-  .author-editor-field--wide {
-    grid-column: span 2;
-  }
-
-  .author-editor-attachment-item {
+  .message-json {
+    margin: 12px 0 0;
     padding: 12px;
-    border-radius: 12px;
-    background: #fff;
-    box-shadow: none;
+    border-radius: 14px;
+    overflow: auto;
+    background: rgba(8, 15, 40, 0.04);
+    font-size: 0.8rem;
   }
 
-  .author-editor-attachment-row {
+  .structured-summary-card {
+    margin-top: 14px;
+    padding: 16px;
     display: flex;
     justify-content: space-between;
-    gap: 12px;
-    align-items: flex-start;
+    gap: 14px;
+    align-items: center;
     flex-wrap: wrap;
   }
 
-  .author-editor-remove-attachment {
-    display: inline-flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .author-editor-actions {
+  .structured-summary-values {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
   }
 
-  @media (max-width: 760px) {
-    .author-editor-field--wide {
-      grid-column: auto;
+  .author-inline-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 980px) {
+    .author-editor-layout {
+      grid-template-columns: 1fr;
     }
   }
 </style>
 
 <script>
   (function () {
-    const list = document.getElementById("leg-list");
-    const addButton = document.getElementById("add-leg-button");
-    const template = document.getElementById("leg-row-template");
+    const modeSelect = document.querySelector("[data-message-mode]");
+    const modePanels = document.querySelectorAll("[data-mode-panel]");
+    const priceInput = document.querySelector('input[name="structured_price"]');
+    const quantityInput = document.querySelector('[data-structured-quantity]');
+    const priceLabel = document.querySelector('[data-structured-price-label]');
+    const quantityLabel = document.querySelector('[data-structured-quantity-label]');
+    const amountLabel = document.querySelector('[data-structured-amount-label]');
 
-    if (!list || !addButton || !template) {
-      return;
+    function formatAmount(raw) {
+      if (!raw || Number.isNaN(raw)) {
+        return "—";
+      }
+      return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(raw);
     }
 
-    function syncLegCards() {
-      const cards = Array.from(list.querySelectorAll(".author-leg-card"));
-
-      cards.forEach((card, index) => {
-        const title = card.querySelector(".js-leg-title");
-        const note = card.querySelector(".author-leg-card-note");
-
-        if (title) {
-          title.textContent = `Бумага ${index + 1}`;
-        }
-
-        if (note) {
-          note.textContent = index === 0
-            ? "Обязательная бумага для публикации."
-            : "Дополнительная бумага. Удалите, если она не нужна.";
-        }
-      });
-
-      Array.from(list.querySelectorAll(".js-remove-leg")).forEach((button) => {
-        button.disabled = cards.length <= 1;
+    function updatePanels() {
+      const value = modeSelect ? modeSelect.value : "structured";
+      modePanels.forEach((panel) => {
+        panel.hidden = panel.dataset.modePanel !== value;
       });
     }
 
-    function addLegCard() {
-      const nextIndex = Number(list.dataset.nextIndex || "1");
-      const rowNumber = list.querySelectorAll(".author-leg-card").length + 1;
-      const html = template.innerHTML
-        .replaceAll("__ROW_ID__", String(nextIndex))
-        .replaceAll("__ROW_NUMBER__", String(rowNumber));
-      list.insertAdjacentHTML("beforeend", html);
-      list.dataset.nextIndex = String(nextIndex + 1);
-      syncLegCards();
+    function updateStructuredSummary() {
+      const price = priceInput ? Number(String(priceInput.value || "").replace(",", ".")) : NaN;
+      const quantity = quantityInput ? Number(String(quantityInput.value || "").replace(",", ".")) : NaN;
+      if (priceLabel) {
+        priceLabel.textContent = priceInput && priceInput.value ? priceInput.value : "—";
+      }
+      if (quantityLabel) {
+        quantityLabel.textContent = quantityInput && quantityInput.value ? quantityInput.value : "—";
+      }
+      if (amountLabel) {
+        amountLabel.textContent = Number.isFinite(price) && Number.isFinite(quantity) ? formatAmount(price * quantity) : "—";
+      }
     }
 
-    addButton.addEventListener("click", addLegCard);
-
-    list.addEventListener("click", (event) => {
-      const button = event.target.closest(".js-remove-leg");
-      if (!button) {
-        return;
-      }
-
-      const cards = list.querySelectorAll(".author-leg-card");
-      if (cards.length <= 1) {
-        return;
-      }
-
-      const card = button.closest(".author-leg-card");
-      if (!card) {
-        return;
-      }
-
-      card.remove();
-      syncLegCards();
-    });
-
-    syncLegCards();
+    if (modeSelect) {
+      modeSelect.addEventListener("change", updatePanels);
+    }
+    if (priceInput) {
+      priceInput.addEventListener("input", updateStructuredSummary);
+    }
+    if (quantityInput) {
+      quantityInput.addEventListener("input", updateStructuredSummary);
+    }
+    updatePanels();
+    updateStructuredSummary();
   })();
 </script>
 {% endblock %}

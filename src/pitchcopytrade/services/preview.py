@@ -258,12 +258,22 @@ def _simple_strategy(
 
 
 def _build_preview_recommendation(strategy: SimpleNamespace) -> SimpleNamespace:
+    payload = {
+        "mode": "structured",
+        "instrument_id": "SBER",
+        "side": "buy",
+        "price": "250.10",
+        "quantity": "100",
+        "amount": "25010",
+        "title": "Риск на пробое",
+    }
     return SimpleNamespace(
         id="preview-recommendation",
         title="Риск на пробое",
         summary="Идея отрабатывает импульс после сжатия диапазона.",
         thesis="Цена готова к движению после пробоя локального уровня.",
         market_context="Preview market context.",
+        recommendation_payload=payload,
         created_at=datetime.now(UTC) - timedelta(days=1),
         updated_at=datetime.now(UTC),
         kind=RecommendationKind.NEW_IDEA,
@@ -276,6 +286,14 @@ def _build_preview_recommendation(strategy: SimpleNamespace) -> SimpleNamespace:
                 entry_from="250.10",
                 take_profit_1="262.40",
                 stop_loss="244.80",
+            )
+        ],
+        messages=[
+            SimpleNamespace(
+                mode="structured",
+                body="Structured recommendation · instrument=SBER · side=buy · price=250.10 · qty=100 · amount=25010",
+                payload=payload,
+                created_at=datetime.now(UTC) - timedelta(days=1),
             )
         ],
         attachments=[],

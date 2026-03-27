@@ -7,7 +7,7 @@ from pitchcopytrade.db.models import Base
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Bundle, LeadSource, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
+from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg, RecommendationMessage
 from pitchcopytrade.db.models.notification_log import NotificationLog
 
 
@@ -29,6 +29,7 @@ def test_metadata_contains_required_foundation_tables() -> None:
         "recommendations",
         "recommendation_legs",
         "recommendation_attachments",
+        "recommendation_messages",
         "legal_documents",
         "user_consents",
         "audit_events",
@@ -105,4 +106,5 @@ def test_sqlalchemy_enums_persist_enum_values_not_names() -> None:
     ]
     assert Recommendation.__table__.c.kind.type.enums == ["new_idea", "update", "close", "cancel"]
     assert RecommendationLeg.__table__.c.side.type.enums == ["buy", "sell"]
+    assert RecommendationMessage.__table__.c.mode.type.length == 20
     assert NotificationLog.__table__.c.channel.type.enums == ["telegram", "email"]

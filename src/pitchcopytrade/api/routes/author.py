@@ -420,6 +420,13 @@ async def recommendation_create_submit(
             kind_value=str(form.get("kind", "new_idea") or "new_idea"),
             status_value=resolved_status,
             title=str(form.get("title", "") or ""),
+            message_mode=str(form.get("message_mode", "structured") or "structured"),
+            message_text=str(form.get("message_text", "") or ""),
+            document_caption=str(form.get("document_caption", "") or ""),
+            structured_instrument_id=str(form.get("structured_instrument_id", "") or ""),
+            structured_side_value=str(form.get("structured_side", "") or ""),
+            structured_price=str(form.get("structured_price", "") or ""),
+            structured_quantity=str(form.get("structured_quantity", "") or ""),
             summary=str(form.get("summary", "") or ""),
             thesis=str(form.get("thesis", "") or ""),
             market_context=str(form.get("market_context", "") or ""),
@@ -539,6 +546,13 @@ async def recommendation_edit_submit(
             kind_value=str(form.get("kind", "") or ""),
             status_value=resolved_status,
             title=str(form.get("title", "") or ""),
+            message_mode=str(form.get("message_mode", "structured") or "structured"),
+            message_text=str(form.get("message_text", "") or ""),
+            document_caption=str(form.get("document_caption", "") or ""),
+            structured_instrument_id=str(form.get("structured_instrument_id", "") or ""),
+            structured_side_value=str(form.get("structured_side", "") or ""),
+            structured_price=str(form.get("structured_price", "") or ""),
+            structured_quantity=str(form.get("structured_quantity", "") or ""),
             summary=str(form.get("summary", "") or ""),
             thesis=str(form.get("thesis", "") or ""),
             market_context=str(form.get("market_context", "") or ""),
@@ -570,6 +584,13 @@ async def recommendation_edit_submit(
                 "kind": str(form.get("kind", "") or ""),
                 "status": resolved_status,
                 "title": str(form.get("title", "") or ""),
+                "message_mode": str(form.get("message_mode", "structured") or "structured"),
+                "message_text": str(form.get("message_text", "") or ""),
+                "document_caption": str(form.get("document_caption", "") or ""),
+                "structured_instrument_id": str(form.get("structured_instrument_id", "") or ""),
+                "structured_side": str(form.get("structured_side", "") or ""),
+                "structured_price": str(form.get("structured_price", "") or ""),
+                "structured_quantity": str(form.get("structured_quantity", "") or ""),
                 "summary": str(form.get("summary", "") or ""),
                 "thesis": str(form.get("thesis", "") or ""),
                 "market_context": str(form.get("market_context", "") or ""),
@@ -687,6 +708,8 @@ async def _render_recommendation_form(
                 "cancelled",
                 "archived",
             ],
+            "recommendation_message_modes": ["structured", "text", "document"],
+            "messages": list(getattr(recommendation, "messages", []) or []),
             "error": error,
             "field_errors": field_errors or {},
             "form_values": effective_form_values,
@@ -954,6 +977,18 @@ def _build_leg_field_errors(error_text: str, *, row_id: str, instrument_error: s
 
 
 def _friendly_recommendation_error_message(error_text: str) -> str:
+    if error_text == "Для structured message нужен инструмент.":
+        return "Выберите инструмент для structured сообщения."
+    if error_text == "Для structured message нужно выбрать Buy или Sell.":
+        return "Выберите Buy или Sell для structured сообщения."
+    if error_text == "Для structured message нужна цена.":
+        return "Укажите цену для structured сообщения."
+    if error_text == "Для structured message нужно количество.":
+        return "Укажите количество для structured сообщения."
+    if error_text == "Для text message нужен текст сообщения.":
+        return "Введите текст сообщения."
+    if error_text == "Для document message нужен PDF или JPG.":
+        return "Прикрепите PDF или JPG."
     if error_text.startswith("Leg 1: выберите допустимый инструмент."):
         return "Выберите инструмент для первой бумаги."
     if error_text.startswith("Leg 1: выберите направление сделки."):
@@ -1015,18 +1050,29 @@ def _recommendation_modal_url(*, next_path: str) -> str:
 
 def _build_recommendation_prefill_form_values(*, request: Request, author: AuthorProfile) -> dict[str, object]:
     form_values = recommendation_form_values(None)
+    legacy_leg_rows = leg_form_values_from_rows(build_leg_rows_from_form(request.query_params))
+    first_leg = legacy_leg_rows[0] if legacy_leg_rows else {}
     form_values.update(
         {
             "strategy_id": str(request.query_params.get("strategy_id", "") or ""),
             "kind": str(request.query_params.get("kind", form_values["kind"]) or form_values["kind"]),
             "status": str(request.query_params.get("status", form_values["status"]) or form_values["status"]),
             "title": str(request.query_params.get("title", "") or ""),
+            "message_mode": str(request.query_params.get("message_mode", "structured") or "structured"),
+            "message_text": str(request.query_params.get("message_text", "") or ""),
+            "document_caption": str(request.query_params.get("document_caption", "") or ""),
+            "structured_instrument_id": str(
+                request.query_params.get("structured_instrument_id", first_leg.get("instrument_id", "")) or first_leg.get("instrument_id", "")
+            ),
+            "structured_side": str(request.query_params.get("structured_side", first_leg.get("side", "")) or first_leg.get("side", "")),
+            "structured_price": str(request.query_params.get("structured_price", first_leg.get("entry_from", "")) or first_leg.get("entry_from", "")),
+            "structured_quantity": str(request.query_params.get("structured_quantity", "1") or "1"),
             "summary": str(request.query_params.get("summary", "") or ""),
             "thesis": str(request.query_params.get("thesis", "") or ""),
             "market_context": str(request.query_params.get("market_context", "") or ""),
             "requires_moderation": author.requires_moderation,
             "scheduled_for": str(request.query_params.get("scheduled_for", "") or ""),
-            "legs": leg_form_values_from_rows(build_leg_rows_from_form(request.query_params)),
+            "legs": legacy_leg_rows,
         }
     )
     return form_values

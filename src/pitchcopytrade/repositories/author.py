@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
-from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
+from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg, RecommendationMessage
 from pitchcopytrade.db.models.enums import RecommendationStatus
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
@@ -93,6 +93,7 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
                 selectinload(Recommendation.strategy),
                 selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
                 selectinload(Recommendation.attachments),
+                selectinload(Recommendation.messages).selectinload(RecommendationMessage.created_by_user),
             )
             .where(Recommendation.author_id == author_id)
             .order_by(Recommendation.updated_at.desc(), Recommendation.created_at.desc())
@@ -107,6 +108,7 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
                 selectinload(Recommendation.strategy),
                 selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
                 selectinload(Recommendation.attachments),
+                selectinload(Recommendation.messages).selectinload(RecommendationMessage.created_by_user),
             )
             .where(Recommendation.id == recommendation_id, Recommendation.author_id == author_id)
         )

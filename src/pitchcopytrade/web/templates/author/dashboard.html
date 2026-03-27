@@ -66,6 +66,7 @@
     <div style="display:grid;gap:12px;">
       {% for recommendation in recommendations %}
       {% set primary_leg = recommendation.legs[0] if recommendation.legs else None %}
+      {% set primary_message = recommendation.messages[0] if recommendation.messages else None %}
       <a class="surface" href="/author/recommendations/{{ recommendation.id }}/edit" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
           <div>
@@ -96,7 +97,7 @@
           </div>
         </div>
         <div class="muted" style="margin-top:10px;line-height:1.6;">
-          {{ recommendation.summary or recommendation.thesis or "Текст рекомендации пока не заполнен" }}
+          {{ primary_message.body if primary_message else recommendation.summary or recommendation.thesis or "Текст рекомендации пока не заполнен" }}
         </div>
       </a>
       {% else %}

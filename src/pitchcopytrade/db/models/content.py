@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -34,6 +34,7 @@ class Recommendation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
     market_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommendation_payload: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     requires_moderation: Mapped[bool] = mapped_column(default=False)
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -46,6 +47,10 @@ class Recommendation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     moderated_by_user: Mapped["User | None"] = relationship(back_populates="moderated_recommendations")
     legs: Mapped[list["RecommendationLeg"]] = relationship(back_populates="recommendation")
     attachments: Mapped[list["RecommendationAttachment"]] = relationship(back_populates="recommendation")
+    messages: Mapped[list["RecommendationMessage"]] = relationship(
+        back_populates="recommendation",
+        order_by="RecommendationMessage.created_at.asc()",
+    )
 
 
 class RecommendationLeg(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -85,3 +90,16 @@ class RecommendationAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     recommendation: Mapped["Recommendation"] = relationship(back_populates="attachments")
     uploaded_by_user: Mapped["User | None"] = relationship(back_populates="uploaded_attachments")
+
+
+class RecommendationMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "recommendation_messages"
+
+    recommendation_id: Mapped[str] = mapped_column(ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+
+    recommendation: Mapped["Recommendation"] = relationship(back_populates="messages")
+    created_by_user: Mapped["User | None"] = relationship(back_populates="created_messages")

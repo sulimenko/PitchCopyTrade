@@ -17,7 +17,7 @@ from pitchcopytrade.db.models.catalog import (
     SubscriptionProduct,
 )
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
+from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg, RecommendationMessage
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     InviteDeliveryStatus,
@@ -90,6 +90,7 @@ class FileDatasetGraph:
     recommendations: dict[str, Recommendation]
     recommendation_legs: dict[str, RecommendationLeg]
     recommendation_attachments: dict[str, RecommendationAttachment]
+    recommendation_messages: dict[str, RecommendationMessage]
 
     @classmethod
     def load(cls, store: FileDataStore) -> FileDatasetGraph:
@@ -152,6 +153,7 @@ class FileDatasetGraph:
             user.payments = []
             user.subscriptions = []
             user.uploaded_attachments = []
+            user.created_messages = []
             user.moderated_recommendations = []
             user.audit_events = []
             user.lead_source = lead_sources.get(user.lead_source_id)
@@ -464,6 +466,7 @@ class FileDatasetGraph:
                 summary=item.get("summary"),
                 thesis=item.get("thesis"),
                 market_context=item.get("market_context"),
+                recommendation_payload=item.get("recommendation_payload"),
                 requires_moderation=item.get("requires_moderation", False),
                 scheduled_for=_parse_datetime(item.get("scheduled_for")),
                 published_at=_parse_datetime(item.get("published_at")),
@@ -488,6 +491,7 @@ class FileDatasetGraph:
                 recommendation.author.recommendations.append(recommendation)
             recommendation.legs = []
             recommendation.attachments = []
+            recommendation.messages = []
 
         recommendation_legs = {
             item["id"]: RecommendationLeg(
@@ -540,6 +544,27 @@ class FileDatasetGraph:
                 if attachment not in attachment.uploaded_by_user.uploaded_attachments:
                     attachment.uploaded_by_user.uploaded_attachments.append(attachment)
 
+        recommendation_messages = {
+            item["id"]: RecommendationMessage(
+                id=item["id"],
+                recommendation_id=item["recommendation_id"],
+                created_by_user_id=item.get("created_by_user_id"),
+                mode=item["mode"],
+                body=item.get("body"),
+                payload=item.get("payload"),
+                created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
+                updated_at=_parse_datetime(item.get("updated_at")) or _utc_now(),
+            )
+            for item in raw.get("recommendation_messages", [])
+        }
+        for message in recommendation_messages.values():
+            message.recommendation = recommendations[message.recommendation_id]
+            message.created_by_user = users.get(message.created_by_user_id)
+            if message not in message.recommendation.messages:
+                message.recommendation.messages.append(message)
+            if message.created_by_user is not None and message not in message.created_by_user.created_messages:
+                message.created_by_user.created_messages.append(message)
+
         return cls(
             roles=roles,
             users=users,
@@ -559,6 +584,7 @@ class FileDatasetGraph:
             recommendations=recommendations,
             recommendation_legs=recommendation_legs,
             recommendation_attachments=recommendation_attachments,
+            recommendation_messages=recommendation_messages,
         )
 
     def add(self, entity: object) -> None:
@@ -606,6 +632,7 @@ class FileDatasetGraph:
                 entity.strategy = self.strategies[entity.strategy_id]
             entity.legs = list(getattr(entity, "legs", []) or [])
             entity.attachments = list(getattr(entity, "attachments", []) or [])
+            entity.messages = list(getattr(entity, "messages", []) or [])
             self.recommendations[entity.id] = entity
             if entity not in entity.author.recommendations:
                 entity.author.recommendations.append(entity)
@@ -631,6 +658,16 @@ class FileDatasetGraph:
                 entity.recommendation.attachments.append(entity)
             if entity.uploaded_by_user is not None and entity not in entity.uploaded_by_user.uploaded_attachments:
                 entity.uploaded_by_user.uploaded_attachments.append(entity)
+        elif isinstance(entity, RecommendationMessage):
+            if getattr(entity, "recommendation", None) is None:
+                entity.recommendation = self.recommendations[entity.recommendation_id]
+            if getattr(entity, "created_by_user", None) is None and entity.created_by_user_id is not None:
+                entity.created_by_user = self.users.get(entity.created_by_user_id)
+            self.recommendation_messages[entity.id] = entity
+            if entity not in entity.recommendation.messages:
+                entity.recommendation.messages.append(entity)
+            if entity.created_by_user is not None and entity not in entity.created_by_user.created_messages:
+                entity.created_by_user.created_messages.append(entity)
 
     def delete(self, entity: object) -> None:
         if isinstance(entity, RecommendationLeg):
@@ -645,6 +682,12 @@ class FileDatasetGraph:
                 entity.recommendation.attachments.remove(entity)
             if entity.uploaded_by_user is not None and entity in entity.uploaded_by_user.uploaded_attachments:
                 entity.uploaded_by_user.uploaded_attachments.remove(entity)
+        elif isinstance(entity, RecommendationMessage):
+            self.recommendation_messages.pop(entity.id, None)
+            if entity in entity.recommendation.messages:
+                entity.recommendation.messages.remove(entity)
+            if entity.created_by_user is not None and entity in entity.created_by_user.created_messages:
+                entity.created_by_user.created_messages.remove(entity)
 
     def save(self, store: FileDataStore) -> None:
         self._sync_recommendation_relations()
@@ -671,12 +714,14 @@ class FileDatasetGraph:
                 "recommendation_attachments": [
                     self._recommendation_attachment_record(item) for item in self.recommendation_attachments.values()
                 ],
+                "recommendation_messages": [self._recommendation_message_record(item) for item in self.recommendation_messages.values()],
             }
         )
 
     def _sync_recommendation_relations(self) -> None:
         synced_legs: dict[str, RecommendationLeg] = {}
         synced_attachments: dict[str, RecommendationAttachment] = {}
+        synced_messages: dict[str, RecommendationMessage] = {}
         for recommendation in self.recommendations.values():
             for leg in recommendation.legs:
                 if getattr(leg, "id", None) in (None, ""):
@@ -702,8 +747,23 @@ class FileDatasetGraph:
                 if getattr(attachment, "uploaded_by_user", None) is None and attachment.uploaded_by_user_id is not None:
                     attachment.uploaded_by_user = self.users.get(attachment.uploaded_by_user_id)
                 synced_attachments[attachment.id] = attachment
+            for message in recommendation.messages:
+                if getattr(message, "id", None) in (None, ""):
+                    message.id = str(uuid4())
+                if getattr(message, "created_at", None) is None:
+                    message.created_at = _utc_now()
+                if getattr(message, "updated_at", None) is None:
+                    message.updated_at = message.created_at
+                message.recommendation_id = recommendation.id
+                message.recommendation = recommendation
+                if getattr(message, "created_by_user", None) is None and message.created_by_user_id is not None:
+                    message.created_by_user = self.users.get(message.created_by_user_id)
+                synced_messages[message.id] = message
+                if message.created_by_user is not None and message not in message.created_by_user.created_messages:
+                    message.created_by_user.created_messages.append(message)
         self.recommendation_legs = synced_legs
         self.recommendation_attachments = synced_attachments
+        self.recommendation_messages = synced_messages
 
     def _base_record(self, entity: object) -> dict[str, Any]:
         return {
@@ -918,6 +978,7 @@ class FileDatasetGraph:
             "summary": entity.summary,
             "thesis": entity.thesis,
             "market_context": entity.market_context,
+            "recommendation_payload": entity.recommendation_payload,
             "requires_moderation": entity.requires_moderation,
             "scheduled_for": _serialize_datetime(entity.scheduled_for),
             "published_at": _serialize_datetime(entity.published_at),
@@ -949,4 +1010,13 @@ class FileDatasetGraph:
             "original_filename": entity.original_filename,
             "content_type": entity.content_type,
             "size_bytes": entity.size_bytes,
+        }
+
+    def _recommendation_message_record(self, entity: RecommendationMessage) -> dict[str, Any]:
+        return self._base_record(entity) | {
+            "recommendation_id": entity.recommendation_id,
+            "created_by_user_id": entity.created_by_user_id,
+            "mode": entity.mode,
+            "body": entity.body,
+            "payload": entity.payload,
         }

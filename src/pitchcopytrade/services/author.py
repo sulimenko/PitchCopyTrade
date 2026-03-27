@@ -12,7 +12,7 @@ from starlette.datastructures import UploadFile
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
+from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg, RecommendationMessage
 from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, RiskLevel, StrategyStatus, TradeSide
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.storage.base import StorageBackend
@@ -23,8 +23,6 @@ MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024
 ALLOWED_ATTACHMENT_CONTENT_TYPES = {
     "application/pdf",
     "image/jpeg",
-    "image/png",
-    "image/webp",
 }
 
 
@@ -79,6 +77,13 @@ class RecommendationFormData:
     scheduled_for: datetime | None
     legs: list[StructuredLegFormData]
     attachments: list[IncomingAttachment]
+    message_mode: str = "structured"
+    message_text: str | None = None
+    document_caption: str | None = None
+    structured_instrument_id: str | None = None
+    structured_side: TradeSide | None = None
+    structured_price: Decimal | None = None
+    structured_quantity: Decimal | None = None
 
 
 @dataclass(slots=True)
@@ -260,6 +265,7 @@ async def create_author_recommendation(
     uploaded_by_user_id: str | None = None,
     storage: StorageBackend | None = None,
 ) -> Recommendation:
+    payload = _build_recommendation_payload(data)
     recommendation = Recommendation(
         author_id=author.id,
         strategy_id=data.strategy_id,
@@ -269,11 +275,13 @@ async def create_author_recommendation(
         summary=data.summary,
         thesis=data.thesis,
         market_context=data.market_context,
+        recommendation_payload=payload,
         requires_moderation=data.requires_moderation,
         scheduled_for=data.scheduled_for,
     )
     _apply_publish_state(recommendation)
     _attach_legs(recommendation, data.legs)
+    _attach_message(recommendation, data, payload, created_by_user_id=uploaded_by_user_id)
     repository.add(recommendation)
     await repository.flush()
     if data.attachments:
@@ -299,6 +307,7 @@ async def update_author_recommendation(
 ) -> Recommendation:
     if recommendation.status not in {RecommendationStatus.DRAFT, RecommendationStatus.REVIEW}:
         raise ValueError("Редактировать можно только рекомендации в статусах «Черновик» и «На модерации».")
+    payload = _build_recommendation_payload(data)
     recommendation.strategy_id = data.strategy_id
     recommendation.kind = data.kind
     recommendation.status = data.status
@@ -306,10 +315,12 @@ async def update_author_recommendation(
     recommendation.summary = data.summary
     recommendation.thesis = data.thesis
     recommendation.market_context = data.market_context
+    recommendation.recommendation_payload = payload
     recommendation.requires_moderation = data.requires_moderation
     recommendation.scheduled_for = data.scheduled_for
     _apply_publish_state(recommendation)
     await _replace_legs(repository, recommendation, data.legs)
+    recommendation.messages.append(_build_message(data, payload, created_by_user_id=uploaded_by_user_id))
     if data.attachments:
         await _store_attachments(
             repository,
@@ -356,9 +367,16 @@ def build_recommendation_form_data(
     kind_value: str,
     status_value: str,
     title: str,
-    summary: str,
-    thesis: str,
-    market_context: str,
+    message_mode: str = "structured",
+    message_text: str = "",
+    document_caption: str = "",
+    structured_instrument_id: str = "",
+    structured_side_value: str = "",
+    structured_price: str = "",
+    structured_quantity: str = "",
+    summary: str = "",
+    thesis: str = "",
+    market_context: str = "",
     author_requires_moderation: bool,
     scheduled_for: str,
     allowed_strategy_ids: set[str],
@@ -384,8 +402,60 @@ def build_recommendation_form_data(
     if status == RecommendationStatus.SCHEDULED and scheduled_for_value is None:
         raise ValueError("Для scheduled нужен planned datetime.")
 
-    legs = _build_leg_rows(leg_rows, allowed_instrument_ids)
     parsed_attachments = list(attachments)
+    normalized_mode = (message_mode.strip() or "structured").lower()
+    if normalized_mode not in {"text", "document", "structured"}:
+        raise ValueError("Некорректный режим сообщения.")
+
+    structured_side: TradeSide | None = None
+    if structured_side_value.strip():
+        try:
+            structured_side = TradeSide(structured_side_value.strip())
+        except ValueError as exc:
+            raise ValueError("Некорректное направление structured-сообщения.") from exc
+
+    structured_price_value = _parse_decimal(structured_price.strip(), "Некорректная цена.") if structured_price.strip() else None
+    structured_quantity_value = _parse_decimal(structured_quantity.strip(), "Некорректное количество.") if structured_quantity.strip() else None
+    normalized_message_text = message_text.strip() or None
+    normalized_document_caption = document_caption.strip() or None
+    normalized_structured_instrument_id = structured_instrument_id.strip() or None
+
+    parsed_legs = _build_leg_rows(
+        leg_rows,
+        allowed_instrument_ids,
+        require_legs=normalized_mode == "structured" and any(
+            (value or "").strip()
+            for row in leg_rows
+            for key, value in row.items()
+            if key != "row_id"
+        ),
+    )
+
+    if normalized_mode == "structured" and not normalized_structured_instrument_id and parsed_legs:
+        first_leg = parsed_legs[0]
+        normalized_structured_instrument_id = first_leg.instrument_id
+        if structured_side is None:
+            structured_side = first_leg.side
+        if structured_price_value is None:
+            structured_price_value = first_leg.entry_from or first_leg.entry_to or Decimal("1")
+        if structured_quantity_value is None:
+            structured_quantity_value = Decimal("1")
+
+    if normalized_mode == "text":
+        if normalized_message_text is None:
+            raise ValueError("Для text message нужен текст сообщения.")
+    elif normalized_mode == "document":
+        if not parsed_attachments:
+            raise ValueError("Для document message нужен PDF или JPG.")
+    else:
+        if normalized_structured_instrument_id is None:
+            raise ValueError("Для structured message нужен инструмент.")
+        if structured_side is None:
+            raise ValueError("Для structured message нужно выбрать Buy или Sell.")
+        if structured_price_value is None:
+            raise ValueError("Для structured message нужна цена.")
+        if structured_quantity_value is None:
+            raise ValueError("Для structured message нужно количество.")
 
     return RecommendationFormData(
         strategy_id=normalized_strategy_id,
@@ -397,8 +467,15 @@ def build_recommendation_form_data(
         market_context=market_context.strip() or None,
         requires_moderation=author_requires_moderation,
         scheduled_for=scheduled_for_value,
-        legs=legs,
+        legs=parsed_legs,
         attachments=parsed_attachments,
+        message_mode=normalized_mode,
+        message_text=normalized_message_text,
+        document_caption=normalized_document_caption,
+        structured_instrument_id=normalized_structured_instrument_id,
+        structured_side=structured_side,
+        structured_price=structured_price_value,
+        structured_quantity=structured_quantity_value,
     )
 
 
@@ -447,7 +524,7 @@ async def normalize_attachment_uploads(files: Iterable[UploadFile]) -> list[Inco
             continue
         content_type = (item.content_type or "application/octet-stream").strip()
         if content_type not in ALLOWED_ATTACHMENT_CONTENT_TYPES:
-            raise ValueError("Разрешены только PDF и изображения JPG/PNG/WEBP.")
+            raise ValueError("Разрешены только PDF и изображения JPG.")
         data = await item.read()
         if not data:
             raise ValueError("Нельзя загрузить пустой файл.")
@@ -476,6 +553,13 @@ def recommendation_form_values(recommendation: Recommendation | None) -> dict[st
             "requires_moderation": False,
             "scheduled_for": "",
             "legs": [_blank_leg_value("0")],
+            "message_mode": "structured",
+            "message_text": "",
+            "document_caption": "",
+            "structured_instrument_id": "",
+            "structured_side": "",
+            "structured_price": "",
+            "structured_quantity": "",
         }
 
     scheduled_for = ""
@@ -514,6 +598,13 @@ def recommendation_form_values(recommendation: Recommendation | None) -> dict[st
         "requires_moderation": recommendation.requires_moderation,
         "scheduled_for": scheduled_for,
         "legs": legs,
+        "message_mode": (recommendation.recommendation_payload or {}).get("mode", "structured"),
+        "message_text": (recommendation.recommendation_payload or {}).get("text", ""),
+        "document_caption": (recommendation.recommendation_payload or {}).get("document_caption", ""),
+        "structured_instrument_id": (recommendation.recommendation_payload or {}).get("instrument_id", ""),
+        "structured_side": (recommendation.recommendation_payload or {}).get("side", ""),
+        "structured_price": (recommendation.recommendation_payload or {}).get("price", ""),
+        "structured_quantity": (recommendation.recommendation_payload or {}).get("quantity", ""),
     }
 
 
@@ -589,7 +680,12 @@ def _apply_publish_state(recommendation: Recommendation) -> None:
     recommendation.cancelled_at = now if recommendation.status == RecommendationStatus.CANCELLED else None
 
 
-def _build_leg_rows(rows: Iterable[dict[str, str]], allowed_instrument_ids: set[str]) -> list[StructuredLegFormData]:
+def _build_leg_rows(
+    rows: Iterable[dict[str, str]],
+    allowed_instrument_ids: set[str],
+    *,
+    require_legs: bool = True,
+) -> list[StructuredLegFormData]:
     legs: list[StructuredLegFormData] = []
     for index, row in enumerate(rows, start=1):
         if not any((value or "").strip() for key, value in row.items() if key != "row_id"):
@@ -629,7 +725,7 @@ def _build_leg_rows(rows: Iterable[dict[str, str]], allowed_instrument_ids: set[
                 note=row.get("note", "").strip() or None,
             )
         )
-    if len(legs) < MIN_REQUIRED_LEGS:
+    if require_legs and len(legs) < MIN_REQUIRED_LEGS:
         raise ValueError("Добавьте минимум одну бумагу с инструментом и направлением.")
     return legs
 
@@ -663,6 +759,79 @@ def _attach_legs(recommendation: Recommendation, legs: list[StructuredLegFormDat
         )
         for item in legs
     ]
+
+
+def _build_recommendation_payload(data: RecommendationFormData) -> dict[str, object]:
+    if data.message_mode == "text":
+        return {
+            "mode": "text",
+            "text": data.message_text or "",
+            "title": data.title or "",
+        }
+    if data.message_mode == "document":
+        return {
+            "mode": "document",
+            "document_caption": data.document_caption or data.message_text or "",
+            "attachments": [attachment.filename for attachment in data.attachments],
+            "title": data.title or "",
+        }
+    amount = None
+    if data.structured_price is not None and data.structured_quantity is not None:
+        amount = data.structured_price * data.structured_quantity
+    return {
+        "mode": "structured",
+        "instrument_id": data.structured_instrument_id,
+        "side": data.structured_side.value if data.structured_side else None,
+        "price": _format_decimal(data.structured_price) if data.structured_price is not None else None,
+        "quantity": _format_decimal(data.structured_quantity) if data.structured_quantity is not None else None,
+        "amount": _format_decimal(amount) if amount is not None else None,
+        "title": data.title or "",
+        "summary": data.summary or "",
+    }
+
+
+def _build_message(
+    data: RecommendationFormData,
+    payload: dict[str, object],
+    *,
+    created_by_user_id: str | None = None,
+) -> RecommendationMessage:
+    body = data.message_text
+    if data.message_mode == "document":
+        body = data.document_caption or data.message_text or "Документ"
+    elif data.message_mode == "structured":
+        body = _build_structured_message_body(data)
+    return RecommendationMessage(
+        created_by_user_id=created_by_user_id,
+        mode=data.message_mode,
+        body=body,
+        payload=payload,
+    )
+
+
+def _build_structured_message_body(data: RecommendationFormData) -> str:
+    parts = ["Structured recommendation"]
+    if data.structured_instrument_id:
+        parts.append(f"instrument={data.structured_instrument_id}")
+    if data.structured_side:
+        parts.append(f"side={data.structured_side.value}")
+    if data.structured_price is not None:
+        parts.append(f"price={_format_decimal(data.structured_price)}")
+    if data.structured_quantity is not None:
+        parts.append(f"qty={_format_decimal(data.structured_quantity)}")
+    if data.structured_price is not None and data.structured_quantity is not None:
+        parts.append(f"amount={_format_decimal(data.structured_price * data.structured_quantity)}")
+    return " · ".join(parts)
+
+
+def _attach_message(
+    recommendation: Recommendation,
+    data: RecommendationFormData,
+    payload: dict[str, object],
+    *,
+    created_by_user_id: str | None = None,
+) -> None:
+    recommendation.messages = [_build_message(data, payload, created_by_user_id=created_by_user_id)]
 
 
 async def _store_attachments(

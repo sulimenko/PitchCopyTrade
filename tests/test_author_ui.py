@@ -367,13 +367,13 @@ def test_author_recommendation_embedded_create_page_renders(monkeypatch) -> None
         assert response.status_code == 200
         assert "Новая рекомендация" in response.text
         assert "Momentum RU" in response.text
-        assert "Основное" in response.text
-        assert "Бумаги" in response.text
+        assert "История сообщений" in response.text
+        assert "Composer" in response.text
+        assert "structured summary" in response.text
+        assert "Публикация" in response.text
         assert "Вложения" in response.text
         assert "Действия" in response.text
-        assert "+ Добавить бумагу" in response.text
-        assert "Политика модерации" in response.text
-        assert "Что уже поддержано" not in response.text
+        assert "Один экран для переписки" in response.text
         assert 'class="embedded-shell"' in response.text
         assert 'class="staff-shell"' not in response.text
         assert 'action="/author/recommendations"' in response.text
@@ -406,9 +406,11 @@ def test_author_recommendation_detail_prefills_editor(monkeypatch) -> None:
         assert 'name="title" value="Покупка SBER"' in response.text
         assert 'value="strategy-1" selected' in response.text
         assert 'value="instrument-1" selected' in response.text
-        assert 'name="leg_1_entry_from" value="101.5"' in response.text
-        assert 'name="leg_1_take_profit_1" value="106.2"' in response.text
-        assert 'name="leg_1_stop_loss" value="99.9"' in response.text
+        assert 'name="message_mode"' in response.text
+        assert 'option value="structured" selected' in response.text
+        assert 'name="structured_instrument_id"' in response.text
+        assert 'name="structured_price" value="101.5"' in response.text
+        assert 'name="structured_quantity" value="1"' in response.text
         assert 'option value="buy" selected' in response.text
 
 
@@ -681,7 +683,8 @@ def test_author_recommendation_create_requires_at_least_one_leg(monkeypatch) -> 
         )
 
         assert response.status_code == 422
-        assert "Добавьте минимум одну бумагу" in response.text
+        assert "Выберите инструмент для structured сообщения." in response.text
+        assert "Добавьте минимум одну бумагу" not in response.text
 
 
 def test_author_recommendation_edit_page_renders(monkeypatch) -> None:
@@ -729,9 +732,8 @@ def test_author_recommendation_create_marks_first_leg_instrument_error(monkeypat
         assert response.status_code == 422
         assert "Leg 1:" not in response.text
         assert "Выберите инструмент для первой бумаги." in response.text
-        assert "Выберите инструмент из списка" in response.text
-        assert 'name="leg_7_instrument_id"' in response.text
-        assert 'class="is-invalid"' in response.text
+        assert 'name="structured_instrument_id"' in response.text
+        assert 'class="is-invalid"' not in response.text
 
 
 def test_author_recommendation_preview_renders_subscriber_view(monkeypatch) -> None:

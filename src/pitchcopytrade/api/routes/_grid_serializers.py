@@ -69,7 +69,7 @@ def serialize_strategies(strategies: list, request_url_for=None) -> str:
             "min_capital": f"{item.min_capital_rub:,.0f}" if item.min_capital_rub else "—",
             "actions": _link(f"/admin/strategies/{item.id}/edit", "Открыть"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_authors(authors: list, request_url_for=None) -> str:
@@ -100,7 +100,7 @@ def serialize_authors(authors: list, request_url_for=None) -> str:
             "invite": invite_status,
             "actions": actions_html,
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_staff(staff: list, current_user_id: str | None = None, request_url_for=None) -> str:
@@ -138,7 +138,7 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
             "telegram_id": str(item.get("telegram_user_id")) if item.get("telegram_user_id") else "—",
             "actions": actions_html,
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_products(products: list, request_url_for=None) -> str:
@@ -161,7 +161,7 @@ def serialize_products(products: list, request_url_for=None) -> str:
             "target": product_type,
             "actions": _link(f"/admin/products/{item.id}/edit", "Открыть"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_subscriptions(subscriptions: list, request_url_for=None) -> str:
@@ -190,7 +190,7 @@ def serialize_subscriptions(subscriptions: list, request_url_for=None) -> str:
             "source": lead_source_name,
             "actions": _link(f"/admin/subscriptions/{item.id}", "Подробнее"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_payments(payments: list, request_url_for=None) -> str:
@@ -216,7 +216,7 @@ def serialize_payments(payments: list, request_url_for=None) -> str:
             "subs_count": str(subs_count) if subs_count else "—",
             "actions": _link(f"/admin/payments/{item.id}", "Подробнее"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_legal(documents: list, request_url_for=None) -> str:
@@ -234,10 +234,10 @@ def serialize_legal(documents: list, request_url_for=None) -> str:
             "version": str(item.version) if item.version else "1",
             "status": _badge("Активен" if is_active else "Черновик", status_class),
             "consents": str(consents_count) if consents_count > 0 else "—",
-            "source": _link(f"/admin/legal/{item.id}", "Просмотр"),
+            "source": _link(f"/admin/legal/{item.id}/edit", "Просмотр"),
             "actions": _link(f"/admin/legal/{item.id}/edit", "Редактировать"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_promos(promo_codes: list, request_url_for=None) -> str:
@@ -264,7 +264,7 @@ def serialize_promos(promo_codes: list, request_url_for=None) -> str:
             "expires": _fmt_dt(item.expires_at) if item.expires_at else "—",
             "actions": _link(f"/admin/promos/{item.id}/edit", "Редактировать"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_delivery(records: list, request_url_for=None) -> str:
@@ -289,7 +289,7 @@ def serialize_delivery(records: list, request_url_for=None) -> str:
             "last_event": item.latest_delivery_event.payload.get("error") if item.latest_delivery_event and item.latest_delivery_event.payload else "—",
             "actions": _link(f"/admin/delivery/{item.recommendation.id}", "Подробнее"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_lead_analytics(rows: list, request_url_for=None) -> str:
@@ -307,7 +307,7 @@ def serialize_lead_analytics(rows: list, request_url_for=None) -> str:
             "paid": str(row.paid_payments),
             "revenue": f"{row.revenue_rub:,.0f} ₽",
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_metrics_strategies(stats: list, request_url_for=None) -> str:
@@ -318,7 +318,7 @@ def serialize_metrics_strategies(stats: list, request_url_for=None) -> str:
             "title": item.get("title", "") or "—",
             "sub_count": str(item.get("sub_count", 0)),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_recommendations(recommendations: list, request_url_for=None) -> str:
@@ -374,7 +374,7 @@ def serialize_recommendations(recommendations: list, request_url_for=None) -> st
             "updated": _fmt_dt(item.updated_at),
             "actions": _link(f"/author/recommendations/{item.id}/edit", "Открыть"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_author_strategies(strategies: list, request_url_for=None) -> str:
@@ -394,7 +394,7 @@ def serialize_author_strategies(strategies: list, request_url_for=None) -> str:
             "min_capital": f"{item.min_capital_rub:,.0f}" if item.min_capital_rub else "—",
             "actions": _link(f"/author/strategies/{item.id}/edit", "Редактировать"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)
 
 
 def serialize_moderation_queue(items: list, request_url_for=None) -> str:
@@ -419,4 +419,4 @@ def serialize_moderation_queue(items: list, request_url_for=None) -> str:
             "status": _badge(status_val, status_class),
             "actions": _link(f"/moderation/recommendations/{item.id}", "Редактировать"),
         })
-    return json.dumps(data, default=str)
+    return json.dumps(data, default=str, ensure_ascii=False)

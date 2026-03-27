@@ -156,8 +156,9 @@ def test_moderation_detail_renders(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Одобрить" in response.text
         assert "Momentum RU" in response.text
-        assert "Одобрено модератором" in response.text
-        assert "SLA:" in response.text
+        assert "message thread" in response.text
+        assert "Комментарий модерации" in response.text
+        assert "Что увидит подписчик" in response.text
 
 
 def test_moderation_approve_redirects(monkeypatch) -> None:

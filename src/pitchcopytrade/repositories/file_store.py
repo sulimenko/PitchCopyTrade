@@ -29,6 +29,7 @@ class FileDataStore:
         "recommendations",
         "recommendation_legs",
         "recommendation_attachments",
+        "recommendation_messages",
     )
 
     def __init__(

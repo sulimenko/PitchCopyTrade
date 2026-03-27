@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from pitchcopytrade.db.models.audit import AuditEvent
     from pitchcopytrade.db.models.catalog import Instrument, LeadSource, Strategy, SubscriptionProduct
     from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
-    from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment
+    from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationMessage
 
 user_roles = Table(
     "user_roles",
@@ -61,6 +61,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     consents: Mapped[list["UserConsent"]] = relationship(back_populates="user")
     moderated_recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="moderated_by_user")
     uploaded_attachments: Mapped[list["RecommendationAttachment"]] = relationship(back_populates="uploaded_by_user")
+    created_messages: Mapped[list["RecommendationMessage"]] = relationship(back_populates="created_by_user")
     audit_events: Mapped[list["AuditEvent"]] = relationship(back_populates="actor_user")
 
 

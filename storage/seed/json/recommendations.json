@@ -10,6 +10,16 @@
     "moderated_by_user_id": null,
     "moderation_comment": null,
     "published_at": "2026-03-11T00:00:00+00:00",
+    "recommendation_payload": {
+      "amount": "10150.00",
+      "instrument_id": "instrument-1",
+      "mode": "structured",
+      "price": "101.5",
+      "quantity": "100",
+      "side": "buy",
+      "summary": "Сильный спрос и удержание локального диапазона.",
+      "title": "Покупка SBER"
+    },
     "requires_moderation": false,
     "scheduled_for": null,
     "status": "published",

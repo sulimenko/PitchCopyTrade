@@ -155,7 +155,7 @@ def test_build_leg_rows_from_form_preserves_dynamic_indexes() -> None:
 
 
 def test_build_recommendation_form_data_requires_at_least_one_leg() -> None:
-    with pytest.raises(ValueError, match="Добавьте минимум одну бумагу"):
+    with pytest.raises(ValueError, match="Для structured message нужен инструмент"):
         build_recommendation_form_data(
             strategy_id="strategy-1",
             kind_value="new_idea",
@@ -164,7 +164,7 @@ def test_build_recommendation_form_data_requires_at_least_one_leg() -> None:
             summary="summary",
             thesis="thesis",
             market_context="context",
-                author_requires_moderation=False,
+            author_requires_moderation=False,
             scheduled_for="",
             allowed_strategy_ids={"strategy-1"},
             allowed_instrument_ids={"instrument-1"},

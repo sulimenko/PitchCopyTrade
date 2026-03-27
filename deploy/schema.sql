@@ -281,6 +281,7 @@ CREATE TABLE recommendations (
     summary              TEXT,
     thesis               TEXT,
     market_context       TEXT,
+    recommendation_payload JSONB,
     requires_moderation  BOOLEAN NOT NULL DEFAULT FALSE,
     scheduled_for        TIMESTAMPTZ,
     published_at         TIMESTAMPTZ,
@@ -322,6 +323,17 @@ CREATE TABLE recommendation_attachments (
     updated_at          TIMESTAMPTZ NOT NULL,
     CONSTRAINT ck_recommendation_attachments_size_bytes_non_negative
         CHECK (size_bytes >= 0)
+);
+
+CREATE TABLE recommendation_messages (
+    id                  UUID PRIMARY KEY,
+    recommendation_id   UUID NOT NULL REFERENCES recommendations (id) ON DELETE CASCADE,
+    created_by_user_id   UUID REFERENCES users (id) ON DELETE SET NULL,
+    mode                VARCHAR(20) NOT NULL,
+    body                TEXT,
+    payload             JSONB,
+    created_at          TIMESTAMPTZ NOT NULL,
+    updated_at          TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE audit_events (
