@@ -17,7 +17,7 @@ from pitchcopytrade.db.models.catalog import (
     SubscriptionProduct,
 )
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg, RecommendationMessage
+from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     InviteDeliveryStatus,
@@ -27,13 +27,10 @@ from pitchcopytrade.db.models.enums import (
     PaymentProvider,
     PaymentStatus,
     ProductType,
-    RecommendationKind,
-    RecommendationStatus,
     RiskLevel,
     RoleSlug,
     StrategyStatus,
     SubscriptionStatus,
-    TradeSide,
     UserStatus,
 )
 from pitchcopytrade.repositories.file_store import FileDataStore
@@ -87,10 +84,7 @@ class FileDatasetGraph:
     subscriptions: dict[str, Subscription]
     user_consents: dict[str, UserConsent]
     audit_events: dict[str, AuditEvent]
-    recommendations: dict[str, Recommendation]
-    recommendation_legs: dict[str, RecommendationLeg]
-    recommendation_attachments: dict[str, RecommendationAttachment]
-    recommendation_messages: dict[str, RecommendationMessage]
+    messages: dict[str, Message]
 
     @classmethod
     def load(cls, store: FileDataStore) -> FileDatasetGraph:
@@ -152,9 +146,8 @@ class FileDatasetGraph:
             user.consents = []
             user.payments = []
             user.subscriptions = []
-            user.uploaded_attachments = []
-            user.created_messages = []
-            user.moderated_recommendations = []
+            user.messages = []
+            user.moderated_messages = []
             user.audit_events = []
             user.lead_source = lead_sources.get(user.lead_source_id)
             if user.lead_source is not None and user not in user.lead_source.users:
@@ -179,7 +172,7 @@ class FileDatasetGraph:
             author.user.author_profile = author
             author.strategies = []
             author.subscription_products = []
-            author.recommendations = []
+            author.messages = []
             author.watchlist_instruments = []
 
         instruments = {
@@ -198,7 +191,6 @@ class FileDatasetGraph:
             for item in raw["instruments"]
         }
         for instrument in instruments.values():
-            instrument.recommendation_legs = []
             instrument.watchlist_authors = []
 
         for item in raw.get("author_watchlist_instruments", []):
@@ -234,7 +226,7 @@ class FileDatasetGraph:
                 strategy.author.strategies.append(strategy)
             strategy.bundle_memberships = []
             strategy.subscription_products = []
-            strategy.recommendations = []
+            strategy.messages = []
 
         bundles = {
             item["id"]: Bundle(
@@ -252,6 +244,7 @@ class FileDatasetGraph:
         for bundle in bundles.values():
             bundle.members = []
             bundle.subscription_products = []
+            bundle.messages = []
 
         bundle_members: list[BundleMember] = []
         for item in raw["bundle_members"]:
@@ -454,116 +447,51 @@ class FileDatasetGraph:
             if event.actor_user is not None and event not in event.actor_user.audit_events:
                 event.actor_user.audit_events.append(event)
 
-        recommendations = {
-            item["id"]: Recommendation(
+        messages = {
+            item["id"]: Message(
                 id=item["id"],
-                strategy_id=item["strategy_id"],
-                author_id=item["author_id"],
-                moderated_by_user_id=item.get("moderated_by_user_id"),
-                kind=_enum(RecommendationKind, item["kind"]),
-                status=_enum(RecommendationStatus, item["status"]),
+                thread=item.get("thread"),
+                parent=item.get("parent"),
+                author_id=item.get("author"),
+                user_id=item.get("user"),
+                moderator_id=item.get("moderator"),
+                strategy_id=item.get("strategy"),
+                bundle_id=item.get("bundle"),
+                deliver=list(item.get("deliver", [])),
+                channel=list(item.get("channel", ["telegram", "miniapp"])),
+                kind=item.get("kind"),
+                type=item.get("type"),
+                status=item.get("status", "draft"),
+                moderation=item.get("moderation", "required"),
                 title=item.get("title"),
-                summary=item.get("summary"),
-                thesis=item.get("thesis"),
-                market_context=item.get("market_context"),
-                recommendation_payload=item.get("recommendation_payload"),
-                requires_moderation=item.get("requires_moderation", False),
-                scheduled_for=_parse_datetime(item.get("scheduled_for")),
-                published_at=_parse_datetime(item.get("published_at")),
-                closed_at=_parse_datetime(item.get("closed_at")),
-                cancelled_at=_parse_datetime(item.get("cancelled_at")),
-                moderation_comment=item.get("moderation_comment"),
-                created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
-                updated_at=_parse_datetime(item.get("updated_at")) or _utc_now(),
+                comment=item.get("comment"),
+                schedule=_parse_datetime(item.get("schedule")),
+                published=_parse_datetime(item.get("published")),
+                archived=_parse_datetime(item.get("archived")),
+                documents=item.get("documents", []),
+                text=item.get("text", {}),
+                deals=item.get("deals", []),
+                created=_parse_datetime(item.get("created")) or _utc_now(),
+                updated=_parse_datetime(item.get("updated")) or _utc_now(),
             )
-            for item in raw["recommendations"]
+            for item in raw["messages"]
         }
-        for recommendation in recommendations.values():
-            recommendation.strategy = strategies[recommendation.strategy_id]
-            recommendation.author = authors[recommendation.author_id]
-            recommendation.moderated_by_user = users.get(recommendation.moderated_by_user_id)
-            if recommendation.moderated_by_user is not None:
-                if recommendation not in recommendation.moderated_by_user.moderated_recommendations:
-                    recommendation.moderated_by_user.moderated_recommendations.append(recommendation)
-            if recommendation not in recommendation.strategy.recommendations:
-                recommendation.strategy.recommendations.append(recommendation)
-            if recommendation not in recommendation.author.recommendations:
-                recommendation.author.recommendations.append(recommendation)
-            recommendation.legs = []
-            recommendation.attachments = []
-            recommendation.messages = []
-
-        recommendation_legs = {
-            item["id"]: RecommendationLeg(
-                id=item["id"],
-                recommendation_id=item["recommendation_id"],
-                instrument_id=item.get("instrument_id"),
-                side=_enum(TradeSide, item.get("side")),
-                entry_from=_parse_decimal(item.get("entry_from")),
-                entry_to=_parse_decimal(item.get("entry_to")),
-                stop_loss=_parse_decimal(item.get("stop_loss")),
-                take_profit_1=_parse_decimal(item.get("take_profit_1")),
-                take_profit_2=_parse_decimal(item.get("take_profit_2")),
-                take_profit_3=_parse_decimal(item.get("take_profit_3")),
-                time_horizon=item.get("time_horizon"),
-                note=item.get("note"),
-                created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
-                updated_at=_parse_datetime(item.get("updated_at")) or _utc_now(),
-            )
-            for item in raw["recommendation_legs"]
-        }
-        for leg in recommendation_legs.values():
-            leg.recommendation = recommendations[leg.recommendation_id]
-            leg.instrument = instruments.get(leg.instrument_id)
-            if leg not in leg.recommendation.legs:
-                leg.recommendation.legs.append(leg)
-            if leg.instrument is not None:
-                if leg not in leg.instrument.recommendation_legs:
-                    leg.instrument.recommendation_legs.append(leg)
-
-        recommendation_attachments = {
-            item["id"]: RecommendationAttachment(
-                id=item["id"],
-                recommendation_id=item["recommendation_id"],
-                uploaded_by_user_id=item.get("uploaded_by_user_id"),
-                object_key=item["object_key"],
-                original_filename=item["original_filename"],
-                content_type=item["content_type"],
-                size_bytes=item["size_bytes"],
-                created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
-                updated_at=_parse_datetime(item.get("updated_at")) or _utc_now(),
-            )
-            for item in raw["recommendation_attachments"]
-        }
-        for attachment in recommendation_attachments.values():
-            attachment.recommendation = recommendations[attachment.recommendation_id]
-            attachment.uploaded_by_user = users.get(attachment.uploaded_by_user_id)
-            if attachment not in attachment.recommendation.attachments:
-                attachment.recommendation.attachments.append(attachment)
-            if attachment.uploaded_by_user is not None:
-                if attachment not in attachment.uploaded_by_user.uploaded_attachments:
-                    attachment.uploaded_by_user.uploaded_attachments.append(attachment)
-
-        recommendation_messages = {
-            item["id"]: RecommendationMessage(
-                id=item["id"],
-                recommendation_id=item["recommendation_id"],
-                created_by_user_id=item.get("created_by_user_id"),
-                mode=item["mode"],
-                body=item.get("body"),
-                payload=item.get("payload"),
-                created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
-                updated_at=_parse_datetime(item.get("updated_at")) or _utc_now(),
-            )
-            for item in raw.get("recommendation_messages", [])
-        }
-        for message in recommendation_messages.values():
-            message.recommendation = recommendations[message.recommendation_id]
-            message.created_by_user = users.get(message.created_by_user_id)
-            if message not in message.recommendation.messages:
-                message.recommendation.messages.append(message)
-            if message.created_by_user is not None and message not in message.created_by_user.created_messages:
-                message.created_by_user.created_messages.append(message)
+        for message in messages.values():
+            message.author = authors.get(message.author_id)
+            message.user = users.get(message.user_id)
+            message.moderator = users.get(message.moderator_id)
+            message.strategy = strategies.get(message.strategy_id)
+            message.bundle = bundles.get(message.bundle_id)
+            if message.author is not None and message not in message.author.messages:
+                message.author.messages.append(message)
+            if message.user is not None and message not in message.user.messages:
+                message.user.messages.append(message)
+            if message.moderator is not None and message not in message.moderator.moderated_messages:
+                message.moderator.moderated_messages.append(message)
+            if message.strategy is not None and message not in message.strategy.messages:
+                message.strategy.messages.append(message)
+            if message.bundle is not None and message not in message.bundle.messages:
+                message.bundle.messages.append(message)
 
         return cls(
             roles=roles,
@@ -581,20 +509,23 @@ class FileDatasetGraph:
             subscriptions=subscriptions,
             user_consents=user_consents,
             audit_events=audit_events,
-            recommendations=recommendations,
-            recommendation_legs=recommendation_legs,
-            recommendation_attachments=recommendation_attachments,
-            recommendation_messages=recommendation_messages,
+            messages=messages,
         )
 
     def add(self, entity: object) -> None:
         now = _utc_now()
         if getattr(entity, "id", None) in (None, ""):
             entity.id = str(uuid4())
-        if getattr(entity, "created_at", None) is None:
-            entity.created_at = now
-        if getattr(entity, "updated_at", None) is None:
-            entity.updated_at = now
+        if isinstance(entity, Message):
+            if getattr(entity, "created", None) is None:
+                entity.created = now
+            if getattr(entity, "updated", None) is None:
+                entity.updated = now
+        else:
+            if getattr(entity, "created_at", None) is None:
+                entity.created_at = now
+            if getattr(entity, "updated_at", None) is None:
+                entity.updated_at = now
 
         if isinstance(entity, User):
             self.users[entity.id] = entity
@@ -625,72 +556,45 @@ class FileDatasetGraph:
             self.audit_events[entity.id] = entity
             if entity.actor_user is not None and entity not in entity.actor_user.audit_events:
                 entity.actor_user.audit_events.append(entity)
-        elif isinstance(entity, Recommendation):
-            if getattr(entity, "author", None) is None:
-                entity.author = self.authors[entity.author_id]
-            if getattr(entity, "strategy", None) is None:
-                entity.strategy = self.strategies[entity.strategy_id]
-            entity.legs = list(getattr(entity, "legs", []) or [])
-            entity.attachments = list(getattr(entity, "attachments", []) or [])
-            entity.messages = list(getattr(entity, "messages", []) or [])
-            self.recommendations[entity.id] = entity
-            if entity not in entity.author.recommendations:
-                entity.author.recommendations.append(entity)
-            if entity not in entity.strategy.recommendations:
-                entity.strategy.recommendations.append(entity)
-        elif isinstance(entity, RecommendationLeg):
-            if getattr(entity, "recommendation", None) is None:
-                entity.recommendation = self.recommendations[entity.recommendation_id]
-            if getattr(entity, "instrument", None) is None and entity.instrument_id is not None:
-                entity.instrument = self.instruments.get(entity.instrument_id)
-            self.recommendation_legs[entity.id] = entity
-            if entity not in entity.recommendation.legs:
-                entity.recommendation.legs.append(entity)
-            if entity.instrument is not None and entity not in entity.instrument.recommendation_legs:
-                entity.instrument.recommendation_legs.append(entity)
-        elif isinstance(entity, RecommendationAttachment):
-            if getattr(entity, "recommendation", None) is None:
-                entity.recommendation = self.recommendations[entity.recommendation_id]
-            if getattr(entity, "uploaded_by_user", None) is None and entity.uploaded_by_user_id is not None:
-                entity.uploaded_by_user = self.users.get(entity.uploaded_by_user_id)
-            self.recommendation_attachments[entity.id] = entity
-            if entity not in entity.recommendation.attachments:
-                entity.recommendation.attachments.append(entity)
-            if entity.uploaded_by_user is not None and entity not in entity.uploaded_by_user.uploaded_attachments:
-                entity.uploaded_by_user.uploaded_attachments.append(entity)
-        elif isinstance(entity, RecommendationMessage):
-            if getattr(entity, "recommendation", None) is None:
-                entity.recommendation = self.recommendations[entity.recommendation_id]
-            if getattr(entity, "created_by_user", None) is None and entity.created_by_user_id is not None:
-                entity.created_by_user = self.users.get(entity.created_by_user_id)
-            self.recommendation_messages[entity.id] = entity
-            if entity not in entity.recommendation.messages:
-                entity.recommendation.messages.append(entity)
-            if entity.created_by_user is not None and entity not in entity.created_by_user.created_messages:
-                entity.created_by_user.created_messages.append(entity)
+        elif isinstance(entity, Message):
+            if getattr(entity, "author", None) is None and entity.author_id is not None:
+                entity.author = self.authors.get(entity.author_id)
+            if getattr(entity, "user", None) is None and entity.user_id is not None:
+                entity.user = self.users.get(entity.user_id)
+            if getattr(entity, "moderator", None) is None and entity.moderator_id is not None:
+                entity.moderator = self.users.get(entity.moderator_id)
+            if getattr(entity, "strategy", None) is None and entity.strategy_id is not None:
+                entity.strategy = self.strategies.get(entity.strategy_id)
+            if getattr(entity, "bundle", None) is None and entity.bundle_id is not None:
+                entity.bundle = self.bundles.get(entity.bundle_id)
+            self.messages[entity.id] = entity
+            if entity.author is not None and entity not in entity.author.messages:
+                entity.author.messages.append(entity)
+            if entity.user is not None and entity not in entity.user.messages:
+                entity.user.messages.append(entity)
+            if entity.moderator is not None and entity not in entity.moderator.moderated_messages:
+                entity.moderator.moderated_messages.append(entity)
+            if entity.strategy is not None and entity not in entity.strategy.messages:
+                entity.strategy.messages.append(entity)
+            if entity.bundle is not None and entity not in entity.bundle.messages:
+                entity.bundle.messages.append(entity)
 
     def delete(self, entity: object) -> None:
-        if isinstance(entity, RecommendationLeg):
-            self.recommendation_legs.pop(entity.id, None)
-            if entity in entity.recommendation.legs:
-                entity.recommendation.legs.remove(entity)
-            if entity.instrument is not None and entity in entity.instrument.recommendation_legs:
-                entity.instrument.recommendation_legs.remove(entity)
-        elif isinstance(entity, RecommendationAttachment):
-            self.recommendation_attachments.pop(entity.id, None)
-            if entity in entity.recommendation.attachments:
-                entity.recommendation.attachments.remove(entity)
-            if entity.uploaded_by_user is not None and entity in entity.uploaded_by_user.uploaded_attachments:
-                entity.uploaded_by_user.uploaded_attachments.remove(entity)
-        elif isinstance(entity, RecommendationMessage):
-            self.recommendation_messages.pop(entity.id, None)
-            if entity in entity.recommendation.messages:
-                entity.recommendation.messages.remove(entity)
-            if entity.created_by_user is not None and entity in entity.created_by_user.created_messages:
-                entity.created_by_user.created_messages.remove(entity)
+        if isinstance(entity, Message):
+            self.messages.pop(entity.id, None)
+            if entity.author is not None and entity in entity.author.messages:
+                entity.author.messages.remove(entity)
+            if entity.user is not None and entity in entity.user.messages:
+                entity.user.messages.remove(entity)
+            if entity.moderator is not None and entity in entity.moderator.moderated_messages:
+                entity.moderator.moderated_messages.remove(entity)
+            if entity.strategy is not None and entity in entity.strategy.messages:
+                entity.strategy.messages.remove(entity)
+            if entity.bundle is not None and entity in entity.bundle.messages:
+                entity.bundle.messages.remove(entity)
 
     def save(self, store: FileDataStore) -> None:
-        self._sync_recommendation_relations()
+        self._sync_message_relations()
         store.save_many(
             {
                 "roles": [self._role_record(item) for item in self.roles.values()],
@@ -709,61 +613,41 @@ class FileDatasetGraph:
                 "subscriptions": [self._subscription_record(item) for item in self.subscriptions.values()],
                 "user_consents": [self._user_consent_record(item) for item in self.user_consents.values()],
                 "audit_events": [self._audit_event_record(item) for item in self.audit_events.values()],
-                "recommendations": [self._recommendation_record(item) for item in self.recommendations.values()],
-                "recommendation_legs": [self._recommendation_leg_record(item) for item in self.recommendation_legs.values()],
-                "recommendation_attachments": [
-                    self._recommendation_attachment_record(item) for item in self.recommendation_attachments.values()
-                ],
-                "recommendation_messages": [self._recommendation_message_record(item) for item in self.recommendation_messages.values()],
+                "messages": [self._message_record(item) for item in self.messages.values()],
             }
         )
 
-    def _sync_recommendation_relations(self) -> None:
-        synced_legs: dict[str, RecommendationLeg] = {}
-        synced_attachments: dict[str, RecommendationAttachment] = {}
-        synced_messages: dict[str, RecommendationMessage] = {}
-        for recommendation in self.recommendations.values():
-            for leg in recommendation.legs:
-                if getattr(leg, "id", None) in (None, ""):
-                    leg.id = str(uuid4())
-                if getattr(leg, "created_at", None) is None:
-                    leg.created_at = _utc_now()
-                if getattr(leg, "updated_at", None) is None:
-                    leg.updated_at = leg.created_at
-                leg.recommendation_id = recommendation.id
-                leg.recommendation = recommendation
-                if getattr(leg, "instrument", None) is None and leg.instrument_id is not None:
-                    leg.instrument = self.instruments.get(leg.instrument_id)
-                synced_legs[leg.id] = leg
-            for attachment in recommendation.attachments:
-                if getattr(attachment, "id", None) in (None, ""):
-                    attachment.id = str(uuid4())
-                if getattr(attachment, "created_at", None) is None:
-                    attachment.created_at = _utc_now()
-                if getattr(attachment, "updated_at", None) is None:
-                    attachment.updated_at = attachment.created_at
-                attachment.recommendation_id = recommendation.id
-                attachment.recommendation = recommendation
-                if getattr(attachment, "uploaded_by_user", None) is None and attachment.uploaded_by_user_id is not None:
-                    attachment.uploaded_by_user = self.users.get(attachment.uploaded_by_user_id)
-                synced_attachments[attachment.id] = attachment
-            for message in recommendation.messages:
-                if getattr(message, "id", None) in (None, ""):
-                    message.id = str(uuid4())
-                if getattr(message, "created_at", None) is None:
-                    message.created_at = _utc_now()
-                if getattr(message, "updated_at", None) is None:
-                    message.updated_at = message.created_at
-                message.recommendation_id = recommendation.id
-                message.recommendation = recommendation
-                if getattr(message, "created_by_user", None) is None and message.created_by_user_id is not None:
-                    message.created_by_user = self.users.get(message.created_by_user_id)
-                synced_messages[message.id] = message
-                if message.created_by_user is not None and message not in message.created_by_user.created_messages:
-                    message.created_by_user.created_messages.append(message)
-        self.recommendation_legs = synced_legs
-        self.recommendation_attachments = synced_attachments
-        self.recommendation_messages = synced_messages
+    def _sync_message_relations(self) -> None:
+        synced_messages: dict[str, Message] = {}
+        for message in self.messages.values():
+            if getattr(message, "id", None) in (None, ""):
+                message.id = str(uuid4())
+            if getattr(message, "created", None) is None:
+                message.created = _utc_now()
+            if getattr(message, "updated", None) is None:
+                message.updated = message.created
+            if getattr(message, "author", None) is None and message.author_id is not None:
+                message.author = self.authors.get(message.author_id)
+            if getattr(message, "user", None) is None and message.user_id is not None:
+                message.user = self.users.get(message.user_id)
+            if getattr(message, "moderator", None) is None and message.moderator_id is not None:
+                message.moderator = self.users.get(message.moderator_id)
+            if getattr(message, "strategy", None) is None and message.strategy_id is not None:
+                message.strategy = self.strategies.get(message.strategy_id)
+            if getattr(message, "bundle", None) is None and message.bundle_id is not None:
+                message.bundle = self.bundles.get(message.bundle_id)
+            synced_messages[message.id] = message
+            if message.author is not None and message not in message.author.messages:
+                message.author.messages.append(message)
+            if message.user is not None and message not in message.user.messages:
+                message.user.messages.append(message)
+            if message.moderator is not None and message not in message.moderator.moderated_messages:
+                message.moderator.moderated_messages.append(message)
+            if message.strategy is not None and message not in message.strategy.messages:
+                message.strategy.messages.append(message)
+            if message.bundle is not None and message not in message.bundle.messages:
+                message.bundle.messages.append(message)
+        self.messages = synced_messages
 
     def _base_record(self, entity: object) -> dict[str, Any]:
         return {
@@ -967,56 +851,30 @@ class FileDatasetGraph:
             "payload": entity.payload,
         }
 
-    def _recommendation_record(self, entity: Recommendation) -> dict[str, Any]:
-        return self._base_record(entity) | {
-            "strategy_id": entity.strategy_id,
-            "author_id": entity.author_id,
-            "moderated_by_user_id": entity.moderated_by_user_id,
-            "kind": entity.kind.value,
-            "status": entity.status.value,
+    def _message_record(self, entity: Message) -> dict[str, Any]:
+        return {
+            "id": entity.id,
+            "thread": entity.thread,
+            "parent": entity.parent,
+            "author": entity.author_id or (entity.author.id if getattr(entity, "author", None) is not None else None),
+            "user": entity.user_id or (entity.user.id if getattr(entity, "user", None) is not None else None),
+            "moderator": entity.moderator_id or (entity.moderator.id if getattr(entity, "moderator", None) is not None else None),
+            "strategy": entity.strategy_id or (entity.strategy.id if getattr(entity, "strategy", None) is not None else None),
+            "bundle": entity.bundle_id or (entity.bundle.id if getattr(entity, "bundle", None) is not None else None),
+            "deliver": list(entity.deliver or []),
+            "channel": list(entity.channel or []),
+            "kind": entity.kind,
+            "type": entity.type,
+            "status": entity.status,
+            "moderation": entity.moderation,
             "title": entity.title,
-            "summary": entity.summary,
-            "thesis": entity.thesis,
-            "market_context": entity.market_context,
-            "recommendation_payload": entity.recommendation_payload,
-            "requires_moderation": entity.requires_moderation,
-            "scheduled_for": _serialize_datetime(entity.scheduled_for),
-            "published_at": _serialize_datetime(entity.published_at),
-            "closed_at": _serialize_datetime(entity.closed_at),
-            "cancelled_at": _serialize_datetime(entity.cancelled_at),
-            "moderation_comment": entity.moderation_comment,
-        }
-
-    def _recommendation_leg_record(self, entity: RecommendationLeg) -> dict[str, Any]:
-        return self._base_record(entity) | {
-            "recommendation_id": entity.recommendation_id,
-            "instrument_id": entity.instrument_id,
-            "side": entity.side.value if entity.side else None,
-            "entry_from": _serialize_decimal(entity.entry_from),
-            "entry_to": _serialize_decimal(entity.entry_to),
-            "stop_loss": _serialize_decimal(entity.stop_loss),
-            "take_profit_1": _serialize_decimal(entity.take_profit_1),
-            "take_profit_2": _serialize_decimal(entity.take_profit_2),
-            "take_profit_3": _serialize_decimal(entity.take_profit_3),
-            "time_horizon": entity.time_horizon,
-            "note": entity.note,
-        }
-
-    def _recommendation_attachment_record(self, entity: RecommendationAttachment) -> dict[str, Any]:
-        return self._base_record(entity) | {
-            "recommendation_id": entity.recommendation_id,
-            "uploaded_by_user_id": entity.uploaded_by_user_id,
-            "object_key": entity.object_key,
-            "original_filename": entity.original_filename,
-            "content_type": entity.content_type,
-            "size_bytes": entity.size_bytes,
-        }
-
-    def _recommendation_message_record(self, entity: RecommendationMessage) -> dict[str, Any]:
-        return self._base_record(entity) | {
-            "recommendation_id": entity.recommendation_id,
-            "created_by_user_id": entity.created_by_user_id,
-            "mode": entity.mode,
-            "body": entity.body,
-            "payload": entity.payload,
+            "comment": entity.comment,
+            "schedule": _serialize_datetime(entity.schedule),
+            "published": _serialize_datetime(entity.published),
+            "archived": _serialize_datetime(entity.archived),
+            "documents": entity.documents,
+            "text": entity.text,
+            "deals": entity.deals,
+            "created": _serialize_datetime(entity.created),
+            "updated": _serialize_datetime(entity.updated),
         }

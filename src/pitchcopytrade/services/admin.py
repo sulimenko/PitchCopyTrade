@@ -14,7 +14,7 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User, user_ro
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import Bundle, Instrument, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
-from pitchcopytrade.db.models.content import Recommendation
+from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     InviteDeliveryStatus,
@@ -41,7 +41,7 @@ class AdminDashboardStats:
     strategies_total: int
     strategies_public: int
     active_subscriptions: int
-    recommendations_live: int
+    messages_live: int
 
 
 @dataclass(slots=True)
@@ -170,7 +170,7 @@ async def get_admin_dashboard_stats(session: AsyncSession | None) -> AdminDashbo
             active_subscriptions=sum(
                 1 for item in graph.subscriptions.values() if item.status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
             ),
-            recommendations_live=sum(1 for item in graph.recommendations.values() if item.published_at is not None),
+            messages_live=sum(1 for item in graph.messages.values() if item.published is not None),
         )
     authors_total = await _count_query(session, select(func.count(AuthorProfile.id)))
     strategies_total = await _count_query(session, select(func.count(Strategy.id)))
@@ -181,16 +181,16 @@ async def get_admin_dashboard_stats(session: AsyncSession | None) -> AdminDashbo
             Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
         ),
     )
-    recommendations_live = await _count_query(
+    messages_live = await _count_query(
         session,
-        select(func.count(Recommendation.id)).where(Recommendation.published_at.is_not(None)),
+        select(func.count(Message.id)).where(Message.published.is_not(None)),
     )
     return AdminDashboardStats(
         authors_total=authors_total,
         strategies_total=strategies_total,
         strategies_public=strategies_public,
         active_subscriptions=active_subscriptions,
-        recommendations_live=recommendations_live,
+        messages_live=messages_live,
     )
 
 

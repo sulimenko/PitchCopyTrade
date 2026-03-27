@@ -3,7 +3,7 @@ from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.base import Base
 from pitchcopytrade.db.models.catalog import Bundle, BundleMember, Instrument, LeadSource, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg, RecommendationMessage
+from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.notification_log import NotificationChannelEnum, NotificationLog
 
 __all__ = [
@@ -17,12 +17,9 @@ __all__ = [
     "LegalDocument",
     "NotificationChannelEnum",
     "NotificationLog",
+    "Message",
     "Payment",
     "PromoCode",
-    "Recommendation",
-    "RecommendationAttachment",
-    "RecommendationLeg",
-    "RecommendationMessage",
     "Role",
     "Strategy",
     "Subscription",

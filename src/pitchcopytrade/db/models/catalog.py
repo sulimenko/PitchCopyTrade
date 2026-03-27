@@ -19,7 +19,7 @@ from pitchcopytrade.db.models.enums import (
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.accounts import AuthorProfile, User
     from pitchcopytrade.db.models.commerce import Payment, Subscription
-    from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
+    from pitchcopytrade.db.models.content import Message
 
 
 class LeadSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -53,7 +53,6 @@ class Instrument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     is_active: Mapped[bool] = mapped_column(default=True)
 
-    recommendation_legs: Mapped[list["RecommendationLeg"]] = relationship(back_populates="instrument")
     watchlist_authors: Mapped[list["AuthorProfile"]] = relationship(
         secondary="author_watchlist_instruments",
         back_populates="watchlist_instruments",
@@ -81,7 +80,7 @@ class Strategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     author: Mapped["AuthorProfile"] = relationship(back_populates="strategies")
     bundle_memberships: Mapped[list["BundleMember"]] = relationship(back_populates="strategy")
     subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="strategy")
-    recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="strategy")
+    messages: Mapped[list["Message"]] = relationship(back_populates="strategy")
 
 
 class Bundle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -96,6 +95,7 @@ class Bundle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     members: Mapped[list["BundleMember"]] = relationship(back_populates="bundle")
     subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="bundle")
+    messages: Mapped[list["Message"]] = relationship(back_populates="bundle")
 
 
 class BundleMember(Base):

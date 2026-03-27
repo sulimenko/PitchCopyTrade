@@ -14,11 +14,11 @@
   <div class="staff-page-head">
     <div class="staff-page-head-copy">
       <div class="eyebrow">карточка доставки</div>
-      <h1>{{ record.recommendation.title or record.recommendation.strategy.title }}</h1>
+      <h1>{{ record.message.title or record.message.strategy.title }}</h1>
       <p>История публикации, объём доставки и retry action собраны в компактной карточке без лишнего intro-пробела.</p>
     </div>
     <div class="staff-page-head-actions">
-      <span class="staff-badge">{{ label_recommendation_status(record.recommendation.status) }}</span>
+      <span class="staff-badge">{{ label_message_status(record.message.status) }}</span>
       <span class="staff-badge">{{ record.delivery_attempts }} попыток</span>
     </div>
   </div>
@@ -33,7 +33,7 @@
     {% if record.delivery_attempts > 0 and record.delivered_recipients == 0 %}
     <div style="padding:14px;border-radius:12px;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;margin-bottom:14px;">
       ⚠️ <strong>Не найдено получателей</strong><br>
-      <span style="font-size:0.92rem;line-height:1.45;">Нет подписчиков с активной подпиской и привязанным Telegram ID для стратегии этой рекомендации.</span>
+      <span style="font-size:0.92rem;line-height:1.45;">Нет подписчиков с активной подпиской и привязанным Telegram ID для этой публикации.</span>
     </div>
     {% endif %}
     <section class="staff-form-section">
@@ -44,9 +44,9 @@
         </div>
       </div>
       <div class="staff-key-list">
-        <div class="staff-key-row"><strong>Стратегия</strong><div class="muted">{{ record.recommendation.strategy.title }}</div></div>
-        <div class="staff-key-row"><strong>Автор</strong><div class="muted">{{ record.recommendation.author.display_name }}</div></div>
-        <div class="staff-key-row"><strong>Опубликовано</strong><div class="muted">{{ record.recommendation.published_at or "не опубликовано" }}</div></div>
+        <div class="staff-key-row"><strong>Стратегия</strong><div class="muted">{{ record.message.strategy.title }}</div></div>
+        <div class="staff-key-row"><strong>Автор</strong><div class="muted">{{ record.message.author.display_name }}</div></div>
+        <div class="staff-key-row"><strong>Опубликовано</strong><div class="muted">{{ record.message.published or record.message.published_at or "не опубликовано" }}</div></div>
         <div class="staff-key-row"><strong>Попыток доставки</strong><div class="muted">{{ record.delivery_attempts }}</div></div>
         <div class="staff-key-row"><strong>Получателей</strong><div class="muted">{{ record.delivered_recipients }}</div></div>
       </div>
@@ -56,15 +56,15 @@
       <div class="staff-form-section-head">
         <div class="staff-form-section-copy">
           <h2>Действия</h2>
-          <p>Основной следующий шаг здесь один: вручную повторить Telegram delivery для этой рекомендации.</p>
+          <p>Основной следующий шаг здесь один: вручную повторить Telegram delivery для этой публикации.</p>
         </div>
       </div>
       <div class="staff-inline-actions">
-        <form method="post" action="/admin/delivery/{{ record.recommendation.id }}/retry">
+        <form method="post" action="/admin/delivery/{{ record.message.id }}/retry">
           <button class="staff-btn is-primary" type="submit">Повторить доставку в Telegram</button>
         </form>
         <a class="staff-btn" href="/admin/delivery">Вернуться к очереди</a>
-        <a class="staff-btn" href="/app/recommendations/{{ record.recommendation.id }}">Открыть клиентский экран</a>
+        <a class="staff-btn" href="/app/messages/{{ record.message.id }}">Открыть клиентский экран</a>
       </div>
     </section>
   </article>

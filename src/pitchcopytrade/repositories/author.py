@@ -8,8 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
-from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg, RecommendationMessage
-from pitchcopytrade.db.models.enums import RecommendationStatus
+from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
@@ -22,16 +21,12 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
     async def count_author_strategies(self, author_id: str) -> int:
         return await self._count(select(func.count(Strategy.id)).where(Strategy.author_id == author_id))
 
-    async def count_author_recommendations(
-        self,
-        author_id: str,
-        *,
-        statuses: Sequence[RecommendationStatus] | None = None,
-    ) -> int:
-        query: Select[tuple[int]] = select(func.count(Recommendation.id)).where(Recommendation.author_id == author_id)
-        if statuses:
-            query = query.where(Recommendation.status.in_(statuses))
+    async def count_author_messages(self, author_id: str) -> int:
+        query: Select[tuple[int]] = select(func.count(Message.id)).where(Message.author_id == author_id)
         return await self._count(query)
+
+    async def count_author_recommendations(self, author_id: str) -> int:
+        return await self.count_author_messages(author_id)
 
     async def list_author_strategies(self, author_id: str) -> list[Strategy]:
         query = select(Strategy).where(Strategy.author_id == author_id).order_by(Strategy.title.asc())
@@ -86,34 +81,42 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
         await self.session.refresh(author)
         return True
 
-    async def list_author_recommendations(self, author_id: str) -> list[Recommendation]:
+    async def list_author_messages(self, author_id: str) -> list[Message]:
         query = (
-            select(Recommendation)
+            select(Message)
             .options(
-                selectinload(Recommendation.strategy),
-                selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-                selectinload(Recommendation.attachments),
-                selectinload(Recommendation.messages).selectinload(RecommendationMessage.created_by_user),
+                selectinload(Message.strategy),
+                selectinload(Message.author),
+                selectinload(Message.user),
+                selectinload(Message.moderator),
+                selectinload(Message.bundle),
             )
-            .where(Recommendation.author_id == author_id)
-            .order_by(Recommendation.updated_at.desc(), Recommendation.created_at.desc())
+            .where(Message.author_id == author_id)
+            .order_by(Message.updated.desc(), Message.created.desc())
         )
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
-    async def get_author_recommendation(self, author_id: str, recommendation_id: str) -> Recommendation | None:
+    async def get_author_message(self, author_id: str, message_id: str) -> Message | None:
         query = (
-            select(Recommendation)
+            select(Message)
             .options(
-                selectinload(Recommendation.strategy),
-                selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-                selectinload(Recommendation.attachments),
-                selectinload(Recommendation.messages).selectinload(RecommendationMessage.created_by_user),
+                selectinload(Message.strategy),
+                selectinload(Message.author),
+                selectinload(Message.user),
+                selectinload(Message.moderator),
+                selectinload(Message.bundle),
             )
-            .where(Recommendation.id == recommendation_id, Recommendation.author_id == author_id)
+            .where(Message.id == message_id, Message.author_id == author_id)
         )
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
+
+    async def list_author_recommendations(self, author_id: str) -> list[Message]:
+        return await self.list_author_messages(author_id)
+
+    async def get_author_recommendation(self, author_id: str, recommendation_id: str) -> Message | None:
+        return await self.get_author_message(author_id, recommendation_id)
 
     async def get_author_by_user_id(self, user_id: str) -> AuthorProfile | None:
         query = (
@@ -161,17 +164,11 @@ class FileAuthorRepository(AuthorRepository):
     async def count_author_strategies(self, author_id: str) -> int:
         return len([item for item in self.graph.strategies.values() if item.author_id == author_id])
 
-    async def count_author_recommendations(
-        self,
-        author_id: str,
-        *,
-        statuses: Sequence[RecommendationStatus] | None = None,
-    ) -> int:
-        items = [item for item in self.graph.recommendations.values() if item.author_id == author_id]
-        if statuses:
-            allowed = set(statuses)
-            items = [item for item in items if item.status in allowed]
-        return len(items)
+    async def count_author_messages(self, author_id: str) -> int:
+        return len([item for item in self.graph.messages.values() if item.author_id == author_id])
+
+    async def count_author_recommendations(self, author_id: str) -> int:
+        return await self.count_author_messages(author_id)
 
     async def list_author_strategies(self, author_id: str) -> list[Strategy]:
         return sorted(
@@ -228,18 +225,24 @@ class FileAuthorRepository(AuthorRepository):
         self.graph.save(self.store)
         return True
 
-    async def list_author_recommendations(self, author_id: str) -> list[Recommendation]:
+    async def list_author_messages(self, author_id: str) -> list[Message]:
         return sorted(
-            [item for item in self.graph.recommendations.values() if item.author_id == author_id],
-            key=lambda item: (item.updated_at, item.created_at),
+            [item for item in self.graph.messages.values() if item.author_id == author_id],
+            key=lambda item: (item.updated, item.created),
             reverse=True,
         )
 
-    async def get_author_recommendation(self, author_id: str, recommendation_id: str) -> Recommendation | None:
-        recommendation = self.graph.recommendations.get(recommendation_id)
-        if recommendation is None or recommendation.author_id != author_id:
+    async def get_author_message(self, author_id: str, message_id: str) -> Message | None:
+        message = self.graph.messages.get(message_id)
+        if message is None or message.author_id != author_id:
             return None
-        return recommendation
+        return message
+
+    async def list_author_recommendations(self, author_id: str) -> list[Message]:
+        return await self.list_author_messages(author_id)
+
+    async def get_author_recommendation(self, author_id: str, recommendation_id: str) -> Message | None:
+        return await self.get_author_message(author_id, recommendation_id)
 
     async def get_author_by_user_id(self, user_id: str) -> AuthorProfile | None:
         return next((item for item in self.graph.authors.values() if item.user_id == user_id), None)

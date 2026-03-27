@@ -1,0 +1,112 @@
+{% extends "staff_base.html" %}
+
+{% block parent_href %}/author/dashboard{% endblock %}
+{% block breadcrumbs %}Автор / Сообщения{% endblock %}
+{% block page_title %}Сообщения автора{% endblock %}
+
+{% block topbar_actions %}
+<button class="staff-btn is-primary" type="button" data-open-message-modal data-modal-url="{{ message_modal_url }}">Новое сообщение</button>
+{% endblock %}
+
+{% block content %}
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">реестр сообщений</div>
+      <h1>Сообщения автора</h1>
+      <p>Здесь видны стратегия, тип сообщения, канал доставки, статус и последнее обновление без перехода в карточку.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ recommendations|length }} строк</span>
+    </div>
+  </div>
+  <div class="staff-grid-shell">
+    <div id="grid-host" class="pct-tabulator"></div>
+  </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Сообщение", field: "message", widthGrow: 1.8, headerFilter: "input" },
+      { title: "Стратегия", field: "strategy", headerFilter: "input" },
+      { title: "Тип", field: "type", headerFilter: "input" },
+      { title: "Доставка", field: "deliver", headerFilter: "input" },
+      { title: "Контент", field: "content", headerFilter: "input" },
+      { title: "Статус", field: "status", headerFilter: "select", headerFilterParams: { values: { "": "все", "draft": "Черновик", "review": "На модерации", "scheduled": "Запланировано", "published": "Опубликовано" } } },
+      { title: "Обновлено", field: "updated", headerFilter: "input" },
+      { title: "Открыть", field: "actions", frozen: true }
+    ],
+    data: {{ recommendations_json | safe }}
+  });
+  </script>
+
+  <dialog id="message-modal" class="workspace-modal">
+    <div class="staff-card" style="padding:18px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+        <div>
+          <div class="eyebrow">модальный редактор</div>
+          <strong>Новое сообщение</strong>
+        </div>
+        <button class="ghost" type="button" data-close-message-modal>Закрыть</button>
+      </div>
+      <iframe id="message-modal-frame" src="{{ message_modal_url }}" title="Создание сообщения" class="workspace-modal-frame" style="width:100%;height:min(84vh,980px);border:0;border-radius:14px;margin-top:14px;background:#fff;"></iframe>
+    </div>
+  </dialog>
+</section>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .workspace-modal { border: 0; padding: 0; background: transparent; width: min(1220px, calc(100% - 24px)); }
+  .workspace-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    const modal = document.getElementById("message-modal");
+    const modalFrame = document.getElementById("message-modal-frame");
+    const openButtons = document.querySelectorAll("[data-open-message-modal]");
+    const closeButtons = document.querySelectorAll("[data-close-message-modal]");
+
+    function openModal(url) {
+      if (modalFrame && url) modalFrame.src = url;
+      if (modal && typeof modal.showModal === "function") modal.showModal();
+    }
+    function closeModal() {
+      if (modal && modal.open) modal.close();
+    }
+    function maybeReloadAfterModalSubmit() {
+      if (!modal || !modalFrame || !modal.open) return;
+      try {
+        const frameUrl = new URL(modalFrame.contentWindow.location.href);
+        const currentUrl = new URL(window.location.href);
+        if (frameUrl.pathname === currentUrl.pathname && frameUrl.search === currentUrl.search) {
+          closeModal();
+          window.location.reload();
+        }
+      } catch (_error) {
+        return;
+      }
+    }
+    openButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        const baseUrl = button.dataset.modalUrl || "{{ message_modal_url }}";
+        openModal(baseUrl);
+      });
+    });
+    closeButtons.forEach(function (button) {
+      button.addEventListener("click", closeModal);
+    });
+    if (modalFrame) {
+      modalFrame.addEventListener("load", maybeReloadAfterModalSubmit);
+    }
+    if (modal) {
+      modal.addEventListener("click", function (event) {
+        if (event.target === modal) closeModal();
+      });
+    }
+  })();
+</script>
+{% endblock %}

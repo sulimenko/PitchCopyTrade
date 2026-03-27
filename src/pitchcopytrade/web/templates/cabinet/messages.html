@@ -24,11 +24,11 @@
       <tbody id="rec-tbody">
         {% if recommendations %}
           {% for rec in recommendations %}
-            {% include "cabinet/recommendation_row.html" %}
+            {% include "cabinet/message_row.html" %}
           {% endfor %}
         {% else %}
         <tr id="empty-row">
-          <td colspan="8" style="padding:24px;text-align:center;color:var(--muted);">Нет рекомендаций</td>
+      <td colspan="8" style="padding:24px;text-align:center;color:var(--muted);">Нет сообщений</td>
         </tr>
         {% endif %}
       </tbody>
@@ -99,7 +99,7 @@ function submitNewRec() {
   formData.append('target', target);
   formData.append('stop', stop);
 
-  fetch('/cabinet/strategies/{{ strategy.id }}/recommendations', {
+  fetch('/cabinet/strategies/{{ strategy.id }}/messages', {
     method: 'POST',
     body: formData,
     headers: { 'HX-Request': 'true' }

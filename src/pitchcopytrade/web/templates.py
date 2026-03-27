@@ -23,7 +23,7 @@ def label_role(value: object) -> str:
 
 
 def label_user_status(value: object) -> str:
-    return _label(value, {"invited": "Приглашён", "active": "Активен", "inactive": "Неактивен"})
+    return _label(value, {"invited": "Приглашён", "active": "Активен", "inactive": "отключён"})
 
 
 def label_invite_delivery_status(value: object) -> str:
@@ -79,11 +79,11 @@ def label_subscription_status(value: object) -> str:
     )
 
 
-def label_recommendation_kind(value: object) -> str:
+def label_message_kind(value: object) -> str:
     return _label(value, {"new_idea": "Новая идея", "update": "Обновление", "close": "Закрытие", "cancel": "Отмена"})
 
 
-def label_recommendation_status(value: object) -> str:
+def label_message_status(value: object) -> str:
     return _label(
         value,
         {
@@ -151,8 +151,8 @@ templates.env.globals.update(
     label_payment_provider=label_payment_provider,
     label_payment_status=label_payment_status,
     label_subscription_status=label_subscription_status,
-    label_recommendation_kind=label_recommendation_kind,
-    label_recommendation_status=label_recommendation_status,
+    label_message_kind=label_message_kind,
+    label_message_status=label_message_status,
     label_trade_side=label_trade_side,
     label_legal_document_type=label_legal_document_type,
     label_sla_state=label_sla_state,

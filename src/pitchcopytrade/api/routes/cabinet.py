@@ -5,8 +5,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-
-logger = logging.getLogger(__name__)
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -19,13 +18,14 @@ from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
-from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
-from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, RiskLevel, StrategyStatus, TradeSide
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import MessageKind, MessageModeration, MessageStatus, MessageType, RiskLevel, StrategyStatus
 from pitchcopytrade.db.session import get_optional_db_session
-from pitchcopytrade.services.notifications import deliver_recommendation_notifications_by_id
+from pitchcopytrade.services.notifications import deliver_message_notifications_by_id
 from pitchcopytrade.web.templates import templates
 
 router = APIRouter(prefix="/cabinet", tags=["cabinet"])
+logger = logging.getLogger(__name__)
 
 
 def _slugify(text: str) -> str:
@@ -101,7 +101,7 @@ async def cabinet_strategy_redirect(
     user: User = Depends(require_author),
 ) -> Response:
     return RedirectResponse(
-        url=f"/cabinet/strategies/{strategy_id}/recommendations",
+        url=f"/cabinet/strategies/{strategy_id}/messages",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -151,7 +151,7 @@ async def cabinet_strategy_edit_save(
     return RedirectResponse(url="/cabinet/strategies", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.get("/strategies/{strategy_id}/recommendations", response_class=HTMLResponse)
+@router.get("/strategies/{strategy_id}/messages", response_class=HTMLResponse)
 async def cabinet_recommendations_list(
     strategy_id: str,
     request: Request,
@@ -160,10 +160,10 @@ async def cabinet_recommendations_list(
 ) -> Response:
     author = _get_author_profile(user)
     strategy = await _get_author_strategy(session, strategy_id, author.id)
-    recommendations = await _list_strategy_recommendations(session, strategy_id)
+    recommendations = await _list_strategy_messages(session, strategy_id)
     return templates.TemplateResponse(
         request,
-        "cabinet/recommendations.html",
+        "cabinet/messages.html",
         {
             "title": strategy.title,
             "user": user,
@@ -175,7 +175,7 @@ async def cabinet_recommendations_list(
     )
 
 
-@router.post("/strategies/{strategy_id}/recommendations", response_class=HTMLResponse)
+@router.post("/strategies/{strategy_id}/messages", response_class=HTMLResponse)
 async def cabinet_recommendation_create(
     strategy_id: str,
     request: Request,
@@ -192,53 +192,49 @@ async def cabinet_recommendation_create(
 
     instrument = None
     if session is not None:
-        inst_result = await session.execute(
-            select(Instrument).where(Instrument.ticker == ticker.upper())
-        )
+        inst_result = await session.execute(select(Instrument).where(Instrument.ticker == ticker.upper()))
         instrument = inst_result.scalar_one_or_none()
 
-    rec = Recommendation(
+    message = Message(
         strategy_id=strategy.id,
         author_id=author.id,
-        kind=RecommendationKind.NEW_IDEA,
-        status=RecommendationStatus.DRAFT,
-        requires_moderation=False,
+        kind=MessageKind.IDEA.value,
+        type=MessageType.MIXED.value,
+        status=MessageStatus.DRAFT.value,
+        moderation=MessageModeration.REQUIRED.value,
+        title=f"{side.upper()} {ticker.upper()}",
+        comment=None,
+        deliver=["telegram"],
+        channel=["telegram", "miniapp"],
+        text={},
+        documents=[],
+        deals=[
+            {
+                "instrument_id": instrument.id if instrument else None,
+                "side": side.lower() if side else None,
+                "entry_from": price.strip() or None,
+                "take_profit_1": target.strip() or None,
+                "stop_loss": stop.strip() or None,
+            }
+        ],
     )
 
     if session is not None:
-        session.add(rec)
-        await session.flush()
-
-        leg = RecommendationLeg(
-            recommendation_id=rec.id,
-            instrument_id=instrument.id if instrument else None,
-            side=TradeSide(side.lower()) if side else None,
-            entry_from=_parse_decimal(price),
-            take_profit_1=_parse_decimal(target),
-            stop_loss=_parse_decimal(stop),
-        )
-        session.add(leg)
+        session.add(message)
         await session.commit()
-        await session.refresh(rec)
-        # Reload with legs+instrument
-        rec_result = await session.execute(
-            select(Recommendation)
-            .options(selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument))
-            .where(Recommendation.id == rec.id)
-        )
-        rec = rec_result.scalar_one()
+        await session.refresh(message)
 
     return templates.TemplateResponse(
         request,
-        "cabinet/recommendation_row.html",
+        "cabinet/message_row.html",
         {
-            "rec": rec,
+            "rec": _cabinet_row(message, instrument=instrument),
             "strategy_id": strategy_id,
         },
     )
 
 
-@router.post("/recommendations/{recommendation_id}/publish", response_class=HTMLResponse)
+@router.post("/messages/{recommendation_id}/publish", response_class=HTMLResponse)
 async def cabinet_recommendation_publish(
     recommendation_id: str,
     request: Request,
@@ -246,39 +242,31 @@ async def cabinet_recommendation_publish(
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     author = _get_author_profile(user)
-    rec = await _get_author_recommendation(session, recommendation_id, author.id)
-    if rec.status != RecommendationStatus.DRAFT:
+    rec = await _get_author_message(session, recommendation_id, author.id)
+    if rec.status != MessageStatus.DRAFT.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Можно публиковать только черновик")
-    rec.status = RecommendationStatus.PUBLISHED
-    rec.published_at = datetime.now(timezone.utc)
+    rec.status = MessageStatus.PUBLISHED.value
+    rec.published = datetime.now(timezone.utc)
     if session is not None:
         await session.commit()
         await session.refresh(rec)
-        rec_result = await session.execute(
-            select(Recommendation)
-            .options(selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument))
-            .where(Recommendation.id == rec.id)
-        )
-        rec = rec_result.scalar_one()
 
-    # Прямая доставка уведомлений (ARQ отключён)
-    if session is not None:
         bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
         try:
-            await deliver_recommendation_notifications_by_id(session, str(rec.id), bot, trigger="cabinet_publish")
+            await deliver_message_notifications_by_id(session, str(rec.id), bot, trigger="cabinet_publish")
         except Exception as exc:
-            logger.error("Notification delivery failed for rec %s: %s", rec.id, exc)
+            logger.error("Notification delivery failed for message %s: %s", rec.id, exc)
         finally:
             await bot.session.close()
 
     return templates.TemplateResponse(
         request,
-        "cabinet/recommendation_row.html",
-        {"rec": rec, "strategy_id": rec.strategy_id},
+        "cabinet/message_row.html",
+        {"rec": _cabinet_row(rec), "strategy_id": rec.strategy_id},
     )
 
 
-@router.post("/recommendations/{recommendation_id}/close", response_class=HTMLResponse)
+@router.post("/messages/{recommendation_id}/close", response_class=HTMLResponse)
 async def cabinet_recommendation_close(
     recommendation_id: str,
     request: Request,
@@ -286,26 +274,20 @@ async def cabinet_recommendation_close(
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     author = _get_author_profile(user)
-    rec = await _get_author_recommendation(session, recommendation_id, author.id)
-    rec.status = RecommendationStatus.CLOSED
-    rec.closed_at = datetime.now(timezone.utc)
+    rec = await _get_author_message(session, recommendation_id, author.id)
+    rec.status = MessageStatus.CLOSED.value
+    rec.archived = datetime.now(timezone.utc)
     if session is not None:
         await session.commit()
         await session.refresh(rec)
-        rec_result = await session.execute(
-            select(Recommendation)
-            .options(selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument))
-            .where(Recommendation.id == rec.id)
-        )
-        rec = rec_result.scalar_one()
     return templates.TemplateResponse(
         request,
-        "cabinet/recommendation_row.html",
-        {"rec": rec, "strategy_id": rec.strategy_id},
+        "cabinet/message_row.html",
+        {"rec": _cabinet_row(rec), "strategy_id": rec.strategy_id},
     )
 
 
-@router.post("/recommendations/{recommendation_id}/cancel", response_class=HTMLResponse)
+@router.post("/messages/{recommendation_id}/cancel", response_class=HTMLResponse)
 async def cabinet_recommendation_cancel(
     recommendation_id: str,
     request: Request,
@@ -313,22 +295,16 @@ async def cabinet_recommendation_cancel(
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     author = _get_author_profile(user)
-    rec = await _get_author_recommendation(session, recommendation_id, author.id)
-    rec.status = RecommendationStatus.CANCELLED
-    rec.cancelled_at = datetime.now(timezone.utc)
+    rec = await _get_author_message(session, recommendation_id, author.id)
+    rec.status = MessageStatus.CANCELLED.value
+    rec.archived = datetime.now(timezone.utc)
     if session is not None:
         await session.commit()
         await session.refresh(rec)
-        rec_result = await session.execute(
-            select(Recommendation)
-            .options(selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument))
-            .where(Recommendation.id == rec.id)
-        )
-        rec = rec_result.scalar_one()
     return templates.TemplateResponse(
         request,
-        "cabinet/recommendation_row.html",
-        {"rec": rec, "strategy_id": rec.strategy_id},
+        "cabinet/message_row.html",
+        {"rec": _cabinet_row(rec), "strategy_id": rec.strategy_id},
     )
 
 
@@ -346,9 +322,7 @@ async def _list_author_strategies(session, author_id: str) -> list:
     if session is None:
         return []
     result = await session.execute(
-        select(Strategy)
-        .where(Strategy.author_id == author_id)
-        .order_by(Strategy.title.asc())
+        select(Strategy).where(Strategy.author_id == author_id).order_by(Strategy.title.asc())
     )
     return list(result.scalars().all())
 
@@ -356,35 +330,50 @@ async def _list_author_strategies(session, author_id: str) -> list:
 async def _get_author_strategy(session, strategy_id: str, author_id: str) -> Strategy:
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стратегия не найдена")
-    result = await session.execute(
-        select(Strategy).where(Strategy.id == strategy_id, Strategy.author_id == author_id)
-    )
+    result = await session.execute(select(Strategy).where(Strategy.id == strategy_id, Strategy.author_id == author_id))
     strategy = result.scalar_one_or_none()
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стратегия не найдена")
     return strategy
 
 
-async def _list_strategy_recommendations(session, strategy_id: str) -> list:
+async def _list_strategy_messages(session, strategy_id: str) -> list:
     if session is None:
         return []
     result = await session.execute(
-        select(Recommendation)
-        .options(selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument))
-        .where(Recommendation.strategy_id == strategy_id)
-        .order_by(Recommendation.created_at.desc())
+        select(Message)
+        .options(selectinload(Message.strategy))
+        .where(Message.strategy_id == strategy_id)
+        .order_by(Message.created.desc())
     )
-    return list(result.scalars().all())
+    return [_cabinet_row(item) for item in result.scalars().all()]
 
 
-async def _get_author_recommendation(session, recommendation_id: str, author_id: str) -> Recommendation:
+async def _get_author_message(session, recommendation_id: str, author_id: str) -> Message:
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Рекомендация не найдена")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено")
     result = await session.execute(
-        select(Recommendation)
-        .where(Recommendation.id == recommendation_id, Recommendation.author_id == author_id)
+        select(Message).where(Message.id == recommendation_id, Message.author_id == author_id)
     )
-    rec = result.scalar_one_or_none()
-    if rec is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Рекомендация не найдена")
-    return rec
+    message = result.scalar_one_or_none()
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено")
+    return message
+
+
+def _cabinet_row(message: Message, instrument: Instrument | None = None):
+    deals = list(message.deals or [])
+    leg = SimpleNamespace(
+        instrument=instrument,
+        side=SimpleNamespace(value=deals[0].get("side")) if deals else None,
+        entry_from=deals[0].get("entry_from") if deals else None,
+        take_profit_1=deals[0].get("take_profit_1") if deals else None,
+        stop_loss=deals[0].get("stop_loss") if deals else None,
+    )
+    return SimpleNamespace(
+        id=message.id,
+        strategy_id=message.strategy_id,
+        created_at=message.created,
+        status=SimpleNamespace(value=message.status),
+        legs=[leg] if deals else [],
+    )

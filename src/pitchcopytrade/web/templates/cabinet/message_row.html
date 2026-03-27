@@ -21,20 +21,20 @@
   <td style="padding:12px;">
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
       {% if rec.status.value == 'draft' %}
-      <form method="post" action="/cabinet/recommendations/{{ rec.id }}/publish"
-        hx-post="/cabinet/recommendations/{{ rec.id }}/publish"
+      <form method="post" action="/cabinet/messages/{{ rec.id }}/publish"
+        hx-post="/cabinet/messages/{{ rec.id }}/publish"
         hx-target="#rec-{{ rec.id }}" hx-swap="outerHTML">
         <button type="submit" class="action" style="padding:5px 12px;font-size:0.8rem;">Опубликовать</button>
       </form>
       {% endif %}
       {% if rec.status.value in ['draft', 'published'] %}
-      <form method="post" action="/cabinet/recommendations/{{ rec.id }}/close"
-        hx-post="/cabinet/recommendations/{{ rec.id }}/close"
+      <form method="post" action="/cabinet/messages/{{ rec.id }}/close"
+        hx-post="/cabinet/messages/{{ rec.id }}/close"
         hx-target="#rec-{{ rec.id }}" hx-swap="outerHTML">
         <button type="submit" class="action ghost" style="padding:5px 12px;font-size:0.8rem;">Закрыть</button>
       </form>
-      <form method="post" action="/cabinet/recommendations/{{ rec.id }}/cancel"
-        hx-post="/cabinet/recommendations/{{ rec.id }}/cancel"
+      <form method="post" action="/cabinet/messages/{{ rec.id }}/cancel"
+        hx-post="/cabinet/messages/{{ rec.id }}/cancel"
         hx-target="#rec-{{ rec.id }}" hx-swap="outerHTML">
         <button type="submit" class="action ghost" style="padding:5px 12px;font-size:0.8rem;color:var(--red-600);">Отменить</button>
       </form>

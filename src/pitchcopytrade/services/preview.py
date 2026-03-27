@@ -7,8 +7,8 @@ from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     PaymentStatus,
     ProductType,
-    RecommendationKind,
-    RecommendationStatus,
+    MessageKind,
+    MessageStatus,
     RiskLevel,
     StrategyStatus,
     SubscriptionStatus,
@@ -61,7 +61,7 @@ def build_preview_miniapp_context() -> dict[str, object]:
         active_subscriptions=[subscription],
         payments=[payment],
         pending_payments=[payment],
-        visible_recommendation_titles=[
+        visible_message_titles=[
             "Риск на пробое",
             "Сценарий на импульс",
             "Сработал уровень входа",
@@ -89,7 +89,7 @@ def build_preview_admin_context() -> dict[str, object]:
         strategies_total=8,
         strategies_public=5,
         active_subscriptions=19,
-        recommendations_live=7,
+        messages_live=7,
     )
     recent_strategies = [
         _simple_strategy("trend-ru", "Trend RU", "Импульс на российском рынке", "medium", "Alpha Desk", 150000, True),
@@ -158,9 +158,9 @@ def build_preview_author_context() -> dict[str, object]:
     recommendation = _build_preview_recommendation(strategy_one)
     stats = SimpleNamespace(
         strategies_total=2,
-        recommendations_total=5,
-        draft_recommendations=1,
-        live_recommendations=2,
+        messages_total=5,
+        draft_messages=1,
+        live_messages=2,
     )
     watchlist_items = [
         {"id": "SBER", "ticker": "SBER", "name": "Сбербанк", "board": "TQBR", "currency": "RUB"},
@@ -176,11 +176,11 @@ def build_preview_author_context() -> dict[str, object]:
         "strategies": [strategy_one, strategy_two],
         "recommendations": recommendations,
         "watchlist_items": watchlist_items,
-        "recommendation_modal_url": "/preview/author/recommendations/preview-recommendation/preview",
+        "message_modal_url": "/preview/author/messages/preview-recommendation/preview",
     }
 
 
-def build_preview_recommendation_context() -> dict[str, object]:
+def build_preview_message_context() -> dict[str, object]:
     strategy = _build_preview_strategy(SimpleNamespace(display_name="Preview Author Desk", slug="preview-author-desk"))
     recommendation = _build_preview_recommendation(strategy)
     return {
@@ -273,11 +273,11 @@ def _build_preview_recommendation(strategy: SimpleNamespace) -> SimpleNamespace:
         summary="Идея отрабатывает импульс после сжатия диапазона.",
         thesis="Цена готова к движению после пробоя локального уровня.",
         market_context="Preview market context.",
-        recommendation_payload=payload,
+        message_payload=payload,
         created_at=datetime.now(UTC) - timedelta(days=1),
         updated_at=datetime.now(UTC),
-        kind=RecommendationKind.NEW_IDEA,
-        status=RecommendationStatus.PUBLISHED,
+        kind=MessageKind.IDEA,
+        status=MessageStatus.PUBLISHED,
         strategy=strategy,
         legs=[
             SimpleNamespace(

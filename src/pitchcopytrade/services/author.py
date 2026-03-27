@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -12,8 +12,17 @@ from starlette.datastructures import UploadFile
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg, RecommendationMessage
-from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus, RiskLevel, StrategyStatus, TradeSide
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import (
+    MessageChannel,
+    MessageDeliver,
+    MessageKind,
+    MessageModeration,
+    MessageStatus,
+    MessageType,
+    RiskLevel,
+    StrategyStatus,
+)
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.storage.base import StorageBackend
 from pitchcopytrade.storage.local import LocalFilesystemStorage
@@ -29,9 +38,9 @@ ALLOWED_ATTACHMENT_CONTENT_TYPES = {
 @dataclass(slots=True)
 class AuthorWorkspaceStats:
     strategies_total: int
-    recommendations_total: int
-    draft_recommendations: int
-    live_recommendations: int
+    messages_total: int
+    draft_messages: int
+    live_messages: int
 
 
 @dataclass(slots=True)
@@ -46,7 +55,7 @@ class WatchlistCandidate:
 @dataclass(slots=True)
 class StructuredLegFormData:
     instrument_id: str
-    side: TradeSide
+    side: str
     entry_from: Decimal | None
     entry_to: Decimal | None
     stop_loss: Decimal | None
@@ -67,23 +76,37 @@ class IncomingAttachment:
 @dataclass(slots=True)
 class RecommendationFormData:
     strategy_id: str
-    kind: RecommendationKind
-    status: RecommendationStatus
+    kind: MessageKind
+    status: MessageStatus
     title: str | None
-    summary: str | None
-    thesis: str | None
-    market_context: str | None
-    requires_moderation: bool
-    scheduled_for: datetime | None
-    legs: list[StructuredLegFormData]
-    attachments: list[IncomingAttachment]
-    message_mode: str = "structured"
+    thread: str | None = None
+    parent: str | None = None
+    deliver: list[str] = field(default_factory=list)
+    channel: list[str] = field(default_factory=list)
+    moderation: MessageModeration = MessageModeration.REQUIRED
+    message_type: MessageType = MessageType.MIXED
+    text_body: str | None = None
+    text_plain: str | None = None
+    documents: list[dict[str, object]] = field(default_factory=list)
+    deals: list[dict[str, object]] = field(default_factory=list)
+    schedule: datetime | None = None
+    published: datetime | None = None
+    archived: datetime | None = None
+    summary: str | None = None
+    thesis: str | None = None
+    market_context: str | None = None
+    requires_moderation: bool = True
+    scheduled_for: datetime | None = None
+    legs: list[StructuredLegFormData] = field(default_factory=list)
+    attachments: list[IncomingAttachment] = field(default_factory=list)
+    message_mode: str = "mixed"
     message_text: str | None = None
     document_caption: str | None = None
     structured_instrument_id: str | None = None
-    structured_side: TradeSide | None = None
+    structured_side: str | None = None
     structured_price: Decimal | None = None
     structured_quantity: Decimal | None = None
+    bundle_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -97,24 +120,14 @@ class AuthorStrategyFormData:
 
 async def get_author_workspace_stats(repository: AuthorRepository, author: AuthorProfile) -> AuthorWorkspaceStats:
     strategies_total = await repository.count_author_strategies(author.id)
-    recommendations_total = await repository.count_author_recommendations(author.id)
-    draft_recommendations = await repository.count_author_recommendations(
-        author.id,
-        statuses=[RecommendationStatus.DRAFT],
-    )
-    live_recommendations = await repository.count_author_recommendations(
-        author.id,
-        statuses=[
-            RecommendationStatus.PUBLISHED,
-            RecommendationStatus.SCHEDULED,
-            RecommendationStatus.APPROVED,
-        ],
-    )
+    messages_total = await repository.count_author_messages(author.id)
+    draft_messages = 0
+    live_messages = 0
     return AuthorWorkspaceStats(
         strategies_total=strategies_total,
-        recommendations_total=recommendations_total,
-        draft_recommendations=draft_recommendations,
-        live_recommendations=live_recommendations,
+        messages_total=messages_total,
+        draft_messages=draft_messages,
+        live_messages=live_messages,
     )
 
 
@@ -245,16 +258,16 @@ async def search_author_watchlist_candidates(
     return deduped
 
 
-async def list_author_recommendations(repository: AuthorRepository, author: AuthorProfile) -> list[Recommendation]:
-    return await repository.list_author_recommendations(author.id)
+async def list_author_recommendations(repository: AuthorRepository, author: AuthorProfile) -> list[Message]:
+    return await repository.list_author_messages(author.id)
 
 
 async def get_author_recommendation(
     repository: AuthorRepository,
     author: AuthorProfile,
     recommendation_id: str,
-) -> Recommendation | None:
-    return await repository.get_author_recommendation(author.id, recommendation_id)
+) -> Message | None:
+    return await repository.get_author_message(author.id, recommendation_id)
 
 
 async def create_author_recommendation(
@@ -264,96 +277,72 @@ async def create_author_recommendation(
     *,
     uploaded_by_user_id: str | None = None,
     storage: StorageBackend | None = None,
-) -> Recommendation:
-    payload = _build_recommendation_payload(data)
-    recommendation = Recommendation(
-        author_id=author.id,
-        strategy_id=data.strategy_id,
-        kind=data.kind,
-        status=data.status,
-        title=data.title,
-        summary=data.summary,
-        thesis=data.thesis,
-        market_context=data.market_context,
-        recommendation_payload=payload,
-        requires_moderation=data.requires_moderation,
-        scheduled_for=data.scheduled_for,
-    )
-    _apply_publish_state(recommendation)
-    _attach_legs(recommendation, data.legs)
-    _attach_message(recommendation, data, payload, created_by_user_id=uploaded_by_user_id)
-    repository.add(recommendation)
+) -> Message:
+    message = _build_message_entity(author, data, uploaded_by_user_id=uploaded_by_user_id)
+    repository.add(message)
     await repository.flush()
-    if data.attachments:
-        await _store_attachments(
-            repository,
-            recommendation,
-            attachments=data.attachments,
-            uploaded_by_user_id=uploaded_by_user_id,
-            storage=storage or LocalFilesystemStorage(),
-        )
+    _finalize_root_thread(message)
     await repository.commit()
-    await repository.refresh(recommendation)
-    return recommendation
+    await repository.refresh(message)
+    return message
 
 
 async def update_author_recommendation(
     repository: AuthorRepository,
-    recommendation: Recommendation,
+    message: Message,
     data: RecommendationFormData,
     *,
     uploaded_by_user_id: str | None = None,
     storage: StorageBackend | None = None,
-) -> Recommendation:
-    if recommendation.status not in {RecommendationStatus.DRAFT, RecommendationStatus.REVIEW}:
-        raise ValueError("Редактировать можно только рекомендации в статусах «Черновик» и «На модерации».")
-    payload = _build_recommendation_payload(data)
-    recommendation.strategy_id = data.strategy_id
-    recommendation.kind = data.kind
-    recommendation.status = data.status
-    recommendation.title = data.title
-    recommendation.summary = data.summary
-    recommendation.thesis = data.thesis
-    recommendation.market_context = data.market_context
-    recommendation.recommendation_payload = payload
-    recommendation.requires_moderation = data.requires_moderation
-    recommendation.scheduled_for = data.scheduled_for
-    _apply_publish_state(recommendation)
-    await _replace_legs(repository, recommendation, data.legs)
-    recommendation.messages.append(_build_message(data, payload, created_by_user_id=uploaded_by_user_id))
-    if data.attachments:
-        await _store_attachments(
-            repository,
-            recommendation,
-            attachments=data.attachments,
-            uploaded_by_user_id=uploaded_by_user_id,
-            storage=storage or LocalFilesystemStorage(),
-        )
+) -> Message:
+    if message.status not in {MessageStatus.DRAFT.value, MessageStatus.REVIEW.value}:
+        raise ValueError("Редактировать можно только сообщения в статусах «Черновик» и «На модерации».")
+    updated = _build_message_entity(author=message.author or author, data=data, uploaded_by_user_id=uploaded_by_user_id, existing=message)
+    message.strategy_id = updated.strategy_id
+    message.bundle_id = updated.bundle_id
+    message.author_id = updated.author_id
+    message.user_id = updated.user_id
+    message.moderator_id = updated.moderator_id
+    message.kind = updated.kind
+    message.type = updated.type
+    message.status = updated.status
+    message.moderation = updated.moderation
+    message.title = updated.title
+    message.comment = updated.comment
+    message.schedule = updated.schedule
+    message.published = updated.published
+    message.archived = updated.archived
+    message.documents = updated.documents
+    message.text = updated.text
+    message.deals = updated.deals
+    message.deliver = updated.deliver
+    message.channel = updated.channel
+    message.thread = updated.thread
+    message.parent = updated.parent
     await repository.commit()
-    await repository.refresh(recommendation)
-    return recommendation
+    await repository.refresh(message)
+    return message
 
 
 async def remove_recommendation_attachments(
     repository: AuthorRepository,
-    recommendation: Recommendation,
+    recommendation: Message,
     attachment_ids: Iterable[str],
     *,
     storage: StorageBackend | None = None,
-) -> Recommendation:
+) -> Message:
     runtime_storage = storage or LocalFilesystemStorage()
     targets = {item.strip() for item in attachment_ids if item and item.strip()}
     if not targets:
         return recommendation
 
-    remaining: list[RecommendationAttachment] = []
-    for attachment in list(recommendation.attachments):
-        if attachment.id not in targets:
-            remaining.append(attachment)
-            continue
-        runtime_storage.delete_object(attachment.object_key)
-        await repository.delete(attachment)
-    recommendation.attachments = remaining
+    documents = [item for item in recommendation.documents if str(item.get("id")) not in targets]
+    removed = [item for item in recommendation.documents if str(item.get("id")) in targets]
+    for attachment in removed:
+        object_key = attachment.get("object_key")
+        if object_key:
+            runtime_storage.delete_object(str(object_key))
+    recommendation.documents = documents
     return recommendation
 
 
@@ -364,16 +353,24 @@ async def get_author_by_user(repository: AuthorRepository, user: User) -> Author
 def build_recommendation_form_data(
     *,
     strategy_id: str,
+    bundle_id: str = "",
     kind_value: str,
     status_value: str,
     title: str,
-    message_mode: str = "structured",
+    type_value: str | None = None,
+    deliver: Iterable[str] | None = None,
+    channel: Iterable[str] | None = None,
+    message_mode: str = "mixed",
     message_text: str = "",
     document_caption: str = "",
     structured_instrument_id: str = "",
     structured_side_value: str = "",
     structured_price: str = "",
     structured_quantity: str = "",
+    text_body: str = "",
+    text_plain: str = "",
+    documents: Iterable[dict[str, object]] | None = None,
+    deals: Iterable[dict[str, object]] | None = None,
     summary: str = "",
     thesis: str = "",
     market_context: str = "",
@@ -389,79 +386,89 @@ def build_recommendation_form_data(
         raise ValueError("Выберите стратегию автора.")
 
     try:
-        kind = RecommendationKind(kind_value)
+        kind = MessageKind(_normalize_message_kind_value(kind_value))
     except ValueError as exc:
-        raise ValueError("Некорректный тип публикации.") from exc
+        raise ValueError("Некорректный kind сообщения.") from exc
 
     try:
-        status = RecommendationStatus(status_value)
+        status = MessageStatus(_normalize_message_status_value(status_value))
     except ValueError as exc:
-        raise ValueError("Некорректный статус рекомендации.") from exc
+        raise ValueError("Некорректный статус сообщения.") from exc
 
     scheduled_for_value = _parse_datetime_local(scheduled_for.strip()) if scheduled_for.strip() else None
-    if status == RecommendationStatus.SCHEDULED and scheduled_for_value is None:
-        raise ValueError("Для scheduled нужен planned datetime.")
+    if status == MessageStatus.SCHEDULED and scheduled_for_value is None:
+        raise ValueError("Для scheduled нужен schedule.")
 
-    parsed_attachments = list(attachments)
-    normalized_mode = (message_mode.strip() or "structured").lower()
-    if normalized_mode not in {"text", "document", "structured"}:
-        raise ValueError("Некорректный режим сообщения.")
+    parsed_documents = list(documents or [])
+    parsed_deals = list(deals or [])
+    normalized_type = _normalize_message_type_value(type_value or message_mode or "")
+    if normalized_type not in {item.value for item in MessageType}:
+        raise ValueError("Некорректный type сообщения.")
 
-    structured_side: TradeSide | None = None
+    structured_side: str | None = None
     if structured_side_value.strip():
-        try:
-            structured_side = TradeSide(structured_side_value.strip())
-        except ValueError as exc:
-            raise ValueError("Некорректное направление structured-сообщения.") from exc
+        structured_side = structured_side_value.strip()
 
     structured_price_value = _parse_decimal(structured_price.strip(), "Некорректная цена.") if structured_price.strip() else None
     structured_quantity_value = _parse_decimal(structured_quantity.strip(), "Некорректное количество.") if structured_quantity.strip() else None
-    normalized_message_text = message_text.strip() or None
+    normalized_message_text = (text_body or message_text).strip() or None
+    normalized_message_plain = text_plain.strip() or None
     normalized_document_caption = document_caption.strip() or None
     normalized_structured_instrument_id = structured_instrument_id.strip() or None
-
+    parsed_attachments = list(attachments)
     parsed_legs = _build_leg_rows(
         leg_rows,
         allowed_instrument_ids,
-        require_legs=normalized_mode == "structured" and any(
-            (value or "").strip()
-            for row in leg_rows
-            for key, value in row.items()
-            if key != "row_id"
-        ),
+        require_legs=False,
     )
+    if not parsed_deals and parsed_legs:
+        parsed_deals = [_deal_from_leg(leg) for leg in parsed_legs]
 
-    if normalized_mode == "structured" and not normalized_structured_instrument_id and parsed_legs:
-        first_leg = parsed_legs[0]
-        normalized_structured_instrument_id = first_leg.instrument_id
-        if structured_side is None:
-            structured_side = first_leg.side
-        if structured_price_value is None:
-            structured_price_value = first_leg.entry_from or first_leg.entry_to or Decimal("1")
-        if structured_quantity_value is None:
-            structured_quantity_value = Decimal("1")
-
-    if normalized_mode == "text":
+    if normalized_type == MessageType.TEXT.value:
         if normalized_message_text is None:
             raise ValueError("Для text message нужен текст сообщения.")
-    elif normalized_mode == "document":
-        if not parsed_attachments:
-            raise ValueError("Для document message нужен PDF или JPG.")
+    elif normalized_type == MessageType.DOCUMENT.value:
+        if not parsed_documents and not parsed_attachments:
+            raise ValueError("Для document message нужен документ.")
+    elif normalized_type == MessageType.DEAL.value:
+        if not parsed_deals and not parsed_legs:
+            raise ValueError("Для deal message нужна сделка.")
     else:
-        if normalized_structured_instrument_id is None:
-            raise ValueError("Для structured message нужен инструмент.")
-        if structured_side is None:
-            raise ValueError("Для structured message нужно выбрать Buy или Sell.")
-        if structured_price_value is None:
-            raise ValueError("Для structured message нужна цена.")
-        if structured_quantity_value is None:
-            raise ValueError("Для structured message нужно количество.")
+        if normalized_message_text is None and not parsed_documents and not parsed_deals:
+            raise ValueError("Для mixed message нужен хотя бы один блок контента.")
+
+    if status == MessageStatus.SCHEDULED and scheduled_for_value is None:
+        raise ValueError("Для scheduled message нужен schedule.")
+
+    deliver_items = [str(item).strip() for item in (deliver or [MessageDeliver.STRATEGY.value]) if str(item).strip()]
+    channel_items = [str(item).strip() for item in (channel or [MessageChannel.TELEGRAM.value, MessageChannel.MINIAPP.value]) if str(item).strip()]
+    if not deliver_items:
+        deliver_items = [MessageDeliver.STRATEGY.value]
+    if not channel_items:
+        channel_items = [MessageChannel.TELEGRAM.value, MessageChannel.MINIAPP.value]
+
+    if MessageDeliver.STRATEGY.value in deliver_items and not normalized_strategy_id:
+        raise ValueError("Для deliver=strategy нужна strategy.")
+    normalized_bundle_id = bundle_id.strip() or None
+    if MessageDeliver.BUNDLE.value in deliver_items and normalized_bundle_id is None:
+        raise ValueError("Для deliver=bundle нужна bundle.")
 
     return RecommendationFormData(
         strategy_id=normalized_strategy_id,
         kind=kind,
         status=status,
         title=title.strip() or None,
+        deliver=deliver_items,
+        channel=channel_items,
+        moderation=MessageModeration.REQUIRED if author_requires_moderation else MessageModeration.DIRECT,
+        message_type=MessageType(normalized_type),
+        text_body=normalized_message_text,
+        text_plain=normalized_message_plain,
+        documents=parsed_documents,
+        deals=parsed_deals,
+        schedule=scheduled_for_value,
+        published=None,
+        archived=None,
         summary=summary.strip() or None,
         thesis=thesis.strip() or None,
         market_context=market_context.strip() or None,
@@ -469,13 +476,14 @@ def build_recommendation_form_data(
         scheduled_for=scheduled_for_value,
         legs=parsed_legs,
         attachments=parsed_attachments,
-        message_mode=normalized_mode,
+        message_mode=normalized_type,
         message_text=normalized_message_text,
         document_caption=normalized_document_caption,
         structured_instrument_id=normalized_structured_instrument_id,
         structured_side=structured_side,
         structured_price=structured_price_value,
         structured_quantity=structured_quantity_value,
+        bundle_id=normalized_bundle_id,
     )
 
 
@@ -540,20 +548,34 @@ async def normalize_attachment_uploads(files: Iterable[UploadFile]) -> list[Inco
     return uploads
 
 
-def recommendation_form_values(recommendation: Recommendation | None) -> dict[str, object]:
-    if recommendation is None:
+def recommendation_form_values(message: Message | None) -> dict[str, object]:
+    if message is None:
         return {
             "strategy_id": "",
-            "kind": RecommendationKind.NEW_IDEA.value,
-            "status": RecommendationStatus.DRAFT.value,
+            "bundle_id": "",
+            "kind": MessageKind.IDEA.value,
+            "status": MessageStatus.DRAFT.value,
             "title": "",
+            "deliver": [MessageDeliver.STRATEGY.value],
+            "channel": [MessageChannel.TELEGRAM.value, MessageChannel.MINIAPP.value],
+            "message_type": MessageType.MIXED.value,
+            "text_body": "",
+            "text_plain": "",
+            "documents": [],
+            "deals": [],
+            "thread": "",
+            "parent": "",
+            "moderation": MessageModeration.REQUIRED.value,
+            "schedule": "",
+            "published": "",
+            "archived": "",
             "summary": "",
             "thesis": "",
             "market_context": "",
             "requires_moderation": False,
             "scheduled_for": "",
             "legs": [_blank_leg_value("0")],
-            "message_mode": "structured",
+            "message_mode": "mixed",
             "message_text": "",
             "document_caption": "",
             "structured_instrument_id": "",
@@ -562,49 +584,65 @@ def recommendation_form_values(recommendation: Recommendation | None) -> dict[st
             "structured_quantity": "",
         }
 
-    scheduled_for = ""
-    if recommendation.scheduled_for is not None:
-        scheduled_for = recommendation.scheduled_for.strftime("%Y-%m-%dT%H:%M")
+    schedule = ""
+    if message.schedule is not None:
+        schedule = message.schedule.strftime("%Y-%m-%dT%H:%M")
 
     legs: list[dict[str, str]] = []
-    for index, leg in enumerate(recommendation.legs):
+    for index, deal in enumerate(message.deals):
         legs.append(
             {
                 "row_id": str(index),
-                "instrument_id": leg.instrument_id or "",
-                "side": leg.side.value if leg.side else "",
-                "entry_from": _format_decimal(leg.entry_from),
-                "entry_to": _format_decimal(leg.entry_to),
-                "stop_loss": _format_decimal(leg.stop_loss),
-                "take_profit_1": _format_decimal(leg.take_profit_1),
-                "take_profit_2": _format_decimal(leg.take_profit_2),
-                "take_profit_3": _format_decimal(leg.take_profit_3),
-                "time_horizon": leg.time_horizon or "",
-                "note": leg.note or "",
+                "instrument_id": str(deal.get("instrument_id") or ""),
+                "side": str(deal.get("side") or ""),
+                "entry_from": str(deal.get("entry_from") or ""),
+                "entry_to": str(deal.get("entry_to") or ""),
+                "stop_loss": str(deal.get("stop_loss") or ""),
+                "take_profit_1": str(deal.get("take_profit_1") or ""),
+                "take_profit_2": str(deal.get("take_profit_2") or ""),
+                "take_profit_3": str(deal.get("take_profit_3") or ""),
+                "time_horizon": str(deal.get("time_horizon") or ""),
+                "note": str(deal.get("note") or ""),
             }
         )
 
     if not legs:
         legs = [_blank_leg_value("0")]
 
+    text_payload = message.text or {}
+
     return {
-        "strategy_id": recommendation.strategy_id,
-        "kind": recommendation.kind.value,
-        "status": recommendation.status.value,
-        "title": recommendation.title or "",
-        "summary": recommendation.summary or "",
-        "thesis": recommendation.thesis or "",
-        "market_context": recommendation.market_context or "",
-        "requires_moderation": recommendation.requires_moderation,
-        "scheduled_for": scheduled_for,
+        "strategy_id": message.strategy_id or "",
+        "bundle_id": message.bundle_id or "",
+        "kind": message.kind or MessageKind.IDEA.value,
+        "status": message.status or MessageStatus.DRAFT.value,
+        "title": message.title or "",
+        "deliver": list(message.deliver or []),
+        "channel": list(message.channel or []),
+        "message_type": message.type or MessageType.MIXED.value,
+        "text_body": str(text_payload.get("body") or ""),
+        "text_plain": str(text_payload.get("plain") or ""),
+        "documents": list(message.documents or []),
+        "deals": list(message.deals or []),
+        "thread": message.thread or "",
+        "parent": message.parent or "",
+        "moderation": message.moderation or MessageModeration.REQUIRED.value,
+        "schedule": schedule,
+        "published": message.published.strftime("%Y-%m-%dT%H:%M") if message.published else "",
+        "archived": message.archived.strftime("%Y-%m-%dT%H:%M") if message.archived else "",
+        "summary": message.comment or "",
+        "thesis": "",
+        "market_context": "",
+        "requires_moderation": message.moderation == MessageModeration.REQUIRED.value,
+        "scheduled_for": schedule,
         "legs": legs,
-        "message_mode": (recommendation.recommendation_payload or {}).get("mode", "structured"),
-        "message_text": (recommendation.recommendation_payload or {}).get("text", ""),
-        "document_caption": (recommendation.recommendation_payload or {}).get("document_caption", ""),
-        "structured_instrument_id": (recommendation.recommendation_payload or {}).get("instrument_id", ""),
-        "structured_side": (recommendation.recommendation_payload or {}).get("side", ""),
-        "structured_price": (recommendation.recommendation_payload or {}).get("price", ""),
-        "structured_quantity": (recommendation.recommendation_payload or {}).get("quantity", ""),
+        "message_mode": message.type or MessageType.MIXED.value,
+        "message_text": str(text_payload.get("body") or ""),
+        "document_caption": str(text_payload.get("title") or ""),
+        "structured_instrument_id": str((message.deals[0] if message.deals else {}).get("instrument_id") or ""),
+        "structured_side": str((message.deals[0] if message.deals else {}).get("side") or ""),
+        "structured_price": str((message.deals[0] if message.deals else {}).get("entry_from") or ""),
+        "structured_quantity": str((message.deals[0] if message.deals else {}).get("quantity") or ""),
     }
 
 
@@ -659,25 +697,30 @@ def leg_form_values_from_rows(rows: list[dict[str, str]]) -> list[dict[str, str]
     ]
 
 
-def build_attachment_object_key(recommendation_id: str, filename: str) -> str:
+def build_attachment_object_key(message_id: str, filename: str) -> str:
     safe_name = Path(filename).name.replace(" ", "_")
-    return f"recommendations/{recommendation_id}/{uuid4().hex}_{safe_name}"
+    return f"messages/{message_id}/{uuid4().hex}_{safe_name}"
 
 
-def _apply_publish_state(recommendation: Recommendation) -> None:
+def _finalize_root_thread(message: Message) -> None:
+    if not message.thread:
+        message.thread = message.id
+
+
+def _apply_publish_state(message: Message) -> None:
     now = datetime.now(timezone.utc)
-
-    if recommendation.status == RecommendationStatus.SCHEDULED:
-        recommendation.published_at = None
-    elif recommendation.status == RecommendationStatus.PUBLISHED:
-        recommendation.scheduled_for = None
-        if recommendation.published_at is None:
-            recommendation.published_at = now
+    if message.status == MessageStatus.SCHEDULED:
+        message.published = None
+    elif message.status == MessageStatus.PUBLISHED:
+        message.schedule = None
+        if message.published is None:
+            message.published = now
     else:
-        recommendation.published_at = None
-
-    recommendation.closed_at = now if recommendation.status == RecommendationStatus.CLOSED else None
-    recommendation.cancelled_at = now if recommendation.status == RecommendationStatus.CANCELLED else None
+        message.published = None
+    if message.status == MessageStatus.ARCHIVED:
+        message.archived = message.archived or now
+    else:
+        message.archived = None
 
 
 def _build_leg_rows(
@@ -696,10 +739,9 @@ def _build_leg_rows(
             raise ValueError(f"Leg {index}: выберите допустимый инструмент.")
 
         side_value = row.get("side", "").strip()
-        try:
-            side = TradeSide(side_value)
-        except ValueError as exc:
-            raise ValueError(f"Leg {index}: выберите направление сделки.") from exc
+        if side_value not in {"buy", "sell"}:
+            raise ValueError(f"Leg {index}: выберите направление сделки.")
+        side = side_value
 
         entry_from = _parse_decimal(row.get("entry_from", ""), f"Leg {index}: некорректный entry_from.")
         entry_to = _parse_decimal(row.get("entry_to", ""), f"Leg {index}: некорректный entry_to.")
@@ -730,132 +772,174 @@ def _build_leg_rows(
     return legs
 
 
-async def _replace_legs(
-    repository: AuthorRepository,
-    recommendation: Recommendation,
-    legs: list[StructuredLegFormData],
-) -> None:
-    existing_legs = list(recommendation.legs)
-    for item in existing_legs:
-        await repository.delete(item)
-    recommendation.legs = []
-    await repository.flush()
-    _attach_legs(recommendation, legs)
-
-
-def _attach_legs(recommendation: Recommendation, legs: list[StructuredLegFormData]) -> None:
-    recommendation.legs = [
-        RecommendationLeg(
-            instrument_id=item.instrument_id,
-            side=item.side,
-            entry_from=item.entry_from,
-            entry_to=item.entry_to,
-            stop_loss=item.stop_loss,
-            take_profit_1=item.take_profit_1,
-            take_profit_2=item.take_profit_2,
-            take_profit_3=item.take_profit_3,
-            time_horizon=item.time_horizon,
-            note=item.note,
-        )
-        for item in legs
-    ]
-
-
-def _build_recommendation_payload(data: RecommendationFormData) -> dict[str, object]:
-    if data.message_mode == "text":
-        return {
-            "mode": "text",
-            "text": data.message_text or "",
-            "title": data.title or "",
-        }
-    if data.message_mode == "document":
-        return {
-            "mode": "document",
-            "document_caption": data.document_caption or data.message_text or "",
-            "attachments": [attachment.filename for attachment in data.attachments],
-            "title": data.title or "",
-        }
-    amount = None
-    if data.structured_price is not None and data.structured_quantity is not None:
-        amount = data.structured_price * data.structured_quantity
+def _deal_from_leg(leg: StructuredLegFormData) -> dict[str, object]:
     return {
-        "mode": "structured",
-        "instrument_id": data.structured_instrument_id,
-        "side": data.structured_side.value if data.structured_side else None,
-        "price": _format_decimal(data.structured_price) if data.structured_price is not None else None,
-        "quantity": _format_decimal(data.structured_quantity) if data.structured_quantity is not None else None,
-        "amount": _format_decimal(amount) if amount is not None else None,
-        "title": data.title or "",
-        "summary": data.summary or "",
+        "instrument_id": leg.instrument_id,
+        "side": leg.side,
+        "entry_from": _format_decimal(leg.entry_from),
+        "entry_to": _format_decimal(leg.entry_to),
+        "stop_loss": _format_decimal(leg.stop_loss),
+        "take_profit_1": _format_decimal(leg.take_profit_1),
+        "take_profit_2": _format_decimal(leg.take_profit_2),
+        "take_profit_3": _format_decimal(leg.take_profit_3),
+        "time_horizon": leg.time_horizon,
+        "note": leg.note,
     }
 
 
-def _build_message(
+def _sanitize_html(value: str | None) -> str:
+    if not value:
+        return ""
+    sanitized = re.sub(r"<\s*(script|style)[^>]*>.*?<\s*/\s*\1\s*>", "", value, flags=re.I | re.S)
+    sanitized = re.sub(r"\son[a-z]+\s*=\s*(['\"]).*?\1", "", sanitized, flags=re.I | re.S)
+    sanitized = re.sub(r"javascript\s*:", "", sanitized, flags=re.I)
+    return sanitized.strip()
+
+
+def _html_to_plain(value: str) -> str:
+    plain = re.sub(r"<[^>]+>", " ", value)
+    plain = re.sub(r"\s+", " ", plain)
+    return plain.strip()
+
+
+def _normalize_message_kind_value(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized == "new_idea":
+        return MessageKind.IDEA.value
+    return normalized
+
+
+def _normalize_message_status_value(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"closed", "cancelled"}:
+        return MessageStatus.ARCHIVED.value
+    return normalized
+
+
+def _normalize_message_type_value(value: str) -> str:
+    normalized = value.strip().lower()
+    if not normalized:
+        return MessageType.MIXED.value
+    if normalized == "structured":
+        return MessageType.MIXED.value
+    return normalized
+
+
+def _normalize_message_moderation_value(value: object) -> str:
+    normalized = str(getattr(value, "value", value)).strip().lower()
+    if normalized == "true":
+        return MessageModeration.REQUIRED.value
+    if normalized == "false":
+        return MessageModeration.DIRECT.value
+    if normalized not in {item.value for item in MessageModeration}:
+        return MessageModeration.REQUIRED.value
+    return normalized
+
+
+def _build_message_entity(
+    author: AuthorProfile,
     data: RecommendationFormData,
-    payload: dict[str, object],
     *,
-    created_by_user_id: str | None = None,
-) -> RecommendationMessage:
-    body = data.message_text
-    if data.message_mode == "document":
-        body = data.document_caption or data.message_text or "Документ"
-    elif data.message_mode == "structured":
-        body = _build_structured_message_body(data)
-    return RecommendationMessage(
-        created_by_user_id=created_by_user_id,
-        mode=data.message_mode,
-        body=body,
-        payload=payload,
-    )
+    uploaded_by_user_id: str | None = None,
+    existing: Message | None = None,
+) -> Message:
+    message = existing or Message()
+    if not getattr(message, "id", None):
+        message.id = str(uuid4())
+    body = _sanitize_html(data.text_body or data.message_text or "")
+    plain = data.text_plain or _html_to_plain(body)
+    documents = list(data.documents)
+    deals = list(data.deals)
+    if not deals and data.legs:
+        deals = [_deal_from_leg(item) for item in data.legs]
+    if not body and data.message_type is MessageType.TEXT and plain:
+        body = f"<p>{plain}</p>"
+    if data.message_type is MessageType.DOCUMENT and data.document_caption and not body:
+        body = f"<p>{_sanitize_html(data.document_caption)}</p>"
+
+    message.author_id = author.id
+    message.strategy_id = data.strategy_id
+    message.bundle_id = data.bundle_id
+    message.kind = MessageKind(_normalize_message_kind_value(getattr(data.kind, "value", str(data.kind))))
+    message.type = MessageType(_normalize_message_type_value(getattr(data.message_type, "value", str(data.message_type))))
+    message.status = MessageStatus(_normalize_message_status_value(getattr(data.status, "value", str(data.status))))
+    message.moderation = MessageModeration(_normalize_message_moderation_value(data.moderation))
+    message.title = data.title
+    message.comment = data.document_caption or data.summary or data.thesis or data.market_context
+    message.deliver = list(dict.fromkeys(data.deliver or [MessageDeliver.STRATEGY.value]))
+    message.channel = list(dict.fromkeys(data.channel or [MessageChannel.TELEGRAM.value, MessageChannel.MINIAPP.value]))
+    message.thread = data.thread or message.thread
+    message.parent = data.parent or message.parent
+    message.schedule = data.schedule or data.scheduled_for
+    message.published = data.published
+    message.archived = data.archived
+    message.documents = documents
+    message.deals = deals
+    message.text = {
+        "body": body,
+        "plain": plain,
+        "title": data.title,
+    }
+    if not message.thread:
+        message.thread = message.id
+    _validate_message_contract(message)
+    _apply_publish_state(message)
+    return message
 
 
-def _build_structured_message_body(data: RecommendationFormData) -> str:
-    parts = ["Structured recommendation"]
-    if data.structured_instrument_id:
-        parts.append(f"instrument={data.structured_instrument_id}")
-    if data.structured_side:
-        parts.append(f"side={data.structured_side.value}")
-    if data.structured_price is not None:
-        parts.append(f"price={_format_decimal(data.structured_price)}")
-    if data.structured_quantity is not None:
-        parts.append(f"qty={_format_decimal(data.structured_quantity)}")
-    if data.structured_price is not None and data.structured_quantity is not None:
-        parts.append(f"amount={_format_decimal(data.structured_price * data.structured_quantity)}")
-    return " · ".join(parts)
-
-
-def _attach_message(
-    recommendation: Recommendation,
-    data: RecommendationFormData,
-    payload: dict[str, object],
-    *,
-    created_by_user_id: str | None = None,
-) -> None:
-    recommendation.messages = [_build_message(data, payload, created_by_user_id=created_by_user_id)]
+def _validate_message_contract(message: Message) -> None:
+    if message.strategy_id is None and MessageDeliver.STRATEGY.value in (message.deliver or []):
+        raise ValueError("Для deliver=strategy нужна strategy.")
+    if message.bundle_id is None and MessageDeliver.BUNDLE.value in (message.deliver or []):
+        raise ValueError("Для deliver=bundle нужна bundle.")
+    if not message.thread and message.parent is not None:
+        raise ValueError("Для дочернего сообщения нужен thread.")
+    if message.status == MessageStatus.SCHEDULED and message.schedule is None:
+        raise ValueError("Для scheduled нужен schedule.")
+    if message.status == MessageStatus.PUBLISHED and message.published is None:
+        raise ValueError("Для published нужен published.")
+    body = str((message.text or {}).get("body") or "").strip()
+    documents = list(message.documents or [])
+    deals = list(message.deals or [])
+    if message.type == MessageType.TEXT and not body:
+        raise ValueError("Для text message нужен текст сообщения.")
+    if message.type == MessageType.DOCUMENT and not documents:
+        raise ValueError("Для document message нужен документ.")
+    if message.type == MessageType.DEAL and not deals:
+        raise ValueError("Для deal message нужна сделка.")
+    if message.type == MessageType.MIXED and not (body or documents or deals):
+        raise ValueError("Для mixed message нужен хотя бы один блок контента.")
+    if message.kind in {MessageKind.UPDATE, MessageKind.CLOSE, MessageKind.CANCEL} and not message.parent:
+        raise ValueError("Для update/close/cancel нужно parent.")
+    if message.thread is None:
+        raise ValueError("thread обязателен для всех сообщений.")
 
 
 async def _store_attachments(
     repository: AuthorRepository,
-    recommendation: Recommendation,
+    message: Message,
     *,
     attachments: list[IncomingAttachment],
     uploaded_by_user_id: str | None,
     storage: StorageBackend,
 ) -> None:
     storage.bootstrap()
+    documents = list(message.documents or [])
     for item in attachments:
-        object_key = build_attachment_object_key(recommendation.id, item.filename)
+        object_key = build_attachment_object_key(message.id, item.filename)
         stored = storage.upload_bytes(object_key, item.data, item.content_type)
-        repository.add(
-            RecommendationAttachment(
-                recommendation_id=recommendation.id,
-                uploaded_by_user_id=uploaded_by_user_id,
-                object_key=stored.object_key,
-                original_filename=item.filename,
-                content_type=stored.content_type,
-                size_bytes=stored.size_bytes,
-            )
+        documents.append(
+            {
+                "id": str(uuid4()),
+                "object_key": stored.object_key,
+                "original_filename": item.filename,
+                "content_type": stored.content_type,
+                "size_bytes": stored.size_bytes,
+                "uploaded_by": uploaded_by_user_id,
+                "kind": "attachment",
+            }
         )
+    message.documents = documents
     await repository.flush()
 
 

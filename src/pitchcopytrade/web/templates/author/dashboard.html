@@ -1,6 +1,7 @@
 {% extends "staff_base.html" %}
 
 {% block topbar_actions %}
+<button class="staff-btn is-primary" type="button" data-open-message-modal>Новое сообщение</button>
 {% endblock %}
 
 {% block content %}
@@ -10,10 +11,10 @@
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">{{ author.display_name }}</h1>
       <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Рабочая зона автора: свои стратегии, поток рекомендаций, черновики и контекст публикации.
+        Рабочая зона автора: стратегии, поток сообщений, черновики и контекст публикации.
       </p>
     </div>
-    <div class="pill">{{ recommendations|length }} последних публикаций</div>
+    <div class="pill">{{ recommendations|length }} последних сообщений</div>
   </div>
 </section>
 
@@ -23,16 +24,16 @@
     <div style="font-size:2rem;margin-top:8px;">{{ stats.strategies_total }}</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">рекомендации</div>
-    <div style="font-size:2rem;margin-top:8px;">{{ stats.recommendations_total }}</div>
+    <div class="eyebrow">сообщения</div>
+    <div style="font-size:2rem;margin-top:8px;">{{ stats.messages_total }}</div>
   </article>
   <article class="surface" style="padding:20px;">
     <div class="eyebrow">черновики</div>
-    <div style="font-size:2rem;margin-top:8px;">{{ stats.draft_recommendations }}</div>
+    <div style="font-size:2rem;margin-top:8px;">{{ stats.draft_messages }}</div>
   </article>
   <article class="surface" style="padding:20px;">
     <div class="eyebrow">активные</div>
-    <div style="font-size:2rem;margin-top:8px;">{{ stats.live_recommendations }}</div>
+    <div style="font-size:2rem;margin-top:8px;">{{ stats.live_messages }}</div>
   </article>
 </section>
 
@@ -58,50 +59,44 @@
   </article>
 
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">рекомендации</div>
+    <div class="eyebrow">сообщения</div>
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-      <h2 style="margin:10px 0 14px;">Последние рекомендации</h2>
-      <a class="action ghost" href="/author/recommendations">Открыть все</a>
+      <h2 style="margin:10px 0 14px;">Последние сообщения</h2>
+      <a class="action ghost" href="/author/messages">Открыть все</a>
     </div>
     <div style="display:grid;gap:12px;">
-      {% for recommendation in recommendations %}
-      {% set primary_leg = recommendation.legs[0] if recommendation.legs else None %}
-      {% set primary_message = recommendation.messages[0] if recommendation.messages else None %}
-      <a class="surface" href="/author/recommendations/{{ recommendation.id }}/edit" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
+      {% for message in recommendations %}
+      <a class="surface" href="/author/messages/{{ message.id }}/edit" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
           <div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-              <small class="muted">{{ (recommendation.updated_at or recommendation.created_at).strftime("%d.%m.%Y") if recommendation.updated_at or recommendation.created_at else "—" }}</small>
-              {% if primary_leg and primary_leg.instrument %}
-              <span class="pill">{{ primary_leg.instrument.ticker }}</span>
+              <small class="muted">{{ (message.updated or message.created).strftime("%d.%m.%Y") if message.updated or message.created else "—" }}</small>
+              {% if message.type %}
+              <span class="pill">{{ message.type }}</span>
               {% endif %}
-              {% if primary_leg and primary_leg.side %}
-              <span class="pill {% if primary_leg.side.value == 'buy' %}ok{% else %}danger{% endif %}">
-                {% if primary_leg.side.value == 'buy' %}↑ покупка{% else %}↓ продажа{% endif %}
-              </span>
+              {% if message.deliver %}
+              <span class="pill">{{ message.deliver|join(", ") }}</span>
               {% endif %}
             </div>
-            <strong>{{ recommendation.title or recommendation.strategy.title }}</strong>
-            {% if primary_leg and (primary_leg.entry_from or primary_leg.take_profit_1 or primary_leg.stop_loss) %}
-            <div class="muted" style="margin-top:4px;font-size:0.9em;">
-              {% if primary_leg.entry_from %}Вход: {{ primary_leg.entry_from }}{% endif %}
-              {% if primary_leg.take_profit_1 %}→ TP: {{ primary_leg.take_profit_1 }}{% endif %}
-              {% if primary_leg.stop_loss %} | Стоп: {{ primary_leg.stop_loss }}{% endif %}
-            </div>
+            <strong>{{ message.title or message.strategy.title }}</strong>
+            {% if message.text and message.text.body %}
+            <div class="muted" style="margin-top:10px;line-height:1.6;">{{ message.text.body | safe }}</div>
+            {% elif message.comment %}
+            <div class="muted" style="margin-top:10px;line-height:1.6;">{{ message.comment }}</div>
+            {% elif message.deals %}
+            <div class="muted" style="margin-top:10px;line-height:1.6;">{{ message.deals[0].ticker or message.deals[0].instrument or message.deals[0].instrument_id }} · {{ message.deals[0].side }}</div>
+            {% else %}
+            <div class="muted" style="margin-top:10px;line-height:1.6;">Сообщение без текста</div>
             {% endif %}
-            <div class="muted" style="margin-top:6px;">Стратегия: {{ recommendation.strategy.title }}</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <span class="pill">{{ label_recommendation_kind(recommendation.kind) }}</span>
-            <span class="pill">{{ label_recommendation_status(recommendation.status) }}</span>
+            <span class="pill">{{ label_message_kind(message.kind) }}</span>
+            <span class="pill">{{ label_message_status(message.status) }}</span>
           </div>
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.6;">
-          {{ primary_message.body if primary_message else recommendation.summary or recommendation.thesis or "Текст рекомендации пока не заполнен" }}
         </div>
       </a>
       {% else %}
-      <div class="muted">Рекомендаций пока нет. Создайте первую публикацию.</div>
+      <div class="muted">Сообщений пока нет. Создайте первую публикацию.</div>
       {% endfor %}
     </div>
   </article>
@@ -137,16 +132,16 @@
   </div>
 </section>
 
-<dialog id="dashboard-recommendation-modal" class="workspace-modal">
+<dialog id="dashboard-message-modal" class="workspace-modal">
   <div class="workspace-modal-shell surface">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
       <div>
         <div class="eyebrow">модальный редактор</div>
-        <strong>Новая рекомендация</strong>
+        <strong>Новое сообщение</strong>
       </div>
-      <button class="action ghost" type="button" data-close-recommendation-modal>Закрыть</button>
+      <button class="action ghost" type="button" data-close-message-modal>Закрыть</button>
     </div>
-    <iframe id="dashboard-recommendation-modal-frame" src="{{ recommendation_modal_url }}" title="Создание рекомендации" class="workspace-modal-frame"></iframe>
+    <iframe id="dashboard-message-modal-frame" src="{{ message_modal_url }}" title="Создание сообщения" class="workspace-modal-frame"></iframe>
   </div>
 </dialog>
 
@@ -251,10 +246,10 @@
 
 <script>
   (function () {
-    const modal = document.getElementById("dashboard-recommendation-modal");
-    const modalFrame = document.getElementById("dashboard-recommendation-modal-frame");
-    const openButtons = document.querySelectorAll("[data-open-recommendation-modal]");
-    const closeButtons = document.querySelectorAll("[data-close-recommendation-modal]");
+    const modal = document.getElementById("dashboard-message-modal");
+    const modalFrame = document.getElementById("dashboard-message-modal-frame");
+    const openButtons = document.querySelectorAll("[data-open-message-modal]");
+    const closeButtons = document.querySelectorAll("[data-close-message-modal]");
     const searchInput = document.getElementById("watchlist-search-input");
     const suggestionsBox = document.getElementById("watchlist-suggestions");
     const gridHost = document.getElementById("watchlist-grid");
@@ -309,8 +304,6 @@
 
     let watchlist = {{ watchlist_items | tojson }};
     let currentSuggestions = [];
-    let activeAbortController = null;
-    let debounceTimer = null;
     let gridApi = null;
 
     function htmlCellRenderer(params) {
@@ -419,97 +412,31 @@
       suggestionsBox.hidden = false;
     }
 
-    async function fetchSuggestions(query, filteredCount) {
-      const normalized = normalize(query);
-      if (normalized.length < 2 || filteredCount > 2) {
-        hideSuggestions();
-        return;
-      }
-
-      if (activeAbortController) {
-        activeAbortController.abort();
-      }
-      activeAbortController = new AbortController();
-
-      try {
-        const response = await fetch(`/author/watchlist/search?q=${encodeURIComponent(normalized)}`, {
-          signal: activeAbortController.signal,
-          headers: { "X-Requested-With": "fetch" },
-        });
-        if (!response.ok) {
-          hideSuggestions();
-          return;
-        }
-        const payload = await response.json();
-        renderSuggestions(payload.items || []);
-      } catch (_error) {
+    function updateWatchlistView(query) {
+      const filtered = filterWatchlist(query);
+      renderGrid(filtered);
+      const candidateQuery = normalize(query);
+      const suggestions = watchlist.filter(function (item) {
+        const haystack = [item.ticker, item.name, item.board].join(" ").toLowerCase();
+        return candidateQuery && !haystack.includes(candidateQuery);
+      }).slice(0, 4);
+      if (candidateQuery && suggestions.length) {
+        renderSuggestions(suggestions);
+      } else {
         hideSuggestions();
       }
     }
 
-    async function addInstrument(instrumentId) {
-      const formData = new FormData();
-      formData.append("instrument_id", instrumentId);
-      const response = await fetch("/author/watchlist/items", {
-        method: "POST",
-        body: formData,
-        headers: { "X-Requested-With": "fetch" },
-      });
-      if (!response.ok) {
-        return;
-      }
-      const payload = await response.json();
-      watchlist = payload.watchlist || watchlist;
-      searchInput.value = "";
-      hideSuggestions();
+    if (gridHost) {
       renderGrid(watchlist);
     }
-
-    async function removeInstrument(instrumentId) {
-      const response = await fetch(`/author/watchlist/items/${encodeURIComponent(instrumentId)}/remove`, {
-        method: "POST",
-        headers: { "X-Requested-With": "fetch" },
+    if (searchInput) {
+      searchInput.addEventListener("input", function (event) {
+        updateWatchlistView(event.target.value);
       });
-      if (!response.ok) {
-        return;
-      }
-      const payload = await response.json();
-      watchlist = payload.watchlist || watchlist;
-      renderGrid(filterWatchlist(searchInput.value));
     }
 
-    searchInput.addEventListener("input", function () {
-      const filtered = filterWatchlist(searchInput.value);
-      renderGrid(filtered);
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(function () {
-        fetchSuggestions(searchInput.value, filtered.length);
-      }, 180);
-    });
-
-    suggestionsBox.addEventListener("click", function (event) {
-      const button = event.target.closest("[data-instrument-id]");
-      if (!button) {
-        return;
-      }
-      addInstrument(button.dataset.instrumentId);
-    });
-
-    gridHost.addEventListener("click", function (event) {
-      const button = event.target.closest("[data-watchlist-remove]");
-      if (!button) {
-        return;
-      }
-      removeInstrument(button.getAttribute("data-watchlist-remove"));
-    });
-
-    document.addEventListener("click", function (event) {
-      if (!suggestionsBox.contains(event.target) && event.target !== searchInput) {
-        hideSuggestions();
-      }
-    });
-
-    renderGrid(watchlist);
+    updateWatchlistView(searchInput.value || "");
   })();
 </script>
 {% endblock %}

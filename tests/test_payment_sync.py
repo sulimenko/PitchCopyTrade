@@ -107,8 +107,7 @@ def _seed_tbank_pending_checkout(store: FileDataStore) -> None:
             "user_consents": [],
             "audit_events": [],
             "recommendations": [],
-            "recommendation_legs": [],
-            "recommendation_attachments": [],
+            "messages": [],
         }
     )
 

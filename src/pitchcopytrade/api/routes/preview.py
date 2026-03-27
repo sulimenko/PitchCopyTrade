@@ -19,7 +19,7 @@ from pitchcopytrade.services.preview import (
     build_preview_admin_context,
     build_preview_author_context,
     build_preview_miniapp_context,
-    build_preview_recommendation_context,
+    build_preview_message_context,
 )
 from pitchcopytrade.services.instruments import build_strategy_quote_strip
 from pitchcopytrade.services.public import build_strategy_story
@@ -408,21 +408,22 @@ async def preview_author_dashboard(request: Request) -> Response:
     )
 
 
-@router.get("/author/recommendations/{recommendation_id}/preview", response_class=HTMLResponse)
+@router.get("/author/messages/{recommendation_id}/preview", response_class=HTMLResponse)
 async def preview_author_recommendation(request: Request, recommendation_id: str) -> Response:
     if not get_settings().app.preview_enabled:
         return _preview_disabled()
-    context = build_preview_recommendation_context()
+    context = build_preview_message_context()
     recommendation = context["recommendation"]
     if recommendation_id != recommendation.id:
         return _preview_disabled()
     return templates.TemplateResponse(
         request,
-        "app/recommendation_detail.html",
+        "app/message_detail.html",
         {
             "title": recommendation.title,
             "user": context["user"],
-            "recommendation": recommendation,
+            "message": recommendation,
+            "thread_messages": [recommendation],
             "preview_mode": True,
             "attachment_download_enabled": False,
         },

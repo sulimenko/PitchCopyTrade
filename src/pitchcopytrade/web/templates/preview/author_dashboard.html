@@ -18,14 +18,14 @@
         Static local preview for the author workspace. It keeps the cards, hierarchy and watchlist visual without requiring a staff session.
       </p>
     </div>
-    <div class="pill">{{ recommendations|length }} recent recommendations</div>
+    <div class="pill">{{ recommendations|length }} recent messages</div>
   </div>
 </section>
 
 <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:18px;">
   <article class="surface" style="padding:20px;"><div class="eyebrow">strategies</div><div style="font-size:2rem;margin-top:8px;">{{ stats.strategies_total }}</div></article>
-  <article class="surface" style="padding:20px;"><div class="eyebrow">drafts</div><div style="font-size:2rem;margin-top:8px;">{{ stats.draft_recommendations }}</div></article>
-  <article class="surface" style="padding:20px;"><div class="eyebrow">live</div><div style="font-size:2rem;margin-top:8px;">{{ stats.live_recommendations }}</div></article>
+  <article class="surface" style="padding:20px;"><div class="eyebrow">drafts</div><div style="font-size:2rem;margin-top:8px;">{{ stats.draft_messages }}</div></article>
+  <article class="surface" style="padding:20px;"><div class="eyebrow">live</div><div style="font-size:2rem;margin-top:8px;">{{ stats.live_messages }}</div></article>
 </section>
 
 <section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px;">
@@ -46,15 +46,17 @@
   </article>
 
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">recommendations</div>
+    <div class="eyebrow">messages</div>
     <div style="display:grid;gap:12px;margin-top:16px;">
-      {% for recommendation in recommendations %}
+      {% for message in recommendations %}
       <article class="surface" style="padding:16px;border-radius:18px;background:var(--staff-surface);box-shadow:none;">
-        <strong>{{ recommendation.title }}</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ recommendation.summary }}</div>
+        <strong>{{ message.title }}</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">{{ message.text.body | safe if message.text else message.comment or "—" }}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <span class="pill">{{ label_recommendation_status(recommendation.status) }}</span>
-          <span class="pill">{{ recommendation.legs[0].instrument.ticker }}</span>
+          <span class="pill">{{ label_message_status(message.status) }}</span>
+          {% if message.deals %}
+          <span class="pill">{{ message.deals[0].instrument_id }}</span>
+          {% endif %}
         </div>
       </article>
       {% endfor %}

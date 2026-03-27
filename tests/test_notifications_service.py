@@ -7,12 +7,12 @@ import pytest
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationLeg
-from pitchcopytrade.db.models.enums import InstrumentType, RecommendationKind, RecommendationStatus, RiskLevel, StrategyStatus, TradeSide
-from pitchcopytrade.services.notifications import _send_with_retry, build_recommendation_notification_text
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import InstrumentType, RiskLevel, StrategyStatus
+from pitchcopytrade.services.notifications import _send_with_retry, build_message_notification_text
 
 
-def test_build_recommendation_notification_text_includes_leg_and_attachments() -> None:
+def test_build_message_notification_text_uses_html_safe_message_payload() -> None:
     author_user = User(id="author-user-1", full_name="Alpha Desk")
     author = AuthorProfile(id="author-1", user_id="author-user-1", display_name="Alpha Desk", slug="alpha-desk", is_active=True)
     author.user = author_user
@@ -29,54 +29,44 @@ def test_build_recommendation_notification_text_includes_leg_and_attachments() -
         is_public=True,
     )
     strategy.author = author
-    recommendation = Recommendation(
-        id="rec-1",
+    message = Message(
+        id="msg-1",
         strategy_id="strategy-1",
         author_id="author-1",
-        kind=RecommendationKind.NEW_IDEA,
-        status=RecommendationStatus.PUBLISHED,
+        kind="idea",
+        status="published",
+        type="mixed",
         title="Покупка SBER",
-        summary="Сильный спрос",
-        published_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        text={"body": "<p>Сильный спрос</p>", "plain": "Сильный спрос"},
+        documents=[
+            {
+                "id": "doc-1",
+                "object_key": "messages/msg-1/file.pdf",
+                "original_filename": "idea.pdf",
+                "content_type": "application/pdf",
+                "size_bytes": 123,
+            }
+        ],
+        deals=[
+            {
+                "instrument_id": "SBER",
+                "side": "buy",
+                "entry_from": "101.5",
+            }
+        ],
+        published=datetime(2026, 3, 12, tzinfo=timezone.utc),
     )
-    recommendation.strategy = strategy
-    recommendation.author = author
-    instrument = Instrument(
-        id="instrument-1",
-        ticker="SBER",
-        name="Sberbank",
-        board="TQBR",
-        lot_size=10,
-        currency="RUB",
-        instrument_type=InstrumentType.EQUITY,
-        is_active=True,
-    )
-    leg = RecommendationLeg(
-        id="leg-1",
-        recommendation_id="rec-1",
-        instrument_id="instrument-1",
-        side=TradeSide.BUY,
-        entry_from=101.5,
-    )
-    leg.instrument = instrument
-    recommendation.legs = [leg]
-    recommendation.attachments = [
-        RecommendationAttachment(
-            id="att-1",
-            recommendation_id="rec-1",
-            object_key="recommendations/rec-1/file.pdf",
-            original_filename="idea.pdf",
-            content_type="application/pdf",
-            size_bytes=123,
-        )
-    ]
+    message.strategy = strategy
 
-    text = build_recommendation_notification_text(recommendation)
+    text = build_message_notification_text(message)
 
-    assert "Новая публикация" in text
-    assert "Покупка SBER" in text
+    assert "<b>Новая публикация по вашей подписке</b>" in text
+    assert "<b>Покупка SBER</b>" in text
+    assert "Стратегия: Momentum RU" in text
+    assert "Тип: idea" in text
+    assert "<p>Сильный спрос</p>" in text
+    assert "Документов: 1" in text
     assert "SBER buy 101.5" in text
-    assert "Вложений: 1" in text
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pitchcopytrade.db.models.accounts import User
-from pitchcopytrade.db.models.content import Recommendation
+from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.repositories.contracts import AccessRepository
 
 
@@ -14,8 +14,8 @@ async def list_user_visible_recommendations(
     *,
     user_id: str,
     limit: int = 20,
-) -> list[Recommendation]:
-    return await repository.list_user_visible_recommendations(user_id=user_id, limit=limit)
+) -> list[Message]:
+    return await repository.list_user_visible_messages(user_id=user_id, limit=limit)
 
 
 async def get_user_visible_recommendation(
@@ -23,8 +23,8 @@ async def get_user_visible_recommendation(
     *,
     user_id: str,
     recommendation_id: str,
-) -> Recommendation | None:
-    return await repository.get_user_visible_recommendation(user_id=user_id, recommendation_id=recommendation_id)
+) -> Message | None:
+    return await repository.get_user_visible_message(user_id=user_id, message_id=recommendation_id)
 
 
 async def get_user_by_telegram_id(repository: AccessRepository, telegram_user_id: int) -> User | None:

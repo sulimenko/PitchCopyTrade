@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi import Request
@@ -37,7 +38,7 @@ async def meta(request: Request) -> dict[str, str]:
         "env": request.app.state.environment,
         "data_mode": request.app.state.data_mode,
         "timezone": request.app.state.base_timezone,
-        "storage_root": request.app.state.storage_root,
+        "storage_root": Path(str(request.app.state.storage_root)).name,
         "storage": request.app.state.storage_backend,
         "payments": request.app.state.payment_provider,
         "started_at": _serialize_datetime(getattr(request.app.state, "started_at", None)),

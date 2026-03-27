@@ -30,7 +30,7 @@ def _enum_str(val) -> str:
 
 # P4.4: Russian status labels mapping
 _STATUS_LABELS = {
-    "ACTIVE": "Активен", "INACTIVE": "Неактивен", "INVITED": "Приглашён",
+    "ACTIVE": "Активен", "INACTIVE": "отключён", "INVITED": "Приглашён",
     "BLOCKED": "Заблокирован", "TRIAL": "Пробный", "EXPIRED": "Истёк",
     "PENDING": "Ожидание", "PAID": "Оплачен", "FAILED": "Ошибка",
     "REFUNDED": "Возврат", "DRAFT": "Черновик", "REVIEW": "На модерации",
@@ -85,6 +85,24 @@ def serialize_authors(authors: list, request_url_for=None) -> str:
         elif item.get("invite_delivery_status") == "FAILED":
             invite_status = _badge("Ошибка", "danger")
 
+        invite_link = item.get("invite_link") or ""
+        invite_actions = ""
+        if invite_link:
+            invite_actions = (
+                f'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+                f'<button type="button" class="ghost" data-copy-text="{invite_link}">Скопировать ссылку</button>'
+                f'<a class="ghost" href="{invite_link}" target="_blank" rel="noreferrer">Открыть</a>'
+                f'</div>'
+            )
+            if item.get("invite_delivery_status") is None or not item.get("email") or item.get("telegram_user_id") is None:
+                invite_actions += '<div class="muted">invite-данные неполные</div>'
+            if item.get("invite_delivery_error"):
+                invite_actions += f'<div class="muted">{item.get("invite_delivery_error")}</div>'
+        elif item.get("has_linked_user"):
+            invite_actions = '<span class="muted">invite-данные неполные</span>'
+        else:
+            invite_actions = '<span class="muted">Недоступно без связанного staff-аккаунта.</span>'
+
         actions_html = ""
         if item.get("has_linked_user"):
             actions_html = f'<button type="button" class="ghost" data-open-staff-dialog="author-edit-{item.get("id")}">Редактировать</button>'
@@ -95,9 +113,11 @@ def serialize_authors(authors: list, request_url_for=None) -> str:
             "name": f"<strong>{item.get('display_name', '—')}</strong><br>{item.get('email', '')}",
             "email": item.get("email", ""),
             "telegram_id": str(item.get("telegram_user_id")) if item.get("telegram_user_id") else "—",
+            "warning": item.get("user_warning") or "",
+            "invite_error": item.get("invite_delivery_error") or "",
             "moderation": f'<form method="post" action="/admin/authors/{item.get("id")}/moderation"><input type="checkbox" {"checked" if item.get("requires_moderation") else ""} onchange="this.form.submit()"></form>',
             "status": _badge(_label(status), status_class),
-            "invite": invite_status,
+            "invite": f"{invite_status}{invite_actions}",
             "actions": actions_html,
         })
     return json.dumps(data, default=str, ensure_ascii=False)
@@ -120,13 +140,35 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
         elif item.get("invite_delivery_status") == "FAILED":
             invite_status = _badge("Ошибка", "danger")
 
-        # Staff actions dropdown (P4.1: use data-open-staff-dialog instead of href)
+        invite_link = item.get("invite_link") or ""
+        invite_actions = ""
+        if invite_link:
+            invite_actions = (
+                f'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+                f'<button type="button" class="ghost" data-copy-text="{invite_link}">Скопировать ссылку</button>'
+                f'<a class="ghost" href="{invite_link}" target="_blank" rel="noreferrer">Открыть</a>'
+                f'</div>'
+            )
+        else:
+            invite_actions = '<span class="muted">Ссылка не требуется</span>'
+
         staff_id = item.get('id')
+        resend_button = ""
+        if item.get("invite_delivery_status") in {"FAILED", "SENT"}:
+            resend_button = f'<form method="post" action="/admin/staff/{staff_id}/invite/resend" style="display:inline;"><button class="ghost" type="submit">Повторить приглашение</button></form>'
+
+        role_actions = ""
+        if item.get("can_revoke_admin"):
+            role_actions = f'<form method="post" action="/admin/staff/{staff_id}/roles/admin/remove" style="display:inline;"><button class="ghost" type="submit">Снять роль администратора</button></form>'
+
+        # Staff actions dropdown (P4.1: use data-open-staff-dialog instead of href)
         actions_html = f'''<details class="staff-row-menu">
   <summary class="staff-btn ghost">⋮ Действия</summary>
   <div class="staff-row-menu-panel">
     <button type="button" class="staff-btn ghost" data-open-staff-dialog="staff-edit-{staff_id}">Редактировать</button>
     <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{staff_id}">Диалог</button>
+    {role_actions}
+    {resend_button}
   </div>
 </details>'''
 
@@ -134,7 +176,7 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
             "name": f"<strong>{item.get('display_name', '—')}</strong><br>{item.get('email', '')}{name_suffix}",
             "roles": roles_html,
             "status": _badge(_label(status), status_class),
-            "invite": invite_status,
+            "invite": f"{invite_status}{invite_actions}",
             "telegram_id": str(item.get("telegram_user_id")) if item.get("telegram_user_id") else "—",
             "actions": actions_html,
         })
@@ -207,11 +249,13 @@ def serialize_payments(payments: list, request_url_for=None) -> str:
 
         subs_count = len(item.subscriptions) if item.subscriptions else 0
 
+        reference = item.stub_reference or item.external_id or "—"
         data.append({
             "client": f"<strong>{user_display}</strong><br>{item.user.email if item.user else ''}",
             "product": item.product.title if item.product else "—",
             "status": _badge(status_val, status_class),
             "provider": provider_val,
+            "reference": reference,
             "amount": f"{item.final_amount_rub:,.0f} ₽" if item.final_amount_rub else "—",
             "subs_count": str(subs_count) if subs_count else "—",
             "actions": _link(f"/admin/payments/{item.id}", "Подробнее"),
@@ -271,8 +315,8 @@ def serialize_delivery(records: list, request_url_for=None) -> str:
     """Serialize delivery records for admin grid. Records are DeliveryRecord dataclass."""
     data = []
     for item in records:
-        # DeliveryRecord: has recommendation, events, latest_delivery_event, delivery_attempts, delivered_recipients
-        rec = item.recommendation
+        # DeliveryRecord: has message, events, latest_delivery_event, delivery_attempts, delivered_recipients
+        rec = getattr(item, "message", None) or getattr(item, "recommendation", None)
         delivery_status = "delivered" if item.delivered_recipients > 0 else "pending" if item.delivery_attempts == 0 else "failed"
         status_class = "ok" if delivery_status == "delivered" else "warn" if delivery_status == "pending" else "danger"
 
@@ -283,11 +327,12 @@ def serialize_delivery(records: list, request_url_for=None) -> str:
         data.append({
             "publication": f"<strong>{rec.title if rec else '—'}</strong>",
             "strategy": f"{rec.strategy.title if rec and rec.strategy else '—'}",
+            "author": rec.author.display_name if rec and getattr(rec, "author", None) else "—",
             "status": _badge(_label(delivery_status), status_class),
             "attempts": str(item.delivery_attempts) if item.delivery_attempts else "0",
             "delivered": _fmt_dt(latest_event_date) if latest_event_date else "—",
             "last_event": item.latest_delivery_event.payload.get("error") if item.latest_delivery_event and item.latest_delivery_event.payload else "—",
-            "actions": _link(f"/admin/delivery/{item.recommendation.id}", "Подробнее"),
+            "actions": _link(f"/admin/delivery/{rec.id}" if rec is not None else "/admin/delivery", "Подробнее"),
         })
     return json.dumps(data, default=str, ensure_ascii=False)
 
@@ -322,57 +367,30 @@ def serialize_metrics_strategies(stats: list, request_url_for=None) -> str:
 
 
 def serialize_recommendations(recommendations: list, request_url_for=None) -> str:
-    """Serialize recommendations for author grid. P3.2: with inline editing."""
+    """Serialize author messages for the author grid."""
     data = []
     for item in recommendations:
         status_val = _enum_str(item.status)
         status_class = "ok" if status_val == "PUBLISHED" else "warn"
-
-        # Get first leg info if exists
-        instrument_text = "—"
-        side_text = "—"
-        entry_text = "—"
-        tp_text = "—"
-        stop_text = "—"
-
-        if item.legs and len(item.legs) > 0:
-            leg = item.legs[0]
-            if leg.instrument:
-                instrument_text = leg.instrument.ticker
-            side_val = _enum_str(leg.side)
-            # P4.3: Russian side labels
-            side_text = "Покупка" if side_val == "BUY" else "Продажа" if side_val == "SELL" else side_val
-            side_class = "ok" if side_val == "BUY" else "danger"
-            if leg.entry_from:
-                entry_text = f"{leg.entry_from:.2f}"
-            if leg.take_profit_1:
-                tp_text = f"{leg.take_profit_1:.2f}"
-            if leg.stop_loss:
-                stop_text = f"{leg.stop_loss:.2f}"
-
-        # P3.2: Make fields inline-editable
-        title_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="title" data-value="{item.title or ""}" contenteditable="false" tabindex="0"><strong>{item.title or "Без названия"}</strong></span><br>{instrument_text}'
-        entry_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="entry_from" data-value="{entry_text if entry_text != "—" else ""}" contenteditable="false" tabindex="0">{entry_text}</span>'
-        tp1_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="take_profit_1" data-value="{tp_text if tp_text != "—" else ""}" contenteditable="false" tabindex="0">{tp_text}</span>'
-        stop_html = f'<span class="inline-editable" data-rec-id="{item.id}" data-field="stop_loss" data-value="{stop_text if stop_text != "—" else ""}" contenteditable="false" tabindex="0">{stop_text}</span>'
-
-        # P3.2: Status as clickable select (P4.3: Russian labels)
-        status_select = f'''<select class="inline-status-select" data-rec-id="{item.id}" data-field="status">
-  <option value="draft" {"selected" if status_val == "DRAFT" else ""}>Черновик</option>
-  <option value="review" {"selected" if status_val == "REVIEW" else ""}>На модерации</option>
-  <option value="published" {"selected" if status_val == "PUBLISHED" else ""}>Опубликовано</option>
-</select>'''
+        message_type = _enum_str(item.type) or "MIXED"
+        message_type_class = "ok" if message_type == "TEXT" else "warn" if message_type == "DOCUMENT" else "danger"
+        deliver_text = ", ".join(item.deliver or []) if getattr(item, "deliver", None) else "strategy"
+        content = item.text or {}
+        preview = str(content.get("plain") or content.get("body") or item.comment or "Без текста").strip()
+        if len(preview) > 120:
+            preview = preview[:117] + "..."
+        docs_count = len(item.documents or [])
+        deals_count = len(item.deals or [])
 
         data.append({
+            "message": f"<strong>{item.title or 'Без названия'}</strong><br><small>{preview}</small>",
             "strategy": item.strategy.title if item.strategy else "—",
-            "idea": title_html,
-            "side": _badge(side_text, side_class if side_text != "—" else ""),
-            "entry": entry_html,
-            "tp1": tp1_html,
-            "stop": stop_html,
-            "status": status_select,
-            "updated": _fmt_dt(item.updated_at),
-            "actions": _link(f"/author/recommendations/{item.id}/edit", "Открыть"),
+            "type": _badge(message_type, message_type_class),
+            "deliver": deliver_text,
+            "content": f"{'📝 ' if content.get('body') else ''}{docs_count} docs · {deals_count} deals".strip(),
+            "status": _badge(status_val, status_class),
+            "updated": _fmt_dt(item.updated),
+            "actions": _link(f"/author/messages/{item.id}/edit", "Открыть"),
         })
     return json.dumps(data, default=str, ensure_ascii=False)
 
@@ -398,25 +416,32 @@ def serialize_author_strategies(strategies: list, request_url_for=None) -> str:
 
 
 def serialize_moderation_queue(items: list, request_url_for=None) -> str:
-    """Serialize moderation queue for moderation page grid. Items are Recommendation objects."""
+    """Serialize moderation queue for the message moderation page grid."""
     data = []
     for item in items:
-        # item is Recommendation object directly
-        kind_val = _enum_str(item.kind)
+        kind_val = _enum_str(item.kind) or "NOTE"
         kind_class = "warn"
         status_val = _enum_str(item.status)
-        status_class = "warn" if status_val == "DRAFT" else "ok"
+        status_class = "warn" if status_val in {"DRAFT", "REVIEW"} else "ok"
+        message_type = _enum_str(item.type) or "MIXED"
+        content = item.text or {}
+        preview = str(content.get("plain") or content.get("body") or item.comment or "Без текста").strip()
+        if len(preview) > 90:
+            preview = preview[:87] + "..."
 
         author_name = "—"
-        if item.strategy and item.strategy.author:
+        if item.author:
+            author_name = item.author.display_name
+        elif item.strategy and item.strategy.author:
             author_name = item.strategy.author.display_name
 
         data.append({
-            "publication": f"<strong>{item.title or 'Publication'}</strong>",
+            "message": f"<strong>{item.title or 'Сообщение'}</strong><br><small>{preview}</small>",
             "author": author_name,
             "strategy": item.strategy.title if item.strategy else "—",
             "kind": _badge(kind_val, kind_class),
+            "type": message_type,
             "status": _badge(status_val, status_class),
-            "actions": _link(f"/moderation/recommendations/{item.id}", "Редактировать"),
+            "actions": _link(f"/moderation/messages/{item.id}", "Редактировать"),
         })
     return json.dumps(data, default=str, ensure_ascii=False)

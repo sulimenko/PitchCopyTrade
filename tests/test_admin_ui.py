@@ -16,7 +16,7 @@ from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
 from pitchcopytrade.db.models.catalog import Bundle, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, PromoCode, Subscription, UserConsent
-from pitchcopytrade.db.models.content import Recommendation
+from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.commerce import LegalDocument
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
@@ -24,8 +24,8 @@ from pitchcopytrade.db.models.enums import (
     PaymentProvider,
     PaymentStatus,
     ProductType,
-    RecommendationKind,
-    RecommendationStatus,
+    MessageKind,
+    MessageStatus,
     RiskLevel,
     RoleSlug,
     StrategyStatus,
@@ -259,22 +259,36 @@ def _make_promo_code(promo_code_id: str, code: str) -> PromoCode:
     return promo_code
 
 
-def _make_published_recommendation(recommendation_id: str, strategy: Strategy, author: AuthorProfile) -> Recommendation:
-    recommendation = Recommendation(
-        id=recommendation_id,
+def _make_published_message(message_id: str, strategy: Strategy, author: AuthorProfile) -> Message:
+    message = Message(
+        id=message_id,
         strategy_id=strategy.id,
         author_id=author.id,
-        kind=RecommendationKind.NEW_IDEA,
-        status=RecommendationStatus.PUBLISHED,
+        kind=MessageKind.IDEA,
+        status=MessageStatus.PUBLISHED,
         title="Покупка SBER",
-        summary="Сильный спрос",
-        published_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        text={
+            "format": "html",
+            "title": "Покупка SBER",
+            "body": "<p>Сильный спрос</p>",
+            "plain": "Сильный спрос",
+        },
+        documents=[],
+        deals=[
+            {
+                "instrument": "instrument-1",
+                "ticker": "SBER",
+                "side": "buy",
+                "price": "101.5",
+                "quantity": "10",
+                "amount": "1015",
+            }
+        ],
+        published=datetime(2026, 3, 11, tzinfo=timezone.utc),
     )
-    recommendation.strategy = strategy
-    recommendation.author = author
-    recommendation.attachments = []
-    recommendation.legs = []
-    return recommendation
+    message.strategy = strategy
+    message.author = author
+    return message
 
 
 def _build_client(session: FakeAsyncSession, admin_user: User) -> TestClient:
@@ -308,7 +322,7 @@ def test_admin_dashboard_renders(monkeypatch) -> None:
                 strategies_total=7,
                 strategies_public=5,
                 active_subscriptions=14,
-                recommendations_live=9,
+                messages_live=9,
             )
         ),
     )
@@ -353,7 +367,7 @@ def test_staff_shell_includes_local_ag_grid_vendor_assets(monkeypatch) -> None:
                 strategies_total=0,
                 strategies_public=0,
                 active_subscriptions=0,
-                recommendations_live=0,
+                messages_live=0,
             )
         ),
     )
@@ -548,10 +562,10 @@ def test_delivery_list_renders(monkeypatch) -> None:
     admin = _make_admin_user()
     author = _make_author("author-1", "author-user-1", "Alpha Desk")
     strategy = _make_strategy("strategy-1", author, "Momentum RU")
-    recommendation = _make_published_recommendation("rec-1", strategy, author)
+    message = _make_published_message("rec-1", strategy, author)
     session.users_by_id[admin.id] = admin
     record = SimpleNamespace(
-        recommendation=recommendation,
+        message=message,
         events=[],
         latest_delivery_event=None,
         delivery_attempts=1,
@@ -578,10 +592,10 @@ def test_delivery_detail_renders_compact_sections(monkeypatch) -> None:
     admin = _make_admin_user()
     author = _make_author("author-1", "author-user-1", "Alpha Desk")
     strategy = _make_strategy("strategy-1", author, "Momentum RU")
-    recommendation = _make_published_recommendation("rec-1", strategy, author)
+    message = _make_published_message("rec-1", strategy, author)
     session.users_by_id[admin.id] = admin
     record = SimpleNamespace(
-        recommendation=recommendation,
+        message=message,
         events=[],
         latest_delivery_event=None,
         delivery_attempts=1,
@@ -604,10 +618,10 @@ def test_delivery_retry_redirects(monkeypatch) -> None:
     admin = _make_admin_user()
     author = _make_author("author-1", "author-user-1", "Alpha Desk")
     strategy = _make_strategy("strategy-1", author, "Momentum RU")
-    recommendation = _make_published_recommendation("rec-1", strategy, author)
+    message = _make_published_message("rec-1", strategy, author)
     session.users_by_id[admin.id] = admin
     record = SimpleNamespace(
-        recommendation=recommendation,
+        message=message,
         events=[],
         latest_delivery_event=None,
         delivery_attempts=2,
@@ -619,7 +633,7 @@ def test_delivery_retry_redirects(monkeypatch) -> None:
         lambda _token: SimpleNamespace(session=SimpleNamespace(close=lambda: _async_return(None))),
     )
     monkeypatch.setattr(
-        "pitchcopytrade.api.routes.admin.retry_recommendation_delivery",
+        "pitchcopytrade.api.routes.admin.retry_message_delivery",
         lambda _session, _recommendation_id, _bot: _async_return(record),
     )
 
@@ -1224,7 +1238,7 @@ def test_staff_registry_renders_filters_and_actions(monkeypatch) -> None:
         assert "multi-role" in response.text
         assert "Снять роль администратора" in response.text
         assert "invite_token=" in response.text
-        assert 'class="staff-row-menu-panel"' in response.text
+        assert "staff-row-menu-panel" in response.text
         assert 'class="staff-content"' in response.text
         assert "height: 100vh;" in response.text
         assert "flex-direction: column;" in response.text

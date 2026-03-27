@@ -4,12 +4,15 @@ import argparse
 import asyncio
 import hmac
 import logging
+from html import escape
 from typing import Any
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramUnauthorizedError
+from aiogram.client.default import DefaultBotProperties
 from aiogram.methods import GetMe
+from aiogram.enums import ParseMode
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from pitchcopytrade.bot.dispatcher import build_dispatcher
@@ -21,7 +24,7 @@ MAX_POLLING_RETRY_DELAY_SECONDS = 60
 
 
 def create_bot(token: str) -> Bot:
-    return Bot(token=token)
+    return Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 
 async def _handle_health(request: web.Request) -> web.Response:
@@ -40,20 +43,20 @@ async def _handle_internal_broadcast(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"detail": "Invalid JSON"}, status=400)
 
-    recommendation_id = body.get("recommendation_id")
-    if not recommendation_id:
-        return web.json_response({"detail": "recommendation_id required"}, status=400)
+    message_id = body.get("message_id") or body.get("recommendation_id")
+    if not message_id:
+        return web.json_response({"detail": "message_id required"}, status=400)
 
     bot: Bot = request.app["bot"]
-    await _broadcast_recommendation(bot, settings, recommendation_id)
+    await _broadcast_message(bot, settings, message_id)
     return web.json_response({"status": "ok"})
 
 
-async def _broadcast_recommendation(bot: Bot, settings: Any, recommendation_id: str) -> None:
+async def _broadcast_message(bot: Bot, settings: Any, message_id: str) -> None:
     from pitchcopytrade.db.session import AsyncSessionLocal
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
-    from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
+    from pitchcopytrade.db.models.content import Message
     from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
     from pitchcopytrade.db.models.commerce import Subscription
     from pitchcopytrade.db.models.enums import SubscriptionStatus
@@ -64,16 +67,15 @@ async def _broadcast_recommendation(bot: Bot, settings: Any, recommendation_id: 
 
     async with AsyncSessionLocal() as session:
         rec_result = await session.execute(
-            select(Recommendation)
+            select(Message)
             .options(
-                selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-                selectinload(Recommendation.strategy),
+                selectinload(Message.strategy),
             )
-            .where(Recommendation.id == recommendation_id)
+            .where(Message.id == message_id)
         )
         rec = rec_result.scalar_one_or_none()
         if rec is None:
-            logger.warning("Recommendation %s not found", recommendation_id)
+            logger.warning("Message %s not found", message_id)
             return
 
         strategy: Strategy = rec.strategy
@@ -89,7 +91,7 @@ async def _broadcast_recommendation(bot: Bot, settings: Any, recommendation_id: 
         )
         subscriptions = subs_result.scalars().all()
 
-        text = _format_recommendation(rec, strategy)
+        text = _format_message(rec, strategy)
 
         for sub in subscriptions:
             user = sub.user
@@ -101,23 +103,22 @@ async def _broadcast_recommendation(bot: Bot, settings: Any, recommendation_id: 
                     logger.error("Failed to send to user %s: %s", user.telegram_user_id, exc)
 
 
-def _format_recommendation(rec: Any, strategy: Any) -> str:
-    lines = [f"Новая рекомендация — {strategy.title}"]
+def _format_message(rec: Any, strategy: Any) -> str:
+    lines = [f"<b>Новая публикация</b> — {escape(strategy.title)}"]
     if rec.title:
-        lines.append(rec.title)
-    lines.append("")
-    for leg in rec.legs:
-        ticker = leg.instrument.ticker if leg.instrument else "—"
-        side = leg.side.upper() if leg.side else "—"
-        entry = leg.entry_from or "рынок"
-        tp = leg.take_profit_1 or "—"
-        sl = leg.stop_loss or "—"
-        lines.append(f"{ticker} — {side} @ {entry}")
-        lines.append(f"Цель: {tp}")
-        lines.append(f"Стоп: {sl}")
-    if rec.summary:
+        lines.append(f"<b>{escape(rec.title)}</b>")
+    text_payload = rec.text or {}
+    body = text_payload.get("body") or text_payload.get("plain")
+    if body:
         lines.append("")
-        lines.append(rec.summary)
+        lines.append(str(body))
+    if rec.deals:
+        lines.append("")
+        for deal in rec.deals:
+            lines.append(
+                f"{escape(str(deal.get('ticker') or deal.get('instrument') or deal.get('instrument_id') or '—'))} — "
+                f"{escape(str(deal.get('side') or '—'))}"
+            )
     return "\n".join(lines)
 
 

@@ -52,7 +52,7 @@ class TestBroadcastTokenValidation:
         assert response.status == 401
 
     async def test_broadcast_handler_rejects_missing_rec_id(self):
-        """Test the actual handler returns 400 when recommendation_id missing."""
+        """Test the actual handler returns 400 when message_id missing."""
         from unittest.mock import MagicMock, AsyncMock
         import json
 

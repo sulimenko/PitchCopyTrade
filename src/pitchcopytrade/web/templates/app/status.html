@@ -11,7 +11,7 @@
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">Статус подписки</h1>
       <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Этот экран показывает текущее состояние подписок, оплат и доступных рекомендаций по вашему Telegram-профилю.
+        Этот экран показывает текущее состояние подписок, оплат и доступных публикаций по вашему Telegram-профилю.
       </p>
     </div>
     <span class="pill">{{ "Активен" if snapshot.has_access else "Ожидает активации" }}</span>
@@ -26,7 +26,7 @@
         <div>Доступ: {{ "активен" if snapshot.has_access else "ожидает активации" }}</div>
         <div>Подписок: {{ snapshot.subscriptions|length }}</div>
         <div>Оплат: {{ snapshot.payments|length }}</div>
-        <div>Рекомендаций сейчас: {{ snapshot.visible_recommendation_titles|length }}</div>
+        <div>Публикаций сейчас: {{ snapshot.visible_message_titles|length }}</div>
       </div>
   </article>
 
@@ -111,14 +111,14 @@
 </section>
 
 <section class="surface" style="padding:24px;margin-top:18px;">
-  <strong>Доступные рекомендации сейчас</strong>
+  <strong>Доступные публикации сейчас</strong>
   <div style="display:grid;gap:12px;margin-top:16px;">
-    {% for title in snapshot.visible_recommendation_titles %}
+    {% for title in snapshot.visible_message_titles %}
     <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
       <strong>{{ title }}</strong>
     </article>
     {% else %}
-    <p class="muted" style="margin:0;line-height:1.65;">Новых рекомендаций пока нет.</p>
+    <p class="muted" style="margin:0;line-height:1.65;">Новых публикаций пока нет.</p>
     {% endfor %}
   </div>
 </section>

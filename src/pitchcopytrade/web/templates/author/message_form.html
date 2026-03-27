@@ -3,37 +3,36 @@
 {% block topbar_actions %}
 {% if not embedded %}
 <div class="author-editor-topbar">
-  <a class="action ghost" href="/author/recommendations">Назад к списку</a>
+  <a class="action ghost" href="/author/messages">Назад к списку</a>
   <a class="action ghost" href="/author/dashboard">Сводка</a>
-  {% if recommendation %}
-  <a class="action ghost" href="/author/recommendations/{{ recommendation.id }}/preview">Предпросмотр</a>
-  {% endif %}
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
 {% endif %}
 {% endblock %}
 
 {% block content %}
-{% set recommendation_is_editable = (not recommendation) or recommendation.status.value in ["draft", "review"] %}
-{% set message_mode = form_values.message_mode or "structured" %}
+{% set message_kind = form_values.kind or "idea" %}
+{% set message_status = form_values.status or "draft" %}
+{% set message_type = form_values.message_type or form_values.message_mode or "mixed" %}
+{% set message_is_editable = (not recommendation) or recommendation.status in ["draft", "review"] %}
 <section class="surface author-editor-head">
-  <div class="eyebrow">редактор рекомендации</div>
+  <div class="eyebrow">редактор сообщения</div>
   <div class="author-editor-head-row">
     <div class="author-editor-head-copy">
-      <h1>{% if recommendation %}Редактирование рекомендации{% else %}Новая рекомендация{% endif %}</h1>
-      <p class="muted">Один экран для переписки, документа и structured сделки. История сверху, composer снизу.</p>
+      <h1>{% if recommendation %}Редактирование сообщения{% else %}Новое сообщение{% endif %}</h1>
+      <p class="muted">Один экран для текста, документа, сделки или mixed сообщения. История сверху, composer снизу.</p>
     </div>
     <div class="author-editor-head-actions">
       {% if recommendation %}
-      <span class="pill">{{ label_recommendation_kind(recommendation.kind) }}</span>
-      <span class="pill">{{ label_recommendation_status(recommendation.status) }}</span>
+      <span class="pill">{{ label_message_kind(recommendation.kind) }}</span>
+      <span class="pill">{{ label_message_status(recommendation.status) }}</span>
       {% endif %}
-      {% if not recommendation_is_editable %}
+      {% if not message_is_editable %}
       <span class="pill">только чтение</span>
       {% endif %}
     </div>
   </div>
-  {% if recommendation and not recommendation_is_editable %}
+  {% if recommendation and not message_is_editable %}
   <p class="muted author-editor-head-note">Редактирование разрешено только для черновика и статуса «На модерации».</p>
   {% endif %}
 </section>
@@ -43,8 +42,8 @@
     <aside class="surface author-editor-history">
       <div class="author-editor-section-head">
         <div class="author-editor-section-copy">
-          <h2>История сообщений</h2>
-          <p class="muted">Сюда попадают все сообщения по рекомендации: текст, документ и structured payload.</p>
+          <h2>История</h2>
+          <p class="muted">Текст, документы и сделки в одном thread.</p>
         </div>
       </div>
       <div class="message-thread">
@@ -52,12 +51,31 @@
         {% for message in messages %}
         <article class="message-card">
           <div class="message-card-head">
-            <strong>{{ message.mode|upper }}</strong>
-            <span class="pill">{{ message.created_at.strftime("%d.%m %H:%M") if message.created_at else "—" }}</span>
+            <strong>{{ (message.type or "mixed")|upper }}</strong>
+            <span class="pill">{{ message.created.strftime("%d.%m %H:%M") if message.created else "—" }}</span>
           </div>
-          <div class="muted" style="margin-top:8px;line-height:1.6;">{{ message.body or "—" }}</div>
-          {% if message.payload %}
-          <pre class="message-json">{{ message.payload | tojson(indent=2) }}</pre>
+          <div class="muted" style="margin-top:8px;line-height:1.6;">
+            {{ message.text.body | safe if message.text else message.comment or "—" }}
+          </div>
+          {% if message.documents %}
+          <div style="margin-top:10px;display:grid;gap:8px;">
+            {% for document in message.documents %}
+            <div class="message-json">
+              <strong>{{ document.original_filename or document.title or "Документ" }}</strong>
+              <div class="muted">{{ document.content_type or "—" }} · {{ document.size_bytes or "—" }} байт</div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if message.deals %}
+          <div style="margin-top:10px;display:grid;gap:8px;">
+            {% for deal in message.deals %}
+            <div class="message-json">
+              <strong>{{ deal.instrument_id or "—" }}</strong>
+              <div class="muted">{{ deal.side or "—" }} · {{ deal.entry_from or "—" }} · {{ deal.take_profit_1 or "—" }}</div>
+            </div>
+            {% endfor %}
+          </div>
           {% endif %}
         </article>
         {% endfor %}
@@ -72,12 +90,12 @@
           <p class="muted">PDF и JPG. Для document mode можно прикрепить один или несколько файлов.</p>
         </div>
       </div>
-      {% if recommendation and recommendation.attachments %}
+      {% if recommendation and recommendation.documents %}
       <div class="message-thread">
-        {% for attachment in recommendation.attachments %}
+        {% for document in recommendation.documents %}
         <div class="message-card">
-          <strong>{{ attachment.original_filename }}</strong>
-          <div class="muted" style="margin-top:6px;">{{ attachment.content_type }} · {{ attachment.size_bytes }} байт</div>
+          <strong>{{ document.original_filename or "Документ" }}</strong>
+          <div class="muted" style="margin-top:6px;">{{ document.content_type }} · {{ document.size_bytes }} байт</div>
         </div>
         {% endfor %}
       </div>
@@ -90,7 +108,7 @@
       class="surface author-editor-form author-editor-composer"
       method="post"
       enctype="multipart/form-data"
-      action="{% if recommendation %}/author/recommendations/{{ recommendation.id }}{% else %}/author/recommendations{% endif %}"
+      action="{% if recommendation %}/author/messages/{{ recommendation.id }}{% else %}/author/messages{% endif %}"
     >
       <input type="hidden" name="embedded" value="{% if embedded %}1{% else %}0{% endif %}" />
       <input type="hidden" name="next_path" value="{{ next_path }}" />
@@ -102,14 +120,14 @@
         <div class="author-editor-section-head">
           <div class="author-editor-section-copy">
             <h2>Composer</h2>
-            <p class="muted">Выберите режим сообщения и заполните только нужные поля.</p>
+            <p class="muted">Выберите тип сообщения и заполните только нужные поля.</p>
           </div>
         </div>
 
         <div class="author-editor-grid author-editor-grid--meta">
           <label class="author-editor-field">
             <span class="author-editor-field-title">Стратегия</span>
-            <select name="strategy_id" {% if field_errors.get("strategy_id") %}class="is-invalid"{% endif %} {% if not recommendation_is_editable %}disabled{% endif %}>
+            <select name="strategy_id" {% if field_errors.get("strategy_id") %}class="is-invalid"{% endif %} {% if not message_is_editable %}disabled{% endif %}>
               <option value="">Выберите стратегию</option>
               {% for strategy in strategies %}
               <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
@@ -120,64 +138,65 @@
             {% endif %}
           </label>
           <label class="author-editor-field">
-            <span class="author-editor-field-title">Режим сообщения</span>
-            <select name="message_mode" data-message-mode {% if not recommendation_is_editable %}disabled{% endif %}>
-              {% for item in recommendation_message_modes %}
-              <option value="{{ item }}" {% if message_mode == item %}selected{% endif %}>
-                {% if item == "structured" %}Structured{% elif item == "document" %}Документ{% else %}Текст{% endif %}
-              </option>
-              {% endfor %}
+            <span class="author-editor-field-title">Тип сообщения</span>
+            <select name="message_type" data-message-mode {% if not message_is_editable %}disabled{% endif %}>
+              <option value="mixed" {% if message_type == "mixed" %}selected{% endif %}>Mixed</option>
+              <option value="text" {% if message_type == "text" %}selected{% endif %}>Текст</option>
+              <option value="document" {% if message_type == "document" %}selected{% endif %}>Документ</option>
+              <option value="deal" {% if message_type == "deal" %}selected{% endif %}>Сделка</option>
             </select>
           </label>
           <label class="author-editor-field">
-            <span class="author-editor-field-title">Тип публикации</span>
-            <select name="kind" {% if not recommendation_is_editable %}disabled{% endif %}>
-              {% for item in recommendation_kind_options %}
-              <option value="{{ item }}" {% if form_values.kind == item %}selected{% endif %}>
-                {% if item == "new_idea" %}Новая идея{% elif item == "update" %}Обновление{% elif item == "close" %}Закрытие{% elif item == "cancel" %}Отмена{% else %}{{ item }}{% endif %}
-              </option>
-              {% endfor %}
+            <span class="author-editor-field-title">Класс сообщения</span>
+            <select name="kind" {% if not message_is_editable %}disabled{% endif %}>
+              <option value="idea" {% if message_kind == "idea" %}selected{% endif %}>Идея</option>
+              <option value="update" {% if message_kind == "update" %}selected{% endif %}>Обновление</option>
+              <option value="close" {% if message_kind == "close" %}selected{% endif %}>Закрытие</option>
+              <option value="cancel" {% if message_kind == "cancel" %}selected{% endif %}>Отмена</option>
+              <option value="note" {% if message_kind == "note" %}selected{% endif %}>Заметка</option>
             </select>
           </label>
           <label class="author-editor-field">
             <span class="author-editor-field-title">Статус</span>
-            <select name="status" {% if not recommendation_is_editable %}disabled{% endif %}>
-              {% for item in recommendation_status_options %}
-              <option value="{{ item }}" {% if form_values.status == item %}selected{% endif %}>
-                {% if item == "draft" %}Черновик{% elif item == "review" %}На модерации{% elif item == "scheduled" %}Запланировано{% elif item == "published" %}Опубликовано{% elif item == "closed" %}Закрыто{% elif item == "cancelled" %}Отменено{% else %}{{ item }}{% endif %}
-              </option>
-              {% endfor %}
+            <select name="status" {% if not message_is_editable %}disabled{% endif %}>
+              <option value="draft" {% if message_status == "draft" %}selected{% endif %}>Черновик</option>
+              <option value="review" {% if message_status == "review" %}selected{% endif %}>На модерации</option>
+              <option value="approved" {% if message_status == "approved" %}selected{% endif %}>Одобрено</option>
+              <option value="scheduled" {% if message_status == "scheduled" %}selected{% endif %}>Запланировано</option>
+              <option value="published" {% if message_status == "published" %}selected{% endif %}>Опубликовано</option>
+              <option value="archived" {% if message_status == "archived" %}selected{% endif %}>Архив</option>
+              <option value="failed" {% if message_status == "failed" %}selected{% endif %}>Ошибка</option>
             </select>
           </label>
         </div>
 
         <label class="author-editor-field">
           <span class="author-editor-field-title">Заголовок</span>
-          <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER" {% if not recommendation_is_editable %}disabled{% endif %} />
+          <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER" {% if not message_is_editable %}disabled{% endif %} />
         </label>
 
-        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="text" {% if message_mode != "text" %}hidden{% endif %}>
+        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="text" {% if message_type != "text" %}hidden{% endif %}>
           <label class="author-editor-field">
             <span class="author-editor-field-title">Текст сообщения</span>
-            <textarea name="message_text" rows="8" placeholder="Неструктурированное сообщение для подписчиков" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.message_text }}</textarea>
+            <textarea name="message_text" rows="8" placeholder="HTML-first текст для подписчиков" {% if not message_is_editable %}disabled{% endif %}>{{ form_values.message_text }}</textarea>
           </label>
         </div>
 
-        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="document" {% if message_mode != "document" %}hidden{% endif %}>
+        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="document" {% if message_type != "document" %}hidden{% endif %}>
           <label class="author-editor-field">
             <span class="author-editor-field-title">Подпись к документу</span>
-            <textarea name="document_caption" rows="6" placeholder="Коротко: что внутри файла и зачем его открыть" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.document_caption }}</textarea>
+            <textarea name="document_caption" rows="6" placeholder="Коротко: что внутри файла и зачем его открыть" {% if not message_is_editable %}disabled{% endif %}>{{ form_values.document_caption }}</textarea>
           </label>
           <label class="author-editor-field">
             <span class="author-editor-field-title">Файл</span>
-            <input type="file" name="attachment_files" accept=".pdf,image/jpeg" multiple {% if not recommendation_is_editable %}disabled{% endif %} />
+            <input type="file" name="attachment_files" accept=".pdf,image/jpeg" multiple {% if not message_is_editable %}disabled{% endif %} />
           </label>
         </div>
 
-        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="structured" {% if message_mode != "structured" %}hidden{% endif %}>
+        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="deal" {% if message_type != "deal" %}hidden{% endif %}>
           <label class="author-editor-field">
             <span class="author-editor-field-title">Инструмент</span>
-            <select name="structured_instrument_id" {% if not recommendation_is_editable %}disabled{% endif %}>
+            <select name="structured_instrument_id" {% if not message_is_editable %}disabled{% endif %}>
               <option value="">Выберите инструмент</option>
               {% for instrument in instruments %}
               <option value="{{ instrument.id }}" {% if form_values.structured_instrument_id == instrument.id %}selected{% endif %}>{{ instrument.ticker }} · {{ instrument.name }}</option>
@@ -186,7 +205,7 @@
           </label>
           <label class="author-editor-field">
             <span class="author-editor-field-title">Buy / Sell</span>
-            <select name="structured_side" {% if not recommendation_is_editable %}disabled{% endif %}>
+            <select name="structured_side" {% if not message_is_editable %}disabled{% endif %}>
               <option value="">Выберите действие</option>
               <option value="buy" {% if form_values.structured_side == "buy" %}selected{% endif %}>Купить</option>
               <option value="sell" {% if form_values.structured_side == "sell" %}selected{% endif %}>Продать</option>
@@ -194,17 +213,17 @@
           </label>
           <label class="author-editor-field">
             <span class="author-editor-field-title">Цена</span>
-            <input type="text" name="structured_price" value="{{ form_values.structured_price }}" inputmode="decimal" placeholder="0.00" {% if not recommendation_is_editable %}disabled{% endif %} />
+            <input type="text" name="structured_price" value="{{ form_values.structured_price }}" inputmode="decimal" placeholder="0.00" {% if not message_is_editable %}disabled{% endif %} />
           </label>
           <label class="author-editor-field">
             <span class="author-editor-field-title">Количество</span>
-            <input type="text" name="structured_quantity" value="{{ form_values.structured_quantity }}" inputmode="decimal" placeholder="0" {% if not recommendation_is_editable %}disabled{% endif %} data-structured-quantity />
+            <input type="text" name="structured_quantity" value="{{ form_values.structured_quantity }}" inputmode="decimal" placeholder="0" {% if not message_is_editable %}disabled{% endif %} data-structured-quantity />
           </label>
         </div>
 
-        <div class="structured-summary-card surface" data-structured-summary>
+        <div class="structured-summary-card surface">
           <div>
-            <div class="eyebrow">structured summary</div>
+            <div class="eyebrow">deal summary</div>
             <strong>Сумма считается автоматически</strong>
           </div>
           <div class="structured-summary-values">
@@ -213,32 +232,30 @@
             <span class="pill" data-structured-amount-label>—</span>
           </div>
         </div>
+
+        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="mixed" {% if message_type != "mixed" %}hidden{% endif %}>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Текст сообщения</span>
+            <textarea name="message_text" rows="6" placeholder="HTML-first текст для mixed сообщения" {% if not message_is_editable %}disabled{% endif %}>{{ form_values.message_text }}</textarea>
+          </label>
+          <label class="author-editor-field">
+            <span class="author-editor-field-title">Подпись к документу</span>
+            <textarea name="document_caption" rows="4" placeholder="Если есть файл, опишите его здесь" {% if not message_is_editable %}disabled{% endif %}>{{ form_values.document_caption }}</textarea>
+          </label>
+        </div>
       </section>
 
       <section class="author-editor-section">
         <div class="author-editor-section-head">
           <div class="author-editor-section-copy">
             <h2>Публикация</h2>
-            <p class="muted">Статус, расписание и заметка для модерации остаются рядом с composer.</p>
+            <p class="muted">Статус и расписание остаются рядом с composer.</p>
           </div>
         </div>
 
         <label class="author-editor-field">
           <span class="author-editor-field-title">Расписание</span>
-          <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" {% if not recommendation_is_editable %}disabled{% endif %} />
-        </label>
-
-        <label class="author-editor-field">
-          <span class="author-editor-field-title">Заметка для модерации</span>
-          <textarea name="summary" rows="3" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.summary }}</textarea>
-        </label>
-        <label class="author-editor-field">
-          <span class="author-editor-field-title">Тезис / контекст</span>
-          <textarea name="thesis" rows="3" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.thesis }}</textarea>
-        </label>
-        <label class="author-editor-field">
-          <span class="author-editor-field-title">Рыночный контекст</span>
-          <textarea name="market_context" rows="3" {% if not recommendation_is_editable %}disabled{% endif %}>{{ form_values.market_context }}</textarea>
+          <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" {% if not message_is_editable %}disabled{% endif %} />
         </label>
       </section>
 
@@ -250,12 +267,12 @@
           </div>
         </div>
         <div class="author-inline-actions">
-          {% if recommendation_is_editable %}
+          {% if message_is_editable %}
           <button class="action" type="submit">Сохранить</button>
           <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить на модерацию</button>
           <button class="action ghost" type="submit" name="workflow_action" value="publish_now">Опубликовать</button>
           {% endif %}
-          <a class="action ghost" href="/author/recommendations">К списку</a>
+          <a class="action ghost" href="/author/messages">К списку</a>
         </div>
       </section>
     </form>
@@ -350,7 +367,7 @@
     }
 
     function updatePanels() {
-      const value = modeSelect ? modeSelect.value : "structured";
+      const value = modeSelect ? modeSelect.value : "mixed";
       modePanels.forEach((panel) => {
         panel.hidden = panel.dataset.modePanel !== value;
       });

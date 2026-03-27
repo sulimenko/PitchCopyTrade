@@ -53,8 +53,8 @@
       <div class="staff-metric-note">активны или пробные</div>
     </article>
     <article class="staff-metric-card">
-      <div class="eyebrow">активные идеи</div>
-      <strong>{{ stats.recommendations_live }}</strong>
+      <div class="eyebrow">активные сообщения</div>
+      <strong>{{ stats.messages_live }}</strong>
       <div class="staff-metric-note">уже опубликованы</div>
     </article>
   </div>
@@ -210,6 +210,8 @@
         <span class="pill">{{ label_payment_provider(payment.provider) }}</span>
         {% if payment.stub_reference %}
         <span class="pill">{{ payment.stub_reference }}</span>
+        {% elif payment.external_id %}
+        <span class="pill">{{ payment.external_id }}</span>
         {% endif %}
       </div>
     </a>

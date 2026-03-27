@@ -11,7 +11,7 @@ from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
-from pitchcopytrade.db.models.enums import RecommendationStatus
+from pitchcopytrade.db.models.enums import MessageStatus
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.repositories.author import FileAuthorRepository, SqlAlchemyAuthorRepository
 from pitchcopytrade.services.author import (
@@ -39,10 +39,7 @@ from pitchcopytrade.services.author import (
     update_author_recommendation,
     update_author_strategy,
 )
-from pitchcopytrade.services.notifications import (
-    deliver_recommendation_notifications,
-    deliver_recommendation_notifications_file,
-)
+from pitchcopytrade.services.notifications import deliver_message_notifications, deliver_message_notifications_file
 from pitchcopytrade.services.instruments import build_instrument_payloads
 from pitchcopytrade.web.templates import templates
 from pitchcopytrade.api.routes._grid_serializers import (
@@ -87,7 +84,7 @@ async def author_dashboard(
             "watchlist_items": watchlist_items,
             "strategies_all": strategies,
             "instruments": instruments,
-            "recommendation_modal_url": "/author/recommendations/new?embedded=1&next=/author/dashboard",
+            "message_modal_url": "/author/messages/new?embedded=1&next=/author/dashboard",
         },
     )
 
@@ -333,7 +330,7 @@ async def author_watchlist_remove_item(
     )
 
 
-@router.get("/recommendations", response_class=HTMLResponse)
+@router.get("/messages", response_class=HTMLResponse)
 async def recommendation_list_page(
     request: Request,
     q: str = "",
@@ -360,16 +357,16 @@ async def recommendation_list_page(
     )
 
 
-@router.get("/recommendations/new", response_class=HTMLResponse)
+@router.get("/messages/new", response_class=HTMLResponse)
 async def recommendation_create_page(
     request: Request,
     embedded: int = 0,
-    next: str = "/author/recommendations",
+    next: str = "/author/messages",
     user: User = Depends(require_author),
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     if embedded != 1:
-        return RedirectResponse(url="/author/recommendations?modal=new", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url=f"/author/messages/new?{urlencode({'embedded': '1', 'next': '/author/messages'})}", status_code=status.HTTP_303_SEE_OTHER)
     author = await _get_author_or_403(repository, user)
     return await _render_recommendation_form(
         request=request,
@@ -384,7 +381,7 @@ async def recommendation_create_page(
     )
 
 
-@router.post("/recommendations", response_class=HTMLResponse)
+@router.post("/messages", response_class=HTMLResponse)
 async def recommendation_create_submit(
     request: Request,
     user: User = Depends(require_author),
@@ -420,7 +417,8 @@ async def recommendation_create_submit(
             kind_value=str(form.get("kind", "new_idea") or "new_idea"),
             status_value=resolved_status,
             title=str(form.get("title", "") or ""),
-            message_mode=str(form.get("message_mode", "structured") or "structured"),
+            type_value=str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
+            message_mode=str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
             message_text=str(form.get("message_text", "") or ""),
             document_caption=str(form.get("document_caption", "") or ""),
             structured_instrument_id=str(form.get("structured_instrument_id", "") or ""),
@@ -455,7 +453,7 @@ async def recommendation_create_submit(
             inline_mode=inline_mode,
             error_text=str(exc),
         )
-    if data.status == RecommendationStatus.PUBLISHED:
+    if getattr(data.status, "value", data.status) == MessageStatus.PUBLISHED.value:
         await _deliver_author_publish_notifications(
             repository=repository,
             author=author,
@@ -465,13 +463,13 @@ async def recommendation_create_submit(
     next_path = _safe_author_next_path(str(form.get("next_path", "") or ""))
     if inline_mode:
         return RedirectResponse(
-            url=next_path or "/author/recommendations",
+            url=next_path or "/author/messages",
             status_code=status.HTTP_303_SEE_OTHER,
         )
-    return RedirectResponse(url=next_path or f"/author/recommendations/{recommendation.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=next_path or f"/author/messages/{recommendation.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.get("/recommendations/{recommendation_id}/edit", response_class=HTMLResponse)
+@router.get("/messages/{recommendation_id}/edit", response_class=HTMLResponse)
 async def recommendation_edit_page(
     recommendation_id: str,
     request: Request,
@@ -481,7 +479,7 @@ async def recommendation_edit_page(
     author = await _get_author_or_403(repository, user)
     recommendation = await get_author_recommendation(repository, author, recommendation_id)
     if recommendation is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
     return await _render_recommendation_form(
         request=request,
         user=user,
@@ -493,7 +491,7 @@ async def recommendation_edit_page(
     )
 
 
-@router.get("/recommendations/{recommendation_id}/preview", response_class=HTMLResponse)
+@router.get("/messages/{recommendation_id}/preview", response_class=HTMLResponse)
 async def recommendation_preview_page(
     recommendation_id: str,
     request: Request,
@@ -503,10 +501,10 @@ async def recommendation_preview_page(
     author = await _get_author_or_403(repository, user)
     recommendation = await get_author_recommendation(repository, author, recommendation_id)
     if recommendation is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
     return templates.TemplateResponse(
         request,
-        "app/recommendation_detail.html",
+        "app/message_detail.html",
         {
             "title": recommendation.title or recommendation.strategy.title,
             "user": user,
@@ -517,7 +515,7 @@ async def recommendation_preview_page(
     )
 
 
-@router.post("/recommendations/{recommendation_id}", response_class=HTMLResponse)
+@router.post("/messages/{recommendation_id}", response_class=HTMLResponse)
 async def recommendation_edit_submit(
     recommendation_id: str,
     request: Request,
@@ -527,7 +525,7 @@ async def recommendation_edit_submit(
     author = await _get_author_or_403(repository, user)
     recommendation = await get_author_recommendation(repository, author, recommendation_id)
     if recommendation is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
 
     strategies = await list_author_strategies(repository, author)
     instruments = await list_active_instruments(repository)
@@ -537,7 +535,7 @@ async def recommendation_edit_submit(
         status_value=str(form.get("status", "") or ""),
         workflow_action=str(form.get("workflow_action", "") or ""),
     )
-    was_published = recommendation.status == RecommendationStatus.PUBLISHED
+    was_published = getattr(recommendation.status, "value", recommendation.status) == MessageStatus.PUBLISHED.value
     remove_attachment_ids = [str(item) for item in form.getlist("remove_attachment_ids")]
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
@@ -546,7 +544,8 @@ async def recommendation_edit_submit(
             kind_value=str(form.get("kind", "") or ""),
             status_value=resolved_status,
             title=str(form.get("title", "") or ""),
-            message_mode=str(form.get("message_mode", "structured") or "structured"),
+            type_value=str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
+            message_mode=str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
             message_text=str(form.get("message_text", "") or ""),
             document_caption=str(form.get("document_caption", "") or ""),
             structured_instrument_id=str(form.get("structured_instrument_id", "") or ""),
@@ -584,7 +583,8 @@ async def recommendation_edit_submit(
                 "kind": str(form.get("kind", "") or ""),
                 "status": resolved_status,
                 "title": str(form.get("title", "") or ""),
-                "message_mode": str(form.get("message_mode", "structured") or "structured"),
+                "message_type": str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
+                "message_mode": str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
                 "message_text": str(form.get("message_text", "") or ""),
                 "document_caption": str(form.get("document_caption", "") or ""),
                 "structured_instrument_id": str(form.get("structured_instrument_id", "") or ""),
@@ -603,7 +603,7 @@ async def recommendation_edit_submit(
             embedded=str(form.get("embedded", "") or "") == "1",
             next_path=str(form.get("next_path", "") or ""),
         )
-    if data.status == RecommendationStatus.PUBLISHED:
+    if getattr(data.status, "value", data.status) == MessageStatus.PUBLISHED.value:
         await _deliver_author_publish_notifications(
             repository=repository,
             author=author,
@@ -613,12 +613,12 @@ async def recommendation_edit_submit(
         )
 
     return RedirectResponse(
-        url=f"/author/recommendations/{recommendation.id}/edit",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+            url=f"/author/messages/{recommendation.id}/edit",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
 
 
-@router.patch("/recommendations/{recommendation_id}/inline")
+@router.patch("/messages/{recommendation_id}/inline")
 async def inline_update_recommendation(
     recommendation_id: str,
     request: Request,
@@ -654,8 +654,8 @@ async def inline_update_recommendation(
                 recommendation.legs[0].stop_loss = float(value) if value else None
         elif field == "status":
             status_value = str(value).lower()
-            if status_value in ["draft", "review", "published", "closed", "cancelled"]:
-                recommendation.status = RecommendationStatus(status_value.upper())
+            if status_value in ["draft", "review", "published", "archived", "scheduled", "approved", "failed"]:
+                recommendation.status = status_value
             else:
                 return JSONResponse({"error": "invalid_status"}, status_code=400)
         else:
@@ -689,9 +689,9 @@ async def _render_recommendation_form(
     instruments = await list_active_instruments(repository)
     return templates.TemplateResponse(
         request,
-        "author/recommendation_form.html",
+        "author/message_form.html",
         {
-            "title": "Редактор рекомендации" if recommendation else "Новая рекомендация",
+            "title": "Редактор сообщения" if recommendation else "Новое сообщение",
             "user": user,
             "author": author,
             "recommendation": recommendation,
@@ -708,14 +708,14 @@ async def _render_recommendation_form(
                 "cancelled",
                 "archived",
             ],
-            "recommendation_message_modes": ["structured", "text", "document"],
-            "messages": list(getattr(recommendation, "messages", []) or []),
+            "recommendation_message_modes": ["mixed", "text", "document", "deal"],
+            "messages": [recommendation] if recommendation is not None else [],
             "error": error,
             "field_errors": field_errors or {},
             "form_values": effective_form_values,
             "next_leg_index": _next_leg_index(effective_form_values),
             "embedded": embedded,
-            "next_path": _safe_author_next_path(next_path) or "/author/recommendations",
+            "next_path": _safe_author_next_path(next_path) or "/author/messages",
         },
         status_code=status_code,
     )
@@ -767,9 +767,9 @@ async def _render_recommendation_list(
     )
     return templates.TemplateResponse(
         request,
-        "author/recommendations_list.html",
+        "author/messages_list.html",
         {
-            "title": "Рекомендации автора",
+            "title": "Сообщения автора",
             "user": user,
             "author": author,
             "recommendations": recommendations,
@@ -783,11 +783,11 @@ async def _render_recommendation_list(
             "direction": direction,
             "date_from": date_from,
             "date_to": date_to,
-            "recommendation_modal_url": _recommendation_modal_url(next_path=current_list_path),
+            "message_modal_url": _message_modal_url(next_path=current_list_path),
             "inline_next_path": current_list_path,
             "inline_error": inline_error,
             "inline_field_errors": inline_field_errors or {},
-            "inline_form_values": _normalize_inline_recommendation_form_values(inline_form_values, instruments),
+            "inline_form_values": _normalize_inline_message_form_values(inline_form_values, instruments),
         },
         status_code=status_code,
     )
@@ -817,7 +817,7 @@ async def _render_recommendation_create_error(
             sort_by=str(form.get("sort_by", "updated_at") or "updated_at"),
             direction=str(form.get("direction", "desc") or "desc"),
             inline_error=inline_feedback["error"],
-            inline_form_values=_build_inline_recommendation_form_values(form),
+            inline_form_values=_build_inline_message_form_values(form),
             inline_field_errors=inline_feedback["field_errors"],
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
@@ -834,6 +834,7 @@ async def _render_recommendation_create_error(
             "kind": str(form.get("kind", "new_idea") or "new_idea"),
             "status": resolved_status,
             "title": str(form.get("title", "") or ""),
+            "message_type": str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
             "summary": str(form.get("summary", "") or ""),
             "thesis": str(form.get("thesis", "") or ""),
             "market_context": str(form.get("market_context", "") or ""),
@@ -859,12 +860,12 @@ async def _deliver_author_publish_notifications(
     bot = None
     try:
         recommendation = await get_author_recommendation(repository, author, recommendation_id)
-        if recommendation is None or recommendation.status != RecommendationStatus.PUBLISHED or was_published:
+        if recommendation is None or getattr(recommendation.status, "value", recommendation.status) != MessageStatus.PUBLISHED.value or was_published:
             return
 
         bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
         if isinstance(repository, FileAuthorRepository):
-            await deliver_recommendation_notifications_file(
+            await deliver_message_notifications_file(
                 repository.graph,
                 repository.store,
                 recommendation,
@@ -873,7 +874,7 @@ async def _deliver_author_publish_notifications(
             )
             return
         if isinstance(repository, SqlAlchemyAuthorRepository):
-            await deliver_recommendation_notifications(
+            await deliver_message_notifications(
                 repository.session,
                 recommendation,
                 bot,
@@ -881,12 +882,12 @@ async def _deliver_author_publish_notifications(
             )
             return
         logger.warning(
-            "Skipping immediate notification delivery for recommendation %s: unsupported repository %s",
+            "Skipping immediate notification delivery for message %s: unsupported repository %s",
             recommendation_id,
             type(repository).__name__,
         )
     except Exception:
-        logger.exception("Immediate notification delivery failed for recommendation %s", recommendation_id)
+        logger.exception("Immediate notification delivery failed for message %s", recommendation_id)
     finally:
         if bot is not None:
             await bot.session.close()
@@ -1040,12 +1041,12 @@ def _author_recommendations_list_path(*, q: str, status_filter: str, sort_by: st
     if direction != "desc":
         params.append(("direction", direction))
     if not params:
-        return "/author/recommendations"
-    return f"/author/recommendations?{urlencode(params)}"
+        return "/author/messages"
+    return f"/author/messages?{urlencode(params)}"
 
 
-def _recommendation_modal_url(*, next_path: str) -> str:
-    return f"/author/recommendations/new?{urlencode({'embedded': '1', 'next': next_path})}"
+def _message_modal_url(*, next_path: str) -> str:
+    return f"/author/messages/new?{urlencode({'embedded': '1', 'next': next_path})}"
 
 
 def _build_recommendation_prefill_form_values(*, request: Request, author: AuthorProfile) -> dict[str, object]:
@@ -1058,7 +1059,8 @@ def _build_recommendation_prefill_form_values(*, request: Request, author: Autho
             "kind": str(request.query_params.get("kind", form_values["kind"]) or form_values["kind"]),
             "status": str(request.query_params.get("status", form_values["status"]) or form_values["status"]),
             "title": str(request.query_params.get("title", "") or ""),
-            "message_mode": str(request.query_params.get("message_mode", "structured") or "structured"),
+            "message_type": str(request.query_params.get("message_type", request.query_params.get("message_mode", "mixed")) or "mixed"),
+            "message_mode": str(request.query_params.get("message_type", request.query_params.get("message_mode", "mixed")) or "mixed"),
             "message_text": str(request.query_params.get("message_text", "") or ""),
             "document_caption": str(request.query_params.get("document_caption", "") or ""),
             "structured_instrument_id": str(
@@ -1078,7 +1080,7 @@ def _build_recommendation_prefill_form_values(*, request: Request, author: Autho
     return form_values
 
 
-def _normalize_inline_recommendation_form_values(
+def _normalize_inline_message_form_values(
     inline_form_values: dict[str, str] | None,
     instruments,
 ) -> dict[str, str]:
@@ -1108,7 +1110,7 @@ def _normalize_inline_recommendation_form_values(
     return values
 
 
-def _build_inline_recommendation_form_values(form) -> dict[str, str]:
+def _build_inline_message_form_values(form) -> dict[str, str]:
     return {
         "strategy_id": str(form.get("strategy_id", "") or ""),
         "kind": str(form.get("kind", "new_idea") or "new_idea"),
@@ -1132,7 +1134,7 @@ def _filter_author_recommendations(recommendations, *, q: str, status_filter: st
     normalized = q.strip().lower()
     items = recommendations
     if status_filter != "all":
-        items = [item for item in items if item.status.value == status_filter]
+        items = [item for item in items if getattr(item.status, "value", item.status) == status_filter]
     if not normalized:
         return items
     return [
@@ -1142,11 +1144,13 @@ def _filter_author_recommendations(recommendations, *, q: str, status_filter: st
             part.lower()
             for part in [
                 item.title or "",
-                item.summary or "",
+                getattr(item, "comment", "") or "",
+                (item.text or {}).get("plain", "") if isinstance(getattr(item, "text", None), dict) else "",
                 item.strategy.title if item.strategy is not None else "",
-                item.status.value,
-                item.kind.value,
-                " ".join((leg.instrument.ticker if leg.instrument is not None else "") for leg in item.legs),
+                getattr(item.status, "value", item.status),
+                getattr(item.kind, "value", item.kind),
+                " ".join(item.deliver or []) if getattr(item, "deliver", None) else "",
+                " ".join((deal.get("instrument_id", "") for deal in (item.deals or []))) if getattr(item, "deals", None) else "",
             ]
             if part
         )
@@ -1162,7 +1166,7 @@ def _sort_author_recommendations(recommendations, *, sort_by: str, direction: st
     elif sort_by == "status":
         key = lambda item: item.status.value
     else:
-        key = lambda item: (item.updated_at, item.created_at)
+        key = lambda item: (getattr(item, "updated", None), getattr(item, "created", None))
     return sorted(recommendations, key=key, reverse=reverse)
 
 

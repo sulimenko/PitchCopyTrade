@@ -9,13 +9,13 @@ from sqlalchemy.orm import selectinload
 from pitchcopytrade.db.models.accounts import AuthorProfile
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import Strategy
-from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
-from pitchcopytrade.db.models.enums import RecommendationStatus
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import MessageStatus
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.services.notifications import (
-    deliver_recommendation_notifications,
-    deliver_recommendation_notifications_file,
+    deliver_message_notifications,
+    deliver_message_notifications_file,
 )
 
 
@@ -24,7 +24,7 @@ DELIVERY_ACTIONS = {"notification.delivery", "worker.scheduled_publish"}
 
 @dataclass(slots=True)
 class DeliveryRecord:
-    recommendation: Recommendation
+    message: Message
     events: list[AuditEvent]
     latest_delivery_event: AuditEvent | None
     delivery_attempts: int
@@ -45,8 +45,8 @@ async def list_admin_delivery_records(
     if session is None:
         graph, _store = _file_delivery_graph(store)
         recommendations = sorted(
-            [item for item in graph.recommendations.values() if item.published_at is not None],
-            key=lambda item: (item.published_at, item.updated_at),
+            [item for item in graph.messages.values() if item.published is not None],
+            key=lambda item: (item.published, item.updated),
             reverse=True,
         )
         return [_build_delivery_record(item, _events_for_recommendation(graph.audit_events.values(), item.id)) for item in recommendations]
@@ -58,63 +58,63 @@ async def list_admin_delivery_records(
 
 async def get_admin_delivery_record(
     session: AsyncSession | None,
-    recommendation_id: str,
+    message_id: str,
     *,
     store: FileDataStore | None = None,
 ) -> DeliveryRecord | None:
     if session is None:
         graph, _store = _file_delivery_graph(store)
-        recommendation = graph.recommendations.get(recommendation_id)
-        if recommendation is None:
+        message = graph.messages.get(message_id)
+        if message is None:
             return None
-        return _build_delivery_record(recommendation, _events_for_recommendation(graph.audit_events.values(), recommendation.id))
+        return _build_delivery_record(message, _events_for_message(graph.audit_events.values(), message.id))
 
-    recommendation = await _get_published_recommendation(session, recommendation_id)
-    if recommendation is None:
+    message = await _get_published_message(session, message_id)
+    if message is None:
         return None
     events = await _list_delivery_events(session)
-    return _build_delivery_record(recommendation, _events_for_recommendation(events, recommendation.id))
+    return _build_delivery_record(message, _events_for_message(events, message.id))
 
 
-async def retry_recommendation_delivery(
+async def retry_message_delivery(
     session: AsyncSession | None,
-    recommendation_id: str,
+    message_id: str,
     notifier,
     *,
     store: FileDataStore | None = None,
 ) -> DeliveryRecord:
     if session is None:
         graph, runtime_store = _file_delivery_graph(store)
-        recommendation = graph.recommendations.get(recommendation_id)
-        if recommendation is None:
-            raise ValueError("Recommendation not found")
-        if recommendation.published_at is None:
-            raise ValueError("Повторно отправлять можно только опубликованную рекомендацию")
-        await deliver_recommendation_notifications_file(
+        message = graph.messages.get(message_id)
+        if message is None:
+            raise ValueError("Message not found")
+        if message.published is None:
+            raise ValueError("Повторно отправлять можно только опубликованное сообщение")
+        await deliver_message_notifications_file(
             graph,
             runtime_store,
-            recommendation,
+            message,
             notifier,
             trigger="manual_retry",
         )
-        return _build_delivery_record(recommendation, _events_for_recommendation(graph.audit_events.values(), recommendation.id))
+        return _build_delivery_record(message, _events_for_message(graph.audit_events.values(), message.id))
 
-    recommendation = await _get_published_recommendation(session, recommendation_id)
-    if recommendation is None:
-        raise ValueError("Recommendation not found")
-    if recommendation.published_at is None:
-        raise ValueError("Повторно отправлять можно только опубликованную рекомендацию")
-    await deliver_recommendation_notifications(session, recommendation, notifier, trigger="manual_retry")
+    message = await _get_published_message(session, message_id)
+    if message is None:
+        raise ValueError("Message not found")
+    if message.published is None:
+        raise ValueError("Повторно отправлять можно только опубликованное сообщение")
+    await deliver_message_notifications(session, message, notifier, trigger="manual_retry")
     events = await _list_delivery_events(session)
-    return _build_delivery_record(recommendation, _events_for_recommendation(events, recommendation.id))
+    return _build_delivery_record(message, _events_for_message(events, message.id))
 
 
-def _build_delivery_record(recommendation: Recommendation, events: list[AuditEvent]) -> DeliveryRecord:
+def _build_delivery_record(message: Message, events: list[AuditEvent]) -> DeliveryRecord:
     delivery_events = [item for item in events if item.action == "notification.delivery"]
     latest_delivery_event = delivery_events[0] if delivery_events else None
     delivered_recipients = sum(int((item.payload or {}).get("recipient_count", 0)) for item in delivery_events)
     return DeliveryRecord(
-        recommendation=recommendation,
+        message=message,
         events=events,
         latest_delivery_event=latest_delivery_event,
         delivery_attempts=len(delivery_events),
@@ -122,13 +122,13 @@ def _build_delivery_record(recommendation: Recommendation, events: list[AuditEve
     )
 
 
-def _events_for_recommendation(events, recommendation_id: str) -> list[AuditEvent]:
+def _events_for_message(events, message_id: str) -> list[AuditEvent]:
     return sorted(
         [
             item
             for item in events
-            if item.entity_type == "recommendation"
-            and item.entity_id == recommendation_id
+            if item.entity_type == "message"
+            and item.entity_id == message_id
             and item.action in DELIVERY_ACTIONS
         ],
         key=lambda item: item.created_at,
@@ -136,35 +136,33 @@ def _events_for_recommendation(events, recommendation_id: str) -> list[AuditEven
     )
 
 
-async def _list_published_recommendations(session: AsyncSession) -> list[Recommendation]:
+async def _list_published_recommendations(session: AsyncSession) -> list[Message]:
     query = (
-        select(Recommendation)
+        select(Message)
         .options(
-            selectinload(Recommendation.strategy).selectinload(Strategy.author).selectinload(AuthorProfile.user),
-            selectinload(Recommendation.author).selectinload(AuthorProfile.user),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
+            selectinload(Message.strategy).selectinload(Strategy.author).selectinload(AuthorProfile.user),
+            selectinload(Message.author).selectinload(AuthorProfile.user),
+            selectinload(Message.bundle),
         )
         .where(
-            Recommendation.status.in_([RecommendationStatus.PUBLISHED, RecommendationStatus.CLOSED]),
-            Recommendation.published_at.is_not(None),
+            Message.status == MessageStatus.PUBLISHED.value,
+            Message.published.is_not(None),
         )
-        .order_by(Recommendation.published_at.desc(), Recommendation.updated_at.desc())
+        .order_by(Message.published.desc(), Message.updated.desc())
     )
     result = await session.execute(query)
     return list(result.scalars().all())
 
 
-async def _get_published_recommendation(session: AsyncSession, recommendation_id: str) -> Recommendation | None:
+async def _get_published_message(session: AsyncSession, message_id: str) -> Message | None:
     query = (
-        select(Recommendation)
+        select(Message)
         .options(
-            selectinload(Recommendation.strategy).selectinload(Strategy.author).selectinload(AuthorProfile.user),
-            selectinload(Recommendation.author).selectinload(AuthorProfile.user),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
+            selectinload(Message.strategy).selectinload(Strategy.author).selectinload(AuthorProfile.user),
+            selectinload(Message.author).selectinload(AuthorProfile.user),
+            selectinload(Message.bundle),
         )
-        .where(Recommendation.id == recommendation_id)
+        .where(Message.id == message_id)
     )
     result = await session.execute(query)
     return result.scalar_one_or_none()
@@ -175,7 +173,7 @@ async def _list_delivery_events(session: AsyncSession) -> list[AuditEvent]:
         select(AuditEvent)
         .options(selectinload(AuditEvent.actor_user))
         .where(
-            AuditEvent.entity_type == "recommendation",
+            AuditEvent.entity_type == "message",
             AuditEvent.action.in_(DELIVERY_ACTIONS),
         )
         .order_by(AuditEvent.created_at.desc())

@@ -546,109 +546,6 @@
           overflow: auto;
         }
       }
-      /* Inline recommendation form styling */
-      .inline-recommendation-row {
-        padding: 12px 16px;
-        border-top: 1px solid var(--staff-line);
-        background: var(--staff-surface-soft);
-      }
-      .inline-recommendation-fields {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: center;
-      }
-      .inline-field {
-        display: grid;
-        gap: 6px;
-        min-width: 140px;
-        flex: 0 1 auto;
-      }
-      .inline-field.is-wide {
-        flex: 0 1 280px;
-      }
-      .inline-field--actions {
-        display: flex;
-        gap: 8px;
-        margin-left: auto;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-      .inline-label {
-        font-size: 0.74rem;
-        color: var(--staff-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      .inline-field input,
-      .inline-field select {
-        width: 100%;
-        min-height: 32px;
-        padding: 7px 10px;
-        border-radius: 8px;
-        border: 1px solid var(--staff-line-strong);
-        background: #fff;
-        font-size: 0.92rem;
-      }
-      .inline-field input.is-invalid,
-      .inline-field select.is-invalid {
-        border-color: var(--staff-danger);
-        background: #fff9f9;
-      }
-      .inline-field-error {
-        font-size: 0.74rem;
-        color: var(--staff-danger);
-        margin-top: -4px;
-      }
-      .inline-picker-state {
-        font-size: 0.74rem;
-        margin-top: -4px;
-      }
-      .inline-ticker-popup {
-        position: absolute;
-        z-index: 10;
-        max-width: 380px;
-        max-height: 220px;
-        overflow-y: auto;
-      }
-      /* P3.2: Inline editable field styles */
-      .inline-editable {
-        cursor: pointer;
-        padding: 2px 4px;
-        border-radius: 3px;
-        outline: 2px solid transparent;
-        outline-offset: 0px;
-        transition: outline-color 0.15s ease;
-      }
-      .inline-editable:hover {
-        background: rgba(51, 65, 85, 0.05);
-      }
-      .inline-editable:focus {
-        outline-color: #3b82f6;
-        background: #f0f8ff;
-      }
-      .inline-editable[contenteditable="true"] {
-        background: #fff8dc;
-        border-color: #f59e0b;
-      }
-      /* P3.2: Inline status select styling */
-      .inline-status-select {
-        appearance: none;
-        border: none;
-        background: transparent;
-        font-weight: 600;
-        cursor: pointer;
-        padding: 2px 4px;
-        border-radius: 3px;
-        outline: 2px solid transparent;
-        outline-offset: 0px;
-      }
-      .inline-status-select:hover {
-        background: rgba(51, 65, 85, 0.05);
-      }
-      .inline-status-select:focus {
-        outline-color: #3b82f6;
-      }
       @media (max-width: 720px) {
         .staff-main { padding: 12px; }
         .staff-topline,
@@ -661,17 +558,6 @@
         .staff-form-grid.is-three,
         .staff-key-row {
           grid-template-columns: 1fr;
-        }
-        .inline-recommendation-fields {
-          flex-direction: column;
-          align-items: stretch;
-        }
-        .inline-field {
-          flex: none;
-          min-width: 100%;
-        }
-        .inline-field--actions {
-          margin-left: 0;
         }
       }
     </style>
@@ -696,7 +582,7 @@
     {% set author_links = [
       ('dashboard', 'Сводка', '/author/dashboard'),
       ('strategies', 'Стратегии', '/author/strategies'),
-      ('recommendations', 'Рекомендации', '/author/recommendations')
+      ('messages', 'Сообщения', '/author/messages')
     ] %}
     {% set moderation_links = [('queue', 'Очередь', '/moderation/queue')] %}
     <div class="staff-shell">

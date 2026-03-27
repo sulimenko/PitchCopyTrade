@@ -10,8 +10,8 @@ from sqlalchemy.orm import selectinload
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import Strategy
-from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg, RecommendationMessage
-from pitchcopytrade.db.models.enums import RecommendationStatus
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import MessageModeration, MessageStatus
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 
@@ -44,77 +44,75 @@ def _file_graph(store: FileDataStore | None = None) -> tuple[FileDatasetGraph, F
 async def list_moderation_recommendations(
     session: AsyncSession | None,
     *,
-    status_filter: RecommendationStatus | None = None,
+    status_filter: MessageStatus | None = None,
     query_text: str | None = None,
     store: FileDataStore | None = None,
-) -> list[Recommendation]:
+) -> list[Message]:
     if session is None:
         graph, _store = _file_graph(store)
         items = [
             item
-            for item in graph.recommendations.values()
-            if item.requires_moderation
+            for item in graph.messages.values()
+            if item.moderation == MessageModeration.REQUIRED.value
             and item.status
             in {
-                RecommendationStatus.REVIEW,
-                RecommendationStatus.APPROVED,
-                RecommendationStatus.SCHEDULED,
-                RecommendationStatus.PUBLISHED,
+                MessageStatus.REVIEW.value,
+                MessageStatus.APPROVED.value,
+                MessageStatus.SCHEDULED.value,
+                MessageStatus.PUBLISHED.value,
             }
         ]
-        items.sort(key=lambda item: (item.updated_at, item.created_at), reverse=True)
+        items.sort(key=lambda item: (item.updated, item.created), reverse=True)
         return _filter_moderation_items(items, status_filter=status_filter, query_text=query_text)
     query = (
-        select(Recommendation)
+        select(Message)
         .options(
-            selectinload(Recommendation.strategy).selectinload(Strategy.author),
-            selectinload(Recommendation.author).selectinload(AuthorProfile.user),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
-            selectinload(Recommendation.messages).selectinload(RecommendationMessage.created_by_user),
+            selectinload(Message.strategy).selectinload(Strategy.author),
+            selectinload(Message.author).selectinload(AuthorProfile.user),
+            selectinload(Message.user),
+            selectinload(Message.moderator),
         )
         .where(
-            Recommendation.requires_moderation.is_(True),
-            Recommendation.status.in_(
+            Message.moderation == MessageModeration.REQUIRED.value,
+            Message.status.in_(
                 [
-                    RecommendationStatus.REVIEW,
-                    RecommendationStatus.APPROVED,
-                    RecommendationStatus.SCHEDULED,
-                    RecommendationStatus.PUBLISHED,
+                    MessageStatus.REVIEW.value,
+                    MessageStatus.APPROVED.value,
+                    MessageStatus.SCHEDULED.value,
+                    MessageStatus.PUBLISHED.value,
                 ]
             ),
         )
-        .order_by(Recommendation.updated_at.desc(), Recommendation.created_at.desc())
+        .order_by(Message.updated.desc(), Message.created.desc())
     )
     result = await session.execute(query)
     return _filter_moderation_items(list(result.scalars().all()), status_filter=status_filter, query_text=query_text)
 
 
-async def get_moderation_recommendation(
+async def get_moderation_message(
     session: AsyncSession | None,
     recommendation_id: str,
     *,
     store: FileDataStore | None = None,
-) -> Recommendation | None:
+) -> Message | None:
     if session is None:
         graph, _store = _file_graph(store)
-        return graph.recommendations.get(recommendation_id)
+        return graph.messages.get(recommendation_id)
     query = (
-        select(Recommendation)
+        select(Message)
         .options(
-            selectinload(Recommendation.strategy).selectinload(Strategy.author),
-            selectinload(Recommendation.author).selectinload(AuthorProfile.user),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
-            selectinload(Recommendation.messages).selectinload(RecommendationMessage.created_by_user),
+            selectinload(Message.strategy).selectinload(Strategy.author),
+            selectinload(Message.author).selectinload(AuthorProfile.user),
+            selectinload(Message.user),
+            selectinload(Message.moderator),
         )
-        .where(Recommendation.id == recommendation_id)
+        .where(Message.id == recommendation_id)
     )
     result = await session.execute(query)
     return result.scalar_one_or_none()
 
 
-async def list_recommendation_audit_events(
+async def list_message_audit_events(
     session: AsyncSession | None,
     recommendation_id: str,
     *,
@@ -125,7 +123,7 @@ async def list_recommendation_audit_events(
         items = [
             item
             for item in graph.audit_events.values()
-            if item.entity_type == "recommendation" and item.entity_id == recommendation_id
+            if item.entity_type == "message" and item.entity_id == recommendation_id
         ]
         items.sort(key=lambda item: item.created_at, reverse=True)
         return items
@@ -133,7 +131,7 @@ async def list_recommendation_audit_events(
         select(AuditEvent)
         .options(selectinload(AuditEvent.actor_user))
         .where(
-            AuditEvent.entity_type == "recommendation",
+            AuditEvent.entity_type == "message",
             AuditEvent.entity_id == recommendation_id,
         )
         .order_by(AuditEvent.created_at.desc())
@@ -150,34 +148,30 @@ async def get_moderation_queue_stats(
     now = datetime.now(timezone.utc)
     if session is None:
         graph, _store = _file_graph(store)
-        items = [item for item in graph.recommendations.values() if item.requires_moderation]
-        events = [item for item in graph.audit_events.values() if item.entity_type == "recommendation"]
+        items = [item for item in graph.messages.values() if item.moderation == MessageModeration.REQUIRED.value]
+        events = [item for item in graph.audit_events.values() if item.entity_type == "message"]
         return _build_queue_stats(items, events=events, now=now)
-    recommendations_result = await session.execute(
-        select(Recommendation).where(Recommendation.requires_moderation.is_(True))
-    )
+    recommendations_result = await session.execute(select(Message).where(Message.moderation == MessageModeration.REQUIRED.value))
     recommendations = list(recommendations_result.scalars().all())
-    events_result = await session.execute(
-        select(AuditEvent).where(AuditEvent.entity_type == "recommendation")
-    )
+    events_result = await session.execute(select(AuditEvent).where(AuditEvent.entity_type == "message"))
     events = list(events_result.scalars().all())
     return _build_queue_stats(recommendations, events=events, now=now)
 
 
 def build_moderation_detail_metrics(
-    recommendation: Recommendation,
+    recommendation: Message,
     history: list[AuditEvent],
     *,
     now: datetime | None = None,
 ) -> ModerationDetailMetrics:
     timestamp = now or datetime.now(timezone.utc)
-    first_submitted_at = recommendation.created_at or recommendation.updated_at or timestamp
+    first_submitted_at = recommendation.created or recommendation.updated or timestamp
     decision_events = [item for item in history if item.action in {"moderation.approve", "moderation.rework", "moderation.reject"}]
     last_decision_at = max((item.created_at for item in decision_events), default=None)
     resolution_hours = None
     if last_decision_at is not None:
         resolution_hours = round((last_decision_at - first_submitted_at).total_seconds() / 3600, 1)
-    if recommendation.status == RecommendationStatus.REVIEW:
+    if recommendation.status == MessageStatus.REVIEW.value:
         sla_state = "overdue" if (timestamp - first_submitted_at).total_seconds() > 24 * 3600 else "within_sla"
     else:
         sla_state = "resolved"
@@ -189,141 +183,141 @@ def build_moderation_detail_metrics(
     )
 
 
-async def approve_recommendation(
+async def approve_message(
     session: AsyncSession | None,
-    recommendation: Recommendation,
+    recommendation: Message,
     moderator: User,
     comment: str | None = None,
     *,
     store: FileDataStore | None = None,
-) -> Recommendation:
+) -> Message:
     now = datetime.now(timezone.utc)
     if session is None:
         graph, active_store = _file_graph(store)
-        persisted = graph.recommendations.get(recommendation.id)
+        persisted = graph.messages.get(recommendation.id)
         if persisted is None:
-            raise ValueError("Recommendation not found")
-        persisted.moderated_by_user_id = moderator.id
-        persisted.moderation_comment = (comment or "").strip() or None
-        if persisted.scheduled_for and persisted.scheduled_for > now:
-            persisted.status = RecommendationStatus.SCHEDULED
-            persisted.published_at = None
+            raise ValueError("Message not found")
+        persisted.moderator_id = moderator.id
+        persisted.comment = (comment or "").strip() or None
+        if persisted.schedule and persisted.schedule > now:
+            persisted.status = MessageStatus.SCHEDULED.value
+            persisted.published = None
         else:
-            persisted.status = RecommendationStatus.PUBLISHED
-            persisted.published_at = now
+            persisted.status = MessageStatus.PUBLISHED.value
+            persisted.published = now
         graph.add(
             AuditEvent(
                 actor_user_id=moderator.id,
-                entity_type="recommendation",
+                entity_type="message",
                 entity_id=persisted.id,
                 action="moderation.approve",
-                payload={"status": persisted.status.value, "comment": persisted.moderation_comment},
+                payload={"status": persisted.status, "comment": persisted.comment},
             )
         )
         graph.save(active_store)
         return persisted
-    recommendation.moderated_by_user_id = moderator.id
-    recommendation.moderation_comment = (comment or "").strip() or None
-    if recommendation.scheduled_for and recommendation.scheduled_for > now:
-        recommendation.status = RecommendationStatus.SCHEDULED
-        recommendation.published_at = None
+    recommendation.moderator_id = moderator.id
+    recommendation.comment = (comment or "").strip() or None
+    if recommendation.schedule and recommendation.schedule > now:
+        recommendation.status = MessageStatus.SCHEDULED.value
+        recommendation.published = None
     else:
-        recommendation.status = RecommendationStatus.PUBLISHED
-        recommendation.published_at = now
+        recommendation.status = MessageStatus.PUBLISHED.value
+        recommendation.published = now
     await _record_audit(
         session,
         actor_user_id=moderator.id,
         entity_id=recommendation.id,
         action="moderation.approve",
-        payload={"status": recommendation.status.value, "comment": recommendation.moderation_comment},
+        payload={"status": recommendation.status, "comment": recommendation.comment},
     )
     await session.commit()
     await session.refresh(recommendation)
     return recommendation
 
 
-async def send_recommendation_to_rework(
+async def send_message_to_rework(
     session: AsyncSession | None,
-    recommendation: Recommendation,
+    recommendation: Message,
     moderator: User,
     comment: str,
     *,
     store: FileDataStore | None = None,
-) -> Recommendation:
+) -> Message:
     if session is None:
         graph, active_store = _file_graph(store)
-        persisted = graph.recommendations.get(recommendation.id)
+        persisted = graph.messages.get(recommendation.id)
         if persisted is None:
-            raise ValueError("Recommendation not found")
-        persisted.status = RecommendationStatus.DRAFT
-        persisted.moderated_by_user_id = moderator.id
-        persisted.moderation_comment = comment.strip() or "Нужна доработка"
-        persisted.published_at = None
+            raise ValueError("Message not found")
+        persisted.status = MessageStatus.DRAFT.value
+        persisted.moderator_id = moderator.id
+        persisted.comment = comment.strip() or "Нужна доработка"
+        persisted.published = None
         graph.add(
             AuditEvent(
                 actor_user_id=moderator.id,
-                entity_type="recommendation",
+                entity_type="message",
                 entity_id=persisted.id,
                 action="moderation.rework",
-                payload={"status": persisted.status.value, "comment": persisted.moderation_comment},
+                payload={"status": persisted.status, "comment": persisted.comment},
             )
         )
         graph.save(active_store)
         return persisted
-    recommendation.status = RecommendationStatus.DRAFT
-    recommendation.moderated_by_user_id = moderator.id
-    recommendation.moderation_comment = comment.strip() or "Нужна доработка"
-    recommendation.published_at = None
+    recommendation.status = MessageStatus.DRAFT.value
+    recommendation.moderator_id = moderator.id
+    recommendation.comment = comment.strip() or "Нужна доработка"
+    recommendation.published = None
     await _record_audit(
         session,
         actor_user_id=moderator.id,
         entity_id=recommendation.id,
         action="moderation.rework",
-        payload={"status": recommendation.status.value, "comment": recommendation.moderation_comment},
+        payload={"status": recommendation.status, "comment": recommendation.comment},
     )
     await session.commit()
     await session.refresh(recommendation)
     return recommendation
 
 
-async def reject_recommendation(
+async def reject_message(
     session: AsyncSession | None,
-    recommendation: Recommendation,
+    recommendation: Message,
     moderator: User,
     comment: str,
     *,
     store: FileDataStore | None = None,
-) -> Recommendation:
+) -> Message:
     if session is None:
         graph, active_store = _file_graph(store)
-        persisted = graph.recommendations.get(recommendation.id)
+        persisted = graph.messages.get(recommendation.id)
         if persisted is None:
-            raise ValueError("Recommendation not found")
-        persisted.status = RecommendationStatus.ARCHIVED
-        persisted.moderated_by_user_id = moderator.id
-        persisted.moderation_comment = comment.strip() or "Отклонено модератором"
-        persisted.published_at = None
+            raise ValueError("Message not found")
+        persisted.status = MessageStatus.ARCHIVED.value
+        persisted.moderator_id = moderator.id
+        persisted.comment = comment.strip() or "Отклонено модератором"
+        persisted.published = None
         graph.add(
             AuditEvent(
                 actor_user_id=moderator.id,
-                entity_type="recommendation",
+                entity_type="message",
                 entity_id=persisted.id,
                 action="moderation.reject",
-                payload={"status": persisted.status.value, "comment": persisted.moderation_comment},
+                payload={"status": persisted.status, "comment": persisted.comment},
             )
         )
         graph.save(active_store)
         return persisted
-    recommendation.status = RecommendationStatus.ARCHIVED
-    recommendation.moderated_by_user_id = moderator.id
-    recommendation.moderation_comment = comment.strip() or "Отклонено модератором"
-    recommendation.published_at = None
+    recommendation.status = MessageStatus.ARCHIVED.value
+    recommendation.moderator_id = moderator.id
+    recommendation.comment = comment.strip() or "Отклонено модератором"
+    recommendation.published = None
     await _record_audit(
         session,
         actor_user_id=moderator.id,
         entity_id=recommendation.id,
         action="moderation.reject",
-        payload={"status": recommendation.status.value, "comment": recommendation.moderation_comment},
+        payload={"status": recommendation.status, "comment": recommendation.comment},
     )
     await session.commit()
     await session.refresh(recommendation)
@@ -341,7 +335,7 @@ async def _record_audit(
     session.add(
         AuditEvent(
             actor_user_id=actor_user_id,
-            entity_type="recommendation",
+        entity_type="message",
             entity_id=entity_id,
             action=action,
             payload=payload,
@@ -356,11 +350,11 @@ async def _count_query(session: AsyncSession, query) -> int:
 
 
 def _filter_moderation_items(
-    items: list[Recommendation],
+    items: list[Message],
     *,
-    status_filter: RecommendationStatus | None,
+    status_filter: MessageStatus | None,
     query_text: str | None,
-) -> list[Recommendation]:
+) -> list[Message]:
     filtered = items
     if status_filter is not None:
         filtered = [item for item in filtered if item.status == status_filter]
@@ -370,22 +364,21 @@ def _filter_moderation_items(
     return [item for item in filtered if _moderation_item_matches(item, normalized)]
 
 
-def _moderation_item_matches(item: Recommendation, normalized: str) -> bool:
+def _moderation_item_matches(item: Message, normalized: str) -> bool:
     parts = [
         item.title,
-        item.summary,
-        item.thesis,
+        item.comment,
         item.author.display_name if item.author is not None else None,
         item.strategy.title if item.strategy is not None else None,
-        item.status.value,
-        item.kind.value,
+        item.status,
+        item.kind,
     ]
     haystack = " ".join(part.strip().lower() for part in parts if part)
     return normalized in haystack
 
 
 def _build_queue_stats(
-    recommendations: list[Recommendation],
+    recommendations: list[Message],
     *,
     events: list[AuditEvent],
     now: datetime,
@@ -401,13 +394,13 @@ def _build_queue_stats(
             resolution_hours.append(detail.resolution_hours)
 
     return ModerationQueueStats(
-        review_count=sum(1 for item in recommendations if item.status == RecommendationStatus.REVIEW),
-        scheduled_count=sum(1 for item in recommendations if item.status == RecommendationStatus.SCHEDULED),
-        published_count=sum(1 for item in recommendations if item.status == RecommendationStatus.PUBLISHED),
+        review_count=sum(1 for item in recommendations if item.status == MessageStatus.REVIEW.value),
+        scheduled_count=sum(1 for item in recommendations if item.status == MessageStatus.SCHEDULED.value),
+        published_count=sum(1 for item in recommendations if item.status == MessageStatus.PUBLISHED.value),
         overdue_review_count=sum(
             1
             for item in recommendations
-            if item.status == RecommendationStatus.REVIEW and (now - item.created_at).total_seconds() > 24 * 3600
+            if item.status == MessageStatus.REVIEW.value and (now - item.created).total_seconds() > 24 * 3600
         ),
         approved_total=sum(1 for item in events if item.action == "moderation.approve"),
         rework_total=sum(1 for item in events if item.action == "moderation.rework"),

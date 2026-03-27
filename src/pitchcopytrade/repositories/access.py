@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -8,19 +8,15 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import BundleMember, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
-from pitchcopytrade.db.models.enums import RecommendationStatus, SubscriptionStatus
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import MessageDeliver, MessageStatus, SubscriptionStatus
 from pitchcopytrade.repositories.contracts import AccessRepository
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 
 
 ACTIVE_SUBSCRIPTION_STATUSES = (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
-VISIBLE_RECOMMENDATION_STATUSES = (
-    RecommendationStatus.PUBLISHED,
-    RecommendationStatus.CLOSED,
-    RecommendationStatus.CANCELLED,
-)
+VISIBLE_MESSAGE_STATUSES = (MessageStatus.PUBLISHED,)
 
 
 class SqlAlchemyAccessRepository(AccessRepository):
@@ -39,54 +35,68 @@ class SqlAlchemyAccessRepository(AccessRepository):
         result = await self.session.execute(query)
         return result.scalar_one_or_none() is not None
 
-    async def list_user_visible_recommendations(
-        self,
-        *,
-        user_id: str,
-        limit: int = 20,
-    ) -> list[Recommendation]:
-        query: Select[tuple[Recommendation]] = (
-            select(Recommendation)
+    async def list_user_visible_messages(self, *, user_id: str, limit: int = 20) -> list[Message]:
+        query: Select[tuple[Message]] = (
+            select(Message)
             .options(
-                selectinload(Recommendation.strategy).selectinload(Strategy.author),
-                selectinload(Recommendation.author).selectinload(AuthorProfile.user),
-                selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-                selectinload(Recommendation.attachments),
+                selectinload(Message.strategy).selectinload(Strategy.author),
+                selectinload(Message.author).selectinload(AuthorProfile.user),
+                selectinload(Message.bundle),
             )
             .where(
-                self._build_user_access_filter(user_id),
-                Recommendation.published_at.is_not(None),
-                Recommendation.status.in_(VISIBLE_RECOMMENDATION_STATUSES),
+                Message.published.is_not(None),
+                Message.status.in_(VISIBLE_MESSAGE_STATUSES),
             )
-            .order_by(Recommendation.published_at.desc(), Recommendation.created_at.desc())
-            .limit(limit)
+            .order_by(Message.published.desc(), Message.created.desc())
         )
         result = await self.session.execute(query)
-        return list(result.scalars().all())
+        strategy_ids, author_ids, bundle_strategy_ids = await self._build_user_access_scope(user_id)
+        items = [
+            item
+            for item in result.scalars().all()
+            if _message_matches_audience(
+                item,
+                strategy_ids=strategy_ids,
+                author_ids=author_ids,
+                bundle_strategy_ids=bundle_strategy_ids,
+            )
+        ]
+        items.sort(key=lambda item: (item.published or item.created, item.created), reverse=True)
+        return items[:limit]
 
-    async def get_user_visible_recommendation(
-        self,
-        *,
-        user_id: str,
-        recommendation_id: str,
-    ) -> Recommendation | None:
+    async def get_user_visible_message(self, *, user_id: str, message_id: str) -> Message | None:
         query = (
-            select(Recommendation)
+            select(Message)
             .options(
-                selectinload(Recommendation.strategy).selectinload(Strategy.author),
-                selectinload(Recommendation.author).selectinload(AuthorProfile.user),
-                selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-                selectinload(Recommendation.attachments),
+                selectinload(Message.strategy).selectinload(Strategy.author),
+                selectinload(Message.author).selectinload(AuthorProfile.user),
+                selectinload(Message.bundle),
             )
             .where(
-                Recommendation.id == recommendation_id,
-                self._build_user_access_filter(user_id),
-                Recommendation.published_at.is_not(None),
-                Recommendation.status.in_(VISIBLE_RECOMMENDATION_STATUSES),
+                Message.id == message_id,
+                Message.published.is_not(None),
+                Message.status.in_(VISIBLE_MESSAGE_STATUSES),
             )
         )
         result = await self.session.execute(query)
-        return result.scalar_one_or_none()
+        message = result.scalar_one_or_none()
+        if message is None:
+            return None
+        strategy_ids, author_ids, bundle_strategy_ids = await self._build_user_access_scope(user_id)
+        if not _message_matches_audience(
+            message,
+            strategy_ids=strategy_ids,
+            author_ids=author_ids,
+            bundle_strategy_ids=bundle_strategy_ids,
+        ):
+            return None
+        return message
+
+    async def list_user_visible_recommendations(self, *, user_id: str, limit: int = 20) -> list[Message]:
+        return await self.list_user_visible_messages(user_id=user_id, limit=limit)
+
+    async def get_user_visible_recommendation(self, *, user_id: str, recommendation_id: str) -> Message | None:
+        return await self.get_user_visible_message(user_id=user_id, message_id=recommendation_id)
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
         query = (
@@ -154,40 +164,37 @@ class SqlAlchemyAccessRepository(AccessRepository):
         await self.session.commit()
         return normalized
 
-    def _build_user_access_filter(self, user_id: str):
-        strategy_ids = (
-            select(SubscriptionProduct.strategy_id)
+    async def _build_user_access_scope(self, user_id: str) -> tuple[set[str], set[str], set[str]]:
+        result = await self.session.execute(
+            select(
+                SubscriptionProduct.strategy_id,
+                SubscriptionProduct.author_id,
+                SubscriptionProduct.bundle_id,
+            )
             .join(Subscription, Subscription.product_id == SubscriptionProduct.id)
             .where(
                 Subscription.user_id == user_id,
                 Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-                SubscriptionProduct.strategy_id.is_not(None),
             )
         )
-        author_ids = (
-            select(SubscriptionProduct.author_id)
-            .join(Subscription, Subscription.product_id == SubscriptionProduct.id)
-            .where(
-                Subscription.user_id == user_id,
-                Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-                SubscriptionProduct.author_id.is_not(None),
+        strategy_ids: set[str] = set()
+        author_ids: set[str] = set()
+        bundle_ids: set[str] = set()
+        for strategy_id, author_id, bundle_id in result.all():
+            if strategy_id is not None:
+                strategy_ids.add(strategy_id)
+            if author_id is not None:
+                author_ids.add(author_id)
+            if bundle_id is not None:
+                bundle_ids.add(bundle_id)
+
+        bundle_strategy_ids: set[str] = set()
+        if bundle_ids:
+            bundle_result = await self.session.execute(
+                select(BundleMember.strategy_id).where(BundleMember.bundle_id.in_(bundle_ids))
             )
-        )
-        bundle_strategy_ids = (
-            select(BundleMember.strategy_id)
-            .join(SubscriptionProduct, SubscriptionProduct.bundle_id == BundleMember.bundle_id)
-            .join(Subscription, Subscription.product_id == SubscriptionProduct.id)
-            .where(
-                Subscription.user_id == user_id,
-                Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-                SubscriptionProduct.bundle_id.is_not(None),
-            )
-        )
-        return or_(
-            Recommendation.strategy_id.in_(strategy_ids),
-            Recommendation.author_id.in_(author_ids),
-            Recommendation.strategy_id.in_(bundle_strategy_ids),
-        )
+            bundle_strategy_ids.update(item for item in bundle_result.scalars().all() if item is not None)
+        return strategy_ids, author_ids, bundle_strategy_ids
 
 
 class FileAccessRepository(AccessRepository):
@@ -201,40 +208,48 @@ class FileAccessRepository(AccessRepository):
             for item in self.graph.subscriptions.values()
         )
 
-    async def list_user_visible_recommendations(
-        self,
-        *,
-        user_id: str,
-        limit: int = 20,
-    ) -> list[Recommendation]:
+    async def list_user_visible_messages(self, *, user_id: str, limit: int = 20) -> list[Message]:
         allowed_strategy_ids = self._allowed_strategy_ids(user_id)
         allowed_author_ids = self._allowed_author_ids(user_id)
+        allowed_bundle_strategy_ids = self._allowed_bundle_strategy_ids(user_id)
         items = [
             item
-            for item in self.graph.recommendations.values()
-            if item.published_at is not None
-            and item.status in VISIBLE_RECOMMENDATION_STATUSES
-            and (item.strategy_id in allowed_strategy_ids or item.author_id in allowed_author_ids)
+            for item in self.graph.messages.values()
+            if item.published is not None
+            and item.status in {status.value for status in VISIBLE_MESSAGE_STATUSES}
+            and _message_matches_audience(
+                item,
+                strategy_ids=allowed_strategy_ids,
+                author_ids=allowed_author_ids,
+                bundle_strategy_ids=allowed_bundle_strategy_ids,
+            )
         ]
-        items.sort(key=lambda item: (item.published_at or item.created_at, item.created_at), reverse=True)
+        items.sort(key=lambda item: (item.published or item.created, item.created), reverse=True)
         return items[:limit]
 
-    async def get_user_visible_recommendation(
-        self,
-        *,
-        user_id: str,
-        recommendation_id: str,
-    ) -> Recommendation | None:
-        recommendation = self.graph.recommendations.get(recommendation_id)
-        if recommendation is None:
+    async def get_user_visible_message(self, *, user_id: str, message_id: str) -> Message | None:
+        message = self.graph.messages.get(message_id)
+        if message is None:
             return None
         allowed_strategy_ids = self._allowed_strategy_ids(user_id)
         allowed_author_ids = self._allowed_author_ids(user_id)
-        if recommendation.published_at is None or recommendation.status not in VISIBLE_RECOMMENDATION_STATUSES:
+        allowed_bundle_strategy_ids = self._allowed_bundle_strategy_ids(user_id)
+        if message.published is None or message.status not in {status.value for status in VISIBLE_MESSAGE_STATUSES}:
             return None
-        if recommendation.strategy_id not in allowed_strategy_ids and recommendation.author_id not in allowed_author_ids:
+        if not _message_matches_audience(
+            message,
+            strategy_ids=allowed_strategy_ids,
+            author_ids=allowed_author_ids,
+            bundle_strategy_ids=allowed_bundle_strategy_ids,
+        ):
             return None
-        return recommendation
+        return message
+
+    async def list_user_visible_recommendations(self, *, user_id: str, limit: int = 20) -> list[Message]:
+        return await self.list_user_visible_messages(user_id=user_id, limit=limit)
+
+    async def get_user_visible_recommendation(self, *, user_id: str, recommendation_id: str) -> Message | None:
+        return await self.get_user_visible_message(user_id=user_id, message_id=recommendation_id)
 
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
         return next((item for item in self.graph.users.values() if item.telegram_user_id == telegram_user_id), None)
@@ -312,3 +327,34 @@ class FileAccessRepository(AccessRepository):
             for product in self._active_products_for_user(user_id)
             if product.author_id is not None
         }
+
+    def _allowed_bundle_strategy_ids(self, user_id: str) -> set[str]:
+        bundle_ids = {
+            product.bundle_id
+            for product in self._active_products_for_user(user_id)
+            if product.bundle_id is not None
+        }
+        return {
+            member.strategy_id
+            for member in self.graph.bundle_members
+            if member.bundle_id in bundle_ids
+        }
+
+
+def _message_matches_audience(
+    message: Message,
+    *,
+    strategy_ids: set[str],
+    author_ids: set[str],
+    bundle_strategy_ids: set[str],
+) -> bool:
+    deliver = {str(item).strip() for item in (message.deliver or []) if str(item).strip()}
+    if not deliver:
+        return False
+    if MessageDeliver.STRATEGY.value in deliver and message.strategy_id in strategy_ids:
+        return True
+    if MessageDeliver.AUTHOR.value in deliver and message.author_id in author_ids:
+        return True
+    if MessageDeliver.BUNDLE.value in deliver and message.strategy_id in bundle_strategy_ids:
+        return True
+    return False

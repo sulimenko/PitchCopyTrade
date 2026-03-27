@@ -26,10 +26,8 @@ class FileDataStore:
         "subscriptions",
         "user_consents",
         "audit_events",
-        "recommendations",
-        "recommendation_legs",
-        "recommendation_attachments",
-        "recommendation_messages",
+        "notification_log",
+        "messages",
     )
 
     def __init__(

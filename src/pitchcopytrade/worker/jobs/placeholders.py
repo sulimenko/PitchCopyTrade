@@ -11,11 +11,11 @@ from pitchcopytrade.db.session import AsyncSessionLocal
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
-from pitchcopytrade.db.models.enums import RecommendationStatus, SubscriptionStatus
+from pitchcopytrade.db.models.enums import MessageStatus, SubscriptionStatus
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.services.notifications import (
-    deliver_recommendation_notifications,
-    deliver_recommendation_notifications_file,
+    deliver_message_notifications,
+    deliver_message_notifications_file,
     deliver_subscriber_reminders,
 )
 from pitchcopytrade.services.lifecycle import expire_due_payments, expire_due_subscriptions
@@ -39,23 +39,23 @@ async def run_scheduled_publish() -> None:
         graph = FileDatasetGraph.load(store)
         current_time = datetime.now(timezone.utc)
         published = []
-        for item in graph.recommendations.values():
+        for item in graph.messages.values():
             if (
-                item.status == RecommendationStatus.SCHEDULED
-                and item.scheduled_for is not None
-                and item.scheduled_for <= current_time
+                item.status == MessageStatus.SCHEDULED.value
+                and item.schedule is not None
+                and item.schedule <= current_time
             ):
-                item.status = RecommendationStatus.PUBLISHED
-                item.published_at = current_time
-                item.scheduled_for = None
+                item.status = MessageStatus.PUBLISHED.value
+                item.published = current_time
+                item.schedule = None
                 published.append(item)
                 graph.add(
                     AuditEvent(
                         actor_user_id=None,
-                        entity_type="recommendation",
+                        entity_type="message",
                         entity_id=item.id,
                         action="worker.scheduled_publish",
-                        payload={"status": item.status.value},
+                        payload={"status": item.status},
                     )
                 )
         if published:
@@ -64,7 +64,7 @@ async def run_scheduled_publish() -> None:
             try:
                 for item in published:
                     try:
-                        await deliver_recommendation_notifications_file(
+                        await deliver_message_notifications_file(
                             graph,
                             store,
                             item,
@@ -72,7 +72,7 @@ async def run_scheduled_publish() -> None:
                             trigger="scheduled_publish",
                         )
                     except Exception:
-                        logger.exception("Notification delivery failed for recommendation %s", item.id)
+                        logger.exception("Notification delivery failed for message %s", item.id)
             finally:
                 await bot.session.close()
         logger.info("scheduled_publish tick(file): %s published", len(published))
@@ -85,9 +85,9 @@ async def run_scheduled_publish() -> None:
             try:
                 for item in published:
                     try:
-                        await deliver_recommendation_notifications(session, item, bot, trigger="scheduled_publish")
+                        await deliver_message_notifications(session, item, bot, trigger="scheduled_publish")
                     except Exception:
-                        logger.exception("Notification delivery failed for recommendation %s", item.id)
+                        logger.exception("Notification delivery failed for message %s", item.id)
             finally:
                 await bot.session.close()
     logger.info("scheduled_publish tick: %s published", len(published))

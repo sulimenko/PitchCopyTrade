@@ -24,7 +24,7 @@ class SubscriberStatusSnapshot:
     active_subscriptions: list[Subscription]
     payments: list[Payment]
     pending_payments: list[Payment]
-    visible_recommendation_titles: list[str]
+    visible_message_titles: list[str]
 
 
 @dataclass(slots=True, frozen=True)
@@ -116,7 +116,7 @@ async def get_subscriber_status_snapshot(
         active_subscriptions=active_subscriptions,
         payments=payments,
         pending_payments=pending_payments,
-        visible_recommendation_titles=visible_titles,
+        visible_message_titles=visible_titles,
     )
 
 
@@ -162,7 +162,7 @@ def billing_period_label(period: BillingPeriod | None) -> str:
 
 def payment_result_message(payment: Payment) -> str:
     if payment.status is PaymentStatus.PAID:
-        return "Оплата подтверждена. Доступ к рекомендациям уже активирован или будет активирован в ближайший момент."
+        return "Оплата подтверждена. Доступ к публикациям уже активирован или будет активирован в ближайший момент."
     if payment.status is PaymentStatus.PENDING:
         return "Платеж еще обрабатывается. Вы можете открыть оплату, обновить статус или дождаться автоматической синхронизации."
     if payment.status is PaymentStatus.FAILED:

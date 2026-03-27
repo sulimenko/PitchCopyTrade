@@ -1,97 +1,49 @@
-# PitchCopyTrade — Research Entry
-> Обновлено: 2026-03-26
-> Этот файл — стартовая точка нового цикла исследования MVP.
+# PitchCopyTrade — Local Work Guide
 
-## Канонические документы
+Этот файл отвечает только за локальную работу с проектом:
 
-- `doc/README.md` — быстрый вход в проект и локальный runbook без Docker
-- `doc/blueprint.md` — текущий продуктовый и UX-контракт
-- `doc/task.md` — только активный backlog
-- `doc/review.md` — текущие findings и merge gate
+- как читать документы;
+- как запускать сервисы локально;
+- как работать с backlog;
+- как прогонять тесты и preview-сценарии.
 
-Все старые фазы считаются архивом в git history и в эти документы не переносятся.
+За product contract отвечает [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md).  
+За backlog отвечает [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md).  
+За review gate отвечает [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).  
+За server deploy и clean DB reset отвечает [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md).
+
+## Правила работы
+
+- перед реализацией читайте [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+- если задача затрагивает UX или data contract, сначала сверяйтесь с [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
+- после завершения задачи обновляйте статус в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+- не переходите к следующему блоку backlog, пока текущий не зафиксирован в задаче и review
+- пишите минимально необходимый код, без лишних абстракций
+- весь пользовательский UI-текст держите на русском языке
+- не добавляйте help/onboarding текст в интерфейс, если это не требуется задачей
 
 ## Короткий снимок проекта
 
-- backend: `FastAPI` + `Jinja2`
-- bot: `aiogram`
-- worker: polling loop
-- public views:
-  - `/catalog`
-  - `/catalog/strategies/{slug}`
-  - `/checkout/{product_id}`
-- miniapp views:
-  - `/app`
-  - `/app/catalog`
-  - `/app/help`
-  - `/app/status`
-  - `/app/payments`
-  - `/app/subscriptions`
-- staff views:
-  - `/login`
-  - `/admin/*`
-  - `/author/*`
-  - `/moderation/*`
+Сервисы:
 
-Важные факты текущего цикла:
-- canonical runtime env file = `.env`, sample template = `.env.example`;
-- `deploy/docker-compose.server.yml` и `deploy/migrate.sh` должны читать тот же `.env`;
-- для локального исследования без Docker основной режим = `APP_DATA_MODE=file`;
-- `api` не стартует без `INTERNAL_API_SECRET`;
-- `file`-mode работает поверх `storage/runtime/*`, поэтому локальные данные нужно периодически сбрасывать;
-- `db`-mode нужен только если вы реально хотите поднимать локальный PostgreSQL и проверять server-like сценарии;
-- для MVP-исследования `file`-mode удобнее и быстрее.
+- API: `./.venv/bin/python -m uvicorn pitchcopytrade.main:app --reload --host 127.0.0.1 --port 8000`
+- Bot: `./.venv/bin/python -m pitchcopytrade.bot.main`
+- Worker: `./.venv/bin/python -m pitchcopytrade.worker.main`
 
-## First-class preview mode
+Storage modes:
 
-Для локальной верстки без Telegram токенов и cookies включите:
+- `file` — основной локальный режим, читает `storage/runtime/*`
+- `db` — PostgreSQL режим для clean reset и server-like сценариев
 
-```bash
-export APP_PREVIEW_ENABLED=true
-```
+Важные env-факты:
 
-Preview surfaces:
+- canonical runtime env file = `.env`
+- template для локальной конфигурации = `.env.example`
+- `api` не стартует без `INTERNAL_API_SECRET`
+- `file`-mode быстрее для верстки, UI smoke и локального исследования
+- `db`-mode нужен, если вы реально проверяете clean schema, seeds и PostgreSQL path
 
-- `http://127.0.0.1:8000/preview`
-- `http://127.0.0.1:8000/preview/app/catalog`
-- `http://127.0.0.1:8000/preview/app/status`
-- `http://127.0.0.1:8000/preview/app/help`
-- `http://127.0.0.1:8000/preview/admin/dashboard`
-- `http://127.0.0.1:8000/preview/author/dashboard`
-
-Это локальный browser preview для layout work. Он не заменяет финальную проверку внутри Telegram WebApp.
-
-## Local dev access bootstrap
-
-Если нужен один локальный вход без Telegram/OAuth, откройте:
-
-- `http://127.0.0.1:8000/dev/bootstrap`
-
-Что делает bootstrap:
-
-- поднимает один staff-аккаунт с ролями `admin`, `author`, `moderator`;
-- ставит staff session cookie, staff mode cookie и Telegram fallback cookie поверх текущей session/cookie модели;
-- открывает нужную surface сразу в браузере;
-- работает только в `development`, `test` и `local` env.
-
-Bootstrap-аккаунт:
-
-- email: `dev-superuser@pitchcopytrade.local`
-- password: `local-dev-password`
-- Telegram ID: `999000099`
-
-Доступные режимы:
-
-- `admin` -> `/admin/dashboard`
-- `author` -> `/author/dashboard`
-- `moderator` -> `/moderation/queue`
-- `catalog` -> `/app/catalog`
-
-Это dev-only ускоритель для локального доступа. Он не заменяет preview mode и не должен использоваться как production path.
-
-## Локальный запуск без Docker
-
-### 1. Подготовка окружения
+## Подготовка окружения
 
 ```bash
 cd /Users/alexey/site/PitchCopyTrade
@@ -103,21 +55,18 @@ if [ ! -x ./.venv/bin/python ]; then
 fi
 ```
 
-Если зависимости уже стоят в `.venv`, этого достаточно.
+## Локальный запуск без Docker
 
-### 2. Сбросить mutable runtime перед воспроизводимой проверкой
+### Рекомендуемый режим: `file`
+
+Перед воспроизводимой проверкой очистите runtime:
 
 ```bash
 cd /Users/alexey/site/PitchCopyTrade
 bash scripts/clean_storage.sh --apply --fresh-runtime
 ```
 
-Зачем это нужно:
-- `storage/runtime/json/*` и `storage/runtime/blob/*` меняются во время локальных тестов;
-- после очистки file-mode заново поднимется от `storage/seed/*`;
-- без этого можно получить ложные результаты, потому что runtime уже "запомнил" старые локальные действия.
-
-### 3. Терминал 1: поднять `api`
+Запуск API:
 
 ```bash
 cd /Users/alexey/site/PitchCopyTrade
@@ -137,15 +86,7 @@ export TELEGRAM_BOT_USERNAME=local_preview_bot
 ./.venv/bin/python -m uvicorn pitchcopytrade.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Этого уже достаточно, чтобы:
-- смотреть public views;
-- тестировать GET/POST формы;
-- открывать miniapp screens в браузере через demo auth link;
-- править шаблоны и сразу видеть изменения.
-
-### 4. Терминал 2: поднять `worker` при необходимости
-
-Нужно только если вы исследуете lifecycle/reminder/scheduled сценарии.
+Запуск worker при необходимости:
 
 ```bash
 cd /Users/alexey/site/PitchCopyTrade
@@ -159,9 +100,7 @@ export INTERNAL_API_SECRET=local-internal-secret
 ./.venv/bin/python -m pitchcopytrade.worker.main
 ```
 
-### 5. Терминал 3: поднять `bot` только если есть реальный Telegram token
-
-Для обычной локальной верстки и HTML-проверок бот не нужен.
+Запуск bot только если есть реальный Telegram token:
 
 ```bash
 cd /Users/alexey/site/PitchCopyTrade
@@ -179,254 +118,117 @@ export TELEGRAM_BOT_USERNAME=<real-bot-username>
 ./.venv/bin/python -m pitchcopytrade.bot.main
 ```
 
-Без реального токена этот контур поднимать не нужно.
+### Когда использовать `db`
 
-### 6. Reproducible file-mode smoke profile
+Переходите в `APP_DATA_MODE=db`, только если хотите:
 
-Для повторяемых smoke-check'ов используйте профиль:
+- проверить `deploy/schema.sql`
+- сделать clean reset PostgreSQL
+- загрузить seed-данные в новую schema
+- прогнать db-mode regression suite
+
+Сам сценарий reset/migrate намеренно вынесен в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md), чтобы не дублировать server/db runbook здесь.
+
+## Preview и локальный доступ
+
+### Preview mode
+
+Для локальной верстки без Telegram token и auth cookies:
 
 ```bash
-source scripts/local_file_profile.sh
-bash scripts/local_file_smoke.sh
+export APP_PREVIEW_ENABLED=true
 ```
 
-Профиль выставляет `APP_PREVIEW_ENABLED=true` и проверяет preview/public URL в одном коротком прогоне.
+Основные preview URL:
+
+- `http://127.0.0.1:8000/preview`
+- `http://127.0.0.1:8000/preview/app/catalog`
+- `http://127.0.0.1:8000/preview/app/status`
+- `http://127.0.0.1:8000/preview/app/help`
+- `http://127.0.0.1:8000/preview/admin/dashboard`
+- `http://127.0.0.1:8000/preview/author/dashboard`
+
+### Dev bootstrap
+
+Для одного локального входа без Telegram/OAuth:
+
+- `http://127.0.0.1:8000/dev/bootstrap`
+
+Что делает bootstrap:
+
+- создает или поднимает local staff account с ролями `admin`, `author`, `moderator`
+- ставит staff/session cookies и Telegram fallback cookie
+- открывает нужную surface сразу в браузере
+- работает только в `development`, `test`, `local`
+
+Bootstrap-аккаунт:
+
+- email: `dev-superuser@pitchcopytrade.local`
+- password: `local-dev-password`
+- Telegram ID: `999000099`
+
+Доступные режимы:
+
+- `admin` -> `/admin/dashboard`
+- `author` -> `/author/dashboard`
+- `moderator` -> `/moderation/queue`
+- `catalog` -> `/app/catalog`
 
 ## Что открывать в браузере
 
-### Public views
-
-После старта `api`:
+Public:
 
 - `http://127.0.0.1:8000/catalog`
 - `http://127.0.0.1:8000/catalog/strategies/momentum-ru`
 - `http://127.0.0.1:8000/checkout/product-1`
 - `http://127.0.0.1:8000/legal/doc-disclaimer`
 
-Это хороший слой для:
-- быстрой проверки GET;
-- проверки form POST;
-- правки layout, typography, spacing, cards, CTA.
-
-### Mini App views: как открыть в обычном браузере
-
-Есть три уровня полезности.
-
-#### Вариант A — просто посмотреть entry screens
-
-Открыть напрямую:
+Mini App:
 
 - `http://127.0.0.1:8000/app`
-- `http://127.0.0.1:8000/miniapp`
-
-Это полезно для:
-- `app/miniapp_entry.html`
-- `public/miniapp_bootstrap.html`
-
-Но этого недостаточно для защищенных `/app/*` страниц.
-
-#### Вариант B — browser preview для настоящих `/app/*` screen'ов
-
-Сгенерируйте demo subscriber link:
-
-```bash
-cd /Users/alexey/site/PitchCopyTrade
-
-export APP_DATA_MODE=file
-export APP_STORAGE_ROOT=storage
-export BASE_URL=http://127.0.0.1:8000
-export ADMIN_BASE_URL=http://127.0.0.1:8000/admin
-export APP_SECRET_KEY=local-app-secret
-export INTERNAL_API_SECRET=local-internal-secret
-
-./.venv/bin/python - <<'PY'
-import asyncio
-from pitchcopytrade.repositories.public import FilePublicRepository
-from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
-from pitchcopytrade.auth.session import build_telegram_login_link_token
-
-async def main():
-    repo = FilePublicRepository()
-    user = await upsert_telegram_subscriber(
-        repo,
-        TelegramSubscriberProfile(
-            telegram_user_id=700000001,
-            username="local_subscriber",
-            first_name="Local",
-            last_name="Subscriber",
-            timezone_name="Asia/Almaty",
-        ),
-    )
-    await repo.commit()
-    print(
-        f"http://127.0.0.1:8000/tg-auth?token={build_telegram_login_link_token(user)}&next=/app/catalog"
-    )
-
-asyncio.run(main())
-PY
-```
-
-Откройте напечатанную ссылку один раз в браузере. Она:
-- поставит subscriber cookie;
-- перекинет вас в `/app/catalog`.
-
-После этого можно открывать и редактировать в браузере:
-
 - `http://127.0.0.1:8000/app/catalog`
 - `http://127.0.0.1:8000/app/help`
 - `http://127.0.0.1:8000/app/status`
-- `http://127.0.0.1:8000/app/payments`
-- `http://127.0.0.1:8000/app/subscriptions`
-- `http://127.0.0.1:8000/app/feed`
 
-Это сейчас лучший local-browser path для miniapp templates.
+Staff:
 
-#### Вариант C — финальная проверка в Telegram
+- `http://127.0.0.1:8000/login`
+- `http://127.0.0.1:8000/admin/dashboard`
+- `http://127.0.0.1:8000/author/dashboard`
+- `http://127.0.0.1:8000/moderation/queue`
 
-Browser preview не заменяет:
-- `Telegram.WebApp.initData`;
-- поведение настоящего webview;
-- deep link / web_app кнопки;
-- эффекты "одной вкладки" внутри Telegram.
+## Тесты и проверки
 
-Для финальной валидации miniapp-навигации нужен HTTPS и реальный запуск из Telegram.
-
-## Canonical validation checklist
-
-### Canonical preview URLs for design and layout work
-
-Use these URLs as the default browser-preview entry set:
-
-- `http://127.0.0.1:8000/preview`
-- `http://127.0.0.1:8000/preview/app/catalog`
-- `http://127.0.0.1:8000/preview/app/status`
-- `http://127.0.0.1:8000/preview/app/help`
-- `http://127.0.0.1:8000/preview/app/payments`
-- `http://127.0.0.1:8000/preview/app/subscriptions`
-- `http://127.0.0.1:8000/preview/admin/dashboard`
-- `http://127.0.0.1:8000/preview/author/dashboard`
-
-These are for local browser preview only. They are not a substitute for Telegram WebApp behavior.
-
-### Canonical real-device Telegram scenarios
-
-Check these flows in a real Telegram client:
-
-1. Open the bot and press `/start`.
-2. Open the bot and press `/help`.
-3. Launch the Mini App and confirm it lands on `/app/catalog`.
-4. Move from catalog to strategy detail and then to checkout without leaving the same webview.
-5. Open `/app/help` from inside the Mini App and return to catalog in the same webview.
-6. Confirm checkout submission creates a payment/subscription pair and returns a success screen.
-
-### Minimum smoke-check matrix
-
-- `public`
-  - `/catalog`
-  - `/catalog/strategies/{slug}`
-  - `/checkout/{product_id}`
-  - `/legal/{document_id}`
-- `miniapp`
-  - `/app/catalog`
-  - `/app/strategies/{slug}`
-  - `/app/help`
-  - `/app/status`
-  - `/app/payments`
-  - `/app/subscriptions`
-- `admin`
-  - `/login`
-  - `/admin/dashboard`
-  - one strategy edit screen
-  - one product edit screen
-- `author`
-  - `/author/dashboard`
-  - `/author/recommendations`
-  - inline recommendation create
-  - watchlist add/remove
-
-Keep browser preview and Telegram device checks separate when you report results.
-
-## Какие view править в первую очередь
-
-### Для главной и витрины
-
-- `src/pitchcopytrade/web/templates/public/catalog.html`
-- `src/pitchcopytrade/web/templates/public/strategy_detail.html`
-- `src/pitchcopytrade/web/templates/public/checkout.html`
-- `src/pitchcopytrade/web/templates/public/checkout_success.html`
-
-### Для Mini App entry/help/navigation
-
-- `src/pitchcopytrade/web/templates/app/miniapp_entry.html`
-- `src/pitchcopytrade/web/templates/public/miniapp_bootstrap.html`
-- `src/pitchcopytrade/web/templates/app/_miniapp_nav.html`
-- `src/pitchcopytrade/web/templates/app/help.html`
-- `src/pitchcopytrade/web/templates/app/status.html`
-- `src/pitchcopytrade/web/templates/app/payments.html`
-- `src/pitchcopytrade/web/templates/app/subscriptions.html`
-
-### Для bot/help/entry logic
-
-- `src/pitchcopytrade/bot/handlers/start.py`
-- `src/pitchcopytrade/api/routes/auth.py`
-- `src/pitchcopytrade/api/routes/public.py`
-- `src/pitchcopytrade/api/routes/app.py`
-
-## Как проверять GET и POST локально
-
-### Простые GET
+Полный suite:
 
 ```bash
-curl -i http://127.0.0.1:8000/health
-curl -i http://127.0.0.1:8000/ready
-curl -i http://127.0.0.1:8000/catalog
-curl -i 'http://127.0.0.1:8000/api/instruments?q=SBER'
+./.venv/bin/python -m pytest -q
 ```
 
-### Public checkout POST
+Точечные прогоны:
 
 ```bash
-curl -i -X POST http://127.0.0.1:8000/checkout/product-1 \
-  -d 'full_name=Local Tester' \
-  -d 'email=local@example.com' \
-  -d 'timezone_name=Asia/Almaty' \
-  -d 'lead_source_name=local_test' \
-  -d 'accepted_document_ids=doc-disclaimer' \
-  -d 'accepted_document_ids=doc-offer' \
-  -d 'accepted_document_ids=doc-privacy_policy' \
-  -d 'accepted_document_ids=doc-payment_consent'
+./.venv/bin/python -m pytest tests/test_health.py -q
+./.venv/bin/python -m pytest tests/test_health.py::test_metadata_route_returns_runtime_metadata -q
+./.venv/bin/python -m pytest -v
 ```
 
-Ожидаемое поведение в `file`-mode:
-- HTTP `201 Created`;
-- экран `Заявка создана`;
-- новые записи в `storage/runtime/json/payments.json` и `storage/runtime/json/subscriptions.json`.
-
-### Mini App GET после demo auth
-
-После открытия `tg-auth` ссылки можно делать:
+Синтаксическая проверка:
 
 ```bash
-curl -i http://127.0.0.1:8000/app/catalog
-curl -i http://127.0.0.1:8000/app/help
+./.venv/bin/python -m compileall src tests
 ```
 
-Но для `curl` уже понадобится cookie jar. Для обычной верстки проще открыть эти URL прямо в браузере после one-time auth link.
+Reproducible file-mode smoke:
 
-## Если нужен local PostgreSQL без Docker
+```bash
+source scripts/local_file_profile.sh
+bash scripts/local_file_smoke.sh
+```
 
-Это возможно, но не рекомендуется как основной путь для текущего MVP-исследования.
+## Где искать дальше
 
-Причина:
-- `db`-mode требует локальный PostgreSQL;
-- schema поднимается из `deploy/schema.sql`;
-- startup seeders добавляют инструменты и bootstrap admin, но не дают такой же быстрый subscriber-facing демо-контур, как `file`-mode.
-
-Для дизайна и subscriber flow сначала используйте `file`-mode.
-
-## Ограничения текущего исследования
-
-- `Straddle.pdf` — image-based PDF. Он годится как визуальный reference, но не как полноценный текстовый источник для автоматического анализа.
-- текущий `/api/instruments` еще не использует `meta.pbull.kz`;
-- browser preview Mini App пока технический, а не first-class dev mode;
-- one-tab behavior надо проверять именно в Telegram, а не только в Chrome/Safari.
+- product/UX/data decisions: [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
+- backlog и implementation phases: [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+- review findings и merge gate: [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
+- db-mode reset, schema, server smoke, SMTP, bot transport: [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md)

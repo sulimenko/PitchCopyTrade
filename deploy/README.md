@@ -1,26 +1,46 @@
-# Server Deploy
+# Server Deploy And Clean DB Reset
 
-Этот каталог хранит только те server-артефакты, которые реально есть в репозитории:
+Этот файл отвечает только за server/db контур:
+
+- server deploy артефакты
+- clean reset PostgreSQL schema
+- db-mode startup после reset
+- SMTP smoke-check
+- live log capture
+- bot transport troubleshooting
+
+Локальный runbook и contributor workflow вынесены в [doc/README.md](/Users/alexey/site/PitchCopyTrade/doc/README.md).  
+Product contract, backlog и review gate вынесены в:
+
+- [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
+- [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+- [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
+
+## Актуальные deploy-артефакты
+
+В репозитории реально поддерживаются:
+
 - `.env.example`
 - `deploy/docker-compose.server.yml`
 - `deploy/nginx/pct.test.ptfin.ru.conf`
 - `deploy/migrate.sh`
+- `deploy/schema.sql`
 
-Старого local-dev `docker-compose.yml` больше нет.
+Корневого local-dev `docker-compose.yml` больше нет.  
 Также в репозитории нет `deploy/docker-compose.server.shared.yml`, поэтому shared-override сценарии из старых описаний больше не считаются актуальным контрактом.
 
-## Layout
+## Server layout
 
 - `/var/www/pct`
   - root проекта
 - `/var/www/pct/.env`
-  - секреты сервера
+  - runtime env сервера
 - `/var/www/pct/storage/seed`
   - seed data
 - `/var/www/pct/storage/runtime`
   - runtime files
 
-## Fast path
+## Fast path: server deploy
 
 1. `cd /var/www`
 2. `git clone <REPO_URL> pct`
@@ -32,21 +52,49 @@
 8. `docker compose -f deploy/docker-compose.server.yml build`
 9. `docker compose -f deploy/docker-compose.server.yml up -d`
 
-## Important
+## Clean DB Reset Contract
 
-- перед использованием server-артефактов сверяйте их между собой: compose, nginx и `.env` в репозитории не покрывают альтернативные режимы за пределами текущего файла `deploy/docker-compose.server.yml`
+Единый воспроизводимый db-mode сценарий:
+
+1. `cp .env.example .env`
+2. заполнить `.env` для PostgreSQL
+3. `bash deploy/migrate.sh --reset`
+4. убедиться, что seed data лежат в `storage/seed`
+5. поднять приложение в `APP_DATA_MODE=db`
+6. прогнать smoke/regression suite
+
+Важно:
+
+- `deploy/schema.sql` является единственным источником правды для clean reset
+- legacy `recommendation_*` schema path не поддерживается
+- `deploy/migrate.sh` читает `.env`
+- storage reset выполняется отдельно внутри `deploy/migrate.sh --reset`
+
+## Команды миграции
+
+```bash
+bash deploy/migrate.sh
+bash deploy/migrate.sh --reset
+```
+
+Что делает `--reset`:
+
+1. дропает `public` schema
+2. пересоздает `public`
+3. очищает `storage`
+4. заново применяет `deploy/schema.sql`
+
+## Важные замечания
+
+- перед использованием server-артефактов сверяйте compose, nginx и `.env` между собой
 - nginx или другой reverse proxy обязан передавать:
   - `X-Forwarded-Proto`
   - `X-Forwarded-For`
-- Telegram Login Widget требует корректный `BASE_URL` и `@BotFather /setdomain`
+- Telegram Login Widget требует корректный `BASE_URL` и настройку `@BotFather /setdomain`
 - для staff onboarding по email должны быть заполнены `SMTP_*` поля в `.env`
 - если `SMTP_PASSWORD` пустой или начинается с `__FILL_ME__`, invite email не отправится
-- staff redesign, current review gate и local preview/runbook описаны в:
-  - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
-  - [review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
-  - [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 
-## SMTP quick check
+## SMTP Quick Check
 
 1. Заполнить в `.env`:
    - `SMTP_HOST`
@@ -58,23 +106,23 @@
    - `SMTP_FROM_NAME`
 2. Перезапустить `api`:
    - `docker compose -f deploy/docker-compose.server.yml up -d --build api`
-3. Создать тестового `author` или `admin` из staff UI.
+3. Создать тестового `author` или `admin` из staff UI
 4. Проверить:
-   - письмо сотруднику;
-   - контрольное письмо действующим администраторам;
-   - badge `отправлено` или `ошибка отправки` в реестре.
-5. Если письмо не ушло, смотреть:
+   - письмо сотруднику
+   - контрольное письмо действующим администраторам
+   - badge `отправлено` или `ошибка отправки` в реестре
+5. Если письмо не ушло:
    - `docker compose -f deploy/docker-compose.server.yml logs --tail=200 api`
 
-## V3 live smoke-check and log capture
+## Live Smoke And Log Capture
 
-Этот runbook нужен для live-части `V3` из `doc/task.md`: создать подписчика, создать и опубликовать рекомендацию, затем снять логи по цепочке доставки.
+Этот runbook нужен для live server-проверки публикации и доставки.
 
-### 1. Выбрать compose command
+### 1. Compose command
 
 - `export COMPOSE_SERVER="docker compose -f deploy/docker-compose.server.yml"`
 
-### 2. Подготовить директорию для артефактов
+### 2. Директория артефактов
 
 1. `cd /var/www/pct`
 2. `export V3_LOG_DIR="/var/www/pct/tmp/v3-smoke-$(date -u +%Y%m%dT%H%M%SZ)"`
@@ -82,29 +130,27 @@
 4. `$COMPOSE_SERVER ps > "$V3_LOG_DIR/compose-ps.txt"`
 5. `$COMPOSE_SERVER logs --tail=200 api worker > "$V3_LOG_DIR/preflight.log"`
 
-### 3. Включить live-follow лог в отдельной сессии
-
-Запустить до начала smoke-сценария и оставить открытым:
+### 3. Live follow
 
 ```bash
 $COMPOSE_SERVER logs --since=1m -f api worker | tee "$V3_LOG_DIR/live-follow.log"
 ```
 
-Если отдельно проверяется transport до Telegram API, параллельно можно смотреть:
+Если отдельно проверяется transport до Telegram API:
 
 ```bash
 $COMPOSE_SERVER logs --since=1m -f bot | tee "$V3_LOG_DIR/bot-follow.log"
 ```
 
-### 4. Выполнить live V3 сценарий
+### 4. Сценарий
 
-1. Создать тестового подписчика и активную подписку.
-2. Создать recommendation через `/author/recommendations`.
-3. Опубликовать recommendation.
-4. Если проверяется scheduled path, дождаться worker tick или принудительно дождаться ближайшего цикла.
-5. Если SMTP настроен и проверяется email часть, повторить сценарий с подписчиком, у которого есть email.
+1. Создать тестового подписчика и активную подписку
+2. Создать сообщение через author surface
+3. Опубликовать сообщение
+4. Для scheduled path дождаться worker tick
+5. Для email path повторить сценарий с пользователем, у которого есть email
 
-### 5. Снять итоговые логи после сценария
+### 5. Итоговые логи
 
 ```bash
 $COMPOSE_SERVER logs --since=30m api > "$V3_LOG_DIR/api.log"
@@ -112,7 +158,7 @@ $COMPOSE_SERVER logs --since=30m worker > "$V3_LOG_DIR/worker.log"
 $COMPOSE_SERVER logs --since=30m bot > "$V3_LOG_DIR/bot.log"
 ```
 
-Собрать короткую выжимку по ключевым маркерам:
+Короткая выжимка:
 
 ```bash
 rg -n "scheduled_publish|notification|Immediate notification delivery failed|Failed to deliver recommendation notification|SMTP|Traceback|ERROR|EXCEPTION" \
@@ -120,61 +166,38 @@ rg -n "scheduled_publish|notification|Immediate notification delivery failed|Fai
   > "$V3_LOG_DIR/highlights.txt" || true
 ```
 
-При необходимости упаковать всё в один архив:
-
-```bash
-tar -czf "$V3_LOG_DIR.tar.gz" -C "$(dirname "$V3_LOG_DIR")" "$(basename "$V3_LOG_DIR")"
-```
-
 ### 6. Что считать нормой
 
 - immediate publish:
-  - в `api.log` нет `Traceback` и нет `Immediate notification delivery failed`
-  - нет строк `Failed to deliver recommendation notification` для нужного `chat_id`
+  - в `api.log` нет `Traceback`
+  - нет `Immediate notification delivery failed`
 - scheduled publish:
   - в `worker.log` есть `scheduled_publish tick:`
   - нет `EXCEPTION`/`Traceback` во время публикации и доставки
 - email часть:
-  - нет SMTP errors в том процессе, который инициировал доставку
+  - нет SMTP errors в процессе, который инициировал доставку
 
-### 7. Что приложить по итогам smoke-проверки
-
-- путь к каталогу `$V3_LOG_DIR`
-- `compose-ps.txt`
-- `highlights.txt`
-- указание, какой path проверялся:
-  - immediate publish через `api`
-  - scheduled publish через `worker`
-  - email smoke при наличии SMTP
-  - transport smoke через `bot`, если была проблема связи с Telegram
-
-## Telegram bot troubleshooting
+## Telegram Bot Troubleshooting
 
 Если `bot` падает на `api.telegram.org:443`, это transport/runtime проблема, а не product-flow ошибка.
 
-Проверить по порядку:
-1. системное время на хосте;
-2. DNS-резолвинг именно из контейнера `bot`;
-3. исходящий `443` до `api.telegram.org` именно из контейнера;
-4. CA/cert trust внутри образа;
-5. логи `bot` после старта и после автоматического retry.
+Проверять по порядку:
+
+1. системное время на хосте
+2. DNS-резолвинг из контейнера `bot`
+3. исходящий `443` из контейнера
+4. CA/cert trust внутри образа
+5. логи `bot` после старта и retry
 
 Runbook:
+
 - `docker compose -f deploy/docker-compose.server.yml logs --tail=200 bot`
 - `docker compose -f deploy/docker-compose.server.yml exec bot getent hosts api.telegram.org`
 - `docker compose -f deploy/docker-compose.server.yml exec bot curl -I https://api.telegram.org`
 - `docker compose -f deploy/docker-compose.server.yml exec bot date -u`
 - `docker compose -f deploy/docker-compose.server.yml exec bot python -m pitchcopytrade.bot.main --smoke-check`
-- убедиться, что после временного network/TLS сбоя в логах появляются retry/backoff сообщения, а затем `Telegram smoke check ok` и запуск polling
-
-Post-deploy smoke-check:
-1. `docker compose -f deploy/docker-compose.server.yml up -d bot`
-2. `docker compose -f deploy/docker-compose.server.yml logs --tail=200 -f bot`
-3. проверить, что bot доходит до `getMe` и затем до polling без ручного `restart`
-4. дополнительно выполнить:
-   - `docker compose -f deploy/docker-compose.server.yml exec bot python -m pitchcopytrade.bot.main --smoke-check`
-5. если во время старта есть временный DNS/TLS timeout, bot должен продолжить retry сам; ручной redeploy всего стека не нужен
 
 Требование к коду:
-- единичный network/TLS сбой не должен завершать bot-contour навсегда;
-- bot обязан сам восстанавливать polling через retry/backoff.
+
+- единичный network/TLS сбой не должен завершать bot-contour навсегда
+- bot обязан восстанавливать polling через retry/backoff

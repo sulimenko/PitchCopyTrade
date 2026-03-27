@@ -625,7 +625,7 @@ async def app_payment_retry(
     return RedirectResponse(url=f"/app/payments/{result.payment.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.get("/recommendations/{recommendation_id}", response_class=HTMLResponse)
+@router.get("/messages/{recommendation_id}", response_class=HTMLResponse)
 async def recommendation_detail_page(
     recommendation_id: str,
     request: Request,
@@ -641,14 +641,15 @@ async def recommendation_detail_page(
         recommendation_id=recommendation_id,
     )
     if recommendation is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
     return templates.TemplateResponse(
         request,
-        "app/recommendation_detail.html",
+        "app/message_detail.html",
         {
-            "title": recommendation.title or "Рекомендация",
+            "title": recommendation.title or "Сообщение",
             "user": user,
-            "recommendation": recommendation,
+            "message": recommendation,
+            "thread_messages": [recommendation],
             "preview_mode": False,
             "attachment_download_enabled": True,
             **_build_miniapp_context("feed", user=user, snapshot=snapshot),
@@ -656,7 +657,7 @@ async def recommendation_detail_page(
     )
 
 
-@router.get("/recommendations/{recommendation_id}/attachments/{attachment_id}")
+@router.get("/messages/{recommendation_id}/attachments/{attachment_id}")
 async def recommendation_attachment_download(
     recommendation_id: str,
     attachment_id: str,
@@ -673,18 +674,23 @@ async def recommendation_attachment_download(
         recommendation_id=recommendation_id,
     )
     if recommendation is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
 
-    attachment = next((item for item in recommendation.attachments if item.id == attachment_id), None)
+    attachment = next((item for item in recommendation.documents if item.get("id") == attachment_id), None)
     if attachment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
 
     try:
-        payload = LocalFilesystemStorage().download_bytes(attachment.object_key)
+        payload = LocalFilesystemStorage().download_bytes(str(attachment.get("key") or attachment.get("object_key")))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment file not found") from exc
-    headers = {"Content-Disposition": f'attachment; filename="{attachment.original_filename}"'}
-    return StreamingResponse(iter([payload]), media_type=attachment.content_type, headers=headers)
+    filename = attachment.get("name") or attachment.get("title") or attachment.get("original_filename") or "attachment"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        iter([payload]),
+        media_type=attachment.get("type") or attachment.get("content_type") or "application/octet-stream",
+        headers=headers,
+    )
 
 
 async def _get_subscriber_or_redirect(request: Request, repository: AuthRepository) -> User | Response:

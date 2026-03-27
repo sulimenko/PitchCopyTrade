@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
+from html import escape
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,8 +14,8 @@ from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import BundleMember, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg, RecommendationMessage
-from pitchcopytrade.db.models.enums import PaymentStatus, SubscriptionStatus
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import MessageDeliver, MessageStatus, PaymentStatus, SubscriptionStatus
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 
@@ -32,130 +33,144 @@ class ReminderStats:
     skipped: int = 0
 
 
-async def list_recommendation_recipient_telegram_ids(
+async def list_message_recipient_telegram_ids(
     session: AsyncSession,
-    recommendation: Recommendation,
+    message: Message,
 ) -> list[int]:
+    bundle_strategy_ids = await _bundle_strategy_ids_for_message(session, message)
     query = (
-        select(User.telegram_user_id)
-        .join(Subscription, Subscription.user_id == User.id)
+        select(Subscription, SubscriptionProduct, User.telegram_user_id)
+        .join(User, Subscription.user_id == User.id)
         .join(SubscriptionProduct, Subscription.product_id == SubscriptionProduct.id)
         .where(
             User.telegram_user_id.is_not(None),
             Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-            or_(
-                SubscriptionProduct.strategy_id == recommendation.strategy_id,
-                SubscriptionProduct.author_id == recommendation.author_id,
-                SubscriptionProduct.bundle_id.in_(
-                    select(BundleMember.bundle_id).where(BundleMember.strategy_id == recommendation.strategy_id)
-                ),
-            ),
         )
-        .distinct()
     )
     result = await session.execute(query)
-    return [int(item) for item in result.scalars().all() if item is not None]
+    recipients: set[int] = set()
+    for _subscription, product, telegram_user_id in result.all():
+        if telegram_user_id is None:
+            continue
+        if _subscription_matches_message(message, product=product, bundle_strategy_ids=bundle_strategy_ids):
+            recipients.add(int(telegram_user_id))
+    return sorted(recipients)
 
 
-def build_recommendation_notification_text(recommendation: Recommendation) -> str:
-    title = recommendation.title or recommendation.strategy.title
-    payload = recommendation.recommendation_payload or {}
-    first_message = recommendation.messages[0] if getattr(recommendation, "messages", None) else None
+async def _bundle_strategy_ids_for_message(session: AsyncSession, message: Message) -> set[str]:
+    if message.strategy_id is None:
+        return set()
+    query = select(BundleMember.bundle_id).where(BundleMember.strategy_id == message.strategy_id)
+    result = await session.execute(query)
+    bundle_ids = [item for item in result.scalars().all() if item is not None]
+    if not bundle_ids:
+        return set()
+    bundle_result = await session.execute(select(BundleMember.strategy_id).where(BundleMember.bundle_id.in_(bundle_ids)))
+    return {item for item in bundle_result.scalars().all() if item is not None}
+
+
+def _subscription_matches_message(
+    message: Message,
+    *,
+    product: SubscriptionProduct,
+    bundle_strategy_ids: set[str],
+) -> bool:
+    deliver = {str(item).strip() for item in (message.deliver or []) if str(item).strip()}
+    if not deliver:
+        return False
+    if MessageDeliver.STRATEGY.value in deliver and product.strategy_id == message.strategy_id:
+        return True
+    if MessageDeliver.AUTHOR.value in deliver and product.author_id == message.author_id:
+        return True
+    if MessageDeliver.BUNDLE.value in deliver and product.bundle_id is not None and message.strategy_id in bundle_strategy_ids:
+        return True
+    return False
+
+
+def build_message_notification_text(message: Message) -> str:
+    title = message.title or (message.strategy.title if message.strategy is not None else "Публикация")
+    text_payload = message.text or {}
     lines = [
-        "Новая публикация по вашей подписке",
-        f"{title}",
-        f"Стратегия: {recommendation.strategy.title}",
-        f"Тип: {recommendation.kind.value}",
+        "<b>Новая публикация по вашей подписке</b>",
+        f"<b>{escape(str(title))}</b>",
+        f"Стратегия: {escape(message.strategy.title) if message.strategy is not None else 'не указана'}",
+        f"Тип: {escape(str(message.kind))}",
     ]
-    if payload.get("mode") == "text" and payload.get("text"):
-        lines.append(str(payload["text"]))
-    elif payload.get("mode") == "document" and payload.get("document_caption"):
-        lines.append(str(payload["document_caption"]))
-    elif payload.get("mode") == "structured":
-        structured_bits = []
-        if payload.get("instrument_id"):
-            structured_bits.append(f"instrument={payload['instrument_id']}")
-        if payload.get("side"):
-            structured_bits.append(f"side={payload['side']}")
-        if payload.get("price"):
-            structured_bits.append(f"price={payload['price']}")
-        if payload.get("quantity"):
-            structured_bits.append(f"qty={payload['quantity']}")
-        if payload.get("amount"):
-            structured_bits.append(f"sum={payload['amount']}")
-        if structured_bits:
-            lines.append("Structured: " + ", ".join(structured_bits))
-    elif recommendation.summary:
-        lines.append(recommendation.summary)
-    elif first_message and first_message.body:
-        lines.append(first_message.body)
-    if recommendation.legs:
-        first_leg = recommendation.legs[0]
-        instrument = first_leg.instrument.ticker if first_leg.instrument else "инструмент"
+    body = str(text_payload.get("body") or text_payload.get("plain") or "").strip()
+    if body:
+        lines.append(body)
+    if message.documents:
+        lines.append(f"Документов: {len(message.documents)}")
+    if message.deals:
+        first_deal = message.deals[0]
         lines.append(
-            f"Leg: {instrument} {first_leg.side.value if first_leg.side else 'n/a'} "
-            f"{first_leg.entry_from or 'n/a'}"
+            "Deal: "
+            f"{escape(str(first_deal.get('ticker') or first_deal.get('instrument') or first_deal.get('instrument_id') or 'инструмент'))} "
+            f"{escape(str(first_deal.get('side') or 'n/a'))} "
+            f"{escape(str(first_deal.get('price') or first_deal.get('entry_from') or 'n/a'))}"
         )
-    if recommendation.attachments:
-        lines.append(f"Вложений: {len(recommendation.attachments)}")
     return "\n".join(lines)
 
 
-async def get_recommendation_for_notification(
+async def get_message_for_notification(
     session: AsyncSession,
-    recommendation_id: str,
-) -> Recommendation | None:
+    message_id: str,
+) -> Message | None:
     query = (
-        select(Recommendation)
+        select(Message)
         .options(
-            selectinload(Recommendation.strategy),
-            selectinload(Recommendation.legs).selectinload(RecommendationLeg.instrument),
-            selectinload(Recommendation.attachments),
-            selectinload(Recommendation.messages).selectinload(RecommendationMessage.created_by_user),
+            selectinload(Message.strategy),
+            selectinload(Message.author),
+            selectinload(Message.bundle),
+            selectinload(Message.user),
+            selectinload(Message.moderator),
         )
-        .where(Recommendation.id == recommendation_id)
+        .where(Message.id == message_id)
     )
     result = await session.execute(query)
     return result.scalar_one_or_none()
 
 
-async def deliver_recommendation_notifications_by_id(
+async def deliver_message_notifications_by_id(
     session: AsyncSession,
-    recommendation_id: str,
+    message_id: str,
     notifier,
     *,
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
 ) -> list[int] | None:
-    recommendation = await get_recommendation_for_notification(session, recommendation_id)
-    if recommendation is None:
+    message = await get_message_for_notification(session, message_id)
+    if message is None:
         return None
-    return await deliver_recommendation_notifications(
+    return await deliver_message_notifications(
         session,
-        recommendation,
+        message,
         notifier,
         trigger=trigger,
         attempts=attempts,
     )
 
 
-async def deliver_recommendation_notifications(
+async def deliver_message_notifications(
     session: AsyncSession,
-    recommendation: Recommendation,
+    message: Message,
     notifier,
     *,
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
 ) -> list[int]:
-    recipients = await list_recommendation_recipient_telegram_ids(session, recommendation)
+    recipients = await list_message_recipient_telegram_ids(session, message)
 
     # P3.4: Log delivery information
-    logger.info("Delivery for rec %s: found %d recipients", recommendation.id, len(recipients))
+    logger.info("Delivery for message %s: found %d recipients", message.id, len(recipients))
     if len(recipients) == 0:
-        logger.warning("No recipients for rec %s (strategy=%s): no active subscriptions with telegram_user_id",
-                      recommendation.id, recommendation.strategy_id)
+        logger.warning(
+            "No recipients for message %s (strategy=%s): no active subscriptions with telegram_user_id",
+            message.id,
+            message.strategy_id,
+        )
 
-    text = build_recommendation_notification_text(recommendation)
+    text = build_message_notification_text(message)
     delivered: list[int] = []
     for chat_id in recipients:
         if await _send_with_retry(notifier.send_message, chat_id, text, attempts=attempts):
@@ -164,8 +179,8 @@ async def deliver_recommendation_notifications(
     session.add(
         AuditEvent(
             actor_user_id=None,
-            entity_type="recommendation",
-            entity_id=recommendation.id,
+            entity_type="message",
+            entity_id=message.id,
             action="notification.delivery",
             payload={
                 "recipient_count": len(delivered),
@@ -180,33 +195,40 @@ async def deliver_recommendation_notifications(
     return delivered
 
 
-async def deliver_recommendation_notifications_file(
+async def deliver_message_notifications_file(
     graph: FileDatasetGraph,
     store: FileDataStore,
-    recommendation: Recommendation,
+    message: Message,
     notifier,
     *,
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
 ) -> list[int]:
+    bundle_ids = {
+        subscription.product.bundle_id
+        for subscription in graph.subscriptions.values()
+        if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES
+        and subscription.product is not None
+        and subscription.product.bundle_id is not None
+    }
+    bundle_strategy_ids = {
+        member.strategy_id
+        for member in graph.bundle_members
+        if member.bundle_id in bundle_ids
+    }
     recipients = {
         subscription.user.telegram_user_id
         for subscription in graph.subscriptions.values()
         if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES
         and subscription.user.telegram_user_id is not None
-        and (
-            subscription.product.strategy_id == recommendation.strategy_id
-            or subscription.product.author_id == recommendation.author_id
-            or (
-                subscription.product.bundle_id is not None
-                and any(
-                    member.bundle_id == subscription.product.bundle_id and member.strategy_id == recommendation.strategy_id
-                    for member in graph.bundle_members
-                )
-            )
+        and subscription.product is not None
+        and _subscription_matches_message(
+            message,
+            product=subscription.product,
+            bundle_strategy_ids=bundle_strategy_ids,
         )
     }
-    text = build_recommendation_notification_text(recommendation)
+    text = build_message_notification_text(message)
     delivered: list[int] = []
     for chat_id in sorted(int(item) for item in recipients if item is not None):
         if await _send_with_retry(notifier.send_message, chat_id, text, attempts=attempts):
@@ -215,8 +237,8 @@ async def deliver_recommendation_notifications_file(
     graph.add(
         AuditEvent(
             actor_user_id=None,
-            entity_type="recommendation",
-            entity_id=recommendation.id,
+            entity_type="message",
+            entity_id=message.id,
             action="notification.delivery",
             payload={
                 "recipient_count": len(delivered),
@@ -246,11 +268,11 @@ async def _send_with_retry(
             return True
         except Exception:
             logger.exception(
-                "Failed to deliver recommendation notification to chat_id=%s attempt=%s/%s",
-                chat_id,
-                attempt,
-                attempts,
-            )
+            "Failed to deliver message notification to chat_id=%s attempt=%s/%s",
+            chat_id,
+            attempt,
+            attempts,
+        )
     return False
 
 

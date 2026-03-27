@@ -101,8 +101,7 @@ def _write_runtime_dataset(store: FileDataStore) -> None:
         ],
         "user_consents": [],
         "recommendations": [],
-        "recommendation_legs": [],
-        "recommendation_attachments": [],
+        "messages": [],
         "audit_events": [],
     }
     for name, data in payload.items():

@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock
 import pytest
 from starlette.datastructures import FormData, Headers, UploadFile
 
-from pitchcopytrade.api.routes.author import _deliver_author_publish_notifications
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Subscription
+from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.services.author import (
     RecommendationFormData,
     StructuredLegFormData,
@@ -23,21 +23,21 @@ from pitchcopytrade.services.author import (
     search_author_watchlist_candidates,
     update_author_recommendation,
 )
-from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     InstrumentType,
     ProductType,
-    RecommendationKind,
-    RecommendationStatus,
+    MessageKind,
+    MessageStatus,
+    MessageType,
     RiskLevel,
     StrategyStatus,
     SubscriptionStatus,
-    TradeSide,
     UserStatus,
 )
 from pitchcopytrade.repositories.author import FileAuthorRepository
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.notifications import deliver_message_notifications_file
 from pitchcopytrade.storage.local import LocalFilesystemStorage
 
 
@@ -97,6 +97,9 @@ def test_build_recommendation_form_data_parses_structured_leg() -> None:
     assert len(payload.legs) == 1
     assert payload.legs[0].instrument_id == "instrument-1"
     assert str(payload.legs[0].entry_from) == "101.5"
+    assert payload.kind == MessageKind.IDEA
+    assert payload.status == MessageStatus.DRAFT
+    assert payload.message_type == MessageType.MIXED
 
 
 def test_build_recommendation_form_data_allows_minimal_inline_leg() -> None:
@@ -129,7 +132,7 @@ def test_build_recommendation_form_data_allows_minimal_inline_leg() -> None:
         attachments=[],
     )
 
-    assert payload.kind.value == "new_idea"
+    assert payload.kind.value == "idea"
     assert payload.legs[0].instrument_id == "instrument-1"
     assert payload.legs[0].entry_from is None
     assert payload.legs[0].take_profit_1 is None
@@ -154,8 +157,8 @@ def test_build_leg_rows_from_form_preserves_dynamic_indexes() -> None:
     assert rows[1]["side"] == "sell"
 
 
-def test_build_recommendation_form_data_requires_at_least_one_leg() -> None:
-    with pytest.raises(ValueError, match="Для structured message нужен инструмент"):
+def test_build_recommendation_form_data_requires_content() -> None:
+    with pytest.raises(ValueError, match="Для mixed message нужен хотя бы один блок контента"):
         build_recommendation_form_data(
             strategy_id="strategy-1",
             kind_value="new_idea",
@@ -215,24 +218,33 @@ async def test_remove_recommendation_attachments_deletes_local_blob(tmp_path) ->
             self.deleted.append(entity)
 
     repository = DummyRepository()
-    recommendation = Recommendation(id="rec-1", strategy_id="strategy-1", author_id="author-1")
-    attachment = RecommendationAttachment(
-        id="att-1",
-        recommendation_id="rec-1",
-        object_key="recommendations/rec-1/file.pdf",
-        original_filename="idea.pdf",
-        content_type="application/pdf",
-        size_bytes=8,
+    recommendation = Message(
+        id="rec-1",
+        strategy_id="strategy-1",
+        author_id="author-1",
+        thread="rec-1",
+        kind=MessageKind.IDEA.value,
+        type=MessageType.DOCUMENT.value,
+        status=MessageStatus.DRAFT.value,
+        moderation="required",
+        documents=[
+            {
+                "id": "att-1",
+                "object_key": "messages/rec-1/file.pdf",
+                "original_filename": "idea.pdf",
+                "content_type": "application/pdf",
+                "size_bytes": 8,
+            }
+        ],
     )
-    recommendation.attachments = [attachment]
     storage = LocalFilesystemStorage(root_dir=tmp_path / "storage" / "blob")
-    storage.upload_bytes(attachment.object_key, b"pdf-data", "application/pdf")
+    storage.upload_bytes("messages/rec-1/file.pdf", b"pdf-data", "application/pdf")
 
     await remove_recommendation_attachments(repository, recommendation, ["att-1"], storage=storage)
 
-    assert recommendation.attachments == []
-    assert repository.deleted == [attachment]
-    assert not (tmp_path / "storage" / "blob" / "recommendations" / "rec-1" / "file.pdf").exists()
+    assert recommendation.documents == []
+    assert repository.deleted == []
+    assert not (tmp_path / "storage" / "blob" / "messages" / "rec-1" / "file.pdf").exists()
 
 
 @pytest.mark.asyncio
@@ -375,55 +387,29 @@ async def test_file_mode_smoke_publish_notifies_active_subscriber(tmp_path, monk
     repository = FileAuthorRepository(store)
     author = repository.graph.authors["author-1"]
 
-    draft = RecommendationFormData(
-        strategy_id="strategy-1",
-        kind=RecommendationKind.NEW_IDEA,
-        status=RecommendationStatus.DRAFT,
-        title="Покупка SBER",
-        summary="Сильный спрос",
-        thesis="Рост оборотов",
-        market_context="Рынок подтверждает импульс",
-        requires_moderation=False,
-        scheduled_for=None,
-        legs=[
-            StructuredLegFormData(
-                instrument_id="instrument-1",
-                side=TradeSide.BUY,
-                entry_from=101.5,
-                entry_to=None,
-                stop_loss=99.9,
-                take_profit_1=106.2,
-                take_profit_2=None,
-                take_profit_3=None,
-                time_horizon="1-3 дня",
-                note="Основной вход",
-            )
-        ],
-        attachments=[],
-    )
-    recommendation = await create_author_recommendation(repository, author, draft, uploaded_by_user_id=author.user_id)
-
     published = RecommendationFormData(
         strategy_id="strategy-1",
-        kind=RecommendationKind.NEW_IDEA,
-        status=RecommendationStatus.PUBLISHED,
+        kind=MessageKind.IDEA,
+        status=MessageStatus.PUBLISHED,
         title="Покупка SBER",
-        summary="Сильный спрос",
-        thesis="Рост оборотов",
-        market_context="Рынок подтверждает импульс",
+        deliver=["strategy"],
+        channel=["telegram"],
+        moderation="required",
+        message_type=MessageType.TEXT,
+        text_body="<p>Сильный спрос</p>",
+        text_plain="Сильный спрос",
+        documents=[],
+        deals=[],
+        schedule=datetime(2026, 3, 12, 10, 0, tzinfo=timezone.utc),
+        published=datetime(2026, 3, 12, 10, 0, tzinfo=timezone.utc),
         requires_moderation=False,
-        scheduled_for=None,
-        legs=draft.legs,
+        scheduled_for=datetime(2026, 3, 12, 10, 0, tzinfo=timezone.utc),
+        legs=[],
         attachments=[],
     )
-    recommendation = await update_author_recommendation(
-        repository,
-        recommendation,
-        published,
-        uploaded_by_user_id=author.user_id,
-    )
-    assert recommendation.status is RecommendationStatus.PUBLISHED
-    assert recommendation.published_at is not None
+    recommendation = await create_author_recommendation(repository, author, published, uploaded_by_user_id=author.user_id)
+    assert recommendation.status == MessageStatus.PUBLISHED.value
+    assert recommendation.published is not None
 
     fake_bot = type(
         "FakeBot",
@@ -433,26 +419,11 @@ async def test_file_mode_smoke_publish_notifies_active_subscriber(tmp_path, monk
             "session": type("FakeSession", (), {"close": AsyncMock()})(),
         },
     )()
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.create_bot", lambda _token: fake_bot)
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.author.get_settings",
-        lambda: type(
-            "Settings",
-            (),
-            {
-                "telegram": type(
-                    "Telegram",
-                    (),
-                    {"bot_token": type("Secret", (), {"get_secret_value": lambda self: "token"})()},
-                )(),
-            },
-        )(),
-    )
-
-    await _deliver_author_publish_notifications(
-        repository=repository,
-        author=author,
-        recommendation_id=recommendation.id,
+    await deliver_message_notifications_file(
+        repository.graph,
+        store,
+        recommendation,
+        fake_bot,
         trigger="author_publish_smoke",
     )
 
@@ -460,7 +431,6 @@ async def test_file_mode_smoke_publish_notifies_active_subscriber(tmp_path, monk
     chat_id, text = fake_bot.send_message.await_args.args
     assert chat_id == 777000
     assert "Покупка SBER" in text
-    fake_bot.session.close.assert_awaited_once()
 
     reloaded = FileAuthorRepository(store)
     delivery_events = [

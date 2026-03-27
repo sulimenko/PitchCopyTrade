@@ -12,7 +12,7 @@ from pitchcopytrade.db.models.enums import sql_enum
 
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.accounts import User
-    from pitchcopytrade.db.models.content import Recommendation
+    from pitchcopytrade.db.models.content import Message
 
 
 class NotificationChannelEnum(str, enum.Enum):
@@ -23,9 +23,7 @@ class NotificationChannelEnum(str, enum.Enum):
 class NotificationLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "notification_log"
 
-    recommendation_id: Mapped[str | None] = mapped_column(
-        ForeignKey("recommendations.id", ondelete="SET NULL"), nullable=True
-    )
+    message_id: Mapped[str | None] = mapped_column(ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
     user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -37,4 +35,4 @@ class NotificationLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User | None"] = relationship()
-    recommendation: Mapped["Recommendation | None"] = relationship()
+    message: Mapped["Message | None"] = relationship()

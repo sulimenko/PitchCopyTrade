@@ -30,7 +30,7 @@
           <option value="">Все</option>
           {% for option in status_options %}
           <option value="{{ option }}" {% if status_value == option %}selected{% endif %}>
-            {{ label_recommendation_status(option) }}
+            {{ label_message_status(option) }}
           </option>
           {% endfor %}
         </select>
@@ -46,10 +46,11 @@
     <script>
     PCTTabulator.create("grid-host", {
       columns: [
-        { title: "Публикация", field: "publication", widthGrow: 1.6 },
+        { title: "Сообщение", field: "message", widthGrow: 1.6 },
         { title: "Автор", field: "author" },
         { title: "Стратегия", field: "strategy" },
         { title: "Тип", field: "kind" },
+        { title: "Формат", field: "type" },
         { title: "Статус", field: "status" },
         { title: "Действия", field: "actions", frozen: true }
       ],

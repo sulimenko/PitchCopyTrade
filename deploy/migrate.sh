@@ -6,6 +6,11 @@
 #   bash deploy/migrate.sh          # применить схему (идемпотентно если база пустая)
 #   bash deploy/migrate.sh --reset  # полный сброс: БД + runtime JSON/blob → пересоздать
 #
+# Contract:
+#   - clean reset uses deploy/schema.sql only
+#   - storage reset is separate from schema reset
+#   - legacy recommendation schema is not supported
+#
 # Требования:
 #   - PostgreSQL установлен локально или доступен по 127.0.0.1
 #   - Пользователь и база созданы (см. README.md Шаг 2)

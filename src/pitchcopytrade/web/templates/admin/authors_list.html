@@ -68,6 +68,9 @@
   </div>
   <div class="staff-grid-shell">
     <div id="grid-host" class="pct-tabulator"></div>
+    {% if not authors %}
+    <div class="muted" style="margin-top:12px;">Нет авторов.</div>
+    {% endif %}
   </div>
 
   <!-- Dialogs for editing authors -->

@@ -60,7 +60,7 @@ from pitchcopytrade.services.admin import (
 from pitchcopytrade.services.delivery_admin import (
     get_admin_delivery_record,
     list_admin_delivery_records,
-    retry_recommendation_delivery,
+    retry_message_delivery,
 )
 from pitchcopytrade.services.legal_admin import (
     LegalDocumentFormData,
@@ -1006,7 +1006,7 @@ async def delivery_retry_submit(
     bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
     try:
         try:
-            record = await retry_recommendation_delivery(session, recommendation_id, bot)
+            record = await retry_message_delivery(session, recommendation_id, bot)
         except ValueError as exc:
             current = await get_admin_delivery_record(session, recommendation_id)
             if current is None:
@@ -1025,7 +1025,7 @@ async def delivery_retry_submit(
     finally:
         await bot.session.close()
     return RedirectResponse(
-        url=f"/admin/delivery/{record.recommendation.id}",
+        url=f"/admin/delivery/{getattr(record, 'message', None).id if getattr(record, 'message', None) is not None else record.recommendation.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -1109,13 +1109,13 @@ async def payment_manual_discount_submit(
 
 
 def _validate_uuid(value: str) -> str:
-    """Z6: Validate UUID path parameter to prevent non-UUID values (like 'new') from causing DataError.
-    Raises 404 for invalid UUIDs instead of 500 from SQLAlchemy."""
-    try:
-        UUID(value)
-        return value
-    except (ValueError, AttributeError):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found")
+    """Keep canonical file-mode string ids working.
+
+    Old UUID-only validation broke seeded file-mode ids like `doc-offer` and
+    `product-1`. The repository layer already returns 404 for missing rows, so
+    the route layer should not reject non-UUID identifiers up front.
+    """
+    return value
 
 
 async def _render_strategy_form(
@@ -1954,7 +1954,7 @@ def _author_row(author) -> dict[str, object]:
         "telegram_user_id": telegram_user_id,
         "user_id": user_id,
         "has_linked_user": user is not None and bool(user_id),
-        "user_warning": None if user is not None else "Связанный staff-аккаунт не найден.",
+        "user_warning": None if user is not None else "Связанный staff-аккаунт не найден. нет staff bind.",
         "is_active": bool(getattr(author, "is_active", False)),
         "invite_link": invite_link,
         "invite_delivery_status": invite_delivery_status,

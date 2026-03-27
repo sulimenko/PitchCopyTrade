@@ -19,9 +19,6 @@ CREATE TYPE billing_period AS ENUM ('month', 'quarter', 'year');
 CREATE TYPE payment_provider AS ENUM ('stub_manual', 'tbank');
 CREATE TYPE payment_status AS ENUM ('created', 'pending', 'paid', 'failed', 'expired', 'cancelled', 'refunded');
 CREATE TYPE subscription_status AS ENUM ('pending', 'trial', 'active', 'expired', 'cancelled', 'blocked');
-CREATE TYPE recommendation_kind AS ENUM ('new_idea', 'update', 'close', 'cancel');
-CREATE TYPE recommendation_status AS ENUM ('draft', 'review', 'approved', 'scheduled', 'published', 'closed', 'cancelled', 'archived');
-CREATE TYPE trade_side AS ENUM ('buy', 'sell');
 CREATE TYPE legal_document_type AS ENUM ('disclaimer', 'offer', 'privacy_policy', 'payment_consent');
 CREATE TYPE instrument_type AS ENUM ('equity');
 CREATE TYPE notification_channel AS ENUM ('telegram', 'email');
@@ -270,70 +267,31 @@ CREATE TABLE user_consents (
         UNIQUE (user_id, document_id, payment_id)
 );
 
-CREATE TABLE recommendations (
-    id                   UUID PRIMARY KEY,
-    strategy_id          UUID NOT NULL REFERENCES strategies (id) ON DELETE CASCADE,
-    author_id            UUID NOT NULL REFERENCES author_profiles (id) ON DELETE CASCADE,
-    moderated_by_user_id UUID REFERENCES users (id) ON DELETE SET NULL,
-    kind                 recommendation_kind NOT NULL,
-    status               recommendation_status NOT NULL,
-    title                VARCHAR(255),
-    summary              TEXT,
-    thesis               TEXT,
-    market_context       TEXT,
-    recommendation_payload JSONB,
-    requires_moderation  BOOLEAN NOT NULL DEFAULT FALSE,
-    scheduled_for        TIMESTAMPTZ,
-    published_at         TIMESTAMPTZ,
-    closed_at            TIMESTAMPTZ,
-    cancelled_at         TIMESTAMPTZ,
-    moderation_comment   TEXT,
-    created_at           TIMESTAMPTZ NOT NULL,
-    updated_at           TIMESTAMPTZ NOT NULL
-);
-
-CREATE TABLE recommendation_legs (
-    id                UUID PRIMARY KEY,
-    recommendation_id UUID NOT NULL REFERENCES recommendations (id) ON DELETE CASCADE,
-    instrument_id     UUID REFERENCES instruments (id) ON DELETE SET NULL,
-    side              trade_side,
-    entry_from        NUMERIC(18, 4),
-    entry_to          NUMERIC(18, 4),
-    stop_loss         NUMERIC(18, 4),
-    take_profit_1     NUMERIC(18, 4),
-    take_profit_2     NUMERIC(18, 4),
-    take_profit_3     NUMERIC(18, 4),
-    time_horizon      VARCHAR(120),
-    note              TEXT,
-    created_at        TIMESTAMPTZ NOT NULL,
-    updated_at        TIMESTAMPTZ NOT NULL,
-    CONSTRAINT ck_recommendation_legs_entry_range_valid
-        CHECK (entry_to IS NULL OR entry_from IS NULL OR entry_to >= entry_from)
-);
-
-CREATE TABLE recommendation_attachments (
-    id                  UUID PRIMARY KEY,
-    recommendation_id   UUID NOT NULL REFERENCES recommendations (id) ON DELETE CASCADE,
-    uploaded_by_user_id UUID REFERENCES users (id) ON DELETE SET NULL,
-    object_key          VARCHAR(500) NOT NULL,
-    original_filename   VARCHAR(255) NOT NULL,
-    content_type        VARCHAR(120) NOT NULL,
-    size_bytes          BIGINT NOT NULL,
-    created_at          TIMESTAMPTZ NOT NULL,
-    updated_at          TIMESTAMPTZ NOT NULL,
-    CONSTRAINT ck_recommendation_attachments_size_bytes_non_negative
-        CHECK (size_bytes >= 0)
-);
-
-CREATE TABLE recommendation_messages (
-    id                  UUID PRIMARY KEY,
-    recommendation_id   UUID NOT NULL REFERENCES recommendations (id) ON DELETE CASCADE,
-    created_by_user_id   UUID REFERENCES users (id) ON DELETE SET NULL,
-    mode                VARCHAR(20) NOT NULL,
-    body                TEXT,
-    payload             JSONB,
-    created_at          TIMESTAMPTZ NOT NULL,
-    updated_at          TIMESTAMPTZ NOT NULL
+CREATE TABLE messages (
+    id          UUID PRIMARY KEY,
+    thread      UUID,
+    parent      UUID,
+    author      UUID,
+    user        UUID,
+    moderator   UUID,
+    strategy    UUID,
+    bundle      UUID,
+    deliver     VARCHAR(32)[] DEFAULT ARRAY[]::VARCHAR(32)[],
+    channel     VARCHAR(32)[] DEFAULT ARRAY['telegram', 'miniapp']::VARCHAR(32)[],
+    kind        VARCHAR(32),
+    type        VARCHAR(32),
+    status      VARCHAR(32) DEFAULT 'draft',
+    moderation  VARCHAR(32) DEFAULT 'required',
+    title       VARCHAR(255),
+    comment     TEXT,
+    schedule    TIMESTAMPTZ,
+    published   TIMESTAMPTZ,
+    archived    TIMESTAMPTZ,
+    documents   JSONB DEFAULT '[]'::jsonb,
+    text        JSONB DEFAULT '{}'::jsonb,
+    deals       JSONB DEFAULT '[]'::jsonb,
+    created     TIMESTAMPTZ NOT NULL,
+    updated     TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE audit_events (
@@ -349,7 +307,7 @@ CREATE TABLE audit_events (
 
 CREATE TABLE notification_log (
     id                UUID PRIMARY KEY,
-    recommendation_id UUID REFERENCES recommendations (id) ON DELETE SET NULL,
+    message_id        UUID,
     user_id           UUID REFERENCES users (id) ON DELETE SET NULL,
     channel           notification_channel NOT NULL,
     sent_at           TIMESTAMPTZ,

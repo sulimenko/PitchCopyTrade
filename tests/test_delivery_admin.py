@@ -5,8 +5,12 @@ from shutil import copytree
 
 import pytest
 
+from datetime import datetime, timezone
+
+from pitchcopytrade.db.models.enums import MessageStatus
+from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
-from pitchcopytrade.services.delivery_admin import get_admin_delivery_record, retry_recommendation_delivery
+from pitchcopytrade.services.delivery_admin import get_admin_delivery_record, retry_message_delivery
 
 
 class DummyNotifier:
@@ -27,10 +31,14 @@ async def test_file_mode_retry_delivery_writes_audit_event(tmp_path: Path) -> No
         root_dir=tmp_path / "storage" / "runtime" / "json",
         seed_dir=tmp_path / "storage" / "seed" / "json",
     )
+    graph = FileDatasetGraph.load(store)
+    graph.messages["message-1"].status = MessageStatus.PUBLISHED
+    graph.messages["message-1"].published = datetime(2026, 3, 11, tzinfo=timezone.utc)
+    graph.save(store)
     notifier = DummyNotifier()
 
-    record = await retry_recommendation_delivery(None, "rec-1", notifier, store=store)
-    loaded = await get_admin_delivery_record(None, "rec-1", store=store)
+    record = await retry_message_delivery(None, "message-1", notifier, store=store)
+    loaded = await get_admin_delivery_record(None, "message-1", store=store)
 
     assert notifier.chat_ids == [222]
     assert record.delivery_attempts == 1

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from pitchcopytrade.db.models.audit import AuditEvent
     from pitchcopytrade.db.models.catalog import Instrument, LeadSource, Strategy, SubscriptionProduct
     from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
-    from pitchcopytrade.db.models.content import Recommendation, RecommendationAttachment, RecommendationMessage
+    from pitchcopytrade.db.models.content import Message
 
 user_roles = Table(
     "user_roles",
@@ -59,9 +59,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     payments: Mapped[list["Payment"]] = relationship(back_populates="user")
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="user")
     consents: Mapped[list["UserConsent"]] = relationship(back_populates="user")
-    moderated_recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="moderated_by_user")
-    uploaded_attachments: Mapped[list["RecommendationAttachment"]] = relationship(back_populates="uploaded_by_user")
-    created_messages: Mapped[list["RecommendationMessage"]] = relationship(back_populates="created_by_user")
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="user",
+        foreign_keys="Message.user_id",
+    )
+    moderated_messages: Mapped[list["Message"]] = relationship(
+        back_populates="moderator",
+        foreign_keys="Message.moderator_id",
+    )
     audit_events: Mapped[list["AuditEvent"]] = relationship(back_populates="actor_user")
 
 
@@ -91,7 +96,7 @@ class AuthorProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user: Mapped[User] = relationship(back_populates="author_profile")
     strategies: Mapped[list["Strategy"]] = relationship(back_populates="author")
     subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="author")
-    recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="author")
+    messages: Mapped[list["Message"]] = relationship(back_populates="author")
     watchlist_instruments: Mapped[list["Instrument"]] = relationship(
         secondary=author_watchlist_instruments,
         back_populates="watchlist_authors",

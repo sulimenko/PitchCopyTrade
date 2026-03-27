@@ -77,22 +77,46 @@ class SubscriptionStatus(str, Enum):
     BLOCKED = "blocked"
 
 
-class RecommendationKind(str, Enum):
-    NEW_IDEA = "new_idea"
+class MessageKind(str, Enum):
+    IDEA = "idea"
     UPDATE = "update"
     CLOSE = "close"
     CANCEL = "cancel"
+    NOTE = "note"
 
 
-class RecommendationStatus(str, Enum):
+class MessageType(str, Enum):
+    TEXT = "text"
+    DOCUMENT = "document"
+    DEAL = "deal"
+    MIXED = "mixed"
+
+
+class MessageStatus(str, Enum):
     DRAFT = "draft"
     REVIEW = "review"
     APPROVED = "approved"
     SCHEDULED = "scheduled"
     PUBLISHED = "published"
-    CLOSED = "closed"
-    CANCELLED = "cancelled"
     ARCHIVED = "archived"
+    FAILED = "failed"
+
+
+class MessageModeration(str, Enum):
+    REQUIRED = "required"
+    DIRECT = "direct"
+
+
+class MessageDeliver(str, Enum):
+    STRATEGY = "strategy"
+    AUTHOR = "author"
+    BUNDLE = "bundle"
+
+
+class MessageChannel(str, Enum):
+    TELEGRAM = "telegram"
+    MINIAPP = "miniapp"
+    WEB = "web"
 
 
 class TradeSide(str, Enum):
