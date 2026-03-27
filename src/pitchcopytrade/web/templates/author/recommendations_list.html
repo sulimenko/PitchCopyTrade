@@ -380,7 +380,9 @@
         const button = document.createElement("button");
         button.type = "button";
         button.className = "ghost inline-ticker-option";
-        button.innerHTML = "<strong>" + item.ticker + "</strong><small>" + item.name + "</small>";
+        const quoteText = item.quote_last_price_text || "—";
+        const changeText = item.quote_change_text || "—";
+        button.innerHTML = "<strong>" + item.ticker + "</strong><small>" + item.name + " · " + quoteText + " · " + changeText + "</small>";
         button.addEventListener("click", function () {
           tickerInput.value = item.ticker;
           instrumentIdInput.value = item.id;

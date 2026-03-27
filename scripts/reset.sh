@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Полный сброс: удаляет volumes, образы, приводит к чистому состоянию
-set -e
-docker compose down -v --remove-orphans
-docker compose build --no-cache
-echo "Сброс завершён. Запустите: docker compose up"
+# Локальный воспроизводимый сброс для текущего file-mode runbook
+set -euo pipefail
+bash scripts/clean_storage.sh --apply --fresh-runtime
+echo "Сброс завершён. Дальше используйте команды локального запуска из doc/README.md"

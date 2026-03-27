@@ -8,6 +8,7 @@ from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.catalog import Instrument
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.repositories.author import FileAuthorRepository
+from pitchcopytrade.services.instruments import build_instrument_payloads
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -23,7 +24,7 @@ async def get_instruments(
         if q:
             q_lower = q.lower()
             instruments = [i for i in instruments if q_lower in i.ticker.lower() or q_lower in i.name.lower()]
-        return [_instrument_dict(i) for i in instruments]
+        return await build_instrument_payloads(instruments)
 
     if session is None:
         return []
@@ -39,16 +40,4 @@ async def get_instruments(
     result = await session.execute(query)
     instruments = result.scalars().all()
 
-    return [_instrument_dict(i) for i in instruments]
-
-
-def _instrument_dict(i) -> dict:
-    return {
-        "ticker": i.ticker,
-        "name": i.name,
-        "board": i.board,
-        "currency": i.currency,
-        "is_active": i.is_active,
-        "last_price": None,
-        "change_pct": None,
-    }
+    return await build_instrument_payloads(instruments)

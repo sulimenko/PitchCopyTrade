@@ -65,6 +65,12 @@
         console.error("Mini App auth failed", payload);
         return;
       }
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.indexOf("application/json") === -1) {
+        if (statusNode) statusNode.textContent = "Не удалось подтвердить Telegram-профиль";
+        console.error("Mini App auth returned non-JSON response");
+        return;
+      }
       const payload = await response.json();
       if (statusNode) statusNode.textContent = "Telegram-профиль подтвержден";
       if (payload.redirect_url) {

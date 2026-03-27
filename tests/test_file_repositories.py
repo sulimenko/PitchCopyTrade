@@ -270,6 +270,77 @@ def test_file_data_store_bootstraps_runtime_from_seed(tmp_path) -> None:
     assert runtime_store.load_dataset("author_watchlist_instruments")[0]["instrument_id"] == "instrument-1"
 
 
+def test_file_data_store_merges_seed_and_runtime_instruments(tmp_path) -> None:
+    seed_store = FileDataStore(root_dir=tmp_path / "storage" / "seed" / "json", seed_dir=tmp_path / "storage" / "seed" / "json")
+    seed_store.save_dataset(
+        "instruments",
+        [
+            {
+                "id": "instrument-1",
+                "ticker": "SBER",
+                "name": "Sberbank",
+                "board": "TQBR",
+                "lot_size": 10,
+                "currency": "RUB",
+                "instrument_type": "equity",
+                "is_active": True,
+                "created_at": "2026-03-11T00:00:00+00:00",
+                "updated_at": "2026-03-11T00:00:00+00:00",
+            },
+            {
+                "id": "instrument-2",
+                "ticker": "GAZP",
+                "name": "Gazprom",
+                "board": "TQBR",
+                "lot_size": 10,
+                "currency": "RUB",
+                "instrument_type": "equity",
+                "is_active": True,
+                "created_at": "2026-03-11T00:00:00+00:00",
+                "updated_at": "2026-03-11T00:00:00+00:00",
+            },
+        ],
+    )
+    runtime_store = FileDataStore(
+        root_dir=tmp_path / "storage" / "runtime" / "json",
+        seed_dir=tmp_path / "storage" / "seed" / "json",
+    )
+    runtime_store.save_dataset(
+        "instruments",
+        [
+            {
+                "id": "instrument-1",
+                "ticker": "SBER",
+                "name": "Sberbank Runtime",
+                "board": "TQBR",
+                "lot_size": 10,
+                "currency": "RUB",
+                "instrument_type": "equity",
+                "is_active": True,
+                "created_at": "2026-03-11T00:00:00+00:00",
+                "updated_at": "2026-03-11T00:00:00+00:00",
+            },
+            {
+                "id": "instrument-x",
+                "ticker": "XTRA",
+                "name": "Extra",
+                "board": "TQBR",
+                "lot_size": 1,
+                "currency": "RUB",
+                "instrument_type": "equity",
+                "is_active": True,
+                "created_at": "2026-03-11T00:00:00+00:00",
+                "updated_at": "2026-03-11T00:00:00+00:00",
+            },
+        ],
+    )
+
+    merged = runtime_store.load_dataset("instruments")
+
+    assert [item["id"] for item in merged] == ["instrument-1", "instrument-2", "instrument-x"]
+    assert merged[0]["name"] == "Sberbank Runtime"
+
+
 @pytest.mark.asyncio
 async def test_file_author_repository_reads_seeded_entities(tmp_path) -> None:
     store = FileDataStore(root_dir=tmp_path / "storage" / "json")

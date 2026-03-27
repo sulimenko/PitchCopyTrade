@@ -325,6 +325,8 @@
           name: item.name,
           board: item.board,
           currency: item.currency || "RUB",
+          quote_last_price_text: item.quote_last_price_text || "—",
+          quote_change_text: item.quote_change_text || "—",
           actions: '<button type="button" class="ghost" data-watchlist-remove="' + item.id + '">Удалить</button>',
         };
       });
@@ -342,6 +344,8 @@
             { headerName: "Название", field: "name", minWidth: 220, flex: 1.6, sortable: true, filter: true },
             { headerName: "Режим", field: "board", minWidth: 120, flex: 1, sortable: true, filter: true },
             { headerName: "Валюта", field: "currency", minWidth: 110, flex: 0.8, sortable: true, filter: true },
+            { headerName: "Цена", field: "quote_last_price_text", minWidth: 120, flex: 0.9, sortable: true, filter: true },
+            { headerName: "Изм.", field: "quote_change_text", minWidth: 120, flex: 0.9, sortable: true, filter: true },
             {
               headerName: "Действия",
               field: "actions",

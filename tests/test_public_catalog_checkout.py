@@ -164,6 +164,10 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         "pitchcopytrade.api.routes.public.list_public_strategies",
         lambda _repository: _async_return([strategy]),
     )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return([SimpleNamespace(ticker="NVTK", last_price_text="123.45", change_text="+1.20%")]),
+    )
 
     with _build_client(FakePublicRepository()) as client:
         response = client.get("/catalog")
@@ -172,6 +176,7 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         assert "Витрина стратегий" in response.text
         assert "Momentum RU" in response.text
         assert "/catalog/strategies/momentum-ru" in response.text
+        assert "NVTK · 123.45 · +1.20%" in response.text
 
 
 def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
@@ -180,6 +185,10 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.app.list_public_strategies",
         lambda _repository: _async_return([strategy]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.build_strategy_quote_strip",
+        lambda _strategy: _async_return([SimpleNamespace(ticker="NVTK", last_price_text="123.45", change_text="+1.20%")]),
     )
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
@@ -202,6 +211,7 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
         assert "/app/subscriptions" in response.text
         assert "/app/payments" in response.text
         assert "/tg-webapp/auth" in response.text
+        assert "NVTK · 123.45 · +1.20%" in response.text
 
 
 def test_strategy_detail_renders_products(monkeypatch) -> None:
@@ -209,6 +219,10 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.public.get_public_strategy_by_slug",
         lambda _repository, _slug: _async_return(strategy),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return([SimpleNamespace(ticker="NVTK", last_price_text="123.45", change_text="+1.20%")]),
     )
 
     with _build_client(FakePublicRepository()) as client:
@@ -218,6 +232,7 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert "Momentum RU" in response.text
         assert product.title in response.text
         assert f"/checkout/{product.id}" in response.text
+        assert "NVTK · 123.45 · +1.20%" in response.text
         assert "Короткий тезис" in response.text
         assert "Тарифы и CTA" in response.text
         assert "FAQ и документы" in response.text

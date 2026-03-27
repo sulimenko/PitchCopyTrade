@@ -8,26 +8,25 @@ def _read(relative_path: str) -> str:
     return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_server_compose_base_supports_standalone_proxy_setup() -> None:
+def test_server_deploy_files_reflect_current_repo_contract() -> None:
     compose = _read("deploy/docker-compose.server.yml")
-    env_example = _read("deploy/env.server.example")
-
-    assert "host.docker.internal:host-gateway" in compose
-    assert "--proxy-headers" in compose
-    assert "--forwarded-allow-ips='*'" in compose
-    assert "API_PORT_BINDING" in compose
-    assert "DOCKER_NETWORK_NAME" in compose
-    assert "API_PORT_BINDING=127.0.0.1:8110:8000" in env_example
-
-
-def test_server_compose_shared_override_supports_external_network_aliases() -> None:
-    shared_compose = _read("deploy/docker-compose.server.shared.yml")
-    env_example = _read("deploy/env.server.example")
     deploy_readme = _read("deploy/README.md")
+    env_example = _read(".env.example")
 
-    assert "external: true" in shared_compose
-    assert "API_ALIAS" in shared_compose
-    assert "BOT_ALIAS" in shared_compose
-    assert "WORKER_ALIAS" in shared_compose
-    assert "DOCKER_NETWORK_EXTERNAL=true" in env_example
-    assert "docker-compose.server.shared.yml" in deploy_readme
+    assert "container_name: pct-api" in compose
+    assert "container_name: pct-bot" in compose
+    assert "container_name: pct-worker" in compose
+    assert "external: true" in compose
+    assert "name: ptfin-backend" in compose
+    assert "env_file:" in compose
+    assert "../.env" in compose
+    assert "APP_DATA_MODE=file" in env_example
+    assert "APP_PREVIEW_ENABLED=true" in env_example
+    assert "cp .env.example .env" in deploy_readme
+    assert "deploy/docker-compose.server.shared.yml" in deploy_readme
+    assert "больше не считаются актуальным контрактом" in deploy_readme
+
+
+def test_root_local_docker_artifacts_are_removed() -> None:
+    assert not (PROJECT_ROOT / "docker-compose.yml").exists()
+    assert not (PROJECT_ROOT / "deploy" / "env.server.example").exists()

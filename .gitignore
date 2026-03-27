@@ -38,6 +38,7 @@ dist/
 *.egg-info/
 .coverage
 htmlcov/
+.claude/
 
 # Local runtime artifacts
 postgres_data/

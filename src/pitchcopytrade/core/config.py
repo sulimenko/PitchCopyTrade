@@ -39,6 +39,10 @@ class EnvName:
     LOG_JSON = "LOG_JSON"
     INTERNAL_API_SECRET = "INTERNAL_API_SECRET"
     REDIS_URL = "REDIS_URL"
+    INSTRUMENT_QUOTE_PROVIDER_ENABLED = "INSTRUMENT_QUOTE_PROVIDER_ENABLED"
+    INSTRUMENT_QUOTE_PROVIDER_BASE_URL = "INSTRUMENT_QUOTE_PROVIDER_BASE_URL"
+    INSTRUMENT_QUOTE_TIMEOUT_SECONDS = "INSTRUMENT_QUOTE_TIMEOUT_SECONDS"
+    INSTRUMENT_QUOTE_CACHE_TTL_SECONDS = "INSTRUMENT_QUOTE_CACHE_TTL_SECONDS"
     TELEGRAM_WEBHOOK_URL = "TELEGRAM_WEBHOOK_URL"
     SMTP_HOST = "SMTP_HOST"
     SMTP_PORT = "SMTP_PORT"
@@ -144,6 +148,15 @@ class NotificationSettings(BaseModel):
     smtp_from_name: str
 
 
+class InstrumentQuoteSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider_enabled: bool
+    provider_base_url: str
+    timeout_seconds: float
+    cache_ttl_seconds: int
+
+
 class StorageSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -197,6 +210,13 @@ class Settings(BaseSettings):
 
     internal_api_secret: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.INTERNAL_API_SECRET)
     redis_url: str = Field(default="redis://localhost:6379/0", alias=EnvName.REDIS_URL)
+    instrument_quote_provider_enabled: bool = Field(default=False, alias=EnvName.INSTRUMENT_QUOTE_PROVIDER_ENABLED)
+    instrument_quote_provider_base_url: str = Field(
+        default="https://meta.pbull.kz/api/marketData/forceDataSymbol",
+        alias=EnvName.INSTRUMENT_QUOTE_PROVIDER_BASE_URL,
+    )
+    instrument_quote_timeout_seconds: float = Field(default=10.0, alias=EnvName.INSTRUMENT_QUOTE_TIMEOUT_SECONDS)
+    instrument_quote_cache_ttl_seconds: int = Field(default=30, alias=EnvName.INSTRUMENT_QUOTE_CACHE_TTL_SECONDS)
     telegram_webhook_url: str = Field(default="", alias=EnvName.TELEGRAM_WEBHOOK_URL)
     smtp_host: str = Field(default="relay.ptfin.kz", alias=EnvName.SMTP_HOST)
     smtp_port: int = Field(default=465, alias=EnvName.SMTP_PORT)
@@ -263,6 +283,20 @@ class Settings(BaseSettings):
     def validate_session_ttl(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("AUTH_SESSION_TTL_SECONDS must be positive")
+        return value
+
+    @field_validator("instrument_quote_timeout_seconds")
+    @classmethod
+    def validate_quote_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("INSTRUMENT_QUOTE_TIMEOUT_SECONDS must be positive")
+        return value
+
+    @field_validator("instrument_quote_cache_ttl_seconds")
+    @classmethod
+    def validate_quote_cache_ttl(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("INSTRUMENT_QUOTE_CACHE_TTL_SECONDS must be positive")
         return value
 
     @field_validator("app_storage_root")
@@ -358,6 +392,15 @@ class Settings(BaseSettings):
             smtp_password=self.smtp_password,
             smtp_from=self.smtp_from,
             smtp_from_name=self.smtp_from_name,
+        )
+
+    @property
+    def instrument_quotes(self) -> InstrumentQuoteSettings:
+        return InstrumentQuoteSettings(
+            provider_enabled=self.instrument_quote_provider_enabled,
+            provider_base_url=self.instrument_quote_provider_base_url.rstrip("/"),
+            timeout_seconds=self.instrument_quote_timeout_seconds,
+            cache_ttl_seconds=self.instrument_quote_cache_ttl_seconds,
         )
 
     @property

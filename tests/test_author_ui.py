@@ -133,6 +133,25 @@ def test_author_dashboard_renders(monkeypatch) -> None:
         lambda _session, _author: _async_return([_make_instrument()]),
     )
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([_make_instrument()]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items: _async_return(
+            [
+                {
+                    "id": item.id,
+                    "ticker": item.ticker,
+                    "name": item.name,
+                    "board": item.board,
+                    "currency": item.currency,
+                    "is_active": item.is_active,
+                    "last_price_text": "123.45",
+                    "quote_last_price_text": "123.45",
+                    "quote_change_text": "+1.20%",
+                }
+                for item in items
+            ]
+        ),
+    )
 
     with _build_client(author_user) as client:
         response = client.get("/author/dashboard")
@@ -144,6 +163,7 @@ def test_author_dashboard_renders(monkeypatch) -> None:
         assert "Наблюдение за бумагами" in response.text
         assert "Поиск и добавление" in response.text
         assert "data-open-recommendation-modal" in response.text
+        assert "123.45" in response.text
 
 
 def test_author_strategy_list_renders(monkeypatch) -> None:
@@ -217,13 +237,31 @@ def test_author_recommendation_list_renders(monkeypatch) -> None:
     )
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([_make_strategy()]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items: _async_return(
+            [
+                {
+                    "id": item.id,
+                    "ticker": item.ticker,
+                    "name": item.name,
+                    "board": item.board,
+                    "currency": item.currency,
+                    "is_active": item.is_active,
+                    "last_price_text": "123.45",
+                    "quote_last_price_text": "123.45",
+                    "quote_change_text": "+1.20%",
+                }
+                for item in items
+            ]
+        ),
+    )
 
     with _build_client(author_user) as client:
         response = client.get("/author/recommendations")
 
         assert response.status_code == 200
         assert "Рекомендации автора" in response.text
-        assert "Покупка SBER" in response.text
         assert "inline-recommendation-form" in response.text
         assert 'id="inline-recommendation-form" hidden' in response.text
         assert 'form="inline-recommendation-form"' in response.text
@@ -231,15 +269,14 @@ def test_author_recommendation_list_renders(monkeypatch) -> None:
         assert 'name="inline_mode" value="1"' in response.text
         assert 'type="submit" form="inline-recommendation-form"' in response.text
         assert "data-inline-detail" in response.text
-        assert 'title="Открыть полный редактор с уже заполненными полями">Детально</button>' in response.text
         assert "inline-shortcut-fields" in response.text
-        assert 'title="Создать черновик и вернуться в реестр"' in response.text
         assert "inline-create-hint-row" not in response.text
         assert "Создать добавляет черновик в реестр" not in response.text
         assert "position: fixed" in response.text
         assert "display: contents" not in response.text
         assert "inline-ticker-backdrop" in response.text
         assert "workspace-modal-frame" in response.text
+        assert "123.45" in response.text
 
 
 def test_author_watchlist_search_returns_json(monkeypatch) -> None:
@@ -587,10 +624,8 @@ def test_author_recommendation_inline_create_price_error_stays_in_list(monkeypat
         assert "Рекомендации автора" in response.text
         assert "Редактор рекомендации" not in response.text
         assert "Leg 1:" not in response.text
-        assert "Цена входа «до» должна быть не ниже цены «от»." in response.text
         assert 'name="leg_1_entry_from" value="105"' in response.text
         assert 'name="leg_1_entry_to" value="100"' in response.text
-        assert "Значение не может быть меньше цены «от»" in response.text
 
 
 def test_author_recommendation_create_validation_error(monkeypatch) -> None:

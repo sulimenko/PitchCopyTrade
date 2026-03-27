@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -22,11 +23,13 @@ from pitchcopytrade.services.public import (
     list_active_checkout_documents,
     list_public_strategies,
 )
+from pitchcopytrade.services.instruments import build_strategy_quote_strip
 from pitchcopytrade.services.subscriber import billing_period_label
 from pitchcopytrade.web.templates import templates
 
 
 router = APIRouter(tags=["public"])
+logger = logging.getLogger(__name__)
 
 
 async def _read_request_payload(request: Request) -> dict[str, object]:
@@ -81,6 +84,7 @@ async def catalog_page(
     strategies = await list_public_strategies(repository)
     for strategy in strategies:
         strategy.story = build_strategy_story(strategy)
+        strategy.quotes = await build_strategy_quote_strip(strategy)
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
@@ -103,6 +107,7 @@ async def strategy_detail_page(
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
     strategy.story = build_strategy_story(strategy)
+    strategy.quotes = await build_strategy_quote_strip(strategy)
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
@@ -227,6 +232,30 @@ async def checkout_submit(
                 },
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    except Exception:
+        logger.exception("Public checkout creation failed for product %s", product_id)
+        return templates.TemplateResponse(
+            request,
+            "public/checkout.html",
+            {
+                "title": f"Подписка {product.title}",
+                "product": product,
+                "documents": documents,
+                "checkout_ready": checkout_ready,
+                "payment_provider": get_settings().payments.provider,
+                "miniapp_mode": False,
+                "error": "Не удалось создать заявку на оплату. Попробуйте еще раз.",
+                "form_values": {
+                    "full_name": full_name,
+                    "email": email,
+                    "timezone_name": timezone_name,
+                    "lead_source_name": detected_lead_source,
+                    "promo_code_value": promo_code_value,
+                    "accepted_document_ids": accepted_document_ids,
+                },
+            },
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
     return templates.TemplateResponse(

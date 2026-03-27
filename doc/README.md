@@ -34,6 +34,8 @@
   - `/moderation/*`
 
 Важные факты текущего цикла:
+- canonical runtime env file = `.env`, sample template = `.env.example`;
+- `deploy/docker-compose.server.yml` и `deploy/migrate.sh` должны читать тот же `.env`;
 - для локального исследования без Docker основной режим = `APP_DATA_MODE=file`;
 - `api` не стартует без `INTERNAL_API_SECRET`;
 - `file`-mode работает поверх `storage/runtime/*`, поэтому локальные данные нужно периодически сбрасывать;
@@ -50,14 +52,42 @@ export APP_PREVIEW_ENABLED=true
 
 Preview surfaces:
 
-- `http://127.0.0.1:8011/preview`
-- `http://127.0.0.1:8011/preview/app/catalog`
-- `http://127.0.0.1:8011/preview/app/status`
-- `http://127.0.0.1:8011/preview/app/help`
-- `http://127.0.0.1:8011/preview/admin/dashboard`
-- `http://127.0.0.1:8011/preview/author/dashboard`
+- `http://127.0.0.1:8000/preview`
+- `http://127.0.0.1:8000/preview/app/catalog`
+- `http://127.0.0.1:8000/preview/app/status`
+- `http://127.0.0.1:8000/preview/app/help`
+- `http://127.0.0.1:8000/preview/admin/dashboard`
+- `http://127.0.0.1:8000/preview/author/dashboard`
 
 Это локальный browser preview для layout work. Он не заменяет финальную проверку внутри Telegram WebApp.
+
+## Local dev access bootstrap
+
+Если нужен один локальный вход без Telegram/OAuth, откройте:
+
+- `http://127.0.0.1:8000/dev/bootstrap`
+
+Что делает bootstrap:
+
+- поднимает один staff-аккаунт с ролями `admin`, `author`, `moderator`;
+- ставит staff session cookie, staff mode cookie и Telegram fallback cookie поверх текущей session/cookie модели;
+- открывает нужную surface сразу в браузере;
+- работает только в `development`, `test` и `local` env.
+
+Bootstrap-аккаунт:
+
+- email: `dev-superuser@pitchcopytrade.local`
+- password: `local-dev-password`
+- Telegram ID: `999000099`
+
+Доступные режимы:
+
+- `admin` -> `/admin/dashboard`
+- `author` -> `/author/dashboard`
+- `moderator` -> `/moderation/queue`
+- `catalog` -> `/app/catalog`
+
+Это dev-only ускоритель для локального доступа. Он не заменяет preview mode и не должен использоваться как production path.
 
 ## Локальный запуск без Docker
 
@@ -94,9 +124,9 @@ cd /Users/alexey/site/PitchCopyTrade
 
 export APP_ENV=development
 export APP_HOST=127.0.0.1
-export APP_PORT=8011
-export BASE_URL=http://127.0.0.1:8011
-export ADMIN_BASE_URL=http://127.0.0.1:8011/admin
+export APP_PORT=8000
+export BASE_URL=http://127.0.0.1:8000
+export ADMIN_BASE_URL=http://127.0.0.1:8000/admin
 export APP_DATA_MODE=file
 export APP_STORAGE_ROOT=storage
 export APP_SECRET_KEY=local-app-secret
@@ -104,7 +134,7 @@ export INTERNAL_API_SECRET=local-internal-secret
 export TELEGRAM_USE_WEBHOOK=false
 export TELEGRAM_BOT_USERNAME=local_preview_bot
 
-./.venv/bin/python -m uvicorn pitchcopytrade.main:app --reload --host 127.0.0.1 --port 8011
+./.venv/bin/python -m uvicorn pitchcopytrade.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Этого уже достаточно, чтобы:
@@ -168,10 +198,10 @@ bash scripts/local_file_smoke.sh
 
 После старта `api`:
 
-- `http://127.0.0.1:8011/catalog`
-- `http://127.0.0.1:8011/catalog/strategies/momentum-ru`
-- `http://127.0.0.1:8011/checkout/product-1`
-- `http://127.0.0.1:8011/legal/doc-disclaimer`
+- `http://127.0.0.1:8000/catalog`
+- `http://127.0.0.1:8000/catalog/strategies/momentum-ru`
+- `http://127.0.0.1:8000/checkout/product-1`
+- `http://127.0.0.1:8000/legal/doc-disclaimer`
 
 Это хороший слой для:
 - быстрой проверки GET;
@@ -186,8 +216,8 @@ bash scripts/local_file_smoke.sh
 
 Открыть напрямую:
 
-- `http://127.0.0.1:8011/app`
-- `http://127.0.0.1:8011/miniapp`
+- `http://127.0.0.1:8000/app`
+- `http://127.0.0.1:8000/miniapp`
 
 Это полезно для:
 - `app/miniapp_entry.html`
@@ -204,8 +234,8 @@ cd /Users/alexey/site/PitchCopyTrade
 
 export APP_DATA_MODE=file
 export APP_STORAGE_ROOT=storage
-export BASE_URL=http://127.0.0.1:8011
-export ADMIN_BASE_URL=http://127.0.0.1:8011/admin
+export BASE_URL=http://127.0.0.1:8000
+export ADMIN_BASE_URL=http://127.0.0.1:8000/admin
 export APP_SECRET_KEY=local-app-secret
 export INTERNAL_API_SECRET=local-internal-secret
 
@@ -229,7 +259,7 @@ async def main():
     )
     await repo.commit()
     print(
-        f"http://127.0.0.1:8011/tg-auth?token={build_telegram_login_link_token(user)}&next=/app/catalog"
+        f"http://127.0.0.1:8000/tg-auth?token={build_telegram_login_link_token(user)}&next=/app/catalog"
     )
 
 asyncio.run(main())
@@ -242,12 +272,12 @@ PY
 
 После этого можно открывать и редактировать в браузере:
 
-- `http://127.0.0.1:8011/app/catalog`
-- `http://127.0.0.1:8011/app/help`
-- `http://127.0.0.1:8011/app/status`
-- `http://127.0.0.1:8011/app/payments`
-- `http://127.0.0.1:8011/app/subscriptions`
-- `http://127.0.0.1:8011/app/feed`
+- `http://127.0.0.1:8000/app/catalog`
+- `http://127.0.0.1:8000/app/help`
+- `http://127.0.0.1:8000/app/status`
+- `http://127.0.0.1:8000/app/payments`
+- `http://127.0.0.1:8000/app/subscriptions`
+- `http://127.0.0.1:8000/app/feed`
 
 Это сейчас лучший local-browser path для miniapp templates.
 
@@ -260,6 +290,61 @@ Browser preview не заменяет:
 - эффекты "одной вкладки" внутри Telegram.
 
 Для финальной валидации miniapp-навигации нужен HTTPS и реальный запуск из Telegram.
+
+## Canonical validation checklist
+
+### Canonical preview URLs for design and layout work
+
+Use these URLs as the default browser-preview entry set:
+
+- `http://127.0.0.1:8000/preview`
+- `http://127.0.0.1:8000/preview/app/catalog`
+- `http://127.0.0.1:8000/preview/app/status`
+- `http://127.0.0.1:8000/preview/app/help`
+- `http://127.0.0.1:8000/preview/app/payments`
+- `http://127.0.0.1:8000/preview/app/subscriptions`
+- `http://127.0.0.1:8000/preview/admin/dashboard`
+- `http://127.0.0.1:8000/preview/author/dashboard`
+
+These are for local browser preview only. They are not a substitute for Telegram WebApp behavior.
+
+### Canonical real-device Telegram scenarios
+
+Check these flows in a real Telegram client:
+
+1. Open the bot and press `/start`.
+2. Open the bot and press `/help`.
+3. Launch the Mini App and confirm it lands on `/app/catalog`.
+4. Move from catalog to strategy detail and then to checkout without leaving the same webview.
+5. Open `/app/help` from inside the Mini App and return to catalog in the same webview.
+6. Confirm checkout submission creates a payment/subscription pair and returns a success screen.
+
+### Minimum smoke-check matrix
+
+- `public`
+  - `/catalog`
+  - `/catalog/strategies/{slug}`
+  - `/checkout/{product_id}`
+  - `/legal/{document_id}`
+- `miniapp`
+  - `/app/catalog`
+  - `/app/strategies/{slug}`
+  - `/app/help`
+  - `/app/status`
+  - `/app/payments`
+  - `/app/subscriptions`
+- `admin`
+  - `/login`
+  - `/admin/dashboard`
+  - one strategy edit screen
+  - one product edit screen
+- `author`
+  - `/author/dashboard`
+  - `/author/recommendations`
+  - inline recommendation create
+  - watchlist add/remove
+
+Keep browser preview and Telegram device checks separate when you report results.
 
 ## Какие view править в первую очередь
 
@@ -292,16 +377,16 @@ Browser preview не заменяет:
 ### Простые GET
 
 ```bash
-curl -i http://127.0.0.1:8011/health
-curl -i http://127.0.0.1:8011/ready
-curl -i http://127.0.0.1:8011/catalog
-curl -i 'http://127.0.0.1:8011/api/instruments?q=SBER'
+curl -i http://127.0.0.1:8000/health
+curl -i http://127.0.0.1:8000/ready
+curl -i http://127.0.0.1:8000/catalog
+curl -i 'http://127.0.0.1:8000/api/instruments?q=SBER'
 ```
 
 ### Public checkout POST
 
 ```bash
-curl -i -X POST http://127.0.0.1:8011/checkout/product-1 \
+curl -i -X POST http://127.0.0.1:8000/checkout/product-1 \
   -d 'full_name=Local Tester' \
   -d 'email=local@example.com' \
   -d 'timezone_name=Asia/Almaty' \
@@ -322,8 +407,8 @@ curl -i -X POST http://127.0.0.1:8011/checkout/product-1 \
 После открытия `tg-auth` ссылки можно делать:
 
 ```bash
-curl -i http://127.0.0.1:8011/app/catalog
-curl -i http://127.0.0.1:8011/app/help
+curl -i http://127.0.0.1:8000/app/catalog
+curl -i http://127.0.0.1:8000/app/help
 ```
 
 Но для `curl` уже понадобится cookie jar. Для обычной верстки проще открыть эти URL прямо в браузере после one-time auth link.

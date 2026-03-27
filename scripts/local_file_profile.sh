@@ -4,9 +4,9 @@ set -euo pipefail
 
 export APP_ENV="${APP_ENV:-development}"
 export APP_HOST="${APP_HOST:-127.0.0.1}"
-export APP_PORT="${APP_PORT:-8011}"
-export BASE_URL="${BASE_URL:-http://127.0.0.1:8011}"
-export ADMIN_BASE_URL="${ADMIN_BASE_URL:-http://127.0.0.1:8011/admin}"
+export APP_PORT="${APP_PORT:-8000}"
+export BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
+export ADMIN_BASE_URL="${ADMIN_BASE_URL:-http://127.0.0.1:8000/admin}"
 export APP_DATA_MODE="${APP_DATA_MODE:-file}"
 export APP_PREVIEW_ENABLED="${APP_PREVIEW_ENABLED:-true}"
 export APP_STORAGE_ROOT="${APP_STORAGE_ROOT:-storage}"

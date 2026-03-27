@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Правила работы (обязательно)
 
 - Читай `doc/task.md` перед каждой задачей
-- После выполнения задачи сразу помечай `[x]` в `task.md`
+- После выполнения задачи сразу помечай `[x]` в `doc/task.md`
 - Не переходи к следующей задаче без пометки
 - Переходи к следующей фазе автоматически — без подтверждения пользователя
 - Если задача требует решения — задай один вопрос, не пиши код до ответа
@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Ключевые документы
 
 - `doc/blueprint.md` — архитектура MVP (читать перед любой реализацией)
-- `doc/task.md` — фазы и задачи (отмечать прогресс `[x]`)
+- `doc/task.md` — единый backlog и задачи (отмечать прогресс `[x]`)
 - `doc/review.md` — чеклист ревью (проверять после каждой фазы)
 - `doc/instruments_stub.json` — 10 бумаг ММВБ (seed data)
 
@@ -43,11 +43,6 @@ PYTHONPATH=src python -m pitchcopytrade.bot.main
 
 # Background worker
 PYTHONPATH=src python -m pitchcopytrade.worker.main
-```
-
-### Docker (local dev)
-```bash
-docker compose up
 ```
 
 ### Tests
@@ -121,9 +116,5 @@ AUTORENEW_ENABLED=true|false
 
 ## Deployment
 
-Production runs on CentOS 8 + Docker + host Nginx. Nginx proxies to `127.0.0.1:8110` (the API container). Bot uses polling (no webhook). File mode is used in production with local `storage/` mounts.
-
-```bash
-docker compose -f deploy/docker-compose.server.yml build
-docker compose -f deploy/docker-compose.server.yml up -d
-```
+Server deploy details live in `deploy/README.md`.
+Корневого local-dev `docker-compose.yml` в актуальном контракте проекта больше нет.

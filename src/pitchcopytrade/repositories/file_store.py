@@ -55,12 +55,17 @@ class FileDataStore:
     def load_dataset(self, dataset_name: str) -> list[dict]:
         self.bootstrap()
         path = self._path_for(dataset_name)
-        if not path.exists():
-            return []
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, list):
-            raise ValueError(f"Dataset {dataset_name} must contain a JSON array")
-        return payload
+        runtime_payload = self._read_dataset(path)
+        if dataset_name != "instruments":
+            return runtime_payload
+
+        seed_path = self._seed_path_for(dataset_name)
+        seed_payload = self._read_dataset(seed_path)
+        if not runtime_payload:
+            return seed_payload
+        if not seed_payload:
+            return runtime_payload
+        return self._merge_seed_runtime_records(seed_payload, runtime_payload)
 
     def save_dataset(self, dataset_name: str, records: list[dict]) -> None:
         self.bootstrap()
@@ -83,3 +88,29 @@ class FileDataStore:
 
     def _seed_path_for(self, dataset_name: str) -> Path:
         return self.seed_dir / f"{dataset_name}.json"
+
+    def _read_dataset(self, path: Path) -> list[dict]:
+        if not path.exists():
+            return []
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise ValueError(f"Dataset {path.stem} must contain a JSON array")
+        return payload
+
+    def _merge_seed_runtime_records(self, seed_records: list[dict], runtime_records: list[dict]) -> list[dict]:
+        merged: dict[str, dict] = {}
+        order: list[str] = []
+        for record in seed_records:
+            record_id = str(record.get("id") or "")
+            if not record_id:
+                continue
+            merged[record_id] = dict(record)
+            order.append(record_id)
+        for record in runtime_records:
+            record_id = str(record.get("id") or "")
+            if not record_id:
+                continue
+            if record_id not in merged:
+                order.append(record_id)
+            merged[record_id] = dict(record)
+        return [merged[record_id] for record_id in order if record_id in merged]

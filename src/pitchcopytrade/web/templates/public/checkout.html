@@ -38,7 +38,7 @@
 </section>
 
 <section style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,0.9fr);gap:18px;margin-top:18px;">
-  <form class="surface" method="post" style="padding:24px;display:grid;gap:18px;">
+  <form id="checkout-form" class="surface" method="post" style="padding:24px;display:grid;gap:18px;">
     {% if not checkout_ready %}
     <div style="padding:14px 16px;border-radius:18px;background:rgba(20,85,216,0.08);color:var(--blue-700);border:1px solid rgba(20,85,216,0.18);">
       Checkout пока не готов: в системе должен быть опубликован полный комплект обязательных документов.
@@ -91,7 +91,7 @@
       {% endfor %}
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Создать заявку на оплату</button>
+      <button id="checkout-submit-button" class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Создать заявку на оплату</button>
       <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}">Вернуться в каталог</a>
     </div>
   </form>
@@ -128,6 +128,8 @@
 </style>
 <script>
   (function () {
+    const form = document.getElementById("checkout-form");
+    const submitButton = document.getElementById("checkout-submit-button");
     const timezoneInput = document.getElementById("timezone_name");
     if (!timezoneInput) {
       return;
@@ -147,6 +149,37 @@
       }
     } catch (error) {
       console.error(error);
+    }
+
+    if (form) {
+      form.addEventListener("submit", async function (event) {
+        if (form.dataset.pctNativeSubmit === "1") {
+          return;
+        }
+        event.preventDefault();
+        if (submitButton) {
+          submitButton.disabled = true;
+        }
+        try {
+          const response = await fetch(form.action || window.location.href, {
+            method: "POST",
+            body: new FormData(form),
+            credentials: "same-origin"
+          });
+          const html = await response.text();
+          document.open();
+          document.write(html);
+          document.close();
+        } catch (error) {
+          console.error("Checkout fetch submit failed", error);
+          form.dataset.pctNativeSubmit = "1";
+          form.submit();
+        } finally {
+          if (submitButton) {
+            submitButton.disabled = false;
+          }
+        }
+      });
     }
   })();
 </script>

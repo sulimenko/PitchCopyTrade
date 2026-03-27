@@ -620,6 +620,8 @@ def _build_login_template_context(
         "error": error,
         "identity": identity,
         "invite_token": invite_token,
+        "dev_bootstrap_enabled": settings.app.env.lower() in {"development", "local", "test"},
+        "dev_bootstrap_url": f"{base_url}/dev/bootstrap",
         "is_staff_invite": bool(invite_token),
         "bot_username": settings.telegram.bot_username,
         "telegram_auth_url": telegram_auth_url,

@@ -12,7 +12,7 @@
 Канонический набор документов:
 - `doc/README.md` — старт исследования и локальный runbook без Docker
 - `doc/blueprint.md` — текущий продуктовый контракт
-- `doc/task.md` — только активный backlog
+- `doc/task.md` — единый активный backlog
 - `doc/review.md` — текущие findings и merge gate
 
 ## Быстрый практический выбор
@@ -30,5 +30,5 @@
 - `file`-mode читает `storage/runtime/*`, а не напрямую `storage/seed/*`;
 - перед воспроизводимыми локальными тестами runtime лучше чистить через `bash scripts/clean_storage.sh --apply --fresh-runtime`;
 - browser preview Mini App полезен для верстки, но финальную проверку webview/navigation надо делать внутри Telegram на HTTPS;
-- first-class preview mode доступен через `APP_PREVIEW_ENABLED=true` и `http://127.0.0.1:8011/preview`;
+- first-class preview mode доступен через `APP_PREVIEW_ENABLED=true` и `http://127.0.0.1:8000/preview`;
 - старые фазы проекта сознательно не хранятся в текущих документах. Их архив — только git history.

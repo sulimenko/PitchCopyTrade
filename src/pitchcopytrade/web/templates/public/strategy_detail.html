@@ -39,6 +39,17 @@
     <a class="action ghost" href="#tariffs">Тарифы</a>
     <a class="action ghost" href="#faq">FAQ</a>
   </div>
+  {% if strategy.quotes %}
+  <div class="surface" style="padding:18px;margin-top:22px;background:rgba(255,255,255,0.7);box-shadow:none;">
+    <div class="eyebrow">market snapshot</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+      {% for quote in strategy.quotes %}
+      <span class="pill">{{ quote.ticker }} · {{ quote.last_price_text }}{% if quote.change_text != "—" %} · {{ quote.change_text }}{% endif %}</span>
+      {% endfor %}
+    </div>
+    <div class="muted" style="margin-top:10px;line-height:1.6;">Цены подтягиваются из live quote-provider и показываются как контролируемый market snapshot.</div>
+  </div>
+  {% endif %}
 </section>
 
 <section style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(320px,0.7fr);gap:18px;margin-top:18px;">

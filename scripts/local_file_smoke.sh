@@ -9,7 +9,7 @@ if [ -f "$SCRIPT_DIR/local_file_profile.sh" ]; then
   source "$SCRIPT_DIR/local_file_profile.sh"
 fi
 
-BASE_URL="${BASE_URL:-http://127.0.0.1:8011}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 
 check_url() {
   local url="$1"

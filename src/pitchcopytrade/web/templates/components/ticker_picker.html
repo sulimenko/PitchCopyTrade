@@ -47,23 +47,35 @@ function debouncedTickerSearch(q) {
   _tickerPickerDebounce = setTimeout(function() { loadTickerResults(q); }, 300);
 }
 
-function loadTickerResults(q) {
-  var url = '/api/instruments' + (q ? '?q=' + encodeURIComponent(q) : '');
-  var recents = JSON.parse(localStorage.getItem('pct_recent_tickers') || '[]');
-  fetch(url)
-    .then(function(r) { return r.json(); })
-    .then(function(instruments) {
-      var html = '<table style="width:100%;border-collapse:collapse;">';
-      instruments.forEach(function(i) {
-        var star = recents.indexOf(i.ticker) !== -1 ? ' ★' : '';
-        html += '<tr onclick="selectTicker(\'' + i.ticker + '\')" style="cursor:pointer;border-bottom:1px solid rgba(16,39,115,0.08);">'
-          + '<td style="padding:10px 12px;font-weight:700;">' + i.ticker + star + '</td>'
-          + '<td style="padding:10px 12px;color:#61719b;">' + i.name + '</td>'
-          + '</tr>';
-      });
-      html += '</table>';
-      document.getElementById('ticker-picker-results').innerHTML = html;
-    })
+  function loadTickerResults(q) {
+    var url = '/api/instruments' + (q ? '?q=' + encodeURIComponent(q) : '');
+    var recents = JSON.parse(localStorage.getItem('pct_recent_tickers') || '[]');
+    fetch(url)
+      .then(function(r) { return r.json(); })
+      .then(function(instruments) {
+        var html = '<table style="width:100%;border-collapse:collapse;">'
+          + '<thead><tr style="border-bottom:1px solid rgba(16,39,115,0.12);color:#61719b;">'
+          + '<th style="padding:10px 12px;text-align:left;font-size:0.78rem;font-weight:700;">Тикер</th>'
+          + '<th style="padding:10px 12px;text-align:left;font-size:0.78rem;font-weight:700;">Название</th>'
+          + '<th style="padding:10px 12px;text-align:right;font-size:0.78rem;font-weight:700;">Цена</th>'
+          + '<th style="padding:10px 12px;text-align:right;font-size:0.78rem;font-weight:700;">Изм.</th>'
+          + '</tr></thead><tbody>';
+        instruments.forEach(function(i) {
+          var star = recents.indexOf(i.ticker) !== -1 ? ' ★' : '';
+          html += '<tr onclick="selectTicker(\'' + i.ticker + '\')" style="cursor:pointer;border-bottom:1px solid rgba(16,39,115,0.08);">'
+            + '<td style="padding:10px 12px;font-weight:700;">' + i.ticker + star + '</td>'
+            + '<td style="padding:10px 12px;color:#61719b;">' + i.name + '</td>'
+            + '<td style="padding:10px 12px;color:#61719b;text-align:right;white-space:nowrap;">'
+            + (i.quote_last_price_text || '—')
+            + '</td>'
+            + '<td style="padding:10px 12px;color:#61719b;text-align:right;white-space:nowrap;">'
+            + (i.quote_change_text || '—')
+            + '</td>'
+            + '</tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('ticker-picker-results').innerHTML = html;
+      })
     .catch(function() {
       document.getElementById('ticker-picker-results').innerHTML = '';
     });

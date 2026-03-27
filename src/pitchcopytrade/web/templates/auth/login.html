@@ -127,6 +127,11 @@
     Клиентам входить через Telegram-бота <strong>@{{ telegram_bot_username }}</strong> и Mini App.
     Если вы открыли сайт как подписчик, используйте <a href="{{ subscriber_verify_url }}">подтверждение через Telegram</a>.
   </div>
+  {% if dev_bootstrap_enabled %}
+  <div class="muted auth-login-footer auth-login-footer--secondary">
+    Локальный dev-bootstrap: <a href="{{ dev_bootstrap_url }}">открыть панель доступа</a>.
+  </div>
+  {% endif %}
 </section>
 <script>
   (function () {

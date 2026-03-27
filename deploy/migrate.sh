@@ -9,14 +9,14 @@
 # Требования:
 #   - PostgreSQL установлен локально или доступен по 127.0.0.1
 #   - Пользователь и база созданы (см. README.md Шаг 2)
-#   - .env.server содержит POSTGRES_USER, POSTGRES_DB, POSTGRES_PASSWORD
+#   - .env содержит POSTGRES_USER, POSTGRES_DB, POSTGRES_PASSWORD
 # =============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-ENV_FILE="$PROJECT_DIR/.env.server"
+ENV_FILE="$PROJECT_DIR/.env"
 SCHEMA_FILE="$SCRIPT_DIR/schema.sql"
 CLEAN_STORAGE_SCRIPT="$PROJECT_DIR/scripts/clean_storage.sh"
 
@@ -25,7 +25,7 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-# Читаем POSTGRES_USER, POSTGRES_DB, POSTGRES_PASSWORD из .env.server
+# Читаем POSTGRES_USER, POSTGRES_DB, POSTGRES_PASSWORD из .env
 PG_USER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
 PG_DB=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
 PG_PASS=$(grep -E '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
@@ -33,7 +33,7 @@ PG_HOST=$(grep -E '^POSTGRES_HOST=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr 
 PG_PORT=$(grep -E '^POSTGRES_PORT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'" || echo "5432")
 
 if [ -z "$PG_USER" ] || [ -z "$PG_DB" ]; then
-  echo "Ошибка: POSTGRES_USER и POSTGRES_DB должны быть заполнены в .env.server"
+  echo "Ошибка: POSTGRES_USER и POSTGRES_DB должны быть заполнены в .env"
   exit 1
 fi
 

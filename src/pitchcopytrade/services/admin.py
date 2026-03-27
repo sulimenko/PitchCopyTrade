@@ -821,9 +821,15 @@ def _build_default_staff_display_name(user: User) -> str:
     return f"staff-{user.id[:8]}"
 
 
-async def create_admin_staff_user(session: AsyncSession | None, data: StaffCreateData) -> User:
+async def create_admin_staff_user(
+    session: AsyncSession | None,
+    data: StaffCreateData,
+    *,
+    skip_invite: bool = False,
+) -> User:
     user = await _create_staff_user(session, data)
-    await _deliver_staff_invite(session, user, role_slugs=data.role_slugs)
+    if not skip_invite:
+        await _deliver_staff_invite(session, user, role_slugs=data.role_slugs)
     return user
 
 

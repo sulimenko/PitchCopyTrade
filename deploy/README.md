@@ -1,19 +1,19 @@
 # Server Deploy
 
-Канонический server deploy path для текущего продукта:
-- код в `/var/www/pct`
-- Docker для `api`, `bot`, `worker`
-- два server deploy режима:
-  - standalone: host `nginx`, host PostgreSQL, host Redis
-  - shared backend: существующая Docker-сеть с PostgreSQL/Redis и reverse proxy в той же сети
-- HTTPS-only domain
-- основной server mode: `APP_DATA_MODE=db`
+Этот каталог хранит только те server-артефакты, которые реально есть в репозитории:
+- `.env.example`
+- `deploy/docker-compose.server.yml`
+- `deploy/nginx/pct.test.ptfin.ru.conf`
+- `deploy/migrate.sh`
+
+Старого local-dev `docker-compose.yml` больше нет.
+Также в репозитории нет `deploy/docker-compose.server.shared.yml`, поэтому shared-override сценарии из старых описаний больше не считаются актуальным контрактом.
 
 ## Layout
 
 - `/var/www/pct`
   - root проекта
-- `/var/www/pct/.env.server`
+- `/var/www/pct/.env`
   - секреты сервера
 - `/var/www/pct/storage/seed`
   - seed data
@@ -22,48 +22,24 @@
 
 ## Fast path
 
-### Standalone
-
 1. `cd /var/www`
 2. `git clone <REPO_URL> pct`
 3. `cd /var/www/pct`
-4. `cp deploy/env.server.example .env.server`
-5. заполнить `.env.server`
-6. для standalone выставить:
-   - `DOCKER_NETWORK_EXTERNAL=false`
-   - `DOCKER_NETWORK_NAME=pct_net`
-   - `API_PORT_BINDING=127.0.0.1:8110:8000`
-   - `DATABASE_URL=postgresql+asyncpg://...@host.docker.internal:5432/...`
-   - `REDIS_URL=redis://host.docker.internal:6379/0`
-7. подготовить PostgreSQL и Redis на хосте
-8. установить nginx config из `deploy/nginx/`
-9. `docker compose -f deploy/docker-compose.server.yml build`
-10. `docker compose -f deploy/docker-compose.server.yml up -d`
-
-### Shared backend
-
-1. `cd /var/www/pct`
-2. в `.env.server` выставить:
-   - `DOCKER_NETWORK_EXTERNAL=true`
-   - `DOCKER_NETWORK_NAME=<existing_network>`
-   - `API_PORT_BINDING=` оставить пустым
-   - `API_ALIAS`, `BOT_ALIAS`, `WORKER_ALIAS` под DNS внутри сети
-   - `DATABASE_URL=postgresql+asyncpg://...@<postgres_service>:5432/...`
-   - `REDIS_URL=redis://<redis_service>:6379/0`
-3. `docker compose -f deploy/docker-compose.server.yml -f deploy/docker-compose.server.shared.yml build`
-4. `docker compose -f deploy/docker-compose.server.yml -f deploy/docker-compose.server.shared.yml up -d`
+4. `cp .env.example .env`
+5. заполнить `.env`
+6. подготовить PostgreSQL, Redis и внешнюю Docker-сеть `ptfin-backend`, которые ожидает текущий `deploy/docker-compose.server.yml`
+7. установить nginx config из `deploy/nginx/`, если используете host nginx
+8. `docker compose -f deploy/docker-compose.server.yml build`
+9. `docker compose -f deploy/docker-compose.server.yml up -d`
 
 ## Important
 
-- standalone: host `nginx` должен проксировать на `http://127.0.0.1:8110`
-- shared backend: reverse proxy/container должен обращаться к `api` по alias из общей Docker-сети
-- `deploy/docker-compose.server.shared.yml` использует compose merge reset-теги `!reset`, поэтому нужен современный Docker Compose plugin
-- `api` запускается с `uvicorn --proxy-headers --forwarded-allow-ips='*'`
+- перед использованием server-артефактов сверяйте их между собой: compose, nginx и `.env` в репозитории не покрывают альтернативные режимы за пределами текущего файла `deploy/docker-compose.server.yml`
 - nginx или другой reverse proxy обязан передавать:
   - `X-Forwarded-Proto`
   - `X-Forwarded-For`
 - Telegram Login Widget требует корректный `BASE_URL` и `@BotFather /setdomain`
-- для staff onboarding по email должны быть заполнены `SMTP_*` поля в `.env.server`
+- для staff onboarding по email должны быть заполнены `SMTP_*` поля в `.env`
 - если `SMTP_PASSWORD` пустой или начинается с `__FILL_ME__`, invite email не отправится
 - staff redesign, current review gate и local preview/runbook описаны в:
   - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
@@ -72,7 +48,7 @@
 
 ## SMTP quick check
 
-1. Заполнить в `.env.server`:
+1. Заполнить в `.env`:
    - `SMTP_HOST`
    - `SMTP_PORT`
    - `SMTP_SSL`
@@ -96,11 +72,7 @@
 
 ### 1. Выбрать compose command
 
-Standalone:
 - `export COMPOSE_SERVER="docker compose -f deploy/docker-compose.server.yml"`
-
-Shared backend:
-- `export COMPOSE_SERVER="docker compose -f deploy/docker-compose.server.yml -f deploy/docker-compose.server.shared.yml"`
 
 ### 2. Подготовить директорию для артефактов
 

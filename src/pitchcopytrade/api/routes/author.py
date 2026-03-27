@@ -43,6 +43,7 @@ from pitchcopytrade.services.notifications import (
     deliver_recommendation_notifications,
     deliver_recommendation_notifications_file,
 )
+from pitchcopytrade.services.instruments import build_instrument_payloads
 from pitchcopytrade.web.templates import templates
 from pitchcopytrade.api.routes._grid_serializers import (
     serialize_recommendations,
@@ -71,6 +72,7 @@ async def author_dashboard(
     recommendations = await list_author_recommendations(repository, author)
     watchlist = await list_author_watchlist(repository, author)
     instruments = await list_active_instruments(repository)
+    watchlist_items = await build_instrument_payloads(watchlist)
     return templates.TemplateResponse(
         request,
         "author/dashboard.html",
@@ -82,7 +84,7 @@ async def author_dashboard(
             "strategies": strategies[:5],
             "recommendations": recommendations[:6],
             "watchlist": watchlist,
-            "watchlist_items": [_instrument_payload(item) for item in watchlist],
+            "watchlist_items": watchlist_items,
             "strategies_all": strategies,
             "instruments": instruments,
             "recommendation_modal_url": "/author/recommendations/new?embedded=1&next=/author/dashboard",
@@ -299,10 +301,12 @@ async def author_watchlist_add_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     watchlist = await list_author_watchlist(repository, author)
+    added_payload = (await build_instrument_payloads([instrument]))[0]
+    watchlist_payload = await build_instrument_payloads(watchlist)
     return JSONResponse(
         {
-            "added": _instrument_payload(instrument),
-            "watchlist": [_instrument_payload(item) for item in watchlist],
+            "added": added_payload,
+            "watchlist": watchlist_payload,
         }
     )
 
@@ -320,10 +324,11 @@ async def author_watchlist_remove_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     watchlist = await list_author_watchlist(repository, author)
+    watchlist_payload = await build_instrument_payloads(watchlist)
     return JSONResponse(
         {
             "removed_id": instrument_id,
-            "watchlist": [_instrument_payload(item) for item in watchlist],
+            "watchlist": watchlist_payload,
         }
     )
 
@@ -730,6 +735,7 @@ async def _render_recommendation_list(
     recommendations = _sort_author_recommendations(recommendations, sort_by=sort_by, direction=direction)
     strategies = await list_author_strategies(repository, author)
     instruments = await list_active_instruments(repository)
+    instrument_items = await build_instrument_payloads(instruments)
     current_list_path = _author_recommendations_list_path(
         q=q,
         status_filter=status_filter,
@@ -747,7 +753,7 @@ async def _render_recommendation_list(
             "recommendations_json": serialize_recommendations(recommendations),
             "strategies": strategies,
             "instruments": instruments,
-            "instrument_items": [_instrument_payload(item) for item in instruments],
+            "instrument_items": instrument_items,
             "q": q,
             "status_filter": status_filter,
             "sort_by": sort_by,
@@ -969,16 +975,6 @@ def _friendly_recommendation_error_message(error_text: str) -> str:
     if error_text == "Для scheduled нужен planned datetime.":
         return "Укажите дату и время для запланированной публикации."
     return error_text
-
-
-def _instrument_payload(instrument) -> dict[str, str]:
-    return {
-        "id": instrument.id,
-        "ticker": instrument.ticker,
-        "name": instrument.name,
-        "board": instrument.board,
-        "currency": instrument.currency,
-    }
 
 
 def _watchlist_candidate_payload(candidate: WatchlistCandidate) -> dict[str, str]:

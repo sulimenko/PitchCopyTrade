@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -24,6 +25,7 @@ from pitchcopytrade.services.public import (
     list_active_checkout_documents,
     list_public_strategies,
 )
+from pitchcopytrade.services.instruments import build_strategy_quote_strip
 from pitchcopytrade.services.subscriber import SubscriberStatusSnapshot, get_subscriber_status_snapshot
 from pitchcopytrade.services.subscriber import (
     billing_period_label,
@@ -49,6 +51,7 @@ from pitchcopytrade.web.templates import templates
 
 
 router = APIRouter(prefix="/app", tags=["app"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/catalog", response_class=HTMLResponse)
@@ -65,6 +68,7 @@ async def app_catalog(
     strategies = await list_public_strategies(public_repository)
     for strategy in strategies:
         strategy.story = build_strategy_story(strategy)
+        strategy.quotes = await build_strategy_quote_strip(strategy)
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
@@ -93,6 +97,7 @@ async def app_strategy_detail(
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
     strategy.story = build_strategy_story(strategy)
+    strategy.quotes = await build_strategy_quote_strip(strategy)
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
@@ -206,6 +211,30 @@ async def app_checkout_submit(
                 **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    except Exception:
+        logger.exception("Mini App checkout creation failed for product %s", product_id)
+        return templates.TemplateResponse(
+            request,
+            "public/checkout.html",
+            {
+                "title": f"Подписка {product.title}",
+                "product": product,
+                "documents": documents,
+                "checkout_ready": checkout_ready,
+                "payment_provider": get_settings().payments.provider,
+                "error": "Не удалось создать заявку на оплату. Попробуйте еще раз.",
+                "form_values": {
+                    "full_name": full_name,
+                    "email": email,
+                    "timezone_name": timezone_name,
+                    "lead_source_name": "telegram_miniapp",
+                    "promo_code_value": promo_code_value,
+                    "accepted_document_ids": accepted_document_ids,
+                },
+                **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
+            },
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
     return templates.TemplateResponse(

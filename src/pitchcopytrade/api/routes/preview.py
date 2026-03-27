@@ -21,6 +21,7 @@ from pitchcopytrade.services.preview import (
     build_preview_miniapp_context,
     build_preview_recommendation_context,
 )
+from pitchcopytrade.services.instruments import build_strategy_quote_strip
 from pitchcopytrade.services.public import build_strategy_story
 from pitchcopytrade.web.templates import templates
 
@@ -66,6 +67,7 @@ async def preview_app_catalog(request: Request) -> Response:
     preview = build_preview_miniapp_context()
     strategy = preview["preview_strategy"]
     strategy.story = build_strategy_story(strategy)
+    strategy.quotes = await build_strategy_quote_strip(strategy)
     snapshot = preview["preview_snapshot"]
     return templates.TemplateResponse(
         request,
@@ -91,6 +93,7 @@ async def preview_app_strategy_detail(slug: str, request: Request) -> Response:
     if slug != strategy.slug:
         return _preview_disabled()
     strategy.story = build_strategy_story(strategy)
+    strategy.quotes = await build_strategy_quote_strip(strategy)
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",

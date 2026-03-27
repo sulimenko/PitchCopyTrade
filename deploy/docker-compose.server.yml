@@ -5,7 +5,7 @@ services:
     container_name: pct-api
     restart: unless-stopped
     env_file:
-      - ../.env.server
+      - ../.env
     command: uvicorn pitchcopytrade.api.main:app --host 0.0.0.0 --port 8000
 #    ports:
 #      - "127.0.0.1:8110:8000"
@@ -23,7 +23,7 @@ services:
     container_name: pct-bot
     restart: unless-stopped
     env_file:
-      - ../.env.server
+      - ../.env
     command: python -m pitchcopytrade.bot.main
     volumes:
       - ../storage:/data/storage:Z
@@ -38,7 +38,7 @@ services:
     container_name: pct-worker
     restart: unless-stopped
     env_file:
-      - ../.env.server
+      - ../.env
     command: python -m pitchcopytrade.worker.main
     volumes:
       - ../storage:/data/storage:Z

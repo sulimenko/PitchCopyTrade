@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="surface" style="max-width:760px;margin:40px auto;padding:32px;">
+  <div class="eyebrow">local dev bootstrap</div>
+  <h1 style="margin:10px 0 14px;font-size:clamp(2rem,4vw,3.4rem);line-height:0.95;letter-spacing:-0.05em;">
+    Один локальный доступ для staff и Mini App
+  </h1>
+  <p class="muted" style="max-width:680px;line-height:1.7;">
+    Эта панель работает только в `development` / `test` / `local` и поднимает один bootstrap-аккаунт
+    с ролями `admin`, `author`, `moderator` и Telegram-cookie для `/app/*`.
+  </p>
+
+  <div style="display:grid;gap:14px;margin-top:24px;">
+    <form method="post" action="/dev/bootstrap" class="surface" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <input type="hidden" name="mode" value="admin">
+      <div style="display:grid;gap:8px;">
+        <strong>Admin</strong>
+        <div class="muted">Откроет `/admin/dashboard` и оставит доступ к `app/*` включённым.</div>
+      </div>
+      <button class="action" type="submit" style="margin-top:14px;">Войти как admin</button>
+    </form>
+
+    <form method="post" action="/dev/bootstrap" class="surface" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <input type="hidden" name="mode" value="author">
+      <div style="display:grid;gap:8px;">
+        <strong>Author</strong>
+        <div class="muted">Откроет `/author/dashboard` и сохранит доступ к `app/*`.</div>
+      </div>
+      <button class="action" type="submit" style="margin-top:14px;">Войти как author</button>
+    </form>
+
+    <form method="post" action="/dev/bootstrap" class="surface" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <input type="hidden" name="mode" value="moderator">
+      <div style="display:grid;gap:8px;">
+        <strong>Moderator</strong>
+        <div class="muted">Откроет `/moderation/queue` и сохранит доступ к `app/*`.</div>
+      </div>
+      <button class="action" type="submit" style="margin-top:14px;">Войти как moderator</button>
+    </form>
+
+    <form method="post" action="/dev/bootstrap" class="surface" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <input type="hidden" name="mode" value="catalog">
+      <div style="display:grid;gap:8px;">
+        <strong>Catalog</strong>
+        <div class="muted">Откроет `/app/catalog` с уже готовыми staff-cookie и Telegram-cookie.</div>
+      </div>
+      <button class="action" type="submit" style="margin-top:14px;">Открыть Mini App</button>
+    </form>
+  </div>
+
+  <div class="muted" style="margin-top:24px;line-height:1.7;">
+    Bootstrap-аккаунт:
+    <code>{{ bootstrap_email }}</code>,
+    password <code>{{ bootstrap_password }}</code>,
+    Telegram ID <code>{{ bootstrap_telegram_id }}</code>.
+  </div>
+</section>
+{% endblock %}
