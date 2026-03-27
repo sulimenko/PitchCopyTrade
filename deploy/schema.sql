@@ -272,7 +272,7 @@ CREATE TABLE messages (
     thread      UUID,
     parent      UUID,
     author      UUID,
-    user        UUID,
+    "user"      UUID,
     moderator   UUID,
     strategy    UUID,
     bundle      UUID,
