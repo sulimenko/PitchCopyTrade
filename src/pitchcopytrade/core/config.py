@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -215,7 +216,7 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0", alias=EnvName.REDIS_URL)
     instrument_quote_provider_enabled: bool = Field(default=False, alias=EnvName.INSTRUMENT_QUOTE_PROVIDER_ENABLED)
     instrument_quote_provider_base_url: str = Field(
-        default="https://meta.pbull.kz/api/marketData/forceDataSymbol",
+        default="https://meta.pbull.kz",
         alias=EnvName.INSTRUMENT_QUOTE_PROVIDER_BASE_URL,
     )
     instrument_quote_timeout_seconds: float = Field(default=10.0, alias=EnvName.INSTRUMENT_QUOTE_TIMEOUT_SECONDS)
@@ -261,6 +262,17 @@ class Settings(BaseSettings):
         if not value.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
         return value.rstrip("/")
+
+    @field_validator("instrument_quote_provider_base_url")
+    @classmethod
+    def validate_quote_provider_base_url(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        parsed = urlsplit(normalized)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError("URL must include scheme and host")
+        return f"{parsed.scheme}://{parsed.netloc}"
 
     @field_validator("database_url")
     @classmethod
@@ -407,9 +419,10 @@ class Settings(BaseSettings):
 
     @property
     def instrument_quotes(self) -> InstrumentQuoteSettings:
+        provider_origin = self.instrument_quote_provider_base_url.rstrip("/")
         return InstrumentQuoteSettings(
             provider_enabled=self.instrument_quote_provider_enabled,
-            provider_base_url=self.instrument_quote_provider_base_url.rstrip("/"),
+            provider_base_url=f"{provider_origin}/api/marketData/forceDataSymbol",
             timeout_seconds=self.instrument_quote_timeout_seconds,
             cache_ttl_seconds=self.instrument_quote_cache_ttl_seconds,
         )

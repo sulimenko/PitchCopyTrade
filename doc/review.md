@@ -9,9 +9,9 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `242 passed`
+- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `248 passed`
 
-Но merge нельзя считать полностью чистым: post-implementation review все еще держит открытыми несколько реальных product regressions в author edit flow.
+Открытых findings в этом gate нет.
 
 ## Подтвержденные факты
 
@@ -57,6 +57,7 @@ Resolved:
 Resolved:
 - author SSR больше не блокирует переход на live quote provider;
 - initial render использует cached/stale/empty payloads и затем делает async quote hydrate after first paint;
+- provider URL contract должен дальше жить как `origin in env + path in code`; internal-network сценарий должен использовать `INSTRUMENT_QUOTE_PROVIDER_BASE_URL=http://meta-api-1:8000`, а не полный endpoint path в `.env`;
 - добавлены regression tests на `POST /auth/mode` + real author dashboard render.
 
 ### [P1] Author publish path валится до delivery, потому что validation идет раньше server-side `published`
@@ -65,6 +66,14 @@ Resolved:
 - `_apply_publish_state()` теперь вызывается до `_validate_message_contract()` в create/update publish paths;
 - `published` назначается сервером, а не ожидается от формы;
 - publish path доходит до delivery trace, и regression tests это покрывают.
+
+### [P1] DB runtime `0 recipients` теперь диагностируется и покрыт end-to-end checkout/publish regression tests
+
+Resolved:
+- recipient selection logs now distinguish `no active subscriptions`, `active subscriptions without telegram_user_id`, and `active subscriptions exist but do not match message audience`;
+- `tests/test_notifications_service.py` covers the negative diagnostic branches;
+- `tests/test_acl_delivery_services.py` covers the Telegram-bound checkout -> active subscription -> publish happy path with `recipient_count > 0`;
+- the earlier `0 recipients` trace is now a diagnosable contract, not a silent failure.
 
 ## Открытые задачи
 
@@ -200,15 +209,29 @@ Resolved:
 
 **Подробные инструкции:** `doc/task.md` → Блок P20
 
+### P21 — Убрать промежуточный блок профиля из каталога Mini App `[x]`
+
+- [x] P21.1: Блок профиля/pills/статус убран из каталога, описание унифицировано
+
+**Подробные инструкции:** `doc/task.md` → Блок P21
+
+### P22 — Каталог: 1-колоночный layout + blue-dominant дизайн карточек `[x]`
+
+- [x] P22.1: Grid `1fr` вместо `repeat(2,...)`, media-query удалён
+- [x] P22.2: Метаданные — крупные синие блоки (`background: var(--accent-bg, #1a2a5e)`, белый текст)
+
+**Подробные инструкции:** `doc/task.md` → Блок P22
+
 ## Gate на следующий implementation pass
 
 Следующий merge считается полностью чистым только после:
 
-1. фикса structured deal edit round-trip через единый `instrument_id` contract;
-2. фикса preview/type detection для existing document-only messages;
-3. синхронизации history table: либо показывать `channel`, либо честно переименовать колонку под `deliver`;
-4. явного решения по полному business seed для `APP_DATA_MODE=db`:
-   или реализовать importer, или оставить это открытым контрактом и не маркировать блок как завершенный.
+1. ~~фикса structured deal edit round-trip~~ → **resolved** (P1)
+2. ~~фикса preview/type detection для existing document-only messages~~ → **resolved** (P1)
+3. ~~синхронизации history table: channel vs deliver~~ → **resolved** (P2)
+4. ~~db seed contract~~ → **resolved** (P2, documented as-is)
+
+Все ранее заблокированные gate items закрыты. Текущий gate: **green**.
 
 ## Что считать готовностью текущего pass
 

@@ -33,28 +33,20 @@ class ReminderStats:
     skipped: int = 0
 
 
+@dataclass(slots=True, frozen=True)
+class RecipientSelectionDiagnostics:
+    active_subscriptions: int
+    telegram_bound_active_subscriptions: int
+    matching_active_subscriptions: int
+    reason: str
+
+
 async def list_message_recipient_telegram_ids(
     session: AsyncSession,
     message: Message,
 ) -> list[int]:
-    bundle_strategy_ids = await _bundle_strategy_ids_for_message(session, message)
-    query = (
-        select(Subscription, SubscriptionProduct, User.telegram_user_id)
-        .join(User, Subscription.user_id == User.id)
-        .join(SubscriptionProduct, Subscription.product_id == SubscriptionProduct.id)
-        .where(
-            User.telegram_user_id.is_not(None),
-            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-        )
-    )
-    result = await session.execute(query)
-    recipients: set[int] = set()
-    for _subscription, product, telegram_user_id in result.all():
-        if telegram_user_id is None:
-            continue
-        if _subscription_matches_message(message, product=product, bundle_strategy_ids=bundle_strategy_ids):
-            recipients.add(int(telegram_user_id))
-    return sorted(recipients)
+    recipients, _diagnostics = await _collect_message_recipients_db(session, message)
+    return recipients
 
 
 async def _bundle_strategy_ids_for_message(session: AsyncSession, message: Message) -> set[str]:
@@ -159,15 +151,22 @@ async def deliver_message_notifications(
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
 ) -> list[int]:
-    recipients = await list_message_recipient_telegram_ids(session, message)
+    recipients, diagnostics = await _collect_message_recipients_db(session, message)
 
     # P3.4: Log delivery information
     logger.info("Delivery for message %s: found %d recipients", message.id, len(recipients))
     if len(recipients) == 0:
         logger.warning(
-            "No recipients for message %s (strategy=%s): no active subscriptions with telegram_user_id",
+            (
+                "No recipients for message %s (strategy=%s): %s; "
+                "active_subscriptions=%d; telegram_bound_active_subscriptions=%d; matching_active_subscriptions=%d"
+            ),
             message.id,
             message.strategy_id,
+            diagnostics.reason,
+            diagnostics.active_subscriptions,
+            diagnostics.telegram_bound_active_subscriptions,
+            diagnostics.matching_active_subscriptions,
         )
 
     text = build_message_notification_text(message)
@@ -204,35 +203,26 @@ async def deliver_message_notifications_file(
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
 ) -> list[int]:
-    bundle_ids = {
-        subscription.product.bundle_id
-        for subscription in graph.subscriptions.values()
-        if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES
-        and subscription.product is not None
-        and subscription.product.bundle_id is not None
-    }
-    bundle_strategy_ids = {
-        member.strategy_id
-        for member in graph.bundle_members
-        if member.bundle_id in bundle_ids
-    }
-    recipients = {
-        subscription.user.telegram_user_id
-        for subscription in graph.subscriptions.values()
-        if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES
-        and subscription.user.telegram_user_id is not None
-        and subscription.product is not None
-        and _subscription_matches_message(
-            message,
-            product=subscription.product,
-            bundle_strategy_ids=bundle_strategy_ids,
-        )
-    }
+    recipients, diagnostics = _collect_message_recipients_file(graph, message)
     text = build_message_notification_text(message)
     delivered: list[int] = []
-    for chat_id in sorted(int(item) for item in recipients if item is not None):
+    for chat_id in recipients:
         if await _send_with_retry(notifier.send_message, chat_id, text, attempts=attempts):
             delivered.append(chat_id)
+
+    if len(recipients) == 0:
+        logger.warning(
+            (
+                "No recipients for message %s (strategy=%s): %s; "
+                "active_subscriptions=%d; telegram_bound_active_subscriptions=%d; matching_active_subscriptions=%d"
+            ),
+            message.id,
+            message.strategy_id,
+            diagnostics.reason,
+            diagnostics.active_subscriptions,
+            diagnostics.telegram_bound_active_subscriptions,
+            diagnostics.matching_active_subscriptions,
+        )
 
     graph.add(
         AuditEvent(
@@ -556,6 +546,106 @@ def _build_payment_reminder_text(payment: Payment) -> str:
         f"Срок заявки: {payment.expires_at}\n"
         "Откройте Mini App, обновите статус или завершите оплату до истечения срока."
     )
+
+
+async def _collect_message_recipients_db(
+    session: AsyncSession,
+    message: Message,
+) -> tuple[list[int], RecipientSelectionDiagnostics]:
+    bundle_strategy_ids = await _bundle_strategy_ids_for_message(session, message)
+    query = (
+        select(Subscription, SubscriptionProduct, User.telegram_user_id)
+        .join(User, Subscription.user_id == User.id)
+        .join(SubscriptionProduct, Subscription.product_id == SubscriptionProduct.id)
+        .where(Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES))
+    )
+    result = await session.execute(query)
+    recipients: set[int] = set()
+    active_subscriptions = 0
+    telegram_bound_active_subscriptions = 0
+    matching_active_subscriptions = 0
+    for subscription, product, telegram_user_id in result.all():
+        active_subscriptions += 1
+        if telegram_user_id is not None:
+            telegram_bound_active_subscriptions += 1
+            if _subscription_matches_message(message, product=product, bundle_strategy_ids=bundle_strategy_ids):
+                matching_active_subscriptions += 1
+                recipients.add(int(telegram_user_id))
+    diagnostics = RecipientSelectionDiagnostics(
+        active_subscriptions=active_subscriptions,
+        telegram_bound_active_subscriptions=telegram_bound_active_subscriptions,
+        matching_active_subscriptions=matching_active_subscriptions,
+        reason=_recipient_selection_reason(
+            active_subscriptions=active_subscriptions,
+            telegram_bound_active_subscriptions=telegram_bound_active_subscriptions,
+            matching_active_subscriptions=matching_active_subscriptions,
+        ),
+    )
+    return sorted(recipients), diagnostics
+
+
+def _collect_message_recipients_file(
+    graph: FileDatasetGraph,
+    message: Message,
+) -> tuple[list[int], RecipientSelectionDiagnostics]:
+    bundle_ids = {
+        subscription.product.bundle_id
+        for subscription in graph.subscriptions.values()
+        if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES
+        and subscription.product is not None
+        and subscription.product.bundle_id is not None
+    }
+    bundle_strategy_ids = {
+        member.strategy_id
+        for member in graph.bundle_members
+        if member.bundle_id in bundle_ids
+    }
+    recipients: set[int] = set()
+    active_subscriptions = 0
+    telegram_bound_active_subscriptions = 0
+    matching_active_subscriptions = 0
+    for subscription in graph.subscriptions.values():
+        if subscription.status not in ACTIVE_SUBSCRIPTION_STATUSES:
+            continue
+        active_subscriptions += 1
+        if subscription.user.telegram_user_id is None:
+            continue
+        telegram_bound_active_subscriptions += 1
+        if subscription.product is None:
+            continue
+        if _subscription_matches_message(
+            message,
+            product=subscription.product,
+            bundle_strategy_ids=bundle_strategy_ids,
+        ):
+            matching_active_subscriptions += 1
+            recipients.add(int(subscription.user.telegram_user_id))
+    diagnostics = RecipientSelectionDiagnostics(
+        active_subscriptions=active_subscriptions,
+        telegram_bound_active_subscriptions=telegram_bound_active_subscriptions,
+        matching_active_subscriptions=matching_active_subscriptions,
+        reason=_recipient_selection_reason(
+            active_subscriptions=active_subscriptions,
+            telegram_bound_active_subscriptions=telegram_bound_active_subscriptions,
+            matching_active_subscriptions=matching_active_subscriptions,
+        ),
+    )
+    return sorted(recipients), diagnostics
+
+
+def _recipient_selection_reason(
+    *,
+    active_subscriptions: int,
+    telegram_bound_active_subscriptions: int,
+    matching_active_subscriptions: int,
+) -> str:
+    if active_subscriptions == 0:
+        return "no active subscriptions"
+    if telegram_bound_active_subscriptions == 0:
+        return "active subscriptions exist but none have telegram_user_id"
+    if matching_active_subscriptions == 0:
+        return "active subscriptions exist but do not match message audience"
+    return "recipient selection returned zero recipients unexpectedly"
 
 
 def _build_reminder_event(

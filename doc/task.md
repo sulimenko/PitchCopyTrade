@@ -5603,6 +5603,22 @@ Canonical rule для worker:
 - [x] **P26.3.2** Уменьшить шум логов до диагностически полезного уровня
 - [x] **P26.3.3** Явно зафиксировать разницу между `disabled`, `empty`, `stale`
 
+Уточнение по provider URL contract:
+- текущая трактовка `INSTRUMENT_QUOTE_PROVIDER_BASE_URL` как full endpoint URL считается нецелевой;
+- canonical env value должна хранить только provider origin/network location, например:
+  - `INSTRUMENT_QUOTE_PROVIDER_BASE_URL=http://meta-api-1:8000`
+- endpoint path `/api/marketData/forceDataSymbol` должен быть code-owned;
+- итоговый runtime request должен собираться как:
+  - `GET http://meta-api-1:8000/api/marketData/forceDataSymbol?symbol=TATN`
+
+Почему это важно:
+- `.env` не должен кодировать внутренний endpoint contract внешнего сервиса;
+- смена пути API не должна требовать ручного переписывания env на сервере;
+- worker должен разделить:
+  - provider origin
+  - provider endpoint path
+  - query params contract
+
 #### P26.4 — Add regression tests `[x]`
 
 - [x] **P26.4.1** Добавить regression test на author page load при падающем quote provider
@@ -5617,10 +5633,20 @@ Canonical rule для worker:
 - [x] **P26.5.4** Вернуть structured price autofill на cold cache после загрузки async quotes
 - [x] **P26.5.5** Добавить UI/regression tests именно на сценарий `cold cache -> page open -> async quotes appear`
 
+#### P26.6 — Normalize provider URL contract `[x]`
+
+- [x] **P26.6.1** Вынести endpoint path `/api/marketData/forceDataSymbol` из `.env` в backend code
+- [x] **P26.6.2** Оставить `INSTRUMENT_QUOTE_PROVIDER_BASE_URL` только как origin, например `http://meta-api-1:8000`
+- [x] **P26.6.3** Собирать final request через code-owned path + `params={"symbol": ticker}`
+- [x] **P26.6.4** Обновить logs так, чтобы было видно effective request contract, а не только сырой env value
+- [x] **P26.6.5** Обновить docs и server env instructions под новый contract
+- [x] **P26.6.6** Добавить tests на URL assembly для internal-network provider scenario
+
 ### Файлы в scope
 
 - `src/pitchcopytrade/api/routes/author.py`
 - `src/pitchcopytrade/api/routes/instruments.py`
+- `src/pitchcopytrade/core/config.py`
 - `src/pitchcopytrade/services/instruments.py`
 - `src/pitchcopytrade/services/author.py`
 - `src/pitchcopytrade/web/templates/author/*.html`
@@ -5628,6 +5654,8 @@ Canonical rule для worker:
 - `tests/test_auth_ui.py`
 - `tests/test_instruments_api.py`
 - `tests/test_instruments_service.py`
+- `doc/README.md`
+- `deploy/README.md`
 - при необходимости: `doc/README.md`, если меняется локальный quote-provider runbook
 
 ### Acceptance P26
@@ -5639,7 +5667,9 @@ Canonical rule для worker:
 5. Structured composer снова умеет подставлять цену инструмента после async quote refresh, если поле цены еще пустое
 6. Один author page load не делает duplicate full quote fan-out для одинаковых тикеров
 7. Недоступный provider не блокирует author composer и watchlist: UI остается рабочим и деградирует в `stale`/`—`
-8. Regression tests покрывают не только redirect и fast render, но и `cold cache -> async quote hydrate`
+8. `INSTRUMENT_QUOTE_PROVIDER_BASE_URL` хранит только provider origin, а endpoint path собирается в коде
+9. Internal Docker network scenario `http://meta-api-1:8000` формирует request `GET /api/marketData/forceDataSymbol?symbol=...`
+10. Regression tests покрывают не только redirect и fast render, но и `cold cache -> async quote hydrate` plus provider URL assembly
 
 ### Минимальная проверка
 
@@ -5666,7 +5696,8 @@ Canonical rule для worker:
 - live quotes для author UI должны быть soft dependency, а не hard prerequisite для initial HTML;
 - duplicate quote fan-out в одном request нужно убрать;
 - UI должен продолжать работать с `empty` или `stale` quotes;
-- fast SSR сам по себе не считается достаточным результатом, если после этого цены больше никогда не появляются на cold cache.
+- fast SSR сам по себе не считается достаточным результатом, если после этого цены больше никогда не появляются на cold cache;
+- `INSTRUMENT_QUOTE_PROVIDER_BASE_URL` должен хранить только provider origin, а не полный endpoint path.
 
 Архитектурные правила:
 1. Не лечи это только косметическим скрытием warning-логов.
@@ -5675,13 +5706,15 @@ Canonical rule для worker:
 4. Если делаешь deferred quotes, initial HTML все равно должен быть полностью рабочим без них.
 5. Предпочитай reuse существующего `/api/instruments`, если он покрывает async quote refresh без лишнего write scope.
 6. Не закрепляй в tests поведение “author dashboard никогда не ходит за live quotes вообще”; закрепляй именно non-blocking contract и async hydration.
-7. Любой runtime fix обязан сопровождаться regression tests.
+7. Не оставляй endpoint path `/api/marketData/forceDataSymbol` в `.env`; path должен быть code-owned.
+8. Любой runtime fix обязан сопровождаться regression tests.
 
 Рекомендуемая стратегия:
 - first pass: оставить initial render быстрым и неблокирующим;
 - second pass inside same task: подключить async after-paint quote refresh для watchlist и composer;
 - third pass: dedupe identical ticker requests внутри одного page load;
-- затем закрыть tests на provider failure, author mode switch и cold-cache hydration.
+- fourth pass: нормализовать provider URL contract на `origin in env + path in code`;
+- затем закрыть tests на provider failure, author mode switch, cold-cache hydration и URL assembly.
 
 Что проверить после фикса:
 - `POST /auth/mode` -> `/author/dashboard`
@@ -5690,6 +5723,8 @@ Canonical rule для worker:
 - watchlist/composer при provider failure
 - cold cache -> page open -> quotes appear asynchronously
 - отсутствие duplicate batch quote calls
+- internal-network env `INSTRUMENT_QUOTE_PROVIDER_BASE_URL=http://meta-api-1:8000`
+- effective request `GET http://meta-api-1:8000/api/marketData/forceDataSymbol?symbol=TATN`
 
 Финальный отчет:
 - root cause
@@ -5859,6 +5894,175 @@ Root cause:
 - author update with publish
 - immediate delivery trigger
 - no duplicate delivery for already-published message
+
+Финальный отчет:
+- root cause
+- changed files
+- tests run + results
+- residual risks
+```
+
+## Блок P28 — Публикация доходит до notifications, но bot не получает сообщение из-за `0 recipients` в DB runtime (2026-03-29)
+
+### Контекст
+
+По пользовательскому сценарию:
+- автор успешно публикует сообщение;
+- bot polling живой;
+- immediate publish path уже доходит до notification service;
+- но сообщение в Telegram не приходит.
+
+Подтвержденные сигналы из логов:
+- `Delivery for message 12c83e15-da74-4be0-b770-8042395a6a26: found 0 recipients`
+- `No recipients for message 12c83e15-da74-4be0-b770-8042395a6a26 (strategy=04721b08-54ed-4e8c-9fba-ab6e17e0b0f2): no active subscriptions with telegram_user_id`
+- bot container здоров:
+  - `Telegram smoke check ok`
+  - polling стартует без ошибок
+- worker container здесь не является первичной причиной:
+  - immediate publish уже идет напрямую через API path;
+  - scheduled worker только тикает и ничего не публикует.
+
+Это означает:
+- transport до Telegram не является текущим blocker;
+- publish path уже исправлен и доходит до `deliver_message_notifications()`;
+- проблема находится на шаге выбора recipient-ов из PostgreSQL.
+
+### Root cause hypothesis
+
+Текущее поведение указывает на разрыв в одном из трех мест:
+
+1. checkout/subscription path создает `Subscription`, но она не привязана к тому `User`, у которого заполнен `telegram_user_id`;
+2. `Subscription` активируется, но `product` не матчится с `message.deliver` / `message.strategy_id` / `message.author_id` / `message.bundle_id`;
+3. в DB runtime пользователь подписки существует, но его `telegram_user_id` пустой, либо checkout создает/использует не того пользователя, который реально авторизован в Mini App.
+
+По коду selection contract сейчас такой:
+- `services/notifications.py:list_message_recipient_telegram_ids()` выбирает только:
+  - `Subscription.status in (ACTIVE, TRIAL)`
+  - `User.telegram_user_id is not null`
+  - `Subscription.product` матчится с `message.deliver`
+- значит publish может быть полностью успешным, но delivery все равно даст `0 recipients`, если подписка не привязана к Telegram-bound user.
+
+### Архитектурное требование
+
+Для DB-first runtime должен существовать жесткий end-to-end invariant:
+
+`успешный checkout / активная подписка / опубликованное сообщение`  
+-> `в БД существует хотя бы один recipient с ACTIVE|TRIAL subscription и ненулевым telegram_user_id, если продукт и deliver реально совпадают`.
+
+Если этот invariant не выполняется, система должна давать диагностируемую причину, а не просто `0 recipients`.
+
+### Что должен сделать worker
+
+#### P28.1 — Проверить identity binding между checkout и delivery `[x]`
+
+- [x] **P28.1.1** Проследить полный flow Mini App checkout:
+  - subscriber auth
+  - current `User`
+  - `create_telegram_stub_checkout()`
+  - создаваемые `Payment` / `Subscription`
+- [x] **P28.1.2** Подтвердить, что `Subscription.user_id` указывает именно на Telegram-bound user, а не на отдельного web-only user
+- [x] **P28.1.3** Проверить, не создается ли новый пользователь без `telegram_user_id` при checkout/edit/update профиля
+
+#### P28.2 — Проверить product/message audience matching `[x]`
+
+- [x] **P28.2.1** Проверить, что у подписки `product.strategy_id` / `product.author_id` / `product.bundle_id` реально совпадают с `message.deliver`
+- [x] **P28.2.2** Проверить, что для `deliver=['strategy']` сообщение и продукт ссылаются на одну и ту же стратегию
+- [x] **P28.2.3** Если используется `deliver=['author']` или `deliver=['bundle']`, проверить тот же сценарий на author/bundle products
+
+#### P28.3 — Сделать recipient selection диагностируемым `[x]`
+
+- [x] **P28.3.1** Добавить structured diagnostic logging для recipient selection:
+  - сколько активных подписок вообще найдено;
+  - сколько из них отброшено из-за `telegram_user_id is null`;
+  - сколько отброшено из-за mismatch по `deliver`;
+  - сколько прошло в итоговый список
+- [x] **P28.3.2** Лог должен различать:
+  - `no active subscriptions`
+  - `active subscriptions without telegram_user_id`
+  - `active subscriptions exist but do not match message audience`
+- [x] **P28.3.3** Не превращать эту диагностику в noisy per-row spam; нужен агрегированный trace на одну delivery attempt
+
+#### P28.4 — Исправить checkout/subscription binding там, где реально найден разрыв `[x]`
+
+- [x] **P28.4.1** Если checkout path создает/выбирает не того пользователя, исправить reuse/binding logic
+- [x] **P28.4.2** Если active subscription не inherits Telegram identity, исправить это без ручного пост-фактума
+- [x] **P28.4.3** Если mismatch в product targeting, исправить mapping contract между checkout product и publish audience
+
+#### P28.5 — Покрыть end-to-end regression tests `[x]`
+
+- [x] **P28.5.1** Добавить test: Telegram-authenticated subscriber оформляет checkout -> получает ACTIVE subscription -> published message дает `recipient_count > 0`
+- [x] **P28.5.2** Добавить negative test: active subscription без `telegram_user_id` дает controlled `0 recipients` с понятной диагностикой
+- [x] **P28.5.3** Добавить test на audience mismatch, чтобы `0 recipients` был осознанным, а не случайным
+
+### Файлы в scope
+
+- `src/pitchcopytrade/services/notifications.py`
+- `src/pitchcopytrade/services/public.py`
+- `src/pitchcopytrade/api/routes/app.py`
+- `src/pitchcopytrade/repositories/public.py`
+- `src/pitchcopytrade/repositories/access.py`
+- `src/pitchcopytrade/services/admin.py`
+- при необходимости: `src/pitchcopytrade/services/subscriber.py`
+- `tests/test_notifications_service.py`
+- `tests/test_public_catalog_checkout.py`
+- `tests/test_access_delivery.py`
+
+### Acceptance P28
+
+1. После успешного Mini App / Telegram-bound checkout в DB runtime существует ACTIVE или TRIAL subscription, связанная с пользователем с ненулевым `telegram_user_id`
+2. После publish подходящего сообщения `deliver_message_notifications()` находит хотя бы одного recipient-а
+3. Если recipient-ов нет, лог объясняет конкретную причину, а не ограничивается общим `0 recipients`
+4. Regression tests покрывают end-to-end path `checkout -> active subscription -> publish -> recipient selection`
+5. Исправление не ломает текущий `deliver` contract и не расширяет аудиторию сверх message intent
+
+### Минимальная проверка
+
+```bash
+./.venv/bin/python -m pytest -q tests/test_public_catalog_checkout.py
+./.venv/bin/python -m pytest -q tests/test_notifications_service.py
+./.venv/bin/python -m pytest -q tests/test_access_delivery.py
+```
+
+### Worker Prompt — Published Message Finds Zero Recipients
+
+```text
+Ты делаешь отдельную задачу по DB-mode delivery recipient selection.
+
+Симптом:
+- автор публикует сообщение;
+- publish path доходит до notifications;
+- bot polling живой;
+- но в логах:
+  - `Delivery for message ...: found 0 recipients`
+  - `No recipients for message ...: no active subscriptions with telegram_user_id`
+
+Что это означает:
+- transport/bot не является primary problem;
+- текущий разрыв находится между checkout/subscription/user identity и recipient query.
+
+Что нужно обеспечить:
+1. Успешный checkout в Telegram/Mini App должен приводить к ACTIVE/TRIAL subscription, связанной с пользователем с `telegram_user_id`.
+2. Если продукт и `message.deliver` реально совпадают, publish должен находить recipient-ов.
+3. Если recipient-ов нет, лог должен объяснять точную причину:
+   - нет активных подписок
+   - нет `telegram_user_id`
+   - mismatch по audience/product
+
+Что проверить по коду:
+- `create_telegram_stub_checkout()`
+- `_create_checkout_records()` / `_create_free_checkout_records()` / `_create_tbank_checkout_records()`
+- `app_checkout_submit()`
+- `list_message_recipient_telegram_ids()`
+- `_subscription_matches_message()`
+
+Что нельзя делать:
+- лечить это временным bypass в bot transport;
+- насильно отправлять всем подписчикам без `deliver` contract;
+- считать задачу закрытой, если publish path просто пишет `0 recipients` без root cause.
+
+Acceptance:
+- checkout -> active subscription -> publish -> recipients > 0 на валидном Telegram subscriber scenario
+- отрицательные сценарии тоже покрыты тестами и диагностируемы
 
 Финальный отчет:
 - root cause

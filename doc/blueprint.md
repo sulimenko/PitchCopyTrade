@@ -200,7 +200,9 @@ Canonical rule:
 ### 7.1 Источник
 
 Новый canonical source для real-time quote data:
-- `https://meta.pbull.kz/api/marketData/forceDataSymbol?symbol={ticker}`
+- provider origin: `https://meta.pbull.kz`
+- code-owned endpoint path: `/api/marketData/forceDataSymbol`
+- итоговый request: `https://meta.pbull.kz/api/marketData/forceDataSymbol?symbol={ticker}`
 
 Пример структуры подтвержден файлом `NVTK.json`.
 

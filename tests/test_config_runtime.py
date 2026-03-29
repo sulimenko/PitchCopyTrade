@@ -118,6 +118,16 @@ def test_settings_expose_log_file_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.logging.file_path == "api.log"
 
 
+def test_settings_normalize_quote_provider_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _make_settings(
+        monkeypatch,
+        INSTRUMENT_QUOTE_PROVIDER_BASE_URL="http://meta-api-1:8000/api/marketData/forceDataSymbol",
+    )
+
+    assert settings.instrument_quote_provider_base_url == "http://meta-api-1:8000"
+    assert settings.instrument_quotes.provider_base_url == "http://meta-api-1:8000/api/marketData/forceDataSymbol"
+
+
 def test_configure_logging_writes_to_file(tmp_path) -> None:
     log_file = tmp_path / "api.log"
     configure_logging(LoggingSettings(level="INFO", json_logs=False, file_path=str(log_file)))

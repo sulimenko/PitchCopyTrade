@@ -43,14 +43,15 @@ class _FakeAsyncClient:
         return _FakeResponse(self.payload, status_code=self.status_code)
 
 
-def _enable_quotes(monkeypatch: pytest.MonkeyPatch, *, base_url: str = "https://meta.pbull.kz/api/marketData/forceDataSymbol") -> None:
+def _enable_quotes(monkeypatch: pytest.MonkeyPatch, *, origin: str = "https://meta.pbull.kz") -> None:
+    provider_base_url = f"{origin.rstrip('/')}/api/marketData/forceDataSymbol"
     monkeypatch.setattr(
         instrument_service,
         "get_settings",
         lambda: SimpleNamespace(
             instrument_quotes=SimpleNamespace(
                 provider_enabled=True,
-                provider_base_url=base_url,
+                provider_base_url=provider_base_url,
                 timeout_seconds=1.0,
                 cache_ttl_seconds=60,
             )
