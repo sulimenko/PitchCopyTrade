@@ -1,5 +1,5 @@
 # PitchCopyTrade — Active Tasks
-> Обновлено: 2026-03-27
+> Обновлено: 2026-03-29
 > Это единый backlog-файл проекта. Все активные задачи ведутся только здесь.
 
 ## Статусы
@@ -10,6 +10,16 @@
 - `[!]` — заблокировано
 
 Предыдущие циклы не переносятся в этот backlog. Их архив — только git history.
+
+## Текущий runtime priority
+
+Для текущего цикла основной рабочий контур проекта = `APP_DATA_MODE=db`.
+
+Это означает:
+- все product-critical сценарии должны в первую очередь считаться рабочими именно в `db`-режиме;
+- `file`-mode остается вторичным compatibility/smoke режимом;
+- нельзя считать задачу закрытой, если она работает только в `file` и не работает в `db`;
+- все новые route/data-contract решения нужно оценивать прежде всего по тому, как они ведут себя на PostgreSQL schema и db seed path.
 
 ## Блок A — Документный reset и research entrypoint
 
@@ -47,6 +57,11 @@ Acceptance:
 - `file`-runtime зависит от содержимого `storage/runtime/*`;
 - `public checkout` в `file`-mode создает заявку и отдает `201 Created`;
 - browser preview для `/app/*` возможен через demo subscriber + `tg-auth` link.
+
+Уточнение приоритета:
+- исторически `file` использовался как быстрый локальный путь;
+- сейчас основной рабочий target = `db`;
+- `file` больше не считается достаточным критерием готовности product-flow.
 
 ### Задачи
 
@@ -1080,7 +1095,7 @@ Ownership / write scope:
 Цель блока:
 - закрыть все подтвержденные финальным review регрессии после перехода на `messages`;
 - после этого дать безопасный путь для чистой DB-миграции;
-- затем заполнить новую схему seed-данными так, чтобы можно было гонять все типы тестов: file-mode, db-mode, UI, service, worker, delivery.
+- затем заполнить новую схему seed-данными так, чтобы основной QA-контур проходил через `db`-mode, а `file` оставался только secondary compatibility/smoke слоем.
 
 Статус блока:
 - `L1-L3` в основном реализованы, но post-implementation review выявил follow-up фиксы в author composer/edit flow
@@ -1094,7 +1109,7 @@ Follow-up after post-implementation review (`2026-03-28`):
 3. History table должна показывать либо реальные `channel`, либо быть переименована под audience/deliver contract.
 
 Порядок выполнения:
-1. `L1` — admin/file-mode/operator UI regressions
+1. `L1` — admin compatibility/operator UI regressions
 2. `L2` — `deliver` contract enforcement
 3. `L3` — final Form 2 payload normalization
 4. `L4` — clean DB reset / migration contract
@@ -1304,9 +1319,11 @@ Follow-up after post-implementation review (`2026-03-28`):
 Контекст:
 - после clean reset нужна новая seed-база, достаточная для UI/service/worker тестов;
 - seed должен покрывать не только `messages`, но и все зависимые справочники и операционные сущности.
+- `db` является основным рабочим режимом текущего цикла, поэтому `L5` больше не optional convenience-task, а обязательный блок для product-ready runtime.
 
 Что сделать:
 - собрать полный db/file-consistent seed dataset под новую схему;
+- сделать так, чтобы именно `db`-режим был основным воспроизводимым продуктовым контуром;
 - seed должен позволять прогонять:
   - admin flows;
   - author flows;
@@ -1366,7 +1383,7 @@ Follow-up after post-implementation review (`2026-03-28`):
 - `tests/test_worker_baseline.py`
 
 Критерии приемки:
-- clean reset + seed дает воспроизводимое локальное db/file состояние;
+- clean reset + seed дает воспроизводимое локальное состояние, где `db`-режим является primary runtime;
 - tests не требуют ad-hoc ручного наполнения БД;
 - message-related screens и services получают реалистичные данные из seeds;
 - file-mode и db-mode не расходятся по ключевым shape assumptions.
@@ -1386,11 +1403,13 @@ Follow-up after post-implementation review (`2026-03-28`):
   - `instruments`
   - bootstrap `admin`
 - это создает ложное ощущение, что `L5` уже закрыт, хотя полного business seed в PostgreSQL нет.
+- при этом для текущего цикла именно `db` считается основным рабочим контуром, поэтому отсутствие полного business seed — это blocker, а не второстепенное неудобство.
 
 Цель задачи:
 - реализовать один канонический db-mode seed path для полного business dataset;
 - использовать существующие canonical seed JSON файлы из `storage/seed/json/*`;
-- после `bash deploy/migrate.sh --reset` и первого старта `api` база должна содержать тот же практический набор бизнес-данных, на который рассчитывает file-mode.
+- после `bash deploy/migrate.sh --reset` и первого старта `api` база должна содержать тот же практический набор бизнес-данных, который нужен для основного `db` runtime;
+- `file`-mode после этого остается вторичным compatibility слоем, а не главным источником работоспособности.
 
 Что считать готовым результатом:
 - после clean reset и первого startup в `APP_DATA_MODE=db` в БД есть:
@@ -1565,7 +1584,7 @@ Acceptance criteria:
 #### L6. Full Regression Gate After Reset And Seed
 
 Цель:
-- после L1-L5 получить репозиторий, который можно полноценно проверять в db-mode и file-mode.
+- после L1-L5 получить репозиторий, который можно полноценно проверять прежде всего в `db`-mode, а `file` использовать только для compatibility/smoke проверки.
 
 Что сделать:
 - прогнать максимально широкий regression suite после clean reset и seed load;
@@ -4563,3 +4582,572 @@ API `meta.pbull.kz` оборачивает данные под ключом ти
 6. При подключении TBank (`SBP_PROVIDER=tbank`) — логика не затрагивается (auto-confirm только в `_create_checkout_records`, TBank идёт через `_create_tbank_checkout_records`)
 7. `CheckoutResult.payment` допускает `None`; шаблоны и routes корректно обрабатывают это
 8. `python3 -m compileall src tests` — без ошибок
+
+---
+
+## Блок P20 — Bugfix: MissingGreenlet при checkout (expired product после commit) (2026-03-29)
+
+### Контекст
+
+**Production error.** При POST `/checkout/{product_id}` — Internal Server Error:
+
+```
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called;
+can't call await_only() here.
+```
+
+**Root cause:**
+1. `_create_checkout_records()` вызывает `await repository.commit()` — SQLAlchemy **expires все объекты** в сессии, включая `product`
+2. Обратно в route handler, обращение к `product.title` (в except-блоке строка 242 ИЛИ в success-шаблоне строка 266) → lazy load expired атрибута
+3. Async SQLAlchemy **не поддерживает** lazy loading → `MissingGreenlet`
+
+Проблема затрагивает **все 3 checkout-функции** (`_create_checkout_records`, `_create_free_checkout_records`, `_create_tbank_checkout_records`) и **оба route-файла** (`public.py`, `app.py`).
+
+**Файлы:**
+- `src/pitchcopytrade/services/public.py`
+- `src/pitchcopytrade/api/routes/public.py`
+- `src/pitchcopytrade/api/routes/app.py`
+
+### P20.1 — Сохранить атрибуты product в локальные переменные ДО commit `[x]`
+
+**Что должен сделать worker:**
+
+Самый надёжный fix: в каждой checkout-функции сервисного слоя **сохранить нужные атрибуты product** в локальные переменные до commit. Альтернативно — добавить `await repository.refresh(product)` после commit.
+
+**Вариант А (рекомендуемый) — refresh product после commit:**
+
+- [x] **P20.1.1** В `_create_checkout_records()` — после `await repository.commit()`, добавить refresh для product:
+  ```python
+  await repository.commit()
+  await repository.refresh(payment)
+  await repository.refresh(subscription)
+  await repository.refresh(product)    # ← ДОБАВИТЬ
+  ```
+
+- [x] **P20.1.2** В `_create_free_checkout_records()` — аналогично:
+  ```python
+  await repository.commit()
+  await repository.refresh(subscription)
+  await repository.refresh(product)    # ← ДОБАВИТЬ
+  ```
+
+- [x] **P20.1.3** В `_create_tbank_checkout_records()` — аналогично:
+  ```python
+  await repository.commit()
+  await repository.refresh(payment)
+  await repository.refresh(subscription)
+  await repository.refresh(product)    # ← ДОБАВИТЬ
+  ```
+
+  **Важно:** Функция `_create_tbank_checkout_records` также делает commit (проверить!). Если в ней тоже есть `await repository.commit()` — добавить refresh.
+
+---
+
+### P20.2 — Защитить except-блоки от expired objects `[x]`
+
+**Что должен сделать worker:**
+
+Даже с refresh в сервисном слое, если **до commit** произойдёт исключение, `product` будет в невалидном состоянии сессии. Route handler НЕ должен обращаться к ORM-объектам в except-блоках.
+
+- [x] **P20.2.1** В `routes/public.py`, функция `checkout_submit` — **сохранить** `product_title` перед try-блоком:
+
+  **Текущий код (около строки 198):**
+  ```python
+  detected_lead_source = lead_source_name.strip() or _detect_lead_source_name(request)
+  try:
+      result = await create_stub_checkout(...)
+  ```
+
+  **Заменить на:**
+  ```python
+  detected_lead_source = lead_source_name.strip() or _detect_lead_source_name(request)
+  product_title = product.title  # сохранить до commit
+  try:
+      result = await create_stub_checkout(...)
+  ```
+
+  Затем ВСЕ обращения к `product.title` в except-блоках заменить на `product_title`:
+  - Строка 218: `"title": f"Подписка {product_title}",`
+  - Строка 242: `"title": f"Подписка {product_title}",`
+
+- [x] **P20.2.2** В `routes/app.py` — аналогичный fix в функции checkout (Mini App). Найти аналогичные except-блоки и защитить `product.title`.
+
+---
+
+### P20.3 — Проверить шаблоны: обращения к expired product `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P20.3.1** В success-path (строки 261-271 в public.py):
+  ```python
+  return templates.TemplateResponse(
+      request,
+      "public/checkout_success.html",
+      {
+          "title": "Заявка создана",
+          "product": product,   # ← product передаётся в шаблон
+          ...
+      },
+  )
+  ```
+
+  Шаблон `checkout_success.html` обращается к `product.title`, `product.slug` и т.д. **После refresh из P20.1** это будет работать. Но на всякий случай проверить что `await repository.refresh(product)` вызывается ДО return.
+
+- [x] **P20.3.2** Проверить шаблон `public/checkout_success.html` — какие атрибуты product используются. Если есть relationship-атрибуты (например `product.strategy.name`), они тоже потребуют eager load или отдельный refresh.
+
+- [x] **P20.3.3** Аналогично проверить `app/checkout_success.html` (Mini App версия).
+
+- [x] **P20.3.4** `python3 -m compileall src tests` — без ошибок
+
+---
+
+### Acceptance P20
+
+1. POST `/checkout/{product_id}` (public) — **не падает** с MissingGreenlet, подписка создаётся
+2. POST `/app/checkout/{product_id}` (Mini App) — аналогично работает
+3. Except-блоки в route handlers не обращаются к expired ORM-атрибутам напрямую
+4. Success-шаблоны корректно рендерят `product.title` и другие атрибуты
+5. `python3 -m compileall src tests` — без ошибок
+
+---
+
+## Блок P21 — Бот: кнопка «Открыть каталог» должна сразу открывать витрину (2026-03-29)
+
+### Контекст
+
+При нажатии «Открыть каталог» в Telegram боте пользователь видит **текстовую заглушку** «Открываем каталог стратегий. Mini App подтверждает ваш Telegram-профиль…» вместо витрины стратегий.
+
+**Причина:** `_webapp_keyboard()` в `start.py` возвращает `None` если `BASE_URL` не начинается с `https://`. В таком случае бот отправляет текстовое сообщение вместо WebApp-кнопки.
+
+Помимо этого, кнопка ведёт на `/app/catalog` — этот URL внутри Mini App показывает промежуточный блок с профилем, pills, «Открыть статус» и т.д. (строки 30-56 в `catalog.html`). Нужно убрать промежуточный экран — пользователь должен сразу видеть карточки стратегий.
+
+**Файлы:**
+- `src/pitchcopytrade/bot/handlers/start.py`
+- `src/pitchcopytrade/web/templates/public/catalog.html`
+
+### P21.1 — Убрать промежуточный блок профиля из каталога Mini App `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P21.1.1** В `catalog.html` строки 30-56 — весь блок `{% if miniapp_mode %}...{% endif %}` с профилем, pills «подписок / оплат в ожидании / доступных идей», кнопками «Открыть статус» / «Открыть ленту» — **УДАЛИТЬ**. Каталог должен показывать **только** заголовок «Витрина стратегий» + описание + карточки стратегий.
+
+  **Удалить блок (строки 30-56):**
+  ```html
+  {% if miniapp_mode %}
+  <p class="muted" ...>Профиль подтвержден по Telegram ID...</p>
+  {% if miniapp_snapshot %}
+  <div class="surface" ...>
+    ...мой профиль...
+    ...pills...
+    ...кнопки статус/лента...
+  </div>
+  {% endif %}
+  {% endif %}
+  ```
+
+  Оставить только:
+  ```html
+  <section class="surface" style="padding:30px;">
+    <div class="eyebrow">каталог стратегий</div>
+    <div style="...">
+      <div>
+        <h1>Витрина стратегий</h1>
+        <p class="muted">Выберите сценарий, сравните риск и тариф, и переходите к checkout.</p>
+      </div>
+      <div class="pill">{{ strategies|length }} стратегий</div>
+    </div>
+  </section>
+  ```
+
+- [x] **P21.1.2** Текст описания сделать одинаковым для miniapp и public — убрать условие `{% if miniapp_mode %}...{% else %}...{% endif %}`, оставить единый текст:
+  ```html
+  <p class="muted">Выберите сценарий, сравните риск и тариф, и переходите к checkout.</p>
+  ```
+
+- [x] **P21.1.3** Проверить что `BASE_URL` в `.env` на сервере начинается с `https://` (иначе WebApp-кнопка не создаётся). Если `BASE_URL` уже `https://pct.test.ptfin.ru` — проблема не в URL, а в промежуточном контенте.
+
+---
+
+### Acceptance P21
+
+1. Кнопка «Открыть каталог» в боте → сразу витрина стратегий (карточки), без промежуточного экрана профиля
+2. Описание «Выберите сценарий...» — одинаковое для public и miniapp
+3. Блок профиля/pills/статус убран из каталога
+
+---
+
+## Блок P22 — Каталог: 1-колоночный layout + blue-dominant дизайн карточек (2026-03-29)
+
+### Контекст
+
+Задача J1 (1-колоночный каталог) была помечена выполненной, но **не реализована**. Текущий `catalog.html`:
+- Строка 62: `grid-template-columns: repeat(2, minmax(0, 1fr))` — **2 колонки** по умолчанию
+- Media-query `≤840px` → 1 колонка — но Mini App на десктопе **шире** 840px
+- Карточки: белые `.surface` с `padding:24px`, мелкие pill-и — **не соответствует** первичному дизайну с крупными синими плашками
+
+**Целевой дизайн (по скриншоту):** Карточки стратегий на всю ширину (1 колонка), крупные блоки с синим фоном для метаданных, большая кнопка «Открыть стратегию».
+
+**Файл:** `src/pitchcopytrade/web/templates/public/catalog.html`
+
+### P22.1 — 1-колоночный grid ВСЕГДА `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P22.1.1** Строка 62 — заменить 2-колоночный grid на 1-колоночный:
+
+  **Текущий код:**
+  ```html
+  <section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px;">
+  ```
+
+  **Заменить на:**
+  ```html
+  <section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
+  ```
+
+- [x] **P22.1.2** Удалить media-query (строки 103-107) — больше не нужен:
+  ```html
+  <style>
+    @media (max-width: 840px) {
+      section[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+    }
+  </style>
+  ```
+
+---
+
+### P22.2 — Крупные синие плашки метаданных `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P22.2.1** Внутри карточки стратегии (строки 80-87) — метаданные сейчас мелкие `.pill` в 2-колоночном grid. Заменить на крупные блоки с синим фоном:
+
+  **Текущий код:**
+  ```html
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px;">
+    <div class="pill" style="justify-content:flex-start;">{{ strategy.story.holding_period_note }}</div>
+    <div class="pill" style="justify-content:flex-start;">{{ strategy.story.risk_rule }}</div>
+    ...
+  </div>
+  ```
+
+  **Заменить на (крупные синие блоки):**
+  ```html
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px;">
+    <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;text-transform:uppercase;">
+      {{ strategy.story.holding_period_note if strategy.story else "Горизонт уточняется" }}
+    </div>
+    <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
+      {{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}
+    </div>
+    {% if strategy.min_capital_rub %}
+    <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
+      от {{ strategy.min_capital_rub }} руб.
+    </div>
+    {% endif %}
+    <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
+      {{ strategy.subscription_products|length }} тариф{% if strategy.subscription_products|length != 1 %}ов{% endif %}
+    </div>
+  </div>
+  ```
+
+  **Важно:** `--accent-bg` — CSS-переменная, если не определена → fallback `#1a2a5e` (тёмно-синий). Карточки крупные: `padding: 16px`, белый текст, `border-radius: 12px`.
+
+- [x] **P22.2.2** Кнопка «Открыть стратегию» — сделать крупной, заметной:
+
+  **Текущий код:**
+  ```html
+  <a class="action" href="...">Открыть стратегию</a>
+  ```
+
+  **Добавить inline style для крупного вида:**
+  ```html
+  <a class="action" href="..." style="display:block;text-align:center;padding:14px 24px;font-size:1rem;border-radius:12px;margin-top:20px;">Открыть стратегию</a>
+  ```
+
+- [x] **P22.2.3** Pill «Высокий» (risk level) — оставить как есть, он уже мелкий и в правом верхнем углу.
+
+---
+
+### Acceptance P22
+
+1. Каталог **всегда 1 колонка** — и на десктопе, и на мобильном, и в Mini App
+2. Метаданные стратегии — крупные синие плашки с белым текстом (не мелкие серые pill-ы)
+3. Кнопка «Открыть стратегию» — крупная, на всю ширину, с `border-radius: 12px`
+4. Media-query для 2→1 колонок удалён (больше не нужен)
+
+---
+
+## Блок P23 — DB-mode checkout сломан: public product ref contract + seed gap (2026-03-29)
+
+### Контекст
+
+На локальной машине в `APP_DATA_MODE=db` переход на public checkout падает уже на `GET /checkout/product-1`:
+
+```text
+asyncpg.exceptions.DataError: invalid UUID 'product-1'
+```
+
+Текущий runtime path такой:
+
+1. route принимает `product_id: str`
+2. `public.py -> get_public_product(product_id)`
+3. `SqlAlchemyPublicRepository.get_public_product()` делает:
+   - `where(SubscriptionProduct.id == product_id)`
+4. в db-mode `SubscriptionProduct.id` имеет UUID-тип
+5. строка `product-1` попадает в SQL как UUID bind parameter и валится до controlled 404
+
+Это не только один route bug. Здесь два слоя проблемы:
+
+- public checkout contract все еще завязан на внутренний `product.id`, который в file-mode выглядит как `product-1`, а в db-mode является UUID;
+- `L5` не закрыт: после clean reset в db-mode бизнесовые `products/strategies/legal_documents` вообще не загружаются автоматически, потому что startup сейчас seed-ит только `instruments` и bootstrap `admin`.
+
+Дополнительное уточнение:
+- для текущего цикла основной режим эксплуатации и проверки = `db`;
+- значит, `file`-совместимость здесь вторична и не может считаться оправданием, если checkout не работает в PostgreSQL path.
+
+Следствие:
+
+- подписка в db-mode не работает даже на первом GET checkout;
+- docs и локальные примеры вида `/checkout/product-1` вводят в заблуждение, если разработчик стартовал проект в db-mode;
+- даже после защиты от UUID-cast нужен рабочий seed path или другой источник public products в PostgreSQL.
+
+### Цель задачи
+
+Сделать public/Mini App checkout работоспособным в основном `db`-режиме и совместимым с `file` как вторичным слоем:
+
+- route не должен падать на non-UUID product ref;
+- public URL не должен зависеть от внутреннего DB primary key;
+- `db`-mode должен иметь хотя бы минимальный public checkout dataset, достаточный для ручной проверки подписки;
+- `file`-mode может сохраняться как compatibility path, но не как основной критерий закрытия задачи.
+
+### Рекомендуемое решение
+
+Исправление делать в 2 шага, без half-fix:
+
+1. Перевести public checkout contract с raw `product.id` на стабильный public ref:
+   - рекомендованный canonical ref = `product.slug`
+   - route может остаться `/checkout/{product_ref}` и `/app/checkout/{product_ref}`
+   - backend должен резолвить ref без raw UUID-cast panic
+2. Закрыть seed-gap для db-mode:
+   - как минимум public products, strategies и legal documents должны появляться в БД после reset/startup;
+   - либо через полноценный `L5` importer;
+   - либо через минимальный промежуточный importer для public checkout smoke, если полный `L5` еще не готов
+
+### Что должен сделать worker
+
+#### P23.1 — Checkout route должен принимать public ref, а не ломаться на string ID `[x]`
+
+- [x] **P23.1.1** В public/app checkout path заменить семантику `product_id` на `product_ref`
+  - `src/pitchcopytrade/api/routes/public.py`
+  - `src/pitchcopytrade/api/routes/app.py`
+- [x] **P23.1.2** Добавить один service-level resolver, например `get_public_product_by_ref()`
+  - сначала пробовать slug path
+  - затем, если строка похожа на UUID, пробовать UUID lookup
+  - если ref не распознается — вернуть `None`, а не доводить до DB driver error
+- [x] **P23.1.3** Не допускать сравнение UUID column с произвольной строкой без предварительной валидации/парсинга
+- [x] **P23.1.4** В `SqlAlchemyPublicRepository` использовать:
+  - `get_public_product_by_slug()` для slug contract
+  - UUID lookup только для валидных UUID
+- [x] **P23.1.5** В `FilePublicRepository` поддержать тот же resolver contract, чтобы file/db режимы не расходились по поведению
+
+#### P23.2 — Все public links должны генерировать stable public ref `[x]`
+
+- [x] **P23.2.1** Обновить шаблоны и success URLs, чтобы они ссылались на `product.slug`, а не на `product.id`
+  - `src/pitchcopytrade/web/templates/public/catalog.html`
+  - `src/pitchcopytrade/web/templates/public/strategy_detail.html`
+  - `src/pitchcopytrade/api/routes/public.py`
+  - `src/pitchcopytrade/api/routes/app.py`
+  - `src/pitchcopytrade/services/public.py`
+- [x] **P23.2.2** Проверить места, где success/callback URL строятся через `product.id`
+  - особенно `success_url` для provider/stub flow
+- [x] **P23.2.3** Старый URL с file-mode `product-1` не обязан оставаться canonical
+  - допустим controlled redirect или controlled 404
+  - недопустим raw `500`
+
+#### P23.3 — DB-mode должен иметь минимально рабочий public checkout dataset `[x]`
+
+- [x] **P23.3.1** Связать задачу с `L5`: определить, что именно нужно, чтобы после reset public checkout мог открыться в db-mode
+- [x] **P23.3.2** Минимальный набор для smoke:
+  - `strategies`
+  - `products`
+  - `legal_documents`
+  - при необходимости `promo_codes` и `lead_sources`
+- [x] **P23.3.3** Если полный `L5` еще не готов, документировать это как blocker прямо в worker report
+  - но route contract из `P23.1-P23.2` все равно исправить
+
+### Файлы в scope
+
+- `src/pitchcopytrade/api/routes/public.py`
+- `src/pitchcopytrade/api/routes/app.py`
+- `src/pitchcopytrade/services/public.py`
+- `src/pitchcopytrade/repositories/public.py`
+- `src/pitchcopytrade/api/lifespan.py`
+- `src/pitchcopytrade/db/seeders/*`
+- `src/pitchcopytrade/web/templates/public/catalog.html`
+- `src/pitchcopytrade/web/templates/public/strategy_detail.html`
+- `tests/test_public_catalog_checkout.py`
+- `tests/test_seeders.py`
+- `doc/README.md`
+- `deploy/README.md`
+
+### Acceptance P23
+
+1. `GET /checkout/<product-slug>` в db-mode не падает на UUID bind error
+2. `GET /app/checkout/<product-slug>` в db-mode тоже не падает
+3. invalid product ref возвращает controlled `404`, а не raw `500`
+4. public templates больше не строят checkout URL из `product.id`
+5. docs больше не советуют `/checkout/product-1` как универсальный локальный URL вне file-mode
+6. worker явно указывает:
+   - закрыт ли только route contract
+   - или одновременно закрыт и db seed gap
+
+### Минимальная проверка
+
+```bash
+./.venv/bin/python -m pytest -q tests/test_public_catalog_checkout.py
+./.venv/bin/python -m pytest -q tests/test_seeders.py
+```
+
+## Блок P24 — DB-mode checkout падает при записи consents: MissingGreenlet на lazy relationship append (2026-03-29) `[x]`
+
+### Контекст
+
+После закрытия `P23` public checkout в `db`-mode доходит до страницы продукта, но при POST создания заявки все еще падает `500`.
+
+Подтвержденный traceback из `storage/api.log`:
+
+```text
+2026-03-29 17:56:22,045 | ERROR | pitchcopytrade.api.routes.public | Public checkout creation failed for product gun
+...
+File "src/pitchcopytrade/services/public.py", line 633, in _create_checkout_records
+  record_user_consent(
+File "src/pitchcopytrade/services/compliance.py", line 89, in record_user_consent
+  document.consents.append(consent)
+...
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called
+```
+
+Это уже не тот баг, который закрывался в `P20`.
+
+Разница:
+- `P20` был про expired `product` после `commit()` и попытку лениво читать его атрибуты;
+- здесь падение происходит в consent path при работе с `AsyncSession`, когда backend пытается мутировать relationship collections:
+  - `user.consents.append(consent)`
+  - `document.consents.append(consent)`
+  - `payment.consents.append(consent)`
+
+Почему это ломается:
+1. `record_user_consent()` создает `UserConsent`, после чего сразу пушит его в relationship collections ORM-объектов.
+2. В async SQLAlchemy это может триггерить lazy load / autoflush для еще не загруженной коллекции.
+3. Lazy load в этом месте идет вне корректного `greenlet_spawn` контекста и заканчивается `MissingGreenlet`.
+4. В результате public checkout возвращает raw `500`, и подписка локально не оформляется.
+
+Затронутый контур:
+- `POST /checkout/{product_ref}`
+- потенциально `POST /app/checkout/{product_ref}`, если там используется тот же consent flow
+- paid/stub path
+- free path
+- возможно provider path, если он тоже пишет consents через те же helper-ы
+
+Дополнительное уточнение:
+- для текущего цикла основной runtime = `db`;
+- значит, checkout нельзя считать рабочим, пока consent recording не проходит на PostgreSQL/AsyncSession path.
+
+### Цель задачи
+
+Сделать так, чтобы checkout в `db`-mode создавал `payment/subscription/user_consents` без lazy-loading побочных эффектов и без raw `500`.
+
+Что считается готовым:
+- POST checkout в public работает в `db`-mode;
+- Mini App checkout не падает по той же причине;
+- записи в `user_consents` создаются корректно;
+- `payment_id` привязывается к consent rows без обращения к lazy collections;
+- в логах больше нет `MissingGreenlet` из `record_user_consent()` / `bind_consents_to_payment()`.
+
+### Рекомендуемое решение
+
+Исправление делать не через новые `refresh()` наугад, а через изменение самого consent write path.
+
+Правильный класс фикса:
+1. Убрать из hot path все `.consents.append(...)` для ORM collection relationships.
+2. `UserConsent` создавать как обычную сущность с явными scalar field / direct object assignment:
+   - `user_id`
+   - `document_id`
+   - `payment_id`
+   - `accepted_at`
+   - `source`
+   - `ip_address`
+3. Consent rows явно добавлять в session через repository/service layer, а не через побочное наполнение relationship collections.
+4. Привязку к payment делать прямым обновлением `consent.payment_id` или `consent.payment`, но без `payment.consents.append(consent)`.
+5. Проверить все три checkout path:
+   - `_create_checkout_records()`
+   - `_create_free_checkout_records()`
+   - `_create_tbank_checkout_records()`
+6. Проверить helper-ы:
+   - `record_user_consent()`
+   - `bind_consents_to_payment()`
+
+Антипаттерн, который нельзя оставлять:
+- фикс через eager-load всех `document.consents/user.consents/payment.consents` только ради append
+- частичный фикс только для public route, если тот же helper продолжит ломать Mini App или provider path
+
+### Что должен сделать worker
+
+#### P24.1 — Перестроить compliance helper под async-safe write path `[x]`
+
+- [x] **P24.1.1** В `src/pitchcopytrade/services/compliance.py` убрать collection appends из `record_user_consent()`
+- [x] **P24.1.2** Переделать `bind_consents_to_payment()` так, чтобы он не трогал `payment.consents`
+- [x] **P24.1.3** Если для foundation tests нужен in-memory relationship convenience, не возвращать старую async-unsafe семантику в production path
+
+#### P24.2 — Обновить checkout services, чтобы consents явно добавлялись в session `[x]`
+
+- [x] **P24.2.1** В `src/pitchcopytrade/services/public.py::_create_checkout_records()` после создания consent rows явно добавить их в repository/session
+- [x] **P24.2.2** Аналогично проверить и исправить `_create_free_checkout_records()`
+- [x] **P24.2.3** Аналогично проверить и исправить `_create_tbank_checkout_records()`
+- [x] **P24.2.4** Убедиться, что `payment_id` корректно выставляется и сохраняется для paid path
+- [x] **P24.2.5** Если в какой-то ветке payment еще не существует на момент создания consent rows, привязку к payment делать после flush/identity появления, но без lazy collection mutation
+
+#### P24.3 — Закрыть regression tests именно на async checkout + consent write `[x]`
+
+- [x] **P24.3.1** Добавить regression test на public POST checkout в `db`-style path, который реально проходит через consent creation, а не monkeypatch-ит `create_stub_checkout()`
+- [x] **P24.3.2** Добавить аналогичную проверку для Mini App checkout, если там используется тот же flow
+- [x] **P24.3.3** Добавить/обновить tests для `record_user_consent()` и `bind_consents_to_payment()`, чтобы они проверяли новый contract и не требовали collection append semantics
+- [x] **P24.3.4** Проверить, что после checkout реально создаются:
+  - `Payment`
+  - `Subscription`
+  - `UserConsent` rows по всем required documents
+
+### Файлы в scope
+
+- `src/pitchcopytrade/services/compliance.py`
+- `src/pitchcopytrade/services/public.py`
+- `src/pitchcopytrade/api/routes/public.py`
+- `src/pitchcopytrade/api/routes/app.py`
+- `src/pitchcopytrade/repositories/public.py`
+- `tests/test_compliance_foundation.py`
+- `tests/test_acl_delivery_services.py`
+- `tests/test_public_catalog_checkout.py`
+
+### Acceptance P24
+
+1. `POST /checkout/<product-slug>` в `APP_DATA_MODE=db` больше не падает с `MissingGreenlet`
+2. `POST /app/checkout/<product-slug>` тоже не падает на consent path
+3. Для платного checkout создаются:
+   - `Payment`
+   - `Subscription`
+   - `UserConsent` на каждый обязательный legal document
+4. `user_consents.payment_id` корректно проставляется там, где payment существует
+5. В checkout/compliance hot path больше нет кода вида:
+   - `user.consents.append(...)`
+   - `document.consents.append(...)`
+   - `payment.consents.append(...)`
+6. Regression tests покрывают реальный async checkout path, а не только unit-level happy path без БД
+
+### Минимальная проверка
+
+```bash
+./.venv/bin/python -m pytest -q tests/test_compliance_foundation.py
+./.venv/bin/python -m pytest -q tests/test_acl_delivery_services.py
+./.venv/bin/python -m pytest -q tests/test_public_catalog_checkout.py
+```

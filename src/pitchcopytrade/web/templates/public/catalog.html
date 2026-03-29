@@ -20,48 +20,15 @@
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2.2rem,4.8vw,4rem);line-height:0.94;letter-spacing:-0.06em;">Витрина стратегий</h1>
-      <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
-        {% if miniapp_mode %}
-        Выберите сценарий, сравните риск и тариф, и переходите к checkout без лишних экранов.
-        {% else %}
-        Выберите сценарий, сравните риск и тариф, и переходите к checkout.
-        {% endif %}
-      </p>
-      {% if miniapp_mode %}
-      <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">
-        Профиль подтвержден по Telegram ID. Каталог открыт первым, а статус и помощь доступны внутри того же webview.
-      </p>
-      {% if miniapp_snapshot %}
-      <div class="surface" style="padding:18px;margin-top:16px;background:rgba(255,255,255,0.85);">
-        <div class="eyebrow">мой профиль</div>
-        <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:10px;">
-          <div>
-            <strong>{{ miniapp_user.full_name or miniapp_user.username or "Подписчик" }}</strong>
-            <p class="muted" style="margin:8px 0 0;line-height:1.6;">
-              Доступ: {{ "активен" if miniapp_snapshot.has_access else "ожидает активации" }}
-            </p>
-          </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <span class="pill">{{ miniapp_snapshot.active_subscriptions|length }} подписок</span>
-            <span class="pill">{{ miniapp_snapshot.pending_payments|length }} оплат в ожидании</span>
-            <span class="pill">{{ miniapp_snapshot.visible_message_titles|length }} доступных идей</span>
-          </div>
-        </div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-          <a class="action" href="{% if preview_mode %}/preview/app/status{% else %}/app/status{% endif %}">Открыть статус</a>
-          <a class="action ghost" href="{% if preview_mode %}/preview/app/help{% else %}/app/feed{% endif %}">{% if preview_mode %}Открыть помощь{% else %}Открыть ленту{% endif %}</a>
-        </div>
-      </div>
-      {% endif %}
-      {% endif %}
+      <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">Выберите сценарий, сравните риск и тариф, и переходите к checkout.</p>
     </div>
     <div class="pill">{{ strategies|length }} стратегий</div>
   </div>
 </section>
 
-<section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px;">
+<section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
   {% for strategy in strategies %}
-  <article class="surface" style="padding:24px;">
+  <article class="surface" style="padding:24px;background:linear-gradient(180deg, rgba(18, 47, 120, 0.06), rgba(18, 47, 120, 0.02));border:1px solid rgba(18, 47, 120, 0.08);">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
       <div>
         <div class="eyebrow">{{ strategy.author.display_name }}</div>
@@ -78,17 +45,21 @@
     </div>
     {% endif %}
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px;">
-      <div class="pill" style="justify-content:flex-start;">{{ strategy.story.holding_period_note if strategy.story else "Горизонт уточняется" }}</div>
-      <div class="pill" style="justify-content:flex-start;">{{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}</div>
+      <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;text-transform:uppercase;">
+        {{ strategy.story.holding_period_note if strategy.story else "Горизонт уточняется" }}
+      </div>
+      <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
+        {{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}
+      </div>
       {% if strategy.min_capital_rub %}
-      <div class="pill" style="justify-content:flex-start;">от {{ strategy.min_capital_rub }} руб</div>
+      <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">от {{ strategy.min_capital_rub }} руб</div>
       {% endif %}
-      <div class="pill" style="justify-content:flex-start;">{{ strategy.subscription_products|length }} тариф{% if strategy.subscription_products|length != 1 %}ов{% endif %}</div>
+      <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">{{ strategy.subscription_products|length }} тариф{% if strategy.subscription_products|length != 1 %}ов{% endif %}</div>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
-      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}">Открыть стратегию</a>
+      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}" style="display:block;text-align:center;padding:14px 24px;font-size:1rem;border-radius:12px;margin-top:20px;">Открыть стратегию</a>
       {% if strategy.subscription_products %}
-      <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].id }}{% else %}/app/checkout/{{ strategy.subscription_products[0].id }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].id }}{% endif %}">Открыть подписку</a>
+      <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].slug }}{% else %}/app/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}">Открыть подписку</a>
       {% endif %}
     </div>
   </article>
@@ -100,9 +71,4 @@
   {% endfor %}
 </section>
 
-<style>
-  @media (max-width: 840px) {
-    section[style*="repeat(2"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

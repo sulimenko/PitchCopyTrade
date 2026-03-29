@@ -1,5 +1,5 @@
 # PitchCopyTrade — Current Review Gate
-> Обновлено: 2026-03-28
+> Обновлено: 2026-03-29
 > Этот файл хранит только актуальные findings и merge gate после перехода проекта на `messages` и unified author composer.
 
 ## Общий вывод
@@ -9,9 +9,9 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `218 passed`
+- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `233 passed`
 
-Но merge нельзя считать полностью чистым: post-implementation review нашел несколько реальных product regressions в author edit flow и одно документное расхождение по db seed contract.
+Но merge нельзя считать полностью чистым: post-implementation review все еще держит открытыми несколько реальных product regressions в author edit flow.
 
 ## Подтвержденные факты
 
@@ -20,7 +20,7 @@
 - preview перед submit реализован
 - локальный test suite проходит полностью
 - clean db schema и startup path существуют
-- полный business seed в PostgreSQL по-прежнему не выполняется автоматически
+- минимальный public checkout dataset в PostgreSQL теперь seed-ится автоматически
 
 ## Findings
 
@@ -205,6 +205,14 @@
 - [x] P18.3: Routes — корректная обработка auto-confirm и free в checkout success page
 
 **Подробные инструкции:** `doc/task.md` → Блок P18
+
+### P20 — Bugfix: MissingGreenlet при checkout (expired product после commit) `[x]`
+
+- [x] P20.1: В `_create_checkout_records`, `_create_free_checkout_records`, `_create_tbank_checkout_records` — добавить `await repository.refresh(product)` после commit
+- [x] P20.2: В route handlers — сохранить `product_title = product.title` ДО try-блока, использовать в except-блоках
+- [x] P20.3: Проверить шаблоны checkout_success на обращения к expired product attributes
+
+**Подробные инструкции:** `doc/task.md` → Блок P20
 
 ## Gate на следующий implementation pass
 

@@ -37,7 +37,7 @@ def test_grid_serializers_use_russian_labels() -> None:
         end_at=None,
         user=_ns(full_name="Lead User", email="lead@example.com", username="lead"),
         product=_ns(title="Momentum RU Monthly"),
-        lead_source=_ns(slug="organic"),
+        lead_source=_ns(name="Telegram Organic", ref_code="tg-organic", source_type="ORGANIC"),
     )
     payment = _ns(
         id="payment-1",
@@ -101,6 +101,7 @@ def test_grid_serializers_use_russian_labels() -> None:
     assert "Низкий" in strategies_json[0]["risk"]
     assert "Активен" in strategies_json[0]["status"]
     assert "Активен" in subscriptions_json[0]["status"]
+    assert "Telegram Organic" in subscriptions_json[0]["source"]
     assert "Оплачен" in payments_json[0]["status"]
     assert "Текст" in recommendations_json[0]["type"]
     assert "Опубликовано" in recommendations_json[0]["status"]

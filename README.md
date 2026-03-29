@@ -20,13 +20,15 @@ Telegram-first marketplace для подписок на инвестиционн
 
 Поддерживаются два storage-режима:
 
-- `APP_DATA_MODE=file` — локальный/demo режим на `storage/runtime/*`
-- `APP_DATA_MODE=db` — PostgreSQL через SQLAlchemy async
+- `APP_DATA_MODE=db` — основной рабочий режим текущего цикла
+- `APP_DATA_MODE=file` — вторичный local/demo compatibility режим на `storage/runtime/*`
 
 Важно:
 
 - в `db`-mode clean schema и startup path поддерживаются
-- полный business seed в PostgreSQL пока не выполняется автоматически: auto-seed-ятся только `instruments` и bootstrap `admin`
+- именно `db` сейчас считается основным runtime target
+- минимальный public checkout seed в PostgreSQL теперь выполняется автоматически: auto-seed-ятся `instruments`, bootstrap `admin` и базовый public catalog checkout dataset
+- полный business seed в PostgreSQL по-прежнему не закрыт полностью
 
 Платежные провайдеры:
 
@@ -48,7 +50,8 @@ Telegram-first marketplace для подписок на инвестиционн
 Если задача локальная:
 
 - поднимайте проект по [doc/README.md](/Users/alexey/site/PitchCopyTrade/doc/README.md)
-- для быстрой разработки используйте `APP_DATA_MODE=file`
+- в первую очередь проверяйте сценарии в `APP_DATA_MODE=db`
+- `APP_DATA_MODE=file` используйте как быстрый preview/smoke fallback
 - для clean DB reset и db-mode сценариев переходите в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md)
 
 Если задача продуктовая или UX:

@@ -371,7 +371,11 @@ def _risk_level_label(value: object) -> str:
 
 
 async def get_public_product(repository: PublicRepository, product_id: str) -> SubscriptionProduct | None:
-    return await repository.get_public_product(product_id)
+    return await repository.get_public_product_by_ref(product_id)
+
+
+async def get_public_product_by_ref(repository: PublicRepository, product_ref: str) -> SubscriptionProduct | None:
+    return await repository.get_public_product_by_ref(product_ref)
 
 
 async def get_public_product_by_slug(repository: PublicRepository, slug: str) -> SubscriptionProduct | None:
@@ -625,6 +629,8 @@ async def _create_checkout_records(
     payment.consents = []
     repository.add(payment)
 
+    await repository.flush()
+
     consents = [
         record_user_consent(
             user=user,
@@ -637,6 +643,8 @@ async def _create_checkout_records(
         for document in required_documents
     ]
     bind_consents_to_payment(consents=consents, payment=payment)
+    for consent in consents:
+        repository.add(consent)
 
     subscription = Subscription(
         user=user,
@@ -654,6 +662,7 @@ async def _create_checkout_records(
     repository.add(subscription)
 
     await repository.commit()
+    await repository.refresh(product)
     await repository.refresh(payment)
     await repository.refresh(subscription)
     await _sync_promo_redemption_counter(repository, promo_code)
@@ -679,17 +688,6 @@ async def _create_free_checkout_records(
     required_documents: list[LegalDocument],
     timestamp: datetime,
 ) -> CheckoutResult:
-    consents = [
-        record_user_consent(
-            user=user,
-            document=document,
-            source=source,
-            payment=None,
-            accepted_at=timestamp,
-            ip_address=ip_address,
-        )
-        for document in required_documents
-    ]
     subscription = Subscription(
         user=user,
         product=product,
@@ -705,7 +703,24 @@ async def _create_free_checkout_records(
     )
     repository.add(subscription)
 
+    await repository.flush()
+
+    consents = [
+        record_user_consent(
+            user=user,
+            document=document,
+            source=source,
+            payment=None,
+            accepted_at=timestamp,
+            ip_address=ip_address,
+        )
+        for document in required_documents
+    ]
+    for consent in consents:
+        repository.add(consent)
+
     await repository.commit()
+    await repository.refresh(product)
     await repository.refresh(subscription)
     await _sync_promo_redemption_counter(repository, promo_code)
     return CheckoutResult(
@@ -751,7 +766,7 @@ async def _create_tbank_checkout_records(
         order_id=order_id,
         amount_rub=pricing.final_amount_rub if pricing is not None else product.price_rub,
         description=product.title,
-        success_url=f"{settings.app.base_url}/checkout/{product.id}",
+        success_url=f"{settings.app.base_url}/checkout/{product.slug}",
     )
 
     payment = Payment(
@@ -780,6 +795,8 @@ async def _create_tbank_checkout_records(
     payment.consents = []
     repository.add(payment)
 
+    await repository.flush()
+
     consents = [
         record_user_consent(
             user=user,
@@ -792,6 +809,8 @@ async def _create_tbank_checkout_records(
         for document in required_documents
     ]
     bind_consents_to_payment(consents=consents, payment=payment)
+    for consent in consents:
+        repository.add(consent)
 
     subscription = Subscription(
         user=user,
@@ -809,6 +828,7 @@ async def _create_tbank_checkout_records(
     repository.add(subscription)
 
     await repository.commit()
+    await repository.refresh(product)
     await repository.refresh(payment)
     await repository.refresh(subscription)
     return CheckoutResult(

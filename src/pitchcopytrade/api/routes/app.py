@@ -110,9 +110,9 @@ async def app_strategy_detail(
     )
 
 
-@router.get("/checkout/{product_id}", response_class=HTMLResponse)
+@router.get("/checkout/{product_ref}", response_class=HTMLResponse)
 async def app_checkout_page(
-    product_id: str,
+    product_ref: str,
     request: Request,
     auth_repository: AuthRepository = Depends(get_auth_repository),
     access_repository: AccessRepository = Depends(get_access_repository),
@@ -122,16 +122,17 @@ async def app_checkout_page(
     if isinstance(user, Response):
         return user
 
-    product = await get_public_product(public_repository, product_id)
+    product = await get_public_product(public_repository, product_ref)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    product_title = product.title
     documents = await list_active_checkout_documents(public_repository)
     checkout_ready = len(documents) == 4
     return templates.TemplateResponse(
         request,
         "public/checkout.html",
         {
-            "title": f"Подписка {product.title}",
+            "title": f"Подписка {product_title}",
             "product": product,
             "documents": documents,
             "checkout_ready": checkout_ready,
@@ -150,9 +151,9 @@ async def app_checkout_page(
     )
 
 
-@router.post("/checkout/{product_id}", response_class=HTMLResponse)
+@router.post("/checkout/{product_ref}", response_class=HTMLResponse)
 async def app_checkout_submit(
-    product_id: str,
+    product_ref: str,
     request: Request,
     auth_repository: AuthRepository = Depends(get_auth_repository),
     access_repository: AccessRepository = Depends(get_access_repository),
@@ -167,9 +168,10 @@ async def app_checkout_submit(
     if isinstance(user, Response):
         return user
 
-    product = await get_public_product(public_repository, product_id)
+    product = await get_public_product(public_repository, product_ref)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    product_title = product.title
     documents = await list_active_checkout_documents(public_repository)
     checkout_ready = len(documents) == 4
     try:
@@ -194,7 +196,7 @@ async def app_checkout_submit(
             request,
             "public/checkout.html",
             {
-                "title": f"Подписка {product.title}",
+                "title": f"Подписка {product_title}",
                 "product": product,
                 "documents": documents,
                 "checkout_ready": checkout_ready,
@@ -213,12 +215,12 @@ async def app_checkout_submit(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     except Exception:
-        logger.exception("Mini App checkout creation failed for product %s", product_id)
+        logger.exception("Mini App checkout creation failed for product %s", product_ref)
         return templates.TemplateResponse(
             request,
             "public/checkout.html",
             {
-                "title": f"Подписка {product.title}",
+                "title": f"Подписка {product_title}",
                 "product": product,
                 "documents": documents,
                 "checkout_ready": checkout_ready,

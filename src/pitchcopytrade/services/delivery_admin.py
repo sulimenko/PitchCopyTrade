@@ -49,11 +49,11 @@ async def list_admin_delivery_records(
             key=lambda item: (item.published, item.updated),
             reverse=True,
         )
-        return [_build_delivery_record(item, _events_for_recommendation(graph.audit_events.values(), item.id)) for item in recommendations]
+        return [_build_delivery_record(item, _events_for_message(graph.audit_events.values(), item.id)) for item in recommendations]
 
     recommendations = await _list_published_recommendations(session)
     events = await _list_delivery_events(session)
-    return [_build_delivery_record(item, _events_for_recommendation(events, item.id)) for item in recommendations]
+    return [_build_delivery_record(item, _events_for_message(events, item.id)) for item in recommendations]
 
 
 async def get_admin_delivery_record(

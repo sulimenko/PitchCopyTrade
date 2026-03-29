@@ -120,13 +120,13 @@ async def strategy_detail_page(
     )
 
 
-@router.get("/checkout/{product_id}", response_class=HTMLResponse)
+@router.get("/checkout/{product_ref}", response_class=HTMLResponse)
 async def checkout_page(
-    product_id: str,
+    product_ref: str,
     request: Request,
     repository: PublicRepository = Depends(get_public_repository),
 ) -> Response:
-    product = await get_public_product(repository, product_id)
+    product = await get_public_product(repository, product_ref)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
@@ -177,9 +177,9 @@ async def legal_document_page(
     )
 
 
-@router.post("/checkout/{product_id}", response_class=HTMLResponse)
+@router.post("/checkout/{product_ref}", response_class=HTMLResponse)
 async def checkout_submit(
-    product_id: str,
+    product_ref: str,
     request: Request,
     repository: PublicRepository = Depends(get_public_repository),
     full_name: str = Form(""),
@@ -189,9 +189,10 @@ async def checkout_submit(
     accepted_document_ids: list[str] = Form(...),
     promo_code_value: str = Form(""),
 ) -> Response:
-    product = await get_public_product(repository, product_id)
+    product = await get_public_product(repository, product_ref)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    product_title = product.title
 
     documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
@@ -215,7 +216,7 @@ async def checkout_submit(
             request,
             "public/checkout.html",
             {
-                "title": f"Подписка {product.title}",
+                "title": f"Подписка {product_title}",
                 "product": product,
                 "documents": documents,
                 "checkout_ready": checkout_ready,
@@ -234,12 +235,12 @@ async def checkout_submit(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     except Exception:
-        logger.exception("Public checkout creation failed for product %s", product_id)
+        logger.exception("Public checkout creation failed for product %s", product_ref)
         return templates.TemplateResponse(
             request,
             "public/checkout.html",
             {
-                "title": f"Подписка {product.title}",
+                "title": f"Подписка {product_title}",
                 "product": product,
                 "documents": documents,
                 "checkout_ready": checkout_ready,

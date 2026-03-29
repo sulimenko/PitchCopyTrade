@@ -84,6 +84,22 @@ async def _run_seeders(settings) -> None:
     except Exception as exc:
         logger.error("Admin seeder failed: %s", exc)
 
+    try:
+        from pitchcopytrade.db.seeders.public_catalog import seed_public_catalog
+        session = AsyncSessionLocal()
+        try:
+            count = await seed_public_catalog(session)
+            if count:
+                logger.info("Public catalog seeded: %d strategies", count)
+        finally:
+            try:
+                await session.close()
+            except ValueError as exc:
+                if "greenlet" not in str(exc):
+                    raise
+    except Exception as exc:
+        logger.error("Public catalog seeder failed: %s", exc)
+
 
 async def _init_arq_pool(app: FastAPI, settings) -> None:
     del settings

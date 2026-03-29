@@ -226,7 +226,14 @@ def serialize_subscriptions(subscriptions: list, request_url_for=None) -> str:
         if item.user:
             user_display = item.user.full_name or item.user.email or item.user.username or "—"
 
-        lead_source_name = item.lead_source.slug if item.lead_source else "—"
+        lead_source_name = "—"
+        if item.lead_source:
+            lead_source_name = (
+                getattr(item.lead_source, "name", None)
+                or getattr(item.lead_source, "ref_code", None)
+                or _enum_str(getattr(item.lead_source, "source_type", None))
+                or "—"
+            )
 
         data.append({
             "client": f"<strong>{user_display}</strong><br>{item.user.email if item.user else ''}",

@@ -34,7 +34,7 @@
   </div>
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:22px;">
     {% if first_product %}
-    <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.id }}{% else %}/app/checkout/{{ first_product.id }}{% endif %}{% else %}/checkout/{{ first_product.id }}{% endif %}">{{ strategy.story.commercial_cta_label if strategy.story else "Выбрать подписку" }}</a>
+    <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}">{{ strategy.story.commercial_cta_label if strategy.story else "Выбрать подписку" }}</a>
     {% endif %}
     <a class="action ghost" href="#tariffs">Тарифы</a>
     <a class="action ghost" href="#faq">FAQ</a>
@@ -133,7 +133,7 @@
   <h2 style="margin:10px 0 14px;font-size:1.55rem;">Тарифы и CTA</h2>
   <div style="display:grid;gap:12px;">
     {% for product in strategy.subscription_products %}
-    <a class="surface" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ product.id }}{% else %}/app/checkout/{{ product.id }}{% endif %}{% else %}/checkout/{{ product.id }}{% endif %}" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
+    <a class="surface" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ product.slug }}{% else %}/app/checkout/{{ product.slug }}{% endif %}{% else %}/checkout/{{ product.slug }}{% endif %}" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
         <div>
           <strong style="font-size:1.1rem;">{{ product.title }}</strong>

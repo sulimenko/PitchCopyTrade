@@ -32,16 +32,16 @@
 
 Storage modes:
 
-- `file` — основной локальный режим, читает `storage/runtime/*`
-- `db` — PostgreSQL режим для clean reset и server-like сценариев
+- `db` — основной рабочий режим текущего цикла
+- `file` — вторичный compatibility/smoke режим, читающий `storage/runtime/*`
 
 Важные env-факты:
 
 - canonical runtime env file = `.env`
 - template для локальной конфигурации = `.env.example`
 - `api` не стартует без `INTERNAL_API_SECRET`
-- `file`-mode быстрее для верстки, UI smoke и локального исследования
-- `db`-mode нужен, если вы реально проверяете clean schema, startup path, auto-seed инструментов/admin и PostgreSQL path
+- `db`-mode является приоритетным runtime path для текущей разработки
+- `file`-mode можно использовать для быстрой верстки, preview и compatibility smoke, но не как основной критерий готовности product-flow
 
 ## Подготовка окружения
 
@@ -57,7 +57,18 @@ fi
 
 ## Локальный запуск без Docker
 
-### Рекомендуемый режим: `file`
+### Основной режим: `db`
+
+Используйте `APP_DATA_MODE=db`, если проверяете реальные продуктовые сценарии.
+
+Важно:
+
+- текущий цикл считает `db` основным рабочим контуром;
+- `file` остается полезным для быстрого UI smoke и preview, но не заменяет проверку на PostgreSQL path.
+
+Детальный reset/startup сценарий вынесен в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md).
+
+### Быстрый fallback режим: `file`
 
 Перед воспроизводимой проверкой очистите runtime:
 
@@ -118,19 +129,18 @@ export TELEGRAM_BOT_USERNAME=<real-bot-username>
 ./.venv/bin/python -m pitchcopytrade.bot.main
 ```
 
-### Когда использовать `db`
+### Когда использовать `file`
 
-Переходите в `APP_DATA_MODE=db`, только если хотите:
+Переходите в `APP_DATA_MODE=file`, если хотите:
 
-- проверить `deploy/schema.sql`
-- сделать clean reset PostgreSQL
-- проверить auto-seed инструментов и bootstrap admin
-- прогнать db-mode regression suite
+- быстро смотреть верстку
+- воспроизводить compatibility path
+- делать preview/smoke без полной зависимости от PostgreSQL данных
 
 Важно:
 
-- полный business seed для PostgreSQL пока не выполняется автоматически;
-- `messages.json`, `users.json`, `strategies.json` и остальные dataset-файлы не импортируются в БД на startup сами по себе;
+- `file` больше не считается главным режимом приемки product-flow;
+- если задача работает только в `file`, но не работает в `db`, она не считается закрытой;
 - детальный db-mode runbook и текущие ограничения описаны в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md).
 
 Сам сценарий reset/migrate намеренно вынесен в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md), чтобы не дублировать server/db runbook здесь.
@@ -186,8 +196,13 @@ Public:
 
 - `http://127.0.0.1:8000/catalog`
 - `http://127.0.0.1:8000/catalog/strategies/momentum-ru`
-- `http://127.0.0.1:8000/checkout/product-1`
+- `http://127.0.0.1:8000/checkout/momentum-ru-month`
 - `http://127.0.0.1:8000/legal/doc-disclaimer`
+
+Важно:
+
+- `http://127.0.0.1:8000/checkout/momentum-ru-month` теперь canonical public checkout URL в `APP_DATA_MODE=db`;
+- `product-1` остается file-mode seeded example и не является универсальным локальным URL.
 
 Mini App:
 

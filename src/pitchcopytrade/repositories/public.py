@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -52,6 +54,19 @@ class SqlAlchemyPublicRepository(PublicRepository):
             strategy.subscription_products = [product for product in strategy.subscription_products if product.is_active]
         return strategy
 
+    async def get_public_product_by_ref(self, product_ref: str) -> SubscriptionProduct | None:
+        normalized = (product_ref or "").strip()
+        if not normalized:
+            return None
+        product = await self.get_public_product_by_slug(normalized)
+        if product is not None:
+            return product
+        try:
+            UUID(normalized)
+        except ValueError:
+            return None
+        return await self.get_public_product(normalized)
+
     async def get_public_product(self, product_id: str) -> SubscriptionProduct | None:
         query = (
             select(SubscriptionProduct)
@@ -85,7 +100,7 @@ class SqlAlchemyPublicRepository(PublicRepository):
         product = result.scalar_one_or_none()
         if product is None:
             return None
-        return await self.get_public_product(product.id)
+        return await self.get_public_product_by_ref(product.id)
 
     async def list_active_checkout_documents(self) -> list[LegalDocument]:
         query = (
@@ -156,6 +171,9 @@ class SqlAlchemyPublicRepository(PublicRepository):
     def add(self, entity: object) -> None:
         self.session.add(entity)
 
+    async def flush(self) -> None:
+        await self.session.flush()
+
     async def commit(self) -> None:
         await self.session.commit()
 
@@ -207,6 +225,15 @@ class FilePublicRepository(PublicRepository):
             return None
         return await self.get_public_product(product.id)
 
+    async def get_public_product_by_ref(self, product_ref: str) -> SubscriptionProduct | None:
+        normalized = (product_ref or "").strip()
+        if not normalized:
+            return None
+        product = await self.get_public_product_by_slug(normalized)
+        if product is not None:
+            return product
+        return await self.get_public_product(normalized)
+
     async def list_active_checkout_documents(self) -> list[LegalDocument]:
         by_type: dict[LegalDocumentType, LegalDocument] = {}
         for document in sorted(
@@ -253,6 +280,9 @@ class FilePublicRepository(PublicRepository):
 
     def add(self, entity: object) -> None:
         self.graph.add(entity)
+
+    async def flush(self) -> None:
+        return None
 
     async def commit(self) -> None:
         self.graph.save(self.store)

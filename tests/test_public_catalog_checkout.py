@@ -42,6 +42,20 @@ class FakeAccessRepository:
     pass
 
 
+class _TitleGuardProduct:
+    def __init__(self, *, product_id: str = "product-1", title: str = "Momentum RU") -> None:
+        self.id = product_id
+        self._title = title
+        self.title_accesses = 0
+
+    @property
+    def title(self) -> str:
+        self.title_accesses += 1
+        if self.title_accesses > 2:
+            raise AssertionError("product.title accessed too many times")
+        return self._title
+
+
 def _build_client(
     repository: FakePublicRepository,
     *,
@@ -231,7 +245,7 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Momentum RU" in response.text
         assert product.title in response.text
-        assert f"/checkout/{product.id}" in response.text
+        assert f"/checkout/{product.slug}" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
         assert "Короткий тезис" in response.text
         assert "Тарифы и CTA" in response.text
@@ -259,7 +273,7 @@ def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
         response = client.get("/app/strategies/momentum-ru")
 
         assert response.status_code == 200
-        assert f"/app/checkout/{product.id}" in response.text
+        assert f"/app/checkout/{product.slug}" in response.text
         assert "Короткий тезис" in response.text
         assert "Выбрать подписку" in response.text
 
@@ -277,7 +291,7 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
     )
 
     with _build_client(FakePublicRepository()) as client:
-        response = client.get("/checkout/product-1")
+        response = client.get("/checkout/momentum-ru-month")
 
         assert response.status_code == 200
         assert "оформление подписки" in response.text
@@ -316,7 +330,7 @@ def test_app_checkout_prefills_telegram_user(monkeypatch) -> None:
         access_repository=FakeAccessRepository(),
     ) as client:
         client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
-        response = client.get("/app/checkout/product-1")
+        response = client.get("/app/checkout/momentum-ru-month")
 
         assert response.status_code == 200
         assert "Lead User" in response.text
@@ -388,7 +402,7 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
 
     with _build_client(FakePublicRepository()) as client:
         response = client.post(
-            "/checkout/product-1",
+            "/checkout/momentum-ru-month",
             data={
                 "full_name": "Lead User",
                 "email": "lead@example.com",
@@ -437,7 +451,7 @@ def test_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
 
     with _build_client(FakePublicRepository()) as client:
         response = client.post(
-            "/checkout/product-1",
+            "/checkout/momentum-ru-month",
             data={
                 "full_name": "Lead User",
                 "email": "lead@example.com",
@@ -512,7 +526,7 @@ def test_app_checkout_submit_creates_telegram_linked_flow(monkeypatch) -> None:
     ) as client:
         client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
         response = client.post(
-            "/app/checkout/product-1",
+            "/app/checkout/momentum-ru-month",
             data={
                 "full_name": "Lead User",
                 "email": "lead@example.com",
@@ -576,7 +590,7 @@ def test_app_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
     ) as client:
         client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
         response = client.post(
-            "/app/checkout/product-1",
+            "/app/checkout/momentum-ru-month",
             data={
                 "full_name": "Lead User",
                 "email": "lead@example.com",
@@ -651,7 +665,7 @@ def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:
 
     with _build_client(FakePublicRepository()) as client:
         response = client.post(
-            "/checkout/product-1",
+            "/checkout/momentum-ru-month",
             data={
                 "full_name": "Lead User",
                 "email": "lead@example.com",
@@ -665,6 +679,91 @@ def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:
         assert response.status_code == 201
         assert "WELCOME10" in response.text
         assert "450 руб" in response.text
+
+
+def test_checkout_submit_uses_saved_product_title_on_exception(monkeypatch) -> None:
+    product = _TitleGuardProduct()
+    documents = _make_documents()
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.create_stub_checkout",
+        lambda _repository, product, request: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.post(
+            "/checkout/momentum-ru-month",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "lead_source_name": "ads",
+                "accepted_document_ids": [item.id for item in documents],
+            },
+        )
+
+        assert response.status_code == 503
+        assert "Подписка Momentum RU" in response.text
+        assert product.title_accesses == 2
+
+
+def test_app_checkout_submit_uses_saved_product_title_on_exception(monkeypatch) -> None:
+    product = _TitleGuardProduct()
+    documents = _make_documents()
+    user = User(
+        id="user-1",
+        telegram_user_id=12345,
+        username="leaduser",
+        full_name="Lead User",
+        email="lead@example.com",
+        timezone="Europe/Moscow",
+    )
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.create_telegram_stub_checkout",
+        lambda _repository, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.post(
+            "/app/checkout/momentum-ru-month",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "accepted_document_ids": [item.id for item in documents],
+                "promo_code_value": "",
+            },
+        )
+
+        assert response.status_code == 503
+        assert "Подписка Momentum RU" in response.text
+        assert product.title_accesses == 2
 
 
 def test_tbank_callback_endpoint_validates_token_and_returns_ok(monkeypatch) -> None:

@@ -27,6 +27,7 @@ class FakeSession:
         self.documents = documents
         self.user = None
         self.added = []
+        self.refreshed = []
 
     async def list_active_checkout_documents(self):
         return self.documents
@@ -45,11 +46,33 @@ class FakeSession:
         self.added.append(entity)
         if entity.__class__.__name__ == "User":
             self.user = entity
+        if getattr(entity, "id", None) is None:
+            if entity.__class__.__name__ == "User":
+                entity.id = "user-1"
+            elif entity.__class__.__name__ == "Payment":
+                entity.id = "payment-1"
+            elif entity.__class__.__name__ == "Subscription":
+                entity.id = "subscription-1"
+            elif entity.__class__.__name__ == "UserConsent":
+                entity.id = f"consent-{len([item for item in self.added if item.__class__.__name__ == 'UserConsent'])}"
 
     async def commit(self):
         return None
 
+    async def flush(self):
+        for entity in self.added:
+            if getattr(entity, "id", None) is None:
+                if entity.__class__.__name__ == "User":
+                    entity.id = "user-1"
+                elif entity.__class__.__name__ == "Payment":
+                    entity.id = "payment-1"
+                elif entity.__class__.__name__ == "Subscription":
+                    entity.id = "subscription-1"
+                elif entity.__class__.__name__ == "UserConsent":
+                    entity.id = f"consent-{len([item for item in self.added if item.__class__.__name__ == 'UserConsent'])}"
+
     async def refresh(self, entity):
+        self.refreshed.append(entity)
         return None
 
 
@@ -117,6 +140,9 @@ async def test_create_stub_checkout_auto_confirms_stub_manual_entities() -> None
     assert result.payment.confirmed_at is not None
     assert result.subscription.status == SubscriptionStatus.ACTIVE
     assert result.subscription.is_trial is True
+    assert product in session.refreshed
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 4
+    assert result.payment.consents == []
 
 
 @pytest.mark.asyncio
@@ -145,6 +171,9 @@ async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() ->
     assert result.payment is not None
     assert result.payment.status == PaymentStatus.PAID
     assert result.subscription.status == SubscriptionStatus.ACTIVE
+    assert product in session.refreshed
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 4
+    assert result.payment.consents == []
 
 
 @pytest.mark.asyncio
@@ -168,6 +197,8 @@ async def test_create_stub_checkout_skips_payment_for_free_product() -> None:
 
     assert result.payment is None
     assert result.subscription.status == SubscriptionStatus.ACTIVE
+    assert product in session.refreshed
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 4
 
 
 @pytest.mark.asyncio
@@ -231,3 +262,4 @@ async def test_create_stub_checkout_uses_tbank_provider_when_enabled(monkeypatch
     assert result.payment.provider == PaymentProvider.TBANK
     assert result.payment_url == "https://pay.tbank.ru/qr/777"
     assert result.payment.provider_payload["provider_payment_id"] == "777"
+    assert product in session.refreshed

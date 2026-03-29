@@ -96,7 +96,7 @@ Product contract, backlog и review gate вынесены в:
 2. выполнить `bash deploy/migrate.sh --reset`
 3. поднять `api`
 4. дождаться auto-seed инструментов и bootstrap admin
-5. если нужен полный dataset для manual QA, пока использовать file-mode или реализовать importer из `storage/seed/json/*`
+5. если нужен полный dataset для manual QA, нельзя считать `file` заменой основного runtime: нужно закрыть/import `L5` и получить полный business seed именно в PostgreSQL
 
 ## Команды миграции
 

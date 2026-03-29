@@ -12,6 +12,7 @@ from pitchcopytrade.api.lifespan import _run_seeders
 from pitchcopytrade.db.models.accounts import Role, User
 from pitchcopytrade.db.seeders.admin import seed_admin
 from pitchcopytrade.db.seeders.instruments import resolve_instruments_seed_path
+from pitchcopytrade.db.seeders.public_catalog import seed_public_catalog
 
 
 class _ScalarResult:
@@ -83,6 +84,26 @@ class MultiAdminSeederSession(FakeSeederSession):
         return _ScalarResult(self.existing_admin_result)
 
 
+class FakePublicCatalogSeederSession:
+    def __init__(self) -> None:
+        self.added: list[object] = []
+        self.committed = False
+        self.closed = False
+
+    async def execute(self, statement):
+        del statement
+        return _ScalarResult(None)
+
+    def add(self, entity: object) -> None:
+        self.added.append(entity)
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def close(self) -> None:
+        self.closed = True
+
+
 def test_resolve_instruments_seed_path_from_storage_root(tmp_path: Path, monkeypatch) -> None:
     storage_root = tmp_path / "container-app" / "runtime-storage"
     seed_dir = storage_root / "seed" / "json"
@@ -131,13 +152,32 @@ async def test_seed_admin_skips_when_multiple_admins_already_exist() -> None:
 
 
 @pytest.mark.asyncio
+async def test_seed_public_catalog_bootstraps_minimal_checkout_dataset() -> None:
+    session = FakePublicCatalogSeederSession()
+
+    created = await seed_public_catalog(session)
+
+    assert created == 1
+    assert session.committed is True
+    assert any(entity.__class__.__name__ == "Strategy" for entity in session.added)
+    assert any(entity.__class__.__name__ == "SubscriptionProduct" for entity in session.added)
+    assert sum(1 for entity in session.added if entity.__class__.__name__ == "LegalDocument") == 4
+    strategy = next(entity for entity in session.added if entity.__class__.__name__ == "Strategy")
+    product = next(entity for entity in session.added if entity.__class__.__name__ == "SubscriptionProduct")
+    assert strategy.slug == "momentum-ru"
+    assert product.slug == "momentum-ru-month"
+    assert product.strategy is strategy
+
+
+@pytest.mark.asyncio
 async def test_run_seeders_skips_admin_bootstrap_without_error_log_for_multi_admin_state(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     instrument_session = FakeSeederSession()
     admin_session = MultiAdminSeederSession()
-    sessions = [instrument_session, admin_session]
+    public_session = FakePublicCatalogSeederSession()
+    sessions = [instrument_session, admin_session, public_session]
 
     def session_factory():
         return sessions.pop(0)
@@ -146,9 +186,14 @@ async def test_run_seeders_skips_admin_bootstrap_without_error_log_for_multi_adm
         assert session is instrument_session
         return 0
 
+    async def fake_seed_public_catalog(session) -> int:
+        assert session is public_session
+        return 0
+
     settings = SimpleNamespace(admin_telegram_id=777001, admin_email="admin@example.com")
     monkeypatch.setattr("pitchcopytrade.db.session.AsyncSessionLocal", session_factory)
     monkeypatch.setattr("pitchcopytrade.db.seeders.instruments.seed_instruments", fake_seed_instruments)
+    monkeypatch.setattr("pitchcopytrade.db.seeders.public_catalog.seed_public_catalog", fake_seed_public_catalog)
 
     with caplog.at_level(logging.INFO):
         await _run_seeders(settings)
@@ -157,6 +202,37 @@ async def test_run_seeders_skips_admin_bootstrap_without_error_log_for_multi_adm
 
     assert instrument_session.closed is True
     assert admin_session.closed is True
+    assert public_session.closed is True
     assert not any(record.levelno >= logging.ERROR for record in caplog.records if record.name == "pitchcopytrade.api.lifespan")
     assert not any("Admin seeder failed" in message for message in messages)
     assert not any("Multiple rows were found when one or none was required" in message for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_run_seeders_invokes_public_catalog_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
+    instrument_session = FakeSeederSession()
+    admin_session = MultiAdminSeederSession()
+    public_session = FakePublicCatalogSeederSession()
+    sessions = [instrument_session, admin_session, public_session]
+
+    def session_factory():
+        return sessions.pop(0)
+
+    async def fake_seed_instruments(session) -> int:
+        assert session is instrument_session
+        return 0
+
+    async def fake_seed_public_catalog(session) -> int:
+        assert session is public_session
+        return 1
+
+    settings = SimpleNamespace(admin_telegram_id=777001, admin_email="admin@example.com")
+    monkeypatch.setattr("pitchcopytrade.db.session.AsyncSessionLocal", session_factory)
+    monkeypatch.setattr("pitchcopytrade.db.seeders.instruments.seed_instruments", fake_seed_instruments)
+    monkeypatch.setattr("pitchcopytrade.db.seeders.public_catalog.seed_public_catalog", fake_seed_public_catalog)
+
+    await _run_seeders(settings)
+
+    assert instrument_session.closed is True
+    assert admin_session.closed is True
+    assert public_session.closed is True
