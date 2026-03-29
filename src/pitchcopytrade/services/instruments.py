@@ -79,9 +79,16 @@ def clear_instrument_quote_cache() -> None:
 async def get_instrument_quote(ticker: str) -> InstrumentQuote:
     settings = get_settings().instrument_quotes
     normalized_ticker = _normalize_ticker(ticker)
+    logger.info(
+        "Fetching quote for %s: provider_enabled=%s, url=%s",
+        normalized_ticker or ticker,
+        settings.provider_enabled,
+        settings.provider_base_url,
+    )
     if not normalized_ticker:
         return _empty_quote("", source="meta.pbull.kz", status="empty")
     if not settings.provider_enabled:
+        logger.warning("Instrument quote provider disabled for %s", normalized_ticker)
         return _empty_quote(normalized_ticker, source="meta.pbull.kz", status="disabled")
 
     cached_quote = await _get_cached_quote(normalized_ticker)
@@ -103,6 +110,14 @@ async def get_instrument_quote(ticker: str) -> InstrumentQuote:
 
 async def build_instrument_payload(instrument) -> dict[str, object]:
     quote = await get_instrument_quote(instrument.ticker)
+    if quote.status in {"empty", "disabled"}:
+        logger.warning("No quote for %s: status=%s", instrument.ticker, quote.status)
+    logger.info(
+        "Instrument payload for %s: quote_status=%s, last_price=%s",
+        instrument.ticker,
+        quote.status,
+        quote.last_price,
+    )
     payload = {
         "id": instrument.id,
         "ticker": instrument.ticker,
@@ -198,8 +213,11 @@ async def _store_quote(ticker: str, quote: InstrumentQuote, *, ttl_seconds: int)
 
 async def _fetch_quote(ticker: str, *, settings) -> InstrumentQuote:
     url = settings.provider_base_url
+    logger.info("Quote HTTP request: GET %s?symbol=%s", url, ticker)
     async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
         response = await client.get(url, params={"symbol": ticker})
+    response_body = getattr(response, "content", b"") or b""
+    logger.info("Quote HTTP response: status=%s, body_length=%s", response.status_code, len(response_body))
     response.raise_for_status()
     payload = response.json()
     normalized = _normalize_provider_payload(ticker, payload, source=_provider_source(settings))
@@ -209,9 +227,21 @@ async def _fetch_quote(ticker: str, *, settings) -> InstrumentQuote:
 
 
 def _normalize_provider_payload(ticker: str, payload: object, *, source: str) -> InstrumentQuote | None:
-    data = _unwrap_payload(payload)
+    unwrapped = _unwrap_payload(payload)
+    if isinstance(unwrapped, dict) and ticker in unwrapped and isinstance(unwrapped[ticker], dict):
+        data = unwrapped[ticker]
+    else:
+        data = unwrapped
     if not isinstance(data, dict):
+        logger.warning("Provider payload for %s is not a dict: %s", ticker, type(data))
         return None
+    logger.debug(
+        "Normalizing provider payload for %s: keys=%s, has_trade=%s, has_daily_bar=%s",
+        ticker,
+        list(data.keys())[:10],
+        "trade" in data,
+        "daily-bar" in data,
+    )
 
     symbol = _first_text(
         data,
@@ -220,12 +250,32 @@ def _normalize_provider_payload(ticker: str, payload: object, *, source: str) ->
         "secCode",
         "sec_code",
         "code",
+        "short_name",
     )
-    last_price = _first_float(data, "lastPrice", "last_price", "price", "close", "ltp", "marketPrice")
-    change_abs = _first_float(data, "change", "delta", "priceChange", "change_value", "absChange")
-    change_pct = _first_float(data, "changePercent", "change_pct", "change_percentage", "percentChange")
-    currency = _first_text(data, "currency", "curr", "priceCurrency")
-    updated_at = _first_text(data, "updatedAt", "updated_at", "time", "timestamp", "datetime", "lastUpdate")
+
+    last_price = _nested_float(data, "trade.price")
+    if last_price is None:
+        last_price = _nested_float(data, "daily-bar.close")
+    if last_price is None:
+        last_price = _first_float(data, "lastPrice", "last_price", "price", "close", "ltp", "marketPrice")
+
+    prev_close = _nested_float(data, "prev-daily-bar.close")
+    if prev_close is None:
+        prev_close = _first_float(data, "prev_close_price", "previousClose")
+    if last_price is not None and prev_close is not None:
+        change_abs = round(last_price - prev_close, 6)
+    else:
+        change_abs = _first_float(data, "change", "delta", "priceChange", "change_value", "absChange")
+    if last_price is not None and prev_close is not None and prev_close != 0:
+        change_pct = round((last_price - prev_close) / prev_close * 100, 2)
+    else:
+        change_pct = _first_float(data, "changePercent", "change_pct", "change_percentage", "percentChange", "chp")
+    currency = _first_text(data, "currency_code", "currency", "curr", "priceCurrency", "currency_id")
+    updated_at = (
+        _nested_text(data, "trade.time")
+        or _nested_text(data, "trade.data-update-time")
+        or _first_text(data, "updatedAt", "updated_at", "time", "timestamp", "datetime", "lastUpdate")
+    )
     status = _first_text(data, "status", "state", "tradeStatus") or ("ok" if last_price is not None else "empty")
 
     if last_price is None and change_abs is None and change_pct is None and symbol == "" and len(data) == 0:
@@ -275,6 +325,28 @@ def _first_float(data: dict[str, object], *keys: str) -> float | None:
         if number is not None:
             return number
     return None
+
+
+def _nested_float(data: dict[str, object], path: str) -> float | None:
+    current: object = data
+    for key in path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+        if current is None:
+            return None
+    return _coerce_float(current)
+
+
+def _nested_text(data: dict[str, object], path: str) -> str:
+    current: object = data
+    for key in path.split("."):
+        if not isinstance(current, dict):
+            return ""
+        current = current.get(key)
+        if current is None:
+            return ""
+    return str(current).strip()
 
 
 def _coerce_float(value: object) -> float | None:

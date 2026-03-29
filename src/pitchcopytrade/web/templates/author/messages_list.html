@@ -1,11 +1,11 @@
-{% extends "staff_base.html" %}
+{% extends "author/author_base.html" %}
 
 {% block parent_href %}/author/dashboard{% endblock %}
 {% block breadcrumbs %}Автор / Сообщения{% endblock %}
 {% block page_title %}Сообщения автора{% endblock %}
 
 {% block topbar_actions %}
-<button class="staff-btn is-primary" type="button" data-open-message-modal data-modal-url="{{ message_modal_url }}">Новое сообщение</button>
+<button class="staff-btn is-primary" type="button" data-composer-dock-toggle>Новое сообщение</button>
 {% endblock %}
 
 {% block content %}
@@ -40,73 +40,10 @@
   });
   </script>
 
-  <dialog id="message-modal" class="workspace-modal">
-    <div class="staff-card" style="padding:18px;">
-      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
-        <div>
-          <div class="eyebrow">модальный редактор</div>
-          <strong>Новое сообщение</strong>
-        </div>
-        <button class="ghost" type="button" data-close-message-modal>Закрыть</button>
-      </div>
-      <iframe id="message-modal-frame" src="{{ message_modal_url }}" title="Создание сообщения" class="workspace-modal-frame" style="width:100%;height:min(84vh,980px);border:0;border-radius:14px;margin-top:14px;background:#fff;"></iframe>
-    </div>
-  </dialog>
 </section>
 {% endblock %}
 
-{% block extra_head %}
-<style>
-  .workspace-modal { border: 0; padding: 0; background: transparent; width: min(1220px, calc(100% - 24px)); }
-  .workspace-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
-</style>
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-  (function () {
-    const modal = document.getElementById("message-modal");
-    const modalFrame = document.getElementById("message-modal-frame");
-    const openButtons = document.querySelectorAll("[data-open-message-modal]");
-    const closeButtons = document.querySelectorAll("[data-close-message-modal]");
-
-    function openModal(url) {
-      if (modalFrame && url) modalFrame.src = url;
-      if (modal && typeof modal.showModal === "function") modal.showModal();
-    }
-    function closeModal() {
-      if (modal && modal.open) modal.close();
-    }
-    function maybeReloadAfterModalSubmit() {
-      if (!modal || !modalFrame || !modal.open) return;
-      try {
-        const frameUrl = new URL(modalFrame.contentWindow.location.href);
-        const currentUrl = new URL(window.location.href);
-        if (frameUrl.pathname === currentUrl.pathname && frameUrl.search === currentUrl.search) {
-          closeModal();
-          window.location.reload();
-        }
-      } catch (_error) {
-        return;
-      }
-    }
-    openButtons.forEach(function (button) {
-      button.addEventListener("click", function () {
-        const baseUrl = button.dataset.modalUrl || "{{ message_modal_url }}";
-        openModal(baseUrl);
-      });
-    });
-    closeButtons.forEach(function (button) {
-      button.addEventListener("click", closeModal);
-    });
-    if (modalFrame) {
-      modalFrame.addEventListener("load", maybeReloadAfterModalSubmit);
-    }
-    if (modal) {
-      modal.addEventListener("click", function (event) {
-        if (event.target === modal) closeModal();
-      });
-    }
-  })();
-</script>
+{% block composer_dock %}
+{% set composer_default_open = False %}
+{% include "author/_composer_dock.html" %}
 {% endblock %}

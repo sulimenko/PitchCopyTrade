@@ -93,7 +93,7 @@ def _make_product() -> SubscriptionProduct:
 
 
 @pytest.mark.asyncio
-async def test_create_stub_checkout_sets_minimal_user_and_pending_entities() -> None:
+async def test_create_stub_checkout_auto_confirms_stub_manual_entities() -> None:
     session = FakeSession(_make_documents())
     product = _make_product()
 
@@ -112,8 +112,10 @@ async def test_create_stub_checkout_sets_minimal_user_and_pending_entities() -> 
 
     assert result.user.email == "lead@example.com"
     assert result.user.password_hash is None
-    assert result.payment.status == PaymentStatus.PENDING
-    assert result.subscription.status == SubscriptionStatus.PENDING
+    assert result.payment is not None
+    assert result.payment.status == PaymentStatus.PAID
+    assert result.payment.confirmed_at is not None
+    assert result.subscription.status == SubscriptionStatus.ACTIVE
     assert result.subscription.is_trial is True
 
 
@@ -140,8 +142,32 @@ async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() ->
     assert result.user.telegram_user_id == 12345
     assert result.user.username == "leaduser"
     assert result.user.email is None
-    assert result.payment.status == PaymentStatus.PENDING
-    assert result.subscription.status == SubscriptionStatus.PENDING
+    assert result.payment is not None
+    assert result.payment.status == PaymentStatus.PAID
+    assert result.subscription.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_create_stub_checkout_skips_payment_for_free_product() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+    product.price_rub = 0
+
+    result = await create_stub_checkout(
+        session,
+        product=product,
+        request=CheckoutRequest(
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            accepted_document_ids=[item.id for item in session.documents],
+            lead_source_name="ads",
+        ),
+        now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+
+    assert result.payment is None
+    assert result.subscription.status == SubscriptionStatus.ACTIVE
 
 
 @pytest.mark.asyncio
@@ -201,6 +227,7 @@ async def test_create_stub_checkout_uses_tbank_provider_when_enabled(monkeypatch
         now=datetime(2026, 3, 11, tzinfo=timezone.utc),
     )
 
+    assert result.payment is not None
     assert result.payment.provider == PaymentProvider.TBANK
     assert result.payment_url == "https://pay.tbank.ru/qr/777"
     assert result.payment.provider_payload["provider_payment_id"] == "777"

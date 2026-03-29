@@ -22,7 +22,7 @@ from pitchcopytrade.db.models.enums import (
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.compliance import bind_consents_to_payment, record_user_consent
-from pitchcopytrade.services.promo import apply_promo_to_amount, validate_promo_code_for_checkout
+from pitchcopytrade.services.promo import apply_promo_to_amount, sync_promo_redemption_counter, validate_promo_code_for_checkout
 from pitchcopytrade.services.subscriber import billing_period_label
 
 
@@ -84,7 +84,7 @@ class StrategyStory:
 @dataclass(slots=True)
 class CheckoutResult:
     user: User
-    payment: Payment
+    payment: Payment | None
     subscription: Subscription
     required_documents: list[LegalDocument]
     applied_promo_code: PromoCode | None = None
@@ -438,6 +438,8 @@ async def create_stub_checkout(
         request.promo_code_value,
         now=timestamp,
     )
+    pricing = apply_promo_to_amount(promo_code, amount_rub=product.price_rub) if promo_code is not None else None
+    final_amount_rub = pricing.final_amount_rub if pricing is not None else product.price_rub
     lead_source = await _resolve_checkout_lead_source(repository, request.lead_source_name)
     user = None
     normalized_email = (request.email or "").strip().lower() or None
@@ -467,6 +469,20 @@ async def create_stub_checkout(
         if user.consents is None:
             user.consents = []
 
+    if final_amount_rub == 0:
+        return await _create_free_checkout_records(
+            repository,
+            user=user,
+            product=product,
+            lead_source=lead_source,
+            lead_source_name=request.lead_source_name,
+            promo_code=promo_code,
+            ip_address=request.ip_address,
+            source="public_checkout",
+            required_documents=required_documents,
+            timestamp=timestamp,
+        )
+
     if get_settings().payments.provider == "tbank":
         return await _create_tbank_checkout_records(
             repository,
@@ -492,6 +508,7 @@ async def create_stub_checkout(
         source="public_checkout",
         required_documents=required_documents,
         timestamp=timestamp,
+        pricing=pricing,
     )
 
 
@@ -518,6 +535,25 @@ async def create_telegram_stub_checkout(
         promo_code_value,
         now=timestamp,
     )
+    pricing = apply_promo_to_amount(promo_code, amount_rub=product.price_rub) if promo_code is not None else None
+    final_amount_rub = pricing.final_amount_rub if pricing is not None else product.price_rub
+    if final_amount_rub == 0:
+        lead_source = await _resolve_checkout_lead_source(repository, profile.lead_source_name)
+        if lead_source is not None and user.lead_source is None:
+            user.lead_source = lead_source
+            user.lead_source_id = lead_source.id
+        return await _create_free_checkout_records(
+            repository,
+            user=user,
+            product=product,
+            lead_source=lead_source,
+            lead_source_name=profile.lead_source_name,
+            promo_code=promo_code,
+            ip_address=None,
+            source="telegram_checkout",
+            required_documents=required_documents,
+            timestamp=timestamp,
+        )
     lead_source = await _resolve_checkout_lead_source(repository, profile.lead_source_name)
     if lead_source is not None and user.lead_source is None:
         user.lead_source = lead_source
@@ -547,6 +583,7 @@ async def create_telegram_stub_checkout(
         source="telegram_checkout",
         required_documents=required_documents,
         timestamp=timestamp,
+        pricing=pricing,
     )
 
 
@@ -562,14 +599,16 @@ async def _create_checkout_records(
     source: str,
     required_documents: list[LegalDocument],
     timestamp: datetime,
+    pricing=None,
 ) -> CheckoutResult:
-    pricing = apply_promo_to_amount(promo_code, amount_rub=product.price_rub) if promo_code is not None else None
+    if pricing is None and promo_code is not None:
+        pricing = apply_promo_to_amount(promo_code, amount_rub=product.price_rub)
     payment = Payment(
         user=user,
         product=product,
         promo_code=promo_code,
         provider=PaymentProvider.STUB_MANUAL,
-        status=PaymentStatus.PENDING,
+        status=PaymentStatus.PAID,
         amount_rub=product.price_rub,
         discount_rub=pricing.discount_rub if pricing is not None else 0,
         final_amount_rub=pricing.final_amount_rub if pricing is not None else product.price_rub,
@@ -581,6 +620,7 @@ async def _create_checkout_records(
             "promo_code": promo_code.code if promo_code is not None else None,
         },
         expires_at=timestamp + timedelta(hours=24),
+        confirmed_at=timestamp,
     )
     payment.consents = []
     repository.add(payment)
@@ -602,7 +642,7 @@ async def _create_checkout_records(
         user=user,
         product=product,
         payment=payment,
-        status=SubscriptionStatus.PENDING,
+        status=SubscriptionStatus.ACTIVE,
         lead_source=lead_source,
         autorenew_enabled=product.autorenew_allowed,
         is_trial=product.trial_days > 0,
@@ -616,6 +656,7 @@ async def _create_checkout_records(
     await repository.commit()
     await repository.refresh(payment)
     await repository.refresh(subscription)
+    await _sync_promo_redemption_counter(repository, promo_code)
     return CheckoutResult(
         user=user,
         payment=payment,
@@ -623,6 +664,67 @@ async def _create_checkout_records(
         required_documents=required_documents,
         applied_promo_code=promo_code,
     )
+
+
+async def _create_free_checkout_records(
+    repository: PublicRepository,
+    *,
+    user: User,
+    product: SubscriptionProduct,
+    lead_source: LeadSource | None,
+    lead_source_name: str | None,
+    promo_code: PromoCode | None,
+    ip_address: str | None,
+    source: str,
+    required_documents: list[LegalDocument],
+    timestamp: datetime,
+) -> CheckoutResult:
+    consents = [
+        record_user_consent(
+            user=user,
+            document=document,
+            source=source,
+            payment=None,
+            accepted_at=timestamp,
+            ip_address=ip_address,
+        )
+        for document in required_documents
+    ]
+    subscription = Subscription(
+        user=user,
+        product=product,
+        payment=None,
+        status=SubscriptionStatus.ACTIVE,
+        lead_source=lead_source,
+        autorenew_enabled=product.autorenew_allowed,
+        is_trial=product.trial_days > 0,
+        manual_discount_rub=0,
+        applied_promo_code=promo_code,
+        start_at=timestamp,
+        end_at=timestamp + _billing_delta(product.billing_period),
+    )
+    repository.add(subscription)
+
+    await repository.commit()
+    await repository.refresh(subscription)
+    await _sync_promo_redemption_counter(repository, promo_code)
+    return CheckoutResult(
+        user=user,
+        payment=None,
+        subscription=subscription,
+        required_documents=required_documents,
+        applied_promo_code=promo_code,
+    )
+
+
+async def _sync_promo_redemption_counter(repository: PublicRepository, promo_code: PromoCode | None) -> None:
+    if promo_code is None:
+        return
+    if not hasattr(repository, "session") and not hasattr(repository, "store"):
+        return
+    session = getattr(repository, "session", None)
+    store = getattr(repository, "store", None)
+    await sync_promo_redemption_counter(session, promo_code, store=store)
 
 
 async def _create_tbank_checkout_records(

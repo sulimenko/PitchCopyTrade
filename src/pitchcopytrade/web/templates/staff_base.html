@@ -107,6 +107,7 @@
         flex-direction: column;
         gap: 10px;
         overflow: hidden;
+        position: relative;
       }
       .staff-topline {
         display: flex;
@@ -650,6 +651,7 @@
         <div class="staff-content">
           {% block content %}{% endblock %}
         </div>
+        {% block composer_dock %}{% endblock %}
       </main>
     </div>
     {% include "app/_miniapp_bridge.html" %}

@@ -32,12 +32,17 @@ def _enum_str(val) -> str:
 _STATUS_LABELS = {
     "ACTIVE": "Активен", "INACTIVE": "отключён", "INVITED": "Приглашён",
     "BLOCKED": "Заблокирован", "TRIAL": "Пробный", "EXPIRED": "Истёк",
-    "PENDING": "Ожидание", "PAID": "Оплачен", "FAILED": "Ошибка",
+    "PENDING": "Ожидание", "PAID": "Оплачен", "CONFIRMED": "Оплачен", "CREATED": "Создан", "FAILED": "Ошибка",
     "REFUNDED": "Возврат", "DRAFT": "Черновик", "REVIEW": "На модерации",
     "APPROVED": "Одобрено", "SCHEDULED": "Запланировано",
     "PUBLISHED": "Опубликовано", "CLOSED": "Закрыто",
     "CANCELLED": "Отменено", "ARCHIVED": "Архив",
     "BUY": "Покупка", "SELL": "Продажа",
+    "LOW": "Низкий", "MEDIUM": "Средний", "HIGH": "Высокий",
+    "IDEA": "Идея", "UPDATE": "Обновление", "CLOSE": "Закрытие",
+    "CANCEL": "Отмена", "NOTE": "Заметка",
+    "TEXT": "Текст", "DOCUMENT": "Документ", "MIXED": "Смешанный", "DEAL": "Сделка", "DEALS": "Сделки",
+    "DELIVERED": "Доставлено", "DELIVERING": "Доставляется",
     "TRUE": "Да", "FALSE": "Нет",
 }
 
@@ -63,8 +68,8 @@ def serialize_strategies(strategies: list, request_url_for=None) -> str:
         data.append({
             "strategy": f"<strong>{item.title}</strong><br><small>{item.slug}</small>",
             "author": item.author.display_name if item.author else "",
-            "risk": _badge(risk_val, risk_class),
-            "status": _badge(status_val, status_class),
+            "risk": _badge(_label(risk_val), risk_class),
+            "status": _badge(_label(status_val), status_class),
             "is_public": "Да" if item.is_public else "Нет",
             "min_capital": f"{item.min_capital_rub:,.0f}" if item.min_capital_rub else "—",
             "actions": _link(f"/admin/strategies/{item.id}/edit", "Открыть"),
@@ -226,7 +231,7 @@ def serialize_subscriptions(subscriptions: list, request_url_for=None) -> str:
         data.append({
             "client": f"<strong>{user_display}</strong><br>{item.user.email if item.user else ''}",
             "product": item.product.title if item.product else "—",
-            "status": _badge(status_val, status_class),
+            "status": _badge(_label(status_val), status_class),
             "period": period_text,
             "target": "—",
             "source": lead_source_name,
@@ -253,7 +258,7 @@ def serialize_payments(payments: list, request_url_for=None) -> str:
         data.append({
             "client": f"<strong>{user_display}</strong><br>{item.user.email if item.user else ''}",
             "product": item.product.title if item.product else "—",
-            "status": _badge(status_val, status_class),
+            "status": _badge(_label(status_val), status_class),
             "provider": provider_val,
             "reference": reference,
             "amount": f"{item.final_amount_rub:,.0f} ₽" if item.final_amount_rub else "—",
@@ -385,10 +390,10 @@ def serialize_recommendations(recommendations: list, request_url_for=None) -> st
         data.append({
             "message": f"<strong>{item.title or 'Без названия'}</strong><br><small>{preview}</small>",
             "strategy": item.strategy.title if item.strategy else "—",
-            "type": _badge(message_type, message_type_class),
+            "type": _badge(_label(message_type), message_type_class),
             "deliver": deliver_text,
             "content": f"{'📝 ' if content.get('body') else ''}{docs_count} docs · {deals_count} deals".strip(),
-            "status": _badge(status_val, status_class),
+            "status": _badge(_label(status_val), status_class),
             "updated": _fmt_dt(item.updated),
             "actions": _link(f"/author/messages/{item.id}/edit", "Открыть"),
         })
@@ -407,8 +412,8 @@ def serialize_author_strategies(strategies: list, request_url_for=None) -> str:
         data.append({
             "title": f"<strong>{item.title}</strong><br>{item.slug}",
             "description": (item.short_description or "")[:60] + "..." if item.short_description and len(item.short_description) > 60 else item.short_description or "",
-            "risk": _badge(risk_val, risk_class),
-            "status": _badge(status_val, status_class),
+            "risk": _badge(_label(risk_val), risk_class),
+            "status": _badge(_label(status_val), status_class),
             "min_capital": f"{item.min_capital_rub:,.0f}" if item.min_capital_rub else "—",
             "actions": _link(f"/author/strategies/{item.id}/edit", "Редактировать"),
         })
@@ -439,9 +444,9 @@ def serialize_moderation_queue(items: list, request_url_for=None) -> str:
             "message": f"<strong>{item.title or 'Сообщение'}</strong><br><small>{preview}</small>",
             "author": author_name,
             "strategy": item.strategy.title if item.strategy else "—",
-            "kind": _badge(kind_val, kind_class),
+            "kind": _badge(_label(kind_val), kind_class),
             "type": message_type,
-            "status": _badge(status_val, status_class),
+            "status": _badge(_label(status_val), status_class),
             "actions": _link(f"/moderation/messages/{item.id}", "Редактировать"),
         })
     return json.dumps(data, default=str, ensure_ascii=False)

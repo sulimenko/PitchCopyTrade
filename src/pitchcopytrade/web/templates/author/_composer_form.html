@@ -1,0 +1,469 @@
+{% set field_errors = field_errors or {} %}
+{% set composer = compose_form_values or form_values or {} %}
+{% set current = recommendation %}
+{% set selected_deal = composer.deals[0] if composer.deals else {} %}
+{% set selected_doc_count = composer.documents|length if composer.documents else 0 %}
+{% set selected_text = composer.message_text or composer.text_body or "" %}
+{% set _history_json = history_json if history_json is defined else [] %}
+{% set _instrument_items = instrument_items if instrument_items is defined else [] %}
+
+<form
+  class="surface author-editor-composer"
+  method="post"
+  enctype="multipart/form-data"
+  action="{% if current %}/author/messages/{{ current.id }}{% else %}/author/messages{% endif %}"
+  data-author-form
+>
+  <input type="hidden" name="embedded" value="{% if embedded %}1{% else %}0{% endif %}" />
+  <input type="hidden" name="next_path" value="{{ next_path }}" />
+  <input type="hidden" name="message_type" value="{{ composer.message_type or composer.message_mode or 'mixed' }}" data-message-type-hidden />
+  <input type="hidden" name="structured_instrument_ticker" value="{{ composer.structured_instrument_ticker or '' }}" data-structured-ticker-hidden />
+  <input type="hidden" name="structured_instrument_name" value="{{ composer.structured_instrument_name or '' }}" data-structured-name-hidden />
+  <input type="hidden" name="structured_amount" value="{{ composer.structured_amount or '' }}" data-structured-amount-hidden />
+
+  <div class="author-editor-section-head">
+    <div>
+      <div class="eyebrow">composer</div>
+      <h2>{% if current %}Редактирование сообщения{% else %}Новое сообщение{% endif %}</h2>
+      <p class="muted">Текст, документы и structured deal доступны одновременно. Пользователь не выбирает режим.</p>
+    </div>
+    <div style="display:grid;gap:8px;justify-items:end;">
+      <div class="pill" data-live-message-type>{{ composer.message_type or "mixed" }}</div>
+    </div>
+  </div>
+
+  <div class="author-editor-meta-grid">
+    <label class="author-editor-field">
+      <span class="author-editor-field-title">Стратегия</span>
+      <select name="strategy_id" data-strategy-select {% if field_errors.get("strategy_id") %}class="is-invalid"{% endif %}>
+        <option value="">Выберите стратегию</option>
+        {% for strategy in strategies %}
+        <option value="{{ strategy.id }}" {% if composer.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
+        {% endfor %}
+      </select>
+      {% if field_errors.get("strategy_id") %}
+      <span class="author-editor-field-error">{{ field_errors.get("strategy_id") }}</span>
+      {% endif %}
+    </label>
+    <label class="author-editor-field">
+      <span class="author-editor-field-title">Класс сообщения</span>
+      <select name="kind">
+        <option value="idea" {% if composer.kind == "idea" %}selected{% endif %}>Идея</option>
+        <option value="update" {% if composer.kind == "update" %}selected{% endif %}>Обновление</option>
+        <option value="close" {% if composer.kind == "close" %}selected{% endif %}>Закрытие</option>
+        <option value="cancel" {% if composer.kind == "cancel" %}selected{% endif %}>Отмена</option>
+        <option value="note" {% if composer.kind == "note" %}selected{% endif %}>Заметка</option>
+      </select>
+    </label>
+    <label class="author-editor-field">
+      <span class="author-editor-field-title">Статус</span>
+      <select name="status">
+        <option value="draft" {% if composer.status == "draft" %}selected{% endif %}>Черновик</option>
+        <option value="review" {% if composer.status == "review" %}selected{% endif %}>На модерации</option>
+        <option value="approved" {% if composer.status == "approved" %}selected{% endif %}>Одобрено</option>
+        <option value="scheduled" {% if composer.status == "scheduled" %}selected{% endif %}>Запланировано</option>
+        <option value="published" {% if composer.status == "published" %}selected{% endif %}>Опубликовано</option>
+        <option value="archived" {% if composer.status == "archived" %}selected{% endif %}>Архив</option>
+        <option value="failed" {% if composer.status == "failed" %}selected{% endif %}>Ошибка</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="author-editor-blocks-row">
+    <section class="author-editor-block" id="block-text">
+      <div class="author-editor-section-head">
+        <div><h3>Описание</h3></div>
+        <span class="pill">HTML-first</span>
+      </div>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Текст сообщения</span>
+        <textarea name="message_text" rows="14" placeholder="Введите текст сообщения. HTML будет санитайзиться на backend." data-message-text>{{ composer.message_text or composer.text_body or '' }}</textarea>
+      </label>
+    </section>
+
+    <section class="author-editor-block" id="block-documents">
+      <div class="author-editor-section-head">
+        <div><h3>OnePager</h3></div>
+        <span class="pill">{{ selected_doc_count }} файлов</span>
+      </div>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Подпись к документам</span>
+        <textarea name="document_caption" rows="2" placeholder="Краткая подпись или пояснение">{{ composer.document_caption or '' }}</textarea>
+      </label>
+      <label class="author-editor-field">
+        <span class="author-editor-field-title">Файлы</span>
+        <input type="file" name="attachment_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple data-document-files />
+      </label>
+      {% if composer.documents %}
+      <div class="author-doc-list">
+        {% for document in composer.documents %}
+        <div class="author-doc-item">
+          <div>
+            <strong>{{ document.name or document.title or document.original_filename or "Файл" }}</strong>
+            <div class="muted">{{ document.type or document.content_type or "—" }} · {{ document.size or document.size_bytes or "—" }} байт</div>
+          </div>
+          <label class="author-doc-remove">
+            <input type="checkbox" name="remove_attachment_ids" value="{{ document.id }}" />
+            удалить
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="author-editor-block" id="block-deal">
+      <div class="author-editor-section-head">
+        <div><h3>Сделка</h3></div>
+        <span class="pill" data-live-amount>{{ composer.structured_amount or "—" }}</span>
+      </div>
+      <div class="author-editor-structured-grid">
+        <div class="deal-row">
+          <label class="author-editor-field deal-field">
+            <span class="author-editor-field-title">Наименование ценной бумаги</span>
+            <div class="author-instrument-picker">
+              <input type="text" name="structured_instrument_query" value="{{ composer.structured_instrument_query or composer.structured_instrument_ticker or composer.structured_instrument_id or '' }}" placeholder="Ticker или название" autocomplete="off" data-instrument-input />
+            </div>
+            <input type="hidden" name="structured_instrument_id" value="{{ composer.structured_instrument_id or '' }}" data-instrument-id />
+            <div id="instrument-autocomplete" class="instrument-autocomplete-popup" hidden></div>
+          </label>
+          <label class="author-editor-field deal-field">
+            <span class="author-editor-field-title">Цена</span>
+            <input type="text" name="structured_price" value="{{ composer.structured_price or '' }}" inputmode="decimal" placeholder="0.00" data-structured-price />
+          </label>
+        </div>
+        <div class="deal-row">
+          <div class="side-toggle" data-side-toggle>
+            <input type="radio" name="structured_side" value="buy" id="side-buy" {% if composer.structured_side != 'sell' %}checked{% endif %} data-structured-side />
+            <label for="side-buy" class="side-toggle-label is-buy">Купить</label>
+            <input type="radio" name="structured_side" value="sell" id="side-sell" {% if composer.structured_side == 'sell' %}checked{% endif %} data-structured-side />
+            <label for="side-sell" class="side-toggle-label is-sell">Продать</label>
+          </div>
+        </div>
+        <div class="deal-row">
+          <label class="author-editor-field deal-field">
+            <span class="author-editor-field-title">Количество</span>
+            <input type="text" name="structured_quantity" value="{{ composer.structured_quantity or '' }}" inputmode="decimal" placeholder="0" data-structured-quantity />
+          </label>
+          <label class="author-editor-field deal-field">
+            <span class="author-editor-field-title">Сумма</span>
+            <input type="text" value="{{ composer.structured_amount or '—' }}" readonly data-amount-field />
+          </label>
+        </div>
+        <div class="deal-row">
+          <label class="author-editor-field deal-field">
+            <span class="author-editor-field-title">TP</span>
+            <input type="text" name="structured_tp" value="{{ composer.structured_tp or '' }}" inputmode="decimal" placeholder="—" data-structured-tp />
+          </label>
+          <label class="author-editor-field deal-field">
+            <span class="author-editor-field-title">SL</span>
+            <input type="text" name="structured_sl" value="{{ composer.structured_sl or '' }}" inputmode="decimal" placeholder="—" data-structured-sl />
+          </label>
+        </div>
+        <div class="deal-row">
+          <label class="author-editor-field deal-field">
+            <span class="author-editor-field-title">Примечание к сделке</span>
+            <textarea name="structured_note" rows="2" placeholder="Дополнительный короткий комментарий" data-deal-note>{{ composer.structured_note or '' }}</textarea>
+          </label>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="author-editor-submit-section">
+    <button class="action author-editor-submit" type="submit">Отправить сообщение</button>
+  </section>
+</form>
+
+<dialog class="author-preview-modal" data-preview-modal>
+  <div class="author-preview-shell surface">
+    <div class="author-preview-head">
+      <div>
+        <div class="eyebrow">preview</div>
+        <h3>Проверка assembled message</h3>
+      </div>
+      <button type="button" class="action ghost" data-close-preview>Закрыть</button>
+    </div>
+    <div class="author-preview-body" data-preview-body></div>
+    <div class="author-preview-actions">
+      <button type="button" class="action ghost" data-close-preview>Вернуться к редактированию</button>
+      <button type="button" class="action" data-confirm-submit>Отправить</button>
+    </div>
+  </div>
+</dialog>
+
+<style>
+  .author-editor-hero {
+    padding: 12px 16px;
+  }
+  .author-editor-hero-row,
+  .author-editor-section-head,
+  .author-preview-head,
+  .author-editor-footer,
+  .author-editor-secondary-actions,
+  .author-doc-item {
+    display: flex;
+    gap: 12px;
+  }
+  .author-editor-hero h1 { margin: 0; font-size: 1.1rem; }
+  .author-editor-section-head h2,
+  .author-editor-section-head h3 { margin: 0; font-size: 0.95rem; }
+  .author-editor-section-head p { margin: 2px 0 0; font-size: 0.78rem; }
+  .eyebrow { font-size: 0.7rem; }
+  .pill { font-size: 0.72rem; padding: 3px 8px; }
+  .author-editor-hero-row,
+  .author-editor-section-head,
+  .author-preview-head { justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+  .author-editor-shell { display: grid; gap: 10px; margin-top: 10px; }
+  .author-editor-mobile-nav { display: none; gap: 8px; flex-wrap: wrap; }
+  .author-editor-nav { display: flex; gap: 6px; padding: 8px 0; flex-wrap: wrap; }
+  .author-nav-tab { padding: 6px 12px; border-radius: 8px; background: #e8ecf2; font-weight: 600; font-size: 0.82rem; text-decoration: none; color: inherit; }
+  .author-nav-tab.is-active { background: var(--staff-primary); color: #fff; }
+  .author-editor-history,
+  .author-editor-composer { padding: 12px; }
+  .author-editor-history { max-height: min(50vh, 500px); overflow: auto; }
+  .author-history-grid-wrap { overflow: auto; }
+  .author-editor-composer { padding: 12px; }
+  .author-editor-blocks-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .author-editor-block { display: grid; gap: 8px; padding: 12px; border: 1px solid rgba(12, 20, 46, 0.10); border-radius: 12px; background: #fff; min-height: 100%; }
+  .author-editor-meta-grid,
+  .author-editor-structured-grid { display: grid; gap: 8px; }
+  .author-editor-meta-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .author-editor-structured-grid { gap: 6px; }
+  .deal-row { display: flex; gap: 6px; align-items: stretch; width: 100%; }
+  .deal-field { display: flex; align-items: center; gap: 4px; font-size: 0.82rem; flex: 1 1 0; min-width: 0; }
+  .deal-field .author-editor-field-title,
+  .deal-field span { white-space: nowrap; font-size: 0.75rem; font-weight: 600; flex-shrink: 0; }
+  .deal-field input,
+  .deal-field textarea,
+  .deal-field select { flex: 1; min-width: 0; width: 100%; }
+  .author-editor-field { display: grid; gap: 4px; }
+  .author-editor-field-title { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.02em; color: var(--ink-700); }
+  .author-editor-field input,
+  .author-editor-field select,
+  .author-editor-field textarea { width: 100%; border-radius: 8px; border: 1px solid rgba(12, 20, 46, 0.12); background: rgba(255, 255, 255, 0.94); font: inherit; padding: 8px 10px; font-size: 0.9rem; color: inherit; }
+  .author-editor-field textarea { resize: vertical; }
+  .author-editor-field--wide { grid-column: 1 / -1; }
+  .author-editor-error { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(194, 24, 91, 0.08); color: #8a1241; }
+  .author-doc-list { display: grid; gap: 10px; }
+  .author-doc-item { justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 12px; background: rgba(12, 20, 46, 0.04); flex-wrap: wrap; }
+  .author-doc-remove { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 0.9rem; }
+  .author-editor-secondary-actions { justify-content: center; flex-wrap: wrap; }
+  .author-editor-footer { margin-top: 12px; justify-content: center; flex-wrap: wrap; }
+  .author-editor-submit-section { display: flex; justify-content: center; margin-top: 12px; }
+  .author-editor-submit { min-width: min(100%, 320px); justify-content: center; padding: 10px 24px; font-weight: 700; border-radius: 10px; }
+  .author-preview-modal { border: 0; padding: 0; width: min(1100px, calc(100% - 24px)); background: transparent; }
+  .author-preview-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
+  .author-preview-shell { padding: 16px; border-radius: 18px; }
+  .author-preview-body { display: grid; gap: 10px; margin-top: 12px; }
+  .author-preview-block { padding: 12px; border-radius: 12px; background: rgba(12, 20, 46, 0.04); }
+  .author-preview-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .instrument-autocomplete-popup { position: fixed; z-index: 100; background: #fff; border: 1px solid rgba(12, 20, 46, 0.12); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10); max-height: 220px; overflow: auto; display: grid; gap: 0; }
+  .instrument-autocomplete-popup[hidden] { display: none !important; }
+  .instrument-autocomplete-item { display: block; width: 100%; text-align: left; padding: 6px 10px; border: none; background: none; cursor: pointer; font-size: 0.85rem; }
+  .instrument-autocomplete-item:hover { background: rgba(12, 20, 46, 0.05); }
+  .author-instrument-picker { display: block; }
+  .side-toggle { display: flex; gap: 0; border-radius: 6px; overflow: hidden; border: 1px solid rgba(12, 20, 46, 0.12); width: 100%; }
+  .side-toggle input[type="radio"] { display: none; }
+  .side-toggle-label { flex: 1; text-align: center; padding: 8px 12px; font-weight: 600; font-size: 0.82rem; cursor: pointer; line-height: 1.4; transition: background 0.15s, color 0.15s; user-select: none; }
+  .side-toggle-label.is-buy { background: rgba(34, 197, 94, 0.15); color: #16a34a; }
+  .side-toggle-label.is-sell { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
+  input#side-buy:checked + .side-toggle-label.is-buy { background: #22c55e; color: #fff; }
+  input#side-sell:checked + .side-toggle-label.is-sell { background: #ef4444; color: #fff; }
+  .author-editor-field.is-invalid input,
+  .author-editor-field.is-invalid select,
+  .author-editor-field.is-invalid textarea,
+  .author-editor-field input.is-invalid,
+  .author-editor-field select.is-invalid,
+  .author-editor-field textarea.is-invalid { border-color: #ef4444; box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18); }
+  @media (max-width: 1080px) {
+    .author-editor-meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .author-editor-structured-grid { grid-template-columns: 1fr; }
+    .deal-row { flex-wrap: wrap; }
+  }
+  @media (max-width: 900px) {
+    .author-editor-nav { display: none; }
+    .author-editor-mobile-nav { display: flex; }
+    .author-editor-history[data-screen-panel="history"] { max-height: none; }
+    .author-editor-shell[data-author-shell][data-mobile-screen="compose"] .author-editor-history { display: none; }
+    .author-editor-shell[data-author-shell][data-mobile-screen="history"] .author-editor-composer { display: none; }
+    .author-editor-shell[data-author-shell] .author-editor-history,
+    .author-editor-shell[data-author-shell] .author-editor-composer { display: block; }
+    .author-editor-blocks-row { grid-template-columns: 1fr; }
+    .author-editor-meta-grid,
+    .author-editor-structured-grid { grid-template-columns: 1fr; }
+    .deal-row { flex-direction: column; }
+  }
+  #author-history-grid .tabulator-placeholder { padding: 24px 12px; background: transparent; color: var(--muted); font-size: 0.85rem; }
+  #author-history-grid .tabulator-placeholder span { color: inherit; }
+  #author-history-grid .tabulator-header .tabulator-col-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  #author-history-grid .tabulator-row .tabulator-cell { font-size: 0.82rem; padding: 4px 8px; }
+</style>
+
+<script>
+  (function () {
+    const shell = document.querySelector("[data-author-shell]");
+    const form = document.querySelector("[data-author-form]");
+    const previewModal = document.querySelector("[data-preview-modal]");
+    const previewBody = document.querySelector("[data-preview-body]");
+    const confirmSubmitButton = document.querySelector("[data-confirm-submit]");
+    const closePreviewButtons = document.querySelectorAll("[data-close-preview]");
+    const instrumentInput = document.querySelector("[data-instrument-input]");
+    const instrumentIdInput = document.querySelector("[data-instrument-id]");
+    const messageText = document.querySelector("[data-message-text]");
+    const documentFiles = document.querySelector("[data-document-files]");
+    const structuredPrice = document.querySelector("[data-structured-price]");
+    const structuredQuantity = document.querySelector("[data-structured-quantity]");
+    const structuredTp = document.querySelector("[data-structured-tp]");
+    const structuredSl = document.querySelector("[data-structured-sl]");
+    const dealNote = document.querySelector("[data-deal-note]");
+    const amountField = document.querySelector("[data-amount-field]");
+    const amountPill = document.querySelector("[data-live-amount]");
+    const liveAmount = document.querySelector("[data-live-amount]");
+    const liveType = document.querySelector("[data-live-message-type]");
+    const hiddenType = document.querySelector("[data-message-type-hidden]");
+    const hiddenTicker = document.querySelector("[data-structured-ticker-hidden]");
+    const hiddenName = document.querySelector("[data-structured-name-hidden]");
+    const hiddenAmount = document.querySelector("[data-structured-amount-hidden]");
+    const instrumentPopup = document.getElementById("instrument-autocomplete");
+    const historyGridEl = document.getElementById("author-history-grid");
+    const historyData = {{ _history_json | tojson }};
+    const instruments = {{ _instrument_items | tojson }};
+    const screenButtons = Array.from(document.querySelectorAll("[data-screen-button]"));
+    const structuredSideRadios = Array.from(document.querySelectorAll('[name="structured_side"]'));
+
+    function escapeHtml(value) {
+      return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }
+    function parseDecimal(value) {
+      const normalized = String(value || "").replace(",", ".").trim();
+      if (!normalized) return null;
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    function clearInstrumentPopup() {
+      if (!instrumentPopup) return;
+      instrumentPopup.hidden = true;
+      instrumentPopup.innerHTML = "";
+    }
+    function positionInstrumentPopup() {
+      if (!instrumentPopup || instrumentPopup.hidden || !instrumentInput) return;
+      const rect = instrumentInput.getBoundingClientRect();
+      instrumentPopup.style.position = "fixed";
+      instrumentPopup.style.top = `${rect.bottom + 2}px`;
+      instrumentPopup.style.left = `${rect.left}px`;
+      instrumentPopup.style.width = `${rect.width}px`;
+      instrumentPopup.style.zIndex = "100";
+    }
+    function renderInstrumentPopup(query, forceOpen = false) {
+      if (!instrumentPopup) return;
+      const normalized = String(query || "").trim().toLowerCase();
+      if (!normalized && !forceOpen) {
+        clearInstrumentPopup();
+        return;
+      }
+      const matches = instruments
+        .filter(function (item) {
+          if (!normalized) return true;
+          return `${item.ticker} ${item.name}`.toLowerCase().includes(normalized);
+        })
+        .slice(0, 6);
+      if (!matches.length) {
+        clearInstrumentPopup();
+        return;
+      }
+      instrumentPopup.innerHTML = "";
+      matches.forEach(function (item) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "instrument-autocomplete-item";
+        const priceText = item.quote_last_price_text || item.last_price_text || "—";
+        button.innerHTML = `<strong>${escapeHtml(item.ticker || "")}</strong> ${escapeHtml(item.name || "")} <span class="muted">${escapeHtml(priceText)}</span>`;
+        button.addEventListener("click", function () {
+          if (instrumentInput) instrumentInput.value = `${item.ticker || ""} · ${item.name || ""}`.trim();
+          if (instrumentIdInput) instrumentIdInput.value = item.id || "";
+          if (hiddenTicker) hiddenTicker.value = item.ticker || "";
+          if (hiddenName) hiddenName.value = item.name || "";
+          if (structuredPrice && !String(structuredPrice.value || "").trim() && item.last_price != null) {
+            structuredPrice.value = String(item.last_price);
+          }
+          clearInstrumentPopup();
+          syncAmount();
+        });
+        instrumentPopup.appendChild(button);
+      });
+      instrumentPopup.hidden = false;
+      positionInstrumentPopup();
+    }
+    function openInstrumentPopup() {
+      if (!instrumentInput) return;
+      renderInstrumentPopup(instrumentInput.value || "", true);
+    }
+    function renderHistoryGrid() {
+      if (!historyGridEl || typeof Tabulator === "undefined") return;
+      if (!historyData || !historyData.length) return;
+      historyGridEl.classList.add("pct-tabulator");
+      new Tabulator("#author-history-grid", {
+        data: historyData,
+        layout: "fitColumns",
+        maxHeight: "400px",
+        placeholder: "Пока сообщений нет.",
+        columns: [
+          { title: "Дата", field: "date", width: 140, sorter: "string" },
+          { title: "Тип", field: "type", width: 80 },
+          { title: "Превью", field: "preview", widthGrow: 3, tooltip: function (_e, cell) { return cell.getRow().getData().preview_full; }, formatter: function (cell) { return `<div class="author-history-message-preview" title="${escapeHtml(cell.getRow().getData().preview_full || cell.getValue() || "")}">${escapeHtml(cell.getValue() || "")}</div>`; } },
+          { title: "Стратегия", field: "strategy", width: 140 },
+          { title: "Статус", field: "status", width: 110 },
+          { title: "Каналы", field: "channels", width: 100 },
+          { title: "Действия", field: "edit_url", width: 100, formatter: function (cell) { var url = cell.getValue(); return url ? `<a class="action ghost" href="${escapeHtml(url)}">Открыть</a>` : ""; }, headerSort: false },
+        ],
+      });
+    }
+    function syncMessageType() { if (liveType && hiddenType) hiddenType.value = liveType.textContent || hiddenType.value; }
+    function syncAmount() {
+      const price = parseDecimal(structuredPrice && structuredPrice.value);
+      const quantity = parseDecimal(structuredQuantity && structuredQuantity.value);
+      const total = price != null && quantity != null ? price * quantity : null;
+      const formatted = total != null ? String(Math.round(total * 100) / 100) : "—";
+      if (liveAmount) liveAmount.textContent = formatted;
+      if (amountField) amountField.value = formatted;
+      if (hiddenAmount) hiddenAmount.value = formatted;
+    }
+    function validateDealBlock() { return true; }
+    if (structuredPrice) structuredPrice.addEventListener("input", function () { syncAmount(); validateDealBlock(); });
+    if (structuredQuantity) structuredQuantity.addEventListener("input", function () { syncAmount(); validateDealBlock(); });
+    if (structuredTp) structuredTp.addEventListener("input", function () { syncMessageType(); validateDealBlock(); });
+    if (structuredSl) structuredSl.addEventListener("input", function () { syncMessageType(); validateDealBlock(); });
+    if (dealNote) dealNote.addEventListener("input", function () { syncMessageType(); validateDealBlock(); });
+    if (instrumentInput) {
+      instrumentInput.addEventListener("focus", openInstrumentPopup);
+      instrumentInput.addEventListener("click", openInstrumentPopup);
+      instrumentInput.addEventListener("input", function () {
+        if (instrumentIdInput) instrumentIdInput.value = "";
+        if (hiddenTicker) hiddenTicker.value = "";
+        if (hiddenName) hiddenName.value = "";
+        renderInstrumentPopup(instrumentInput.value || "", true);
+      });
+      instrumentInput.addEventListener("blur", function () {
+        window.setTimeout(clearInstrumentPopup, 120);
+      });
+    }
+    if (instrumentPopup) {
+      document.addEventListener("click", function (event) {
+        if (event.target === instrumentInput || instrumentPopup.contains(event.target)) return;
+        clearInstrumentPopup();
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") clearInstrumentPopup();
+      });
+      window.addEventListener("scroll", positionInstrumentPopup, true);
+      window.addEventListener("resize", positionInstrumentPopup);
+    }
+    structuredSideRadios.forEach(function (radio) { radio.addEventListener("change", syncMessageType); });
+    [messageText, documentFiles, instrumentInput].forEach(function (field) { if (!field) return; field.addEventListener("input", syncAmount); field.addEventListener("change", syncAmount); });
+    renderHistoryGrid();
+    syncAmount();
+    syncMessageType();
+    validateDealBlock();
+  })();
+</script>

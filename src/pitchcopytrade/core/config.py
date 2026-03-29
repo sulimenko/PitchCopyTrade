@@ -37,6 +37,7 @@ class EnvName:
     APP_PREVIEW_ENABLED = "APP_PREVIEW_ENABLED"
     LOG_LEVEL = "LOG_LEVEL"
     LOG_JSON = "LOG_JSON"
+    LOG_FILE = "LOG_FILE"
     INTERNAL_API_SECRET = "INTERNAL_API_SECRET"
     REDIS_URL = "REDIS_URL"
     INSTRUMENT_QUOTE_PROVIDER_ENABLED = "INSTRUMENT_QUOTE_PROVIDER_ENABLED"
@@ -125,6 +126,7 @@ class LoggingSettings(BaseModel):
 
     level: str
     json_logs: bool
+    file_path: str | None = None
 
 
 class AuthSettings(BaseModel):
@@ -207,6 +209,7 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", alias=EnvName.LOG_LEVEL)
     log_json: bool = Field(default=False, alias=EnvName.LOG_JSON)
+    log_file: str | None = Field(default=None, alias=EnvName.LOG_FILE)
 
     internal_api_secret: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.INTERNAL_API_SECRET)
     redis_url: str = Field(default="redis://localhost:6379/0", alias=EnvName.REDIS_URL)
@@ -277,6 +280,14 @@ class Settings(BaseSettings):
         if normalized not in allowed:
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return normalized
+
+    @field_validator("log_file")
+    @classmethod
+    def validate_log_file(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     @field_validator("auth_session_ttl_seconds")
     @classmethod
@@ -371,7 +382,7 @@ class Settings(BaseSettings):
 
     @property
     def logging(self) -> LoggingSettings:
-        return LoggingSettings(level=self.log_level, json_logs=self.log_json)
+        return LoggingSettings(level=self.log_level, json_logs=self.log_json, file_path=self.log_file)
 
     @property
     def auth(self) -> AuthSettings:

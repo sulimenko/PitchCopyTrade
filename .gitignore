@@ -53,3 +53,6 @@ doc/*
 !doc/task.md
 !doc/review.md
 !doc/instruments_stub.json
+
+# Logs
+api.log

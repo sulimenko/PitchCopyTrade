@@ -1,7 +1,7 @@
-{% extends "staff_base.html" %}
+{% extends "author/author_base.html" %}
 
 {% block topbar_actions %}
-<button class="staff-btn is-primary" type="button" data-open-message-modal>Новое сообщение</button>
+<button class="staff-btn is-primary" type="button" data-composer-dock-toggle>Новое сообщение</button>
 {% endblock %}
 
 {% block content %}
@@ -132,19 +132,6 @@
   </div>
 </section>
 
-<dialog id="dashboard-message-modal" class="workspace-modal">
-  <div class="workspace-modal-shell surface">
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
-      <div>
-        <div class="eyebrow">модальный редактор</div>
-        <strong>Новое сообщение</strong>
-      </div>
-      <button class="action ghost" type="button" data-close-message-modal>Закрыть</button>
-    </div>
-    <iframe id="dashboard-message-modal-frame" src="{{ message_modal_url }}" title="Создание сообщения" class="workspace-modal-frame"></iframe>
-  </div>
-</dialog>
-
 <style>
   @media (max-width: 980px) {
     section[style*="repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
@@ -238,65 +225,14 @@
   .author-watchlist-empty {
     padding: 14px 0 4px;
   }
-  .workspace-modal { border: 0; padding: 0; background: transparent; width: min(1220px, calc(100% - 24px)); }
-  .workspace-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
-  .workspace-modal-shell { padding: 18px; border-radius: 26px; }
-  .workspace-modal-frame { width: 100%; height: min(84vh, 980px); border: 0; border-radius: 20px; margin-top: 14px; background: #fff; }
 </style>
 
 <script>
   (function () {
-    const modal = document.getElementById("dashboard-message-modal");
-    const modalFrame = document.getElementById("dashboard-message-modal-frame");
-    const openButtons = document.querySelectorAll("[data-open-message-modal]");
-    const closeButtons = document.querySelectorAll("[data-close-message-modal]");
     const searchInput = document.getElementById("watchlist-search-input");
     const suggestionsBox = document.getElementById("watchlist-suggestions");
     const gridHost = document.getElementById("watchlist-grid");
     const emptyState = document.getElementById("watchlist-empty");
-
-    function openModal() {
-      if (modal && typeof modal.showModal === "function") {
-        modal.showModal();
-      }
-    }
-
-    function closeModal() {
-      if (modal && modal.open) {
-        modal.close();
-      }
-    }
-
-    function maybeReloadAfterModalSubmit() {
-      if (!modal || !modalFrame || !modal.open) return;
-      try {
-        const frameUrl = new URL(modalFrame.contentWindow.location.href);
-        const currentUrl = new URL(window.location.href);
-        if (frameUrl.pathname === currentUrl.pathname && frameUrl.search === currentUrl.search) {
-          closeModal();
-          window.location.reload();
-        }
-      } catch (_error) {
-        return;
-      }
-    }
-
-    openButtons.forEach(function (button) {
-      button.addEventListener("click", openModal);
-    });
-    closeButtons.forEach(function (button) {
-      button.addEventListener("click", closeModal);
-    });
-    if (modalFrame) {
-      modalFrame.addEventListener("load", maybeReloadAfterModalSubmit);
-    }
-    if (modal) {
-      modal.addEventListener("click", function (event) {
-        if (event.target === modal) {
-          closeModal();
-        }
-      });
-    }
 
     if (!searchInput || !suggestionsBox || !gridHost || !emptyState) {
       return;
@@ -439,4 +375,9 @@
     updateWatchlistView(searchInput.value || "");
   })();
 </script>
+{% endblock %}
+
+{% block composer_dock %}
+{% set composer_default_open = False %}
+{% include "author/_composer_dock.html" %}
 {% endblock %}

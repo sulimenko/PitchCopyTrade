@@ -270,9 +270,6 @@ def _build_preview_recommendation(strategy: SimpleNamespace) -> SimpleNamespace:
     return SimpleNamespace(
         id="preview-recommendation",
         title="Риск на пробое",
-        summary="Идея отрабатывает импульс после сжатия диапазона.",
-        thesis="Цена готова к движению после пробоя локального уровня.",
-        market_context="Preview market context.",
         message_payload=payload,
         created_at=datetime.now(UTC) - timedelta(days=1),
         updated_at=datetime.now(UTC),

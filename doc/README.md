@@ -41,7 +41,7 @@ Storage modes:
 - template для локальной конфигурации = `.env.example`
 - `api` не стартует без `INTERNAL_API_SECRET`
 - `file`-mode быстрее для верстки, UI smoke и локального исследования
-- `db`-mode нужен, если вы реально проверяете clean schema, seeds и PostgreSQL path
+- `db`-mode нужен, если вы реально проверяете clean schema, startup path, auto-seed инструментов/admin и PostgreSQL path
 
 ## Подготовка окружения
 
@@ -124,8 +124,14 @@ export TELEGRAM_BOT_USERNAME=<real-bot-username>
 
 - проверить `deploy/schema.sql`
 - сделать clean reset PostgreSQL
-- загрузить seed-данные в новую schema
+- проверить auto-seed инструментов и bootstrap admin
 - прогнать db-mode regression suite
+
+Важно:
+
+- полный business seed для PostgreSQL пока не выполняется автоматически;
+- `messages.json`, `users.json`, `strategies.json` и остальные dataset-файлы не импортируются в БД на startup сами по себе;
+- детальный db-mode runbook и текущие ограничения описаны в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md).
 
 Сам сценарий reset/migrate намеренно вынесен в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md), чтобы не дублировать server/db runbook здесь.
 
@@ -195,7 +201,15 @@ Staff:
 - `http://127.0.0.1:8000/login`
 - `http://127.0.0.1:8000/admin/dashboard`
 - `http://127.0.0.1:8000/author/dashboard`
+- `http://127.0.0.1:8000/author/messages`
+- `http://127.0.0.1:8000/author/messages/new`
 - `http://127.0.0.1:8000/moderation/queue`
+
+Author surface:
+
+- `/author/messages` — основная message-centric рабочая поверхность автора: history table + unified composer
+- `/author/messages/new` — тот же composer, открытый в явном create-flow
+- `/author/messages/<id>/edit` — edit-flow того же composer для существующего сообщения
 
 ## Тесты и проверки
 

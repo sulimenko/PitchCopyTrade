@@ -1,403 +1,187 @@
-{% extends "embedded_base.html" if embedded else "staff_base.html" %}
+{% extends "author/author_base.html" %}
+
+{% block parent_href %}/author/messages{% endblock %}
+{% block breadcrumbs %}Автор / Сообщения{% endblock %}
+{% block page_title %}{{ compose_title or (recommendation.title if recommendation else "Новое сообщение") }}{% endblock %}
 
 {% block topbar_actions %}
-{% if not embedded %}
 <div class="author-editor-topbar">
-  <a class="action ghost" href="/author/messages">Назад к списку</a>
+  <a class="action ghost" href="/author/messages">Сообщения</a>
   <a class="action ghost" href="/author/dashboard">Сводка</a>
   <a class="action ghost" href="/logout">Выйти</a>
 </div>
-{% endif %}
 {% endblock %}
 
 {% block content %}
-{% set message_kind = form_values.kind or "idea" %}
-{% set message_status = form_values.status or "draft" %}
-{% set message_type = form_values.message_type or form_values.message_mode or "mixed" %}
-{% set message_is_editable = (not recommendation) or recommendation.status in ["draft", "review"] %}
-<section class="surface author-editor-head">
-  <div class="eyebrow">редактор сообщения</div>
-  <div class="author-editor-head-row">
-    <div class="author-editor-head-copy">
-      <h1>{% if recommendation %}Редактирование сообщения{% else %}Новое сообщение{% endif %}</h1>
-      <p class="muted">Один экран для текста, документа, сделки или mixed сообщения. История сверху, composer снизу.</p>
+{% set history = history_messages if history_messages is defined else (recommendations if recommendations is defined else []) %}
+{% set current = composer_recommendation if composer_recommendation is defined else (recommendation if recommendation is defined else None) %}
+{% set page_title = (compose_title if compose_title is defined else None) or ("Редактирование сообщения" if current else "Новое сообщение") %}
+
+<section class="surface author-editor-hero">
+  <div class="author-editor-hero-row">
+    <div>
+      <div class="eyebrow">composer</div>
+      <h1>{{ page_title }}</h1>
+      <!-- <p class="muted">История сообщений и composer вынесены в dock внутри рабочей области автора.</p> -->
     </div>
-    <div class="author-editor-head-actions">
-      {% if recommendation %}
-      <span class="pill">{{ label_message_kind(recommendation.kind) }}</span>
-      <span class="pill">{{ label_message_status(recommendation.status) }}</span>
-      {% endif %}
-      {% if not message_is_editable %}
-      <span class="pill">только чтение</span>
+    <div class="author-editor-hero-actions">
+      <span class="pill">{{ history|length }} сообщений</span>
+      {% if current %}
+      <span class="pill">{{ label_message_kind(current.kind) }}</span>
+      <span class="pill">{{ label_message_status(current.status) }}</span>
       {% endif %}
     </div>
   </div>
-  {% if recommendation and not message_is_editable %}
-  <p class="muted author-editor-head-note">Редактирование разрешено только для черновика и статуса «На модерации».</p>
-  {% endif %}
 </section>
 
-<section class="author-editor-shell">
-  <div class="author-editor-layout">
-    <aside class="surface author-editor-history">
-      <div class="author-editor-section-head">
-        <div class="author-editor-section-copy">
-          <h2>История</h2>
-          <p class="muted">Текст, документы и сделки в одном thread.</p>
-        </div>
-      </div>
-      <div class="message-thread">
-        {% if messages %}
-        {% for message in messages %}
-        <article class="message-card">
-          <div class="message-card-head">
-            <strong>{{ (message.type or "mixed")|upper }}</strong>
-            <span class="pill">{{ message.created.strftime("%d.%m %H:%M") if message.created else "—" }}</span>
-          </div>
-          <div class="muted" style="margin-top:8px;line-height:1.6;">
-            {{ message.text.body | safe if message.text else message.comment or "—" }}
-          </div>
-          {% if message.documents %}
-          <div style="margin-top:10px;display:grid;gap:8px;">
-            {% for document in message.documents %}
-            <div class="message-json">
-              <strong>{{ document.original_filename or document.title or "Документ" }}</strong>
-              <div class="muted">{{ document.content_type or "—" }} · {{ document.size_bytes or "—" }} байт</div>
-            </div>
-            {% endfor %}
-          </div>
-          {% endif %}
-          {% if message.deals %}
-          <div style="margin-top:10px;display:grid;gap:8px;">
-            {% for deal in message.deals %}
-            <div class="message-json">
-              <strong>{{ deal.instrument_id or "—" }}</strong>
-              <div class="muted">{{ deal.side or "—" }} · {{ deal.entry_from or "—" }} · {{ deal.take_profit_1 or "—" }}</div>
-            </div>
-            {% endfor %}
-          </div>
-          {% endif %}
-        </article>
-        {% endfor %}
-        {% else %}
-        <div class="muted">Пока сообщений нет. Первое сообщение создаст composer ниже.</div>
-        {% endif %}
-      </div>
+{% if error %}
+<section class="author-editor-error">{{ error }}</section>
+{% endif %}
 
-      <div class="author-editor-section-head" style="margin-top:24px;">
-        <div class="author-editor-section-copy">
-          <h2>Вложения</h2>
-          <p class="muted">PDF и JPG. Для document mode можно прикрепить один или несколько файлов.</p>
-        </div>
-      </div>
-      {% if recommendation and recommendation.documents %}
-      <div class="message-thread">
-        {% for document in recommendation.documents %}
-        <div class="message-card">
-          <strong>{{ document.original_filename or "Документ" }}</strong>
-          <div class="muted" style="margin-top:6px;">{{ document.content_type }} · {{ document.size_bytes }} байт</div>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="muted">Вложений нет.</div>
-      {% endif %}
-    </aside>
+<section class="surface author-editor-history" id="block-history">
+  <div class="author-editor-section-head">
+    <div>
+      <div class="eyebrow">history</div>
+      <h2>Таблица сообщений</h2>
+      <p class="muted">Компактный журнал сообщений для быстрой навигации и редактирования.</p>
+    </div>
+    <div class="pill">{{ history|length }} строк</div>
+  </div>
 
-    <form
-      class="surface author-editor-form author-editor-composer"
-      method="post"
-      enctype="multipart/form-data"
-      action="{% if recommendation %}/author/messages/{{ recommendation.id }}{% else %}/author/messages{% endif %}"
-    >
-      <input type="hidden" name="embedded" value="{% if embedded %}1{% else %}0{% endif %}" />
-      <input type="hidden" name="next_path" value="{{ next_path }}" />
-      {% if error %}
-      <div class="author-editor-error">{{ error }}</div>
-      {% endif %}
-
-      <section class="author-editor-section">
-        <div class="author-editor-section-head">
-          <div class="author-editor-section-copy">
-            <h2>Composer</h2>
-            <p class="muted">Выберите тип сообщения и заполните только нужные поля.</p>
-          </div>
-        </div>
-
-        <div class="author-editor-grid author-editor-grid--meta">
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Стратегия</span>
-            <select name="strategy_id" {% if field_errors.get("strategy_id") %}class="is-invalid"{% endif %} {% if not message_is_editable %}disabled{% endif %}>
-              <option value="">Выберите стратегию</option>
-              {% for strategy in strategies %}
-              <option value="{{ strategy.id }}" {% if form_values.strategy_id == strategy.id %}selected{% endif %}>{{ strategy.title }}</option>
-              {% endfor %}
-            </select>
-            {% if field_errors.get("strategy_id") %}
-            <span class="author-editor-field-error">{{ field_errors.get("strategy_id") }}</span>
-            {% endif %}
-          </label>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Тип сообщения</span>
-            <select name="message_type" data-message-mode {% if not message_is_editable %}disabled{% endif %}>
-              <option value="mixed" {% if message_type == "mixed" %}selected{% endif %}>Mixed</option>
-              <option value="text" {% if message_type == "text" %}selected{% endif %}>Текст</option>
-              <option value="document" {% if message_type == "document" %}selected{% endif %}>Документ</option>
-              <option value="deal" {% if message_type == "deal" %}selected{% endif %}>Сделка</option>
-            </select>
-          </label>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Класс сообщения</span>
-            <select name="kind" {% if not message_is_editable %}disabled{% endif %}>
-              <option value="idea" {% if message_kind == "idea" %}selected{% endif %}>Идея</option>
-              <option value="update" {% if message_kind == "update" %}selected{% endif %}>Обновление</option>
-              <option value="close" {% if message_kind == "close" %}selected{% endif %}>Закрытие</option>
-              <option value="cancel" {% if message_kind == "cancel" %}selected{% endif %}>Отмена</option>
-              <option value="note" {% if message_kind == "note" %}selected{% endif %}>Заметка</option>
-            </select>
-          </label>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Статус</span>
-            <select name="status" {% if not message_is_editable %}disabled{% endif %}>
-              <option value="draft" {% if message_status == "draft" %}selected{% endif %}>Черновик</option>
-              <option value="review" {% if message_status == "review" %}selected{% endif %}>На модерации</option>
-              <option value="approved" {% if message_status == "approved" %}selected{% endif %}>Одобрено</option>
-              <option value="scheduled" {% if message_status == "scheduled" %}selected{% endif %}>Запланировано</option>
-              <option value="published" {% if message_status == "published" %}selected{% endif %}>Опубликовано</option>
-              <option value="archived" {% if message_status == "archived" %}selected{% endif %}>Архив</option>
-              <option value="failed" {% if message_status == "failed" %}selected{% endif %}>Ошибка</option>
-            </select>
-          </label>
-        </div>
-
-        <label class="author-editor-field">
-          <span class="author-editor-field-title">Заголовок</span>
-          <input type="text" name="title" value="{{ form_values.title }}" placeholder="Например: Покупка SBER" {% if not message_is_editable %}disabled{% endif %} />
-        </label>
-
-        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="text" {% if message_type != "text" %}hidden{% endif %}>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Текст сообщения</span>
-            <textarea name="message_text" rows="8" placeholder="HTML-first текст для подписчиков" {% if not message_is_editable %}disabled{% endif %}>{{ form_values.message_text }}</textarea>
-          </label>
-        </div>
-
-        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="document" {% if message_type != "document" %}hidden{% endif %}>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Подпись к документу</span>
-            <textarea name="document_caption" rows="6" placeholder="Коротко: что внутри файла и зачем его открыть" {% if not message_is_editable %}disabled{% endif %}>{{ form_values.document_caption }}</textarea>
-          </label>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Файл</span>
-            <input type="file" name="attachment_files" accept=".pdf,image/jpeg" multiple {% if not message_is_editable %}disabled{% endif %} />
-          </label>
-        </div>
-
-        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="deal" {% if message_type != "deal" %}hidden{% endif %}>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Инструмент</span>
-            <select name="structured_instrument_id" {% if not message_is_editable %}disabled{% endif %}>
-              <option value="">Выберите инструмент</option>
-              {% for instrument in instruments %}
-              <option value="{{ instrument.id }}" {% if form_values.structured_instrument_id == instrument.id %}selected{% endif %}>{{ instrument.ticker }} · {{ instrument.name }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Buy / Sell</span>
-            <select name="structured_side" {% if not message_is_editable %}disabled{% endif %}>
-              <option value="">Выберите действие</option>
-              <option value="buy" {% if form_values.structured_side == "buy" %}selected{% endif %}>Купить</option>
-              <option value="sell" {% if form_values.structured_side == "sell" %}selected{% endif %}>Продать</option>
-            </select>
-          </label>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Цена</span>
-            <input type="text" name="structured_price" value="{{ form_values.structured_price }}" inputmode="decimal" placeholder="0.00" {% if not message_is_editable %}disabled{% endif %} />
-          </label>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Количество</span>
-            <input type="text" name="structured_quantity" value="{{ form_values.structured_quantity }}" inputmode="decimal" placeholder="0" {% if not message_is_editable %}disabled{% endif %} data-structured-quantity />
-          </label>
-        </div>
-
-        <div class="structured-summary-card surface">
-          <div>
-            <div class="eyebrow">deal summary</div>
-            <strong>Сумма считается автоматически</strong>
-          </div>
-          <div class="structured-summary-values">
-            <span class="pill" data-structured-price-label>{{ form_values.structured_price or "—" }}</span>
-            <span class="pill" data-structured-quantity-label>{{ form_values.structured_quantity or "—" }}</span>
-            <span class="pill" data-structured-amount-label>—</span>
-          </div>
-        </div>
-
-        <div class="author-editor-grid author-editor-grid--content" data-mode-panel="mixed" {% if message_type != "mixed" %}hidden{% endif %}>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Текст сообщения</span>
-            <textarea name="message_text" rows="6" placeholder="HTML-first текст для mixed сообщения" {% if not message_is_editable %}disabled{% endif %}>{{ form_values.message_text }}</textarea>
-          </label>
-          <label class="author-editor-field">
-            <span class="author-editor-field-title">Подпись к документу</span>
-            <textarea name="document_caption" rows="4" placeholder="Если есть файл, опишите его здесь" {% if not message_is_editable %}disabled{% endif %}>{{ form_values.document_caption }}</textarea>
-          </label>
-        </div>
-      </section>
-
-      <section class="author-editor-section">
-        <div class="author-editor-section-head">
-          <div class="author-editor-section-copy">
-            <h2>Публикация</h2>
-            <p class="muted">Статус и расписание остаются рядом с composer.</p>
-          </div>
-        </div>
-
-        <label class="author-editor-field">
-          <span class="author-editor-field-title">Расписание</span>
-          <input type="datetime-local" name="scheduled_for" value="{{ form_values.scheduled_for }}" {% if not message_is_editable %}disabled{% endif %} />
-        </label>
-      </section>
-
-      <section class="author-editor-section author-editor-section--actions">
-        <div class="author-editor-section-head">
-          <div class="author-editor-section-copy">
-            <h2>Действия</h2>
-            <p class="muted">Сохранение обновляет JSONB payload и добавляет запись в message thread.</p>
-          </div>
-        </div>
-        <div class="author-inline-actions">
-          {% if message_is_editable %}
-          <button class="action" type="submit">Сохранить</button>
-          <button class="action ghost" type="submit" name="workflow_action" value="send_to_review">Отправить на модерацию</button>
-          <button class="action ghost" type="submit" name="workflow_action" value="publish_now">Опубликовать</button>
-          {% endif %}
-          <a class="action ghost" href="/author/messages">К списку</a>
-        </div>
-      </section>
-    </form>
+  <div class="author-history-grid-wrap">
+    <div id="author-history-grid" class="pct-tabulator"></div>
   </div>
 </section>
 
 <style>
-  .author-editor-layout {
-    display: grid;
-    grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
-    gap: 18px;
+  .author-editor-hero {
+    padding: 12px 16px;
   }
 
-  .author-editor-history,
-  .author-editor-composer {
-    padding: 24px;
-  }
-
-  .message-thread {
-    display: grid;
+  .author-editor-hero-row,
+  .author-editor-section-head {
+    display: flex;
     gap: 12px;
-  }
-
-  .message-card {
-    padding: 16px;
-    border-radius: 20px;
-    background: var(--surface-strong);
-    box-shadow: none;
-  }
-
-  .message-card-head {
-    display: flex;
     justify-content: space-between;
-    gap: 10px;
-    align-items: center;
+    align-items: flex-start;
     flex-wrap: wrap;
   }
 
-  .message-json {
-    margin: 12px 0 0;
-    padding: 12px;
-    border-radius: 14px;
-    overflow: auto;
-    background: rgba(8, 15, 40, 0.04);
-    font-size: 0.8rem;
+  .author-editor-hero h1 {
+    margin: 0;
+    font-size: 1.1rem;
   }
 
-  .structured-summary-card {
-    margin-top: 14px;
-    padding: 16px;
-    display: flex;
-    justify-content: space-between;
-    gap: 14px;
-    align-items: center;
-    flex-wrap: wrap;
+  .author-editor-hero p {
+    margin: 8px 0 0;
+    line-height: 1.5;
   }
 
-  .structured-summary-values {
+  .author-editor-hero-actions {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
-  .author-inline-actions {
-    display: flex;
+  .author-editor-error {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(194, 24, 91, 0.08);
+    color: #8a1241;
+  }
+
+  .author-editor-history {
+    padding: 12px;
+    display: grid;
     gap: 10px;
-    flex-wrap: wrap;
+    max-height: min(50vh, 500px);
+    overflow: auto;
   }
 
-  @media (max-width: 980px) {
-    .author-editor-layout {
-      grid-template-columns: 1fr;
-    }
+  .author-history-grid-wrap {
+    overflow: auto;
+  }
+
+  #author-history-grid.pct-tabulator {
+    min-height: 80px;
+  }
+
+  #author-history-grid .tabulator-placeholder {
+    padding: 24px 12px;
+    background: transparent;
+    color: var(--staff-muted);
+    font-size: 0.85rem;
+  }
+
+  #author-history-grid .tabulator-placeholder span {
+    color: inherit;
+  }
+
+  #author-history-grid .tabulator-header .tabulator-col-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  #author-history-grid .tabulator-row .tabulator-cell {
+    font-size: 0.82rem;
+    padding: 4px 8px;
+  }
+
+  #author-history-grid .author-history-message-preview {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>
 
 <script>
   (function () {
-    const modeSelect = document.querySelector("[data-message-mode]");
-    const modePanels = document.querySelectorAll("[data-mode-panel]");
-    const priceInput = document.querySelector('input[name="structured_price"]');
-    const quantityInput = document.querySelector('[data-structured-quantity]');
-    const priceLabel = document.querySelector('[data-structured-price-label]');
-    const quantityLabel = document.querySelector('[data-structured-quantity-label]');
-    const amountLabel = document.querySelector('[data-structured-amount-label]');
-
-    function formatAmount(raw) {
-      if (!raw || Number.isNaN(raw)) {
-        return "—";
-      }
-      return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(raw);
-    }
-
-    function updatePanels() {
-      const value = modeSelect ? modeSelect.value : "mixed";
-      modePanels.forEach((panel) => {
-        panel.hidden = panel.dataset.modePanel !== value;
-      });
-    }
-
-    function updateStructuredSummary() {
-      const price = priceInput ? Number(String(priceInput.value || "").replace(",", ".")) : NaN;
-      const quantity = quantityInput ? Number(String(quantityInput.value || "").replace(",", ".")) : NaN;
-      if (priceLabel) {
-        priceLabel.textContent = priceInput && priceInput.value ? priceInput.value : "—";
-      }
-      if (quantityLabel) {
-        quantityLabel.textContent = quantityInput && quantityInput.value ? quantityInput.value : "—";
-      }
-      if (amountLabel) {
-        amountLabel.textContent = Number.isFinite(price) && Number.isFinite(quantity) ? formatAmount(price * quantity) : "—";
-      }
-    }
-
-    if (modeSelect) {
-      modeSelect.addEventListener("change", updatePanels);
-    }
-    if (priceInput) {
-      priceInput.addEventListener("input", updateStructuredSummary);
-    }
-    if (quantityInput) {
-      quantityInput.addEventListener("input", updateStructuredSummary);
-    }
-    updatePanels();
-    updateStructuredSummary();
+    const historyGridEl = document.getElementById("author-history-grid");
+    if (!historyGridEl || typeof Tabulator === "undefined") return;
+    const historyData = {{ history_json | tojson }};
+    historyGridEl.classList.add("pct-tabulator");
+    new Tabulator("#author-history-grid", {
+      data: historyData,
+      layout: "fitColumns",
+      maxHeight: "400px",
+      placeholder: "Пока сообщений нет.",
+      columns: [
+        { title: "Дата", field: "date", width: 140, sorter: "string" },
+        { title: "Тип", field: "type", width: 80 },
+        {
+          title: "Превью",
+          field: "preview",
+          widthGrow: 3,
+          tooltip: function (_e, cell) {
+            return cell.getRow().getData().preview_full;
+          },
+          formatter: function (cell) {
+            return `<div class="author-history-message-preview" title="${String(cell.getRow().getData().preview_full || cell.getValue() || "").replace(/"/g, "&quot;")}">${String(cell.getValue() || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`;
+          },
+        },
+        { title: "Стратегия", field: "strategy", width: 140 },
+        { title: "Статус", field: "status", width: 110 },
+        { title: "Каналы", field: "channels", width: 100 },
+        {
+          title: "Действия",
+          field: "edit_url",
+          width: 100,
+          formatter: function (cell) {
+            const url = cell.getValue();
+            return url ? `<a class="action ghost" href="${String(url).replace(/"/g, "&quot;")}">Открыть</a>` : "";
+          },
+          headerSort: false,
+        },
+      ],
+    });
   })();
 </script>
+{% endblock %}
+
+{% block composer_dock %}
+{% set composer_default_open = True %}
+{% include "author/_composer_dock.html" %}
 {% endblock %}

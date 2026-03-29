@@ -67,7 +67,7 @@ async def test_get_instrument_quote_normalizes_provider_payload(monkeypatch: pyt
         "AsyncClient",
         lambda **kwargs: _FakeAsyncClient(
             {
-                "data": {
+                "NVTK": {
                     "symbol": "NVTK",
                     "lastPrice": "123.45",
                     "changePercent": "1.25",
@@ -89,6 +89,50 @@ async def test_get_instrument_quote_normalizes_provider_payload(monkeypatch: pyt
     assert quote.change_abs == 1.53
     assert quote.last_price_text == "123.45"
     assert quote.change_text == "+1.53 / +1.25%"
+
+
+@pytest.mark.asyncio
+async def test_get_instrument_quote_prefers_nested_trade_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    instrument_service.clear_instrument_quote_cache()
+    _enable_quotes(monkeypatch)
+    monkeypatch.setattr(
+        instrument_service.httpx,
+        "AsyncClient",
+        lambda **kwargs: _FakeAsyncClient(
+            {
+                "GAZP": {
+                    "symbol": "GAZP",
+                    "short_name": "GAZP",
+                    "description": "Gazprom",
+                    "trade": {
+                        "price": "137.32",
+                        "time": "1774778083",
+                    },
+                    "prev-daily-bar": {
+                        "close": "137.09",
+                    },
+                    "daily-bar": {
+                        "close": "137.32",
+                    },
+                    "currency_code": "RUB",
+                    "lp": 1.68214032,
+                    "chp": 0.18,
+                    "ch": 0.003,
+                    "prev_close_price": 1.6790783200000001,
+                }
+            }
+        ),
+    )
+
+    quote = await instrument_service.get_instrument_quote("GAZP")
+
+    assert quote.ticker == "GAZP"
+    assert quote.provider_symbol == "GAZP"
+    assert quote.last_price == 137.32
+    assert quote.change_abs == pytest.approx(0.23)
+    assert quote.change_pct == pytest.approx(0.17)
+    assert quote.currency == "RUB"
+    assert quote.updated_at == "1774778083"
 
 
 @pytest.mark.asyncio

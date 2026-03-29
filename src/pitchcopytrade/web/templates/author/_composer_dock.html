@@ -1,0 +1,159 @@
+{% set _composer_recommendation = composer_recommendation if composer_recommendation is defined else recommendation if recommendation is defined else None %}
+{% set _composer_default_open = composer_default_open if composer_default_open is defined else request.url.path == "/author/messages" %}
+<aside class="composer-dock {% if not _composer_default_open %}is-collapsed{% endif %}" id="composer-dock" data-composer-dock{% if _composer_default_open %} data-composer-default-open="1"{% endif %}>
+  <div class="composer-dock-header" data-composer-dock-toggle>
+    <div class="composer-dock-title">
+      {% if _composer_recommendation %}
+      <span class="composer-dock-mode is-edit">✎ Редактирование</span>
+      <span class="composer-dock-id">#{{ _composer_recommendation.id[:8] }}</span>
+      {% if _composer_recommendation.status %}
+      <span class="pill">{{ label_message_status(_composer_recommendation.status) }}</span>
+      {% endif %}
+      <a class="action ghost composer-dock-reset" href="/author/messages">+ Новое</a>
+      {% else %}
+      <span class="composer-dock-mode is-new">● Новое сообщение</span>
+      {% endif %}
+    </div>
+    <button type="button" class="action ghost composer-dock-toggle-btn" data-composer-dock-toggle title="Свернуть / развернуть">
+      <span class="composer-dock-arrow">▼</span>
+    </button>
+  </div>
+
+  <div class="composer-dock-body" data-composer-dock-body>
+    {% set recommendation = _composer_recommendation %}
+    {% include "author/_composer_form.html" %}
+  </div>
+</aside>
+
+<style>
+  .composer-dock {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100% - 60px);
+    background: var(--staff-surface);
+    border-top: 1px solid var(--staff-line);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 26px rgba(17, 27, 42, 0.10);
+    overflow: hidden;
+  }
+
+  .composer-dock.is-collapsed {
+    max-height: none;
+  }
+
+  .composer-dock.is-collapsed .composer-dock-body {
+    display: none;
+  }
+
+  .composer-dock-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+    background: var(--staff-surface-soft);
+    border-bottom: 1px solid var(--staff-line);
+    border-radius: 16px 16px 0 0;
+  }
+
+  .composer-dock-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+
+  .composer-dock-mode.is-new {
+    color: var(--staff-accent);
+  }
+
+  .composer-dock-mode.is-edit {
+    color: #b45309;
+  }
+
+  .composer-dock-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--staff-muted);
+  }
+
+  .composer-dock-reset {
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .composer-dock-body {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    padding: 12px;
+    background: var(--staff-surface);
+  }
+
+  .composer-dock-arrow {
+    display: inline-block;
+    transition: transform 0.2s ease;
+  }
+
+  .composer-dock.is-collapsed .composer-dock-arrow {
+    transform: rotate(180deg);
+  }
+
+  @media (max-width: 900px) {
+    .composer-dock {
+      left: 0;
+      right: 0;
+      max-height: calc(100% - 54px);
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    const dock = document.getElementById("composer-dock");
+    if (!dock) return;
+    const STORAGE_KEY = "pct-composer-dock-collapsed";
+    const defaultOpen = dock.hasAttribute("data-composer-default-open");
+    const toggleButtons = Array.from(dock.querySelectorAll("[data-composer-dock-toggle]"));
+
+    function setCollapsed(collapsed) {
+      dock.classList.toggle("is-collapsed", collapsed);
+      try {
+        localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0");
+      } catch (_error) {
+        return;
+      }
+    }
+
+    if (!defaultOpen) {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored === null || stored === "1") {
+          dock.classList.add("is-collapsed");
+        }
+      } catch (_error) {
+        dock.classList.add("is-collapsed");
+      }
+    }
+
+    toggleButtons.forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        setCollapsed(!dock.classList.contains("is-collapsed"));
+      });
+    });
+  })();
+</script>

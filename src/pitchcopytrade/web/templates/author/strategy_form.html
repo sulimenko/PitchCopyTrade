@@ -1,4 +1,4 @@
-{% extends "staff_base.html" %}
+{% extends "author/author_base.html" %}
 
 {% block topbar_actions %}
 <div class="author-strategy-topbar">
@@ -97,6 +97,11 @@
     </div>
   </section>
 </form>
+
+{% block composer_dock %}
+{% set composer_default_open = False %}
+{% include "author/_composer_dock.html" %}
+{% endblock %}
 
 <style>
   .author-strategy-topbar,

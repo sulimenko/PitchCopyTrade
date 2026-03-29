@@ -20,6 +20,7 @@ def test_server_deploy_files_reflect_current_repo_contract() -> None:
     assert "name: ptfin-backend" in compose
     assert "env_file:" in compose
     assert "../.env" in compose
+    assert "INSTRUMENT_QUOTE_PROVIDER_ENABLED: \"true\"" in compose
     assert "APP_DATA_MODE=file" in env_example
     assert "APP_PREVIEW_ENABLED=true" in env_example
     assert "cp .env.example .env" in deploy_readme

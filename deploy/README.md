@@ -70,6 +70,34 @@ Product contract, backlog и review gate вынесены в:
 - `deploy/migrate.sh` читает `.env`
 - storage reset выполняется отдельно внутри `deploy/migrate.sh --reset`
 
+### Что сейчас реально seed-ится в `APP_DATA_MODE=db`
+
+Текущее поведение проекта такое:
+
+1. `bash deploy/migrate.sh --reset`
+   - создает schema из `deploy/schema.sql`
+   - не загружает автоматически весь business dataset из `storage/seed/json`
+2. при первом старте `api` в `APP_DATA_MODE=db`
+   - startup вызывает `src/pitchcopytrade/api/lifespan.py::_run_seeders()`
+   - автоматически загружаются только:
+     - `instruments` из `storage/seed/json/instruments.json`
+     - bootstrap `admin`, если в `.env` заданы `ADMIN_TELEGRAM_ID` или `ADMIN_EMAIL`
+
+Это значит:
+
+- `messages.json`, `users.json`, `strategies.json`, `products.json`, `subscriptions.json` и прочие file-mode datasets сейчас не импортируются в PostgreSQL автоматически;
+- для полного business seed в db-mode нужен отдельный importer или явный seed pipeline;
+- post-implementation review от `2026-03-28` подтверждает, что этот статус все еще актуален;
+- текущая follow-up работа по полному db seed описана в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md) в блоке `L5`.
+
+Практический сценарий на сегодня:
+
+1. подготовить `.env` с `APP_DATA_MODE=db`
+2. выполнить `bash deploy/migrate.sh --reset`
+3. поднять `api`
+4. дождаться auto-seed инструментов и bootstrap admin
+5. если нужен полный dataset для manual QA, пока использовать file-mode или реализовать importer из `storage/seed/json/*`
+
 ## Команды миграции
 
 ```bash
@@ -161,7 +189,7 @@ $COMPOSE_SERVER logs --since=30m bot > "$V3_LOG_DIR/bot.log"
 Короткая выжимка:
 
 ```bash
-rg -n "scheduled_publish|notification|Immediate notification delivery failed|Failed to deliver recommendation notification|SMTP|Traceback|ERROR|EXCEPTION" \
+rg -n "scheduled_publish|notification|Immediate notification delivery failed|Failed to deliver message notification|SMTP|Traceback|ERROR|EXCEPTION" \
   "$V3_LOG_DIR"/api.log "$V3_LOG_DIR"/worker.log "$V3_LOG_DIR"/bot.log \
   > "$V3_LOG_DIR/highlights.txt" || true
 ```

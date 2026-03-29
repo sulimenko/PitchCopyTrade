@@ -403,6 +403,55 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
         assert "MANUAL-MOMENTUM-ABCD1234" in response.text
 
 
+def test_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
+    _strategy, product = _make_strategy_and_product()
+    product.price_rub = 0
+    documents = _make_documents()
+    user = User(id="user-1", email="lead@example.com", full_name="Lead User", timezone="Europe/Moscow")
+    subscription = Subscription(
+        id="subscription-1",
+        user_id="user-1",
+        product_id="product-1",
+        payment_id=None,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=True,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+    result = SimpleNamespace(user=user, payment=None, subscription=subscription, required_documents=documents)
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.create_stub_checkout",
+        lambda _repository, product, request: _async_return(result),
+    )
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.post(
+            "/checkout/product-1",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "lead_source_name": "ads",
+                "accepted_document_ids": [item.id for item in documents],
+            },
+        )
+
+        assert response.status_code == 201
+        assert "Оплата не требуется" in response.text
+        assert "Оплатить по СБП" not in response.text
+
+
 def test_app_checkout_submit_creates_telegram_linked_flow(monkeypatch) -> None:
     _strategy, product = _make_strategy_and_product()
     documents = _make_documents()
@@ -476,6 +525,70 @@ def test_app_checkout_submit_creates_telegram_linked_flow(monkeypatch) -> None:
         assert response.status_code == 201
         assert "MANUAL-MINIAPP-ABCD1234" in response.text
         assert "/app/payments" in response.text
+
+
+def test_app_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
+    _strategy, product = _make_strategy_and_product()
+    product.price_rub = 0
+    documents = _make_documents()
+    user = User(
+        id="user-1",
+        telegram_user_id=12345,
+        username="leaduser",
+        full_name="Lead User",
+        email="lead@example.com",
+        timezone="Europe/Moscow",
+    )
+    subscription = Subscription(
+        id="subscription-1",
+        user_id="user-1",
+        product_id="product-1",
+        payment_id=None,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=True,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+    result = SimpleNamespace(user=user, payment=None, subscription=subscription, required_documents=documents)
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.create_telegram_stub_checkout",
+        lambda _repository, **kwargs: _async_return(result),
+    )
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.post(
+            "/app/checkout/product-1",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "accepted_document_ids": [item.id for item in documents],
+                "promo_code_value": "",
+            },
+        )
+
+        assert response.status_code == 201
+        assert "Оплата не требуется" in response.text
+        assert "/app/subscriptions" in response.text
 
 
 def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:

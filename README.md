@@ -2,6 +2,12 @@
 
 Telegram-first marketplace для подписок на инвестиционные стратегии и доставки торговых сообщений.
 
+Текущий content-контур проекта уже message-centric:
+
+- staff/author workflow строится вокруг `messages`, а не `recommendations`
+- основной author surface: `/author/messages`
+- author UI использует unified composer + history table
+
 ## Что находится в репозитории
 
 Проект состоит из трех сервисов:
@@ -16,6 +22,11 @@ Telegram-first marketplace для подписок на инвестиционн
 
 - `APP_DATA_MODE=file` — локальный/demo режим на `storage/runtime/*`
 - `APP_DATA_MODE=db` — PostgreSQL через SQLAlchemy async
+
+Важно:
+
+- в `db`-mode clean schema и startup path поддерживаются
+- полный business seed в PostgreSQL пока не выполняется автоматически: auto-seed-ятся только `instruments` и bootstrap `admin`
 
 Платежные провайдеры:
 

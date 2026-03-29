@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -11,6 +12,8 @@ from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
+from pitchcopytrade.db.models.catalog import Instrument, Strategy
+from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.enums import MessageStatus
 from pitchcopytrade.repositories.contracts import AuthorRepository
 from pitchcopytrade.repositories.author import FileAuthorRepository, SqlAlchemyAuthorRepository
@@ -18,7 +21,6 @@ from pitchcopytrade.services.author import (
     WatchlistCandidate,
     add_author_watchlist_instrument,
     build_author_strategy_form_data,
-    build_leg_rows_from_form,
     build_recommendation_form_data,
     create_author_recommendation,
     create_author_strategy,
@@ -26,7 +28,6 @@ from pitchcopytrade.services.author import (
     get_author_recommendation,
     get_author_strategy,
     get_author_workspace_stats,
-    leg_form_values_from_rows,
     list_active_instruments,
     list_author_recommendations,
     list_author_strategies,
@@ -41,7 +42,7 @@ from pitchcopytrade.services.author import (
 )
 from pitchcopytrade.services.notifications import deliver_message_notifications, deliver_message_notifications_file
 from pitchcopytrade.services.instruments import build_instrument_payloads
-from pitchcopytrade.web.templates import templates
+from pitchcopytrade.web.templates import label_message_status, templates
 from pitchcopytrade.api.routes._grid_serializers import (
     serialize_recommendations,
     serialize_author_strategies,
@@ -69,7 +70,19 @@ async def author_dashboard(
     recommendations = await list_author_recommendations(repository, author)
     watchlist = await list_author_watchlist(repository, author)
     instruments = await list_active_instruments(repository)
+    logger.info(
+        "Building instrument payloads for %d instruments, provider_enabled=%s",
+        len(watchlist),
+        get_settings().instrument_quotes.provider_enabled,
+    )
     watchlist_items = await build_instrument_payloads(watchlist)
+    composer_context = await _get_composer_context(
+        repository,
+        author,
+        strategies=strategies,
+        instruments=instruments,
+        composer_default_open=False,
+    )
     return templates.TemplateResponse(
         request,
         "author/dashboard.html",
@@ -83,8 +96,7 @@ async def author_dashboard(
             "watchlist": watchlist,
             "watchlist_items": watchlist_items,
             "strategies_all": strategies,
-            "instruments": instruments,
-            "message_modal_url": "/author/messages/new?embedded=1&next=/author/dashboard",
+            **composer_context,
         },
     )
 
@@ -102,6 +114,12 @@ async def author_strategy_list_page(
     strategies = await list_author_strategies(repository, author)
     strategies = _filter_author_strategies(strategies, q=q)
     strategies = _sort_author_strategies(strategies, sort_by=sort_by, direction=direction)
+    composer_context = await _get_composer_context(
+        repository,
+        author,
+        strategies=strategies,
+        composer_default_open=False,
+    )
     return templates.TemplateResponse(
         request,
         "author/strategies_list.html",
@@ -114,6 +132,7 @@ async def author_strategy_list_page(
             "q": q,
             "sort_by": sort_by,
             "direction": direction,
+            **composer_context,
         },
     )
 
@@ -125,6 +144,15 @@ async def author_strategy_create_page(
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
+    strategies = await list_author_strategies(repository, author)
+    instruments = await list_active_instruments(repository)
+    composer_context = await _get_composer_context(
+        repository,
+        author,
+        strategies=strategies,
+        instruments=instruments,
+        composer_default_open=False,
+    )
     return templates.TemplateResponse(
         request,
         "author/strategy_form.html",
@@ -142,6 +170,7 @@ async def author_strategy_create_page(
                 "risk_level": "medium",
                 "min_capital_rub": "",
             },
+            **composer_context,
         },
     )
 
@@ -154,6 +183,14 @@ async def author_strategy_create_submit(
 ) -> Response:
     author = await _get_author_or_403(repository, user)
     strategies = await list_author_strategies(repository, author)
+    instruments = await list_active_instruments(repository)
+    composer_context = await _get_composer_context(
+        repository,
+        author,
+        strategies=strategies,
+        instruments=instruments,
+        composer_default_open=False,
+    )
     form = await request.form()
     try:
         data = build_author_strategy_form_data(
@@ -183,6 +220,7 @@ async def author_strategy_create_submit(
                     "risk_level": str(form.get("risk_level", "") or "medium"),
                     "min_capital_rub": str(form.get("min_capital_rub", "") or ""),
                 },
+                **composer_context,
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
@@ -197,9 +235,18 @@ async def author_strategy_edit_page(
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
     author = await _get_author_or_403(repository, user)
+    strategies = await list_author_strategies(repository, author)
     strategy = await get_author_strategy(repository, author, strategy_id)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    instruments = await list_active_instruments(repository)
+    composer_context = await _get_composer_context(
+        repository,
+        author,
+        strategies=strategies,
+        instruments=instruments,
+        composer_default_open=False,
+    )
     return templates.TemplateResponse(
         request,
         "author/strategy_form.html",
@@ -217,6 +264,7 @@ async def author_strategy_edit_page(
                 "risk_level": strategy.risk_level.value,
                 "min_capital_rub": strategy.min_capital_rub or "",
             },
+            **composer_context,
         },
     )
 
@@ -233,6 +281,14 @@ async def author_strategy_edit_submit(
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
     strategies = await list_author_strategies(repository, author)
+    instruments = await list_active_instruments(repository)
+    composer_context = await _get_composer_context(
+        repository,
+        author,
+        strategies=strategies,
+        instruments=instruments,
+        composer_default_open=False,
+    )
     form = await request.form()
     try:
         data = build_author_strategy_form_data(
@@ -263,6 +319,7 @@ async def author_strategy_edit_submit(
                     "risk_level": str(form.get("risk_level", "") or "medium"),
                     "min_capital_rub": str(form.get("min_capital_rub", "") or ""),
                 },
+                **composer_context,
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
@@ -298,7 +355,17 @@ async def author_watchlist_add_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     watchlist = await list_author_watchlist(repository, author)
+    logger.info(
+        "Building instrument payloads for %d instruments, provider_enabled=%s",
+        1,
+        get_settings().instrument_quotes.provider_enabled,
+    )
     added_payload = (await build_instrument_payloads([instrument]))[0]
+    logger.info(
+        "Building instrument payloads for %d instruments, provider_enabled=%s",
+        len(watchlist),
+        get_settings().instrument_quotes.provider_enabled,
+    )
     watchlist_payload = await build_instrument_payloads(watchlist)
     return JSONResponse(
         {
@@ -321,6 +388,11 @@ async def author_watchlist_remove_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     watchlist = await list_author_watchlist(repository, author)
+    logger.info(
+        "Building instrument payloads for %d instruments, provider_enabled=%s",
+        len(watchlist),
+        get_settings().instrument_quotes.provider_enabled,
+    )
     watchlist_payload = await build_instrument_payloads(watchlist)
     return JSONResponse(
         {
@@ -365,8 +437,6 @@ async def recommendation_create_page(
     user: User = Depends(require_author),
     repository: AuthorRepository = Depends(get_author_repository),
 ) -> Response:
-    if embedded != 1:
-        return RedirectResponse(url=f"/author/messages/new?{urlencode({'embedded': '1', 'next': '/author/messages'})}", status_code=status.HTTP_303_SEE_OTHER)
     author = await _get_author_or_403(repository, user)
     return await _render_recommendation_form(
         request=request,
@@ -376,7 +446,7 @@ async def recommendation_create_page(
         recommendation=None,
         error=None,
         form_values=_build_recommendation_prefill_form_values(request=request, author=author),
-        embedded=True,
+        embedded=False,
         next_path=next,
     )
 
@@ -391,7 +461,8 @@ async def recommendation_create_submit(
     strategies = await list_author_strategies(repository, author)
     instruments = await list_active_instruments(repository)
     form = await request.form()
-    leg_rows = build_leg_rows_from_form(form)
+    selected_instrument_id = str(form.get("structured_instrument_id", "") or "").strip()
+    selected_instrument = next((item for item in instruments if item.id == selected_instrument_id), None)
     resolved_status = _resolve_status_value(
         status_value=str(form.get("status", "") or ""),
         workflow_action=str(form.get("workflow_action", "") or ""),
@@ -406,33 +477,44 @@ async def recommendation_create_submit(
             repository=repository,
             form=form,
             resolved_status=resolved_status,
-            leg_rows=leg_rows,
             inline_mode=inline_mode,
             error_text="Выберите стратегию автора.",
         )
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
+        remaining_documents: list[dict[str, object]] = []
+        message_type_value = _derive_message_type_value(
+            text_value=str(form.get("message_text", "") or ""),
+            documents=uploads,
+            structured_instrument_id=selected_instrument_id,
+            structured_side_value=str(form.get("structured_side", "") or ""),
+            structured_price_value=str(form.get("structured_price", "") or ""),
+            structured_quantity_value=str(form.get("structured_quantity", "") or ""),
+            structured_tp_value=str(form.get("structured_tp", "") or ""),
+            structured_sl_value=str(form.get("structured_sl", "") or ""),
+            structured_note_value=str(form.get("structured_note", "") or ""),
+        )
         data = build_recommendation_form_data(
             strategy_id=strategy_id,
             kind_value=str(form.get("kind", "new_idea") or "new_idea"),
             status_value=resolved_status,
             title=str(form.get("title", "") or ""),
-            type_value=str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
-            message_mode=str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
+            type_value=message_type_value,
+            message_mode=message_type_value,
             message_text=str(form.get("message_text", "") or ""),
             document_caption=str(form.get("document_caption", "") or ""),
-            structured_instrument_id=str(form.get("structured_instrument_id", "") or ""),
+            structured_instrument_id=selected_instrument_id,
             structured_side_value=str(form.get("structured_side", "") or ""),
             structured_price=str(form.get("structured_price", "") or ""),
             structured_quantity=str(form.get("structured_quantity", "") or ""),
-            summary=str(form.get("summary", "") or ""),
-            thesis=str(form.get("thesis", "") or ""),
-            market_context=str(form.get("market_context", "") or ""),
+            structured_tp=str(form.get("structured_tp", "") or ""),
+            structured_sl=str(form.get("structured_sl", "") or ""),
+            structured_note=str(form.get("structured_note", "") or ""),
             author_requires_moderation=author.requires_moderation,
             scheduled_for=str(form.get("scheduled_for", "") or ""),
             allowed_strategy_ids={item.id for item in strategies},
             allowed_instrument_ids={item.id for item in instruments},
-            leg_rows=leg_rows,
+            selected_instrument=selected_instrument,
             attachments=uploads,
         )
         recommendation = await create_author_recommendation(
@@ -449,7 +531,6 @@ async def recommendation_create_submit(
             repository=repository,
             form=form,
             resolved_status=resolved_status,
-            leg_rows=leg_rows,
             inline_mode=inline_mode,
             error_text=str(exc),
         )
@@ -461,11 +542,6 @@ async def recommendation_create_submit(
             trigger="author_publish_create",
         )
     next_path = _safe_author_next_path(str(form.get("next_path", "") or ""))
-    if inline_mode:
-        return RedirectResponse(
-            url=next_path or "/author/messages",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
     return RedirectResponse(url=next_path or f"/author/messages/{recommendation.id}/edit", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -530,47 +606,69 @@ async def recommendation_edit_submit(
     strategies = await list_author_strategies(repository, author)
     instruments = await list_active_instruments(repository)
     form = await request.form()
-    leg_rows = build_leg_rows_from_form(form)
+    selected_instrument_id = str(form.get("structured_instrument_id", "") or "").strip()
+    selected_instrument = next((item for item in instruments if item.id == selected_instrument_id), None)
     resolved_status = _resolve_status_value(
         status_value=str(form.get("status", "") or ""),
         workflow_action=str(form.get("workflow_action", "") or ""),
     )
     was_published = getattr(recommendation.status, "value", recommendation.status) == MessageStatus.PUBLISHED.value
     remove_attachment_ids = [str(item) for item in form.getlist("remove_attachment_ids")]
+    current_documents = list(recommendation.documents or [])
+    remaining_documents = [item for item in current_documents if str(item.get("id")) not in remove_attachment_ids]
+    message_type_value = str(form.get("message_type", "") or form.get("message_mode", "") or "mixed")
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
+        message_type_value = _derive_message_type_value(
+            text_value=str(form.get("message_text", "") or ""),
+            documents=remaining_documents + uploads,
+            structured_instrument_id=selected_instrument_id,
+            structured_side_value=str(form.get("structured_side", "") or ""),
+            structured_price_value=str(form.get("structured_price", "") or ""),
+            structured_quantity_value=str(form.get("structured_quantity", "") or ""),
+            structured_tp_value=str(form.get("structured_tp", "") or ""),
+            structured_sl_value=str(form.get("structured_sl", "") or ""),
+            structured_note_value=str(form.get("structured_note", "") or ""),
+        )
         data = build_recommendation_form_data(
             strategy_id=str(form.get("strategy_id", "") or ""),
             kind_value=str(form.get("kind", "") or ""),
             status_value=resolved_status,
             title=str(form.get("title", "") or ""),
-            type_value=str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
-            message_mode=str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
+            type_value=message_type_value,
+            message_mode=message_type_value,
             message_text=str(form.get("message_text", "") or ""),
             document_caption=str(form.get("document_caption", "") or ""),
-            structured_instrument_id=str(form.get("structured_instrument_id", "") or ""),
+            structured_instrument_id=selected_instrument_id,
             structured_side_value=str(form.get("structured_side", "") or ""),
             structured_price=str(form.get("structured_price", "") or ""),
             structured_quantity=str(form.get("structured_quantity", "") or ""),
-            summary=str(form.get("summary", "") or ""),
-            thesis=str(form.get("thesis", "") or ""),
-            market_context=str(form.get("market_context", "") or ""),
+            structured_tp=str(form.get("structured_tp", "") or ""),
+            structured_sl=str(form.get("structured_sl", "") or ""),
+            structured_note=str(form.get("structured_note", "") or ""),
             author_requires_moderation=author.requires_moderation,
             scheduled_for=str(form.get("scheduled_for", "") or ""),
             allowed_strategy_ids={item.id for item in strategies},
             allowed_instrument_ids={item.id for item in instruments},
-            leg_rows=leg_rows,
+            selected_instrument=selected_instrument,
+            documents=remaining_documents,
             attachments=uploads,
         )
-        await remove_recommendation_attachments(repository, recommendation, remove_attachment_ids)
         await update_author_recommendation(
             repository,
+            author,
             recommendation,
             data,
             uploaded_by_user_id=user.id,
         )
+        if remove_attachment_ids:
+            await remove_recommendation_attachments(
+                repository,
+                Message(documents=current_documents),
+                remove_attachment_ids,
+            )
     except ValueError as exc:
-        feedback = _build_recommendation_form_feedback(str(exc), leg_rows)
+        feedback = _build_recommendation_form_feedback(str(exc))
         return await _render_recommendation_form(
             request=request,
             user=user,
@@ -583,20 +681,24 @@ async def recommendation_edit_submit(
                 "kind": str(form.get("kind", "") or ""),
                 "status": resolved_status,
                 "title": str(form.get("title", "") or ""),
-                "message_type": str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
-                "message_mode": str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
+                "message_type": message_type_value,
+                "message_mode": message_type_value,
                 "message_text": str(form.get("message_text", "") or ""),
                 "document_caption": str(form.get("document_caption", "") or ""),
-                "structured_instrument_id": str(form.get("structured_instrument_id", "") or ""),
+                "structured_instrument_id": selected_instrument_id,
+                "structured_instrument_query": str(form.get("structured_instrument_query", "") or ""),
+                "structured_instrument_ticker": selected_instrument.ticker if selected_instrument is not None else "",
+                "structured_instrument_name": selected_instrument.name if selected_instrument is not None else "",
+                "structured_amount": str(form.get("structured_amount", "") or ""),
                 "structured_side": str(form.get("structured_side", "") or ""),
                 "structured_price": str(form.get("structured_price", "") or ""),
                 "structured_quantity": str(form.get("structured_quantity", "") or ""),
-                "summary": str(form.get("summary", "") or ""),
-                "thesis": str(form.get("thesis", "") or ""),
-                "market_context": str(form.get("market_context", "") or ""),
+                "structured_tp": str(form.get("structured_tp", "") or ""),
+                "structured_sl": str(form.get("structured_sl", "") or ""),
+                "structured_note": str(form.get("structured_note", "") or ""),
                 "requires_moderation": author.requires_moderation,
                 "scheduled_for": str(form.get("scheduled_for", "") or ""),
-                "legs": leg_form_values_from_rows(leg_rows),
+                "documents": remaining_documents,
             },
             field_errors=feedback["field_errors"],
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -639,19 +741,18 @@ async def inline_update_recommendation(
     field = body.get("field", "")
     value = body.get("value", "")
 
-    # Map field names to recommendation/leg attributes
+    # Map field names to canonical message attributes
     try:
         if field == "title":
             recommendation.title = str(value).strip()
-        elif field == "entry_from":
-            if recommendation.legs and len(recommendation.legs) > 0:
-                recommendation.legs[0].entry_from = float(value) if value else None
-        elif field == "take_profit_1":
-            if recommendation.legs and len(recommendation.legs) > 0:
-                recommendation.legs[0].take_profit_1 = float(value) if value else None
-        elif field == "stop_loss":
-            if recommendation.legs and len(recommendation.legs) > 0:
-                recommendation.legs[0].stop_loss = float(value) if value else None
+        elif field in {"instrument", "ticker", "name", "side", "price", "quantity", "amount", "board", "currency", "lot", "from", "to", "stop", "targets", "period", "note", "status", "opened", "closed", "result"}:
+            deals = list(recommendation.deals or [])
+            if not deals:
+                deals = [{}]
+            deal = dict(deals[0])
+            deal[field] = value
+            deals[0] = deal
+            recommendation.deals = deals
         elif field == "status":
             status_value = str(value).lower()
             if status_value in ["draft", "review", "published", "archived", "scheduled", "approved", "failed"]:
@@ -687,6 +788,25 @@ async def _render_recommendation_form(
     strategies = await list_author_strategies(repository, author)
     effective_form_values = form_values or recommendation_form_values(recommendation)
     instruments = await list_active_instruments(repository)
+    logger.info(
+        "Building instrument payloads for %d instruments, provider_enabled=%s",
+        len(instruments),
+        get_settings().instrument_quotes.provider_enabled,
+    )
+    try:
+        history_messages = await list_author_recommendations(repository, author)
+    except AttributeError:
+        history_messages = [recommendation] if recommendation is not None else []
+    composer_context = await _get_composer_context(
+        repository,
+        author,
+        recommendation=recommendation,
+        form_values=effective_form_values,
+        strategies=strategies,
+        instruments=instruments,
+        history_messages=history_messages,
+        composer_default_open=True,
+    )
     return templates.TemplateResponse(
         request,
         "author/message_form.html",
@@ -695,8 +815,6 @@ async def _render_recommendation_form(
             "user": user,
             "author": author,
             "recommendation": recommendation,
-            "strategies": strategies,
-            "instruments": instruments,
             "recommendation_kind_options": ["new_idea", "update", "close", "cancel"],
             "recommendation_status_options": [
                 "draft",
@@ -709,13 +827,11 @@ async def _render_recommendation_form(
                 "archived",
             ],
             "recommendation_message_modes": ["mixed", "text", "document", "deal"],
-            "messages": [recommendation] if recommendation is not None else [],
             "error": error,
             "field_errors": field_errors or {},
-            "form_values": effective_form_values,
-            "next_leg_index": _next_leg_index(effective_form_values),
-            "embedded": embedded,
             "next_path": _safe_author_next_path(next_path) or "/author/messages",
+            "embedded": embedded,
+            **composer_context,
         },
         status_code=status_code,
     )
@@ -758,7 +874,19 @@ async def _render_recommendation_list(
     recommendations = _sort_author_recommendations(recommendations, sort_by=sort_by, direction=direction)
     strategies = await list_author_strategies(repository, author)
     instruments = await list_active_instruments(repository)
-    instrument_items = await build_instrument_payloads(instruments)
+    logger.info(
+        "Building instrument payloads for %d instruments, provider_enabled=%s",
+        len(instruments),
+        get_settings().instrument_quotes.provider_enabled,
+    )
+    composer_context = await _get_composer_context(
+        repository,
+        author,
+        strategies=strategies,
+        instruments=instruments,
+        history_messages=recommendations,
+        composer_default_open=False,
+    )
     current_list_path = _author_recommendations_list_path(
         q=q,
         status_filter=status_filter,
@@ -767,27 +895,24 @@ async def _render_recommendation_list(
     )
     return templates.TemplateResponse(
         request,
-        "author/messages_list.html",
+        "author/message_form.html",
         {
             "title": "Сообщения автора",
             "user": user,
             "author": author,
             "recommendations": recommendations,
             "recommendations_json": serialize_recommendations(recommendations),
-            "strategies": strategies,
-            "instruments": instruments,
-            "instrument_items": instrument_items,
             "q": q,
             "status_filter": status_filter,
             "sort_by": sort_by,
             "direction": direction,
             "date_from": date_from,
             "date_to": date_to,
-            "message_modal_url": _message_modal_url(next_path=current_list_path),
             "inline_next_path": current_list_path,
             "inline_error": inline_error,
             "inline_field_errors": inline_field_errors or {},
             "inline_form_values": _normalize_inline_message_form_values(inline_form_values, instruments),
+            **composer_context,
         },
         status_code=status_code,
     )
@@ -801,12 +926,11 @@ async def _render_recommendation_create_error(
     repository: AuthorRepository,
     form,
     resolved_status: str,
-    leg_rows: list[dict[str, str]],
     inline_mode: bool,
     error_text: str,
 ) -> Response:
     if inline_mode:
-        inline_feedback = _build_inline_recommendation_feedback(error_text, leg_rows)
+        inline_feedback = _build_inline_recommendation_feedback(error_text)
         return await _render_recommendation_list(
             request=request,
             user=user,
@@ -821,7 +945,7 @@ async def _render_recommendation_create_error(
             inline_field_errors=inline_feedback["field_errors"],
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
-    feedback = _build_recommendation_form_feedback(error_text, leg_rows)
+    feedback = _build_recommendation_form_feedback(error_text)
     return await _render_recommendation_form(
         request=request,
         user=user,
@@ -835,12 +959,19 @@ async def _render_recommendation_create_error(
             "status": resolved_status,
             "title": str(form.get("title", "") or ""),
             "message_type": str(form.get("message_type", "") or form.get("message_mode", "") or "mixed"),
-            "summary": str(form.get("summary", "") or ""),
-            "thesis": str(form.get("thesis", "") or ""),
-            "market_context": str(form.get("market_context", "") or ""),
+            "structured_instrument_id": str(form.get("structured_instrument_id", "") or ""),
+            "structured_instrument_query": str(form.get("structured_instrument_query", "") or ""),
+            "structured_instrument_ticker": str(form.get("structured_instrument_ticker", "") or ""),
+            "structured_instrument_name": str(form.get("structured_instrument_name", "") or ""),
+            "structured_amount": str(form.get("structured_amount", "") or ""),
+            "structured_side": str(form.get("structured_side", "") or ""),
+            "structured_price": str(form.get("structured_price", "") or ""),
+            "structured_quantity": str(form.get("structured_quantity", "") or ""),
+            "structured_tp": str(form.get("structured_tp", "") or ""),
+            "structured_sl": str(form.get("structured_sl", "") or ""),
+            "structured_note": str(form.get("structured_note", "") or ""),
             "requires_moderation": author.requires_moderation,
             "scheduled_for": str(form.get("scheduled_for", "") or ""),
-            "legs": leg_form_values_from_rows(leg_rows),
         },
         field_errors=feedback["field_errors"],
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -915,66 +1046,18 @@ def _resolve_status_value(*, status_value: str, workflow_action: str) -> str:
     return mapping.get(normalized_action, status_value)
 
 
-def _next_leg_index(form_values: dict[str, object]) -> int:
-    legs = form_values.get("legs", [])
-    if not isinstance(legs, list) or not legs:
-        return 1
-    indexes: list[int] = []
-    for item in legs:
-        if not isinstance(item, dict):
-            continue
-        try:
-            indexes.append(int(str(item.get("row_id", "0"))))
-        except ValueError:
-            continue
-    return (max(indexes) + 1) if indexes else len(legs)
-
-
-def _build_recommendation_form_feedback(error_text: str, leg_rows: list[dict[str, str]]) -> dict[str, object]:
-    first_row_id = str(leg_rows[0].get("row_id", "0")) if leg_rows else "0"
-    field_errors = _build_leg_field_errors(
-        error_text,
-        row_id=first_row_id,
-        instrument_error="Выберите инструмент из списка",
-    )
+def _build_recommendation_form_feedback(error_text: str) -> dict[str, object]:
+    field_errors: dict[str, str] = {}
     if error_text == "Выберите стратегию автора.":
         field_errors["strategy_id"] = "Выберите стратегию автора"
     return {"error": _friendly_recommendation_error_message(error_text), "field_errors": field_errors}
 
 
-def _build_inline_recommendation_feedback(error_text: str, leg_rows: list[dict[str, str]]) -> dict[str, object]:
-    first_row_id = str(leg_rows[0].get("row_id", "1")) if leg_rows else "1"
-    field_errors = _build_leg_field_errors(
-        error_text,
-        row_id=first_row_id,
-        instrument_error="Выберите бумагу из подсказок",
-    )
+def _build_inline_recommendation_feedback(error_text: str) -> dict[str, object]:
+    field_errors: dict[str, str] = {}
     if error_text == "Выберите стратегию автора.":
         field_errors["strategy_id"] = "Выберите стратегию автора"
     return {"error": _friendly_recommendation_error_message(error_text), "field_errors": field_errors}
-
-
-def _build_leg_field_errors(error_text: str, *, row_id: str, instrument_error: str) -> dict[str, str]:
-    field_prefix = f"leg_{row_id}_"
-    if error_text.startswith("Leg 1: выберите допустимый инструмент."):
-        return {f"{field_prefix}instrument_id": instrument_error}
-    if error_text.startswith("Leg 1: выберите направление сделки."):
-        return {f"{field_prefix}side": "Выберите направление сделки"}
-    if error_text.startswith("Leg 1: некорректный entry_from."):
-        return {f"{field_prefix}entry_from": "Укажите корректную цену входа"}
-    if error_text.startswith("Leg 1: некорректный entry_to."):
-        return {f"{field_prefix}entry_to": "Укажите корректную цену входа"}
-    if error_text.startswith("Leg 1: entry_to не может быть меньше entry_from."):
-        return {f"{field_prefix}entry_to": "Значение не может быть меньше цены «от»"}
-    if error_text.startswith("Leg 1: некорректный stop_loss."):
-        return {f"{field_prefix}stop_loss": "Укажите корректный стоп"}
-    if error_text.startswith("Leg 1: некорректный take_profit_1."):
-        return {f"{field_prefix}take_profit_1": "Укажите корректный TP1"}
-    if error_text.startswith("Leg 1: некорректный take_profit_2."):
-        return {f"{field_prefix}take_profit_2": "Укажите корректный TP2"}
-    if error_text.startswith("Leg 1: некорректный take_profit_3."):
-        return {f"{field_prefix}take_profit_3": "Укажите корректный TP3"}
-    return {}
 
 
 def _friendly_recommendation_error_message(error_text: str) -> str:
@@ -988,7 +1071,7 @@ def _friendly_recommendation_error_message(error_text: str) -> str:
         return "Укажите количество для structured сообщения."
     if error_text == "Для text message нужен текст сообщения.":
         return "Введите текст сообщения."
-    if error_text == "Для document message нужен PDF или JPG.":
+    if error_text in {"Для document message нужен PDF или JPG.", "Для document message нужен документ."}:
         return "Прикрепите PDF или JPG."
     if error_text.startswith("Leg 1: выберите допустимый инструмент."):
         return "Выберите инструмент для первой бумаги."
@@ -1023,11 +1106,74 @@ def _watchlist_candidate_payload(candidate: WatchlistCandidate) -> dict[str, str
     }
 
 
+def _build_history_grid_rows(messages) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for message in messages or []:
+        content = message.text or {}
+        plain = ""
+        body = ""
+        if isinstance(content, dict):
+            plain = str(content.get("plain") or "").strip()
+            body = str(content.get("body") or "").strip()
+        preview_full = plain or (re.sub(r"<[^>]+>", "", body).strip() if body else "") or str(message.comment or "Без текста").strip()
+        if not preview_full:
+            preview_full = "Без текста"
+        rows.append(
+            {
+                "date": (message.updated or message.created).strftime("%d.%m.%Y %H:%M") if message.updated or message.created else "—",
+                "type": (message.type or "mixed").upper(),
+                "preview": preview_full[:60] + ("..." if len(preview_full) > 60 else ""),
+                "preview_full": preview_full,
+                "strategy": message.strategy.title if message.strategy else "—",
+                "status": label_message_status(message.status),
+                "channels": ", ".join(message.deliver) if message.deliver else "strategy",
+                "edit_url": f"/author/messages/{message.id}/edit",
+            }
+        )
+    return rows
+
+
 def _safe_author_next_path(next_path: str) -> str:
     normalized = next_path.strip()
     if not normalized.startswith("/author/"):
         return ""
     return normalized
+
+
+async def _get_composer_context(
+    repository: AuthorRepository,
+    author: AuthorProfile,
+    *,
+    recommendation: Message | None = None,
+    form_values: dict[str, object] | None = None,
+    strategies: list[Strategy] | None = None,
+    instruments: list[Instrument] | None = None,
+    history_messages: list[Message] | None = None,
+    composer_default_open: bool = False,
+) -> dict[str, object]:
+    loaded_strategies = strategies if strategies is not None else await list_author_strategies(repository, author)
+    loaded_instruments = instruments if instruments is not None else await list_active_instruments(repository)
+    logger.info(
+        "Building instrument payloads for %d instruments, provider_enabled=%s",
+        len(loaded_instruments),
+        get_settings().instrument_quotes.provider_enabled,
+    )
+    instrument_items = await build_instrument_payloads(loaded_instruments)
+    if form_values is None:
+        form_values = recommendation_form_values(recommendation)
+    if history_messages is None:
+        history_messages = [recommendation] if recommendation is not None else []
+    return {
+        "strategies": loaded_strategies,
+        "instruments": loaded_instruments,
+        "instrument_items": instrument_items,
+        "composer_recommendation": recommendation,
+        "compose_form_values": form_values,
+        "composer_default_open": composer_default_open,
+        "history_messages": history_messages,
+        "history_json": _build_history_grid_rows(history_messages),
+        "show_history": True,
+    }
 
 
 def _author_recommendations_list_path(*, q: str, status_filter: str, sort_by: str, direction: str) -> str:
@@ -1045,14 +1191,47 @@ def _author_recommendations_list_path(*, q: str, status_filter: str, sort_by: st
     return f"/author/messages?{urlencode(params)}"
 
 
-def _message_modal_url(*, next_path: str) -> str:
-    return f"/author/messages/new?{urlencode({'embedded': '1', 'next': next_path})}"
+def _derive_message_type_value(
+    *,
+    text_value: str,
+    documents,
+    structured_instrument_id: str,
+    structured_side_value: str,
+    structured_price_value: str,
+    structured_quantity_value: str,
+    structured_tp_value: str,
+    structured_sl_value: str,
+    structured_note_value: str,
+) -> str:
+    has_text = bool(text_value.strip())
+    has_documents = bool(documents)
+    has_structured = any(
+        str(value).strip()
+        for value in (
+            structured_instrument_id,
+            structured_side_value,
+            structured_price_value,
+            structured_quantity_value,
+            structured_tp_value,
+            structured_sl_value,
+            structured_note_value,
+        )
+    )
+    has_deal = has_structured
+    sections = sum(1 for flag in (has_text, has_documents, has_deal) if flag)
+    if sections <= 0:
+        return "mixed"
+    if sections == 1:
+        if has_text:
+            return "text"
+        if has_documents:
+            return "document"
+        return "deal"
+    return "mixed"
 
 
 def _build_recommendation_prefill_form_values(*, request: Request, author: AuthorProfile) -> dict[str, object]:
     form_values = recommendation_form_values(None)
-    legacy_leg_rows = leg_form_values_from_rows(build_leg_rows_from_form(request.query_params))
-    first_leg = legacy_leg_rows[0] if legacy_leg_rows else {}
     form_values.update(
         {
             "strategy_id": str(request.query_params.get("strategy_id", "") or ""),
@@ -1063,18 +1242,17 @@ def _build_recommendation_prefill_form_values(*, request: Request, author: Autho
             "message_mode": str(request.query_params.get("message_type", request.query_params.get("message_mode", "mixed")) or "mixed"),
             "message_text": str(request.query_params.get("message_text", "") or ""),
             "document_caption": str(request.query_params.get("document_caption", "") or ""),
-            "structured_instrument_id": str(
-                request.query_params.get("structured_instrument_id", first_leg.get("instrument_id", "")) or first_leg.get("instrument_id", "")
-            ),
-            "structured_side": str(request.query_params.get("structured_side", first_leg.get("side", "")) or first_leg.get("side", "")),
-            "structured_price": str(request.query_params.get("structured_price", first_leg.get("entry_from", "")) or first_leg.get("entry_from", "")),
+            "structured_instrument_id": str(request.query_params.get("structured_instrument_id", "") or ""),
+            "structured_instrument_query": str(request.query_params.get("structured_instrument_query", "") or ""),
+            "structured_side": str(request.query_params.get("structured_side", "") or ""),
+            "structured_price": str(request.query_params.get("structured_price", "") or ""),
             "structured_quantity": str(request.query_params.get("structured_quantity", "1") or "1"),
-            "summary": str(request.query_params.get("summary", "") or ""),
-            "thesis": str(request.query_params.get("thesis", "") or ""),
-            "market_context": str(request.query_params.get("market_context", "") or ""),
+            "structured_amount": str(request.query_params.get("structured_amount", "") or ""),
+            "structured_tp": str(request.query_params.get("structured_tp", "") or ""),
+            "structured_sl": str(request.query_params.get("structured_sl", "") or ""),
+            "structured_note": str(request.query_params.get("structured_note", "") or ""),
             "requires_moderation": author.requires_moderation,
             "scheduled_for": str(request.query_params.get("scheduled_for", "") or ""),
-            "legs": legacy_leg_rows,
         }
     )
     return form_values

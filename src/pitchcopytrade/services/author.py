@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+import hashlib
 from pathlib import Path
 import re
 from typing import Iterable
@@ -92,9 +93,6 @@ class RecommendationFormData:
     schedule: datetime | None = None
     published: datetime | None = None
     archived: datetime | None = None
-    summary: str | None = None
-    thesis: str | None = None
-    market_context: str | None = None
     requires_moderation: bool = True
     scheduled_for: datetime | None = None
     legs: list[StructuredLegFormData] = field(default_factory=list)
@@ -103,9 +101,16 @@ class RecommendationFormData:
     message_text: str | None = None
     document_caption: str | None = None
     structured_instrument_id: str | None = None
+    structured_instrument_ticker: str | None = None
+    structured_instrument_name: str | None = None
+    structured_instrument_board: str | None = None
+    structured_instrument_currency: str | None = None
+    structured_instrument_lot: int | None = None
     structured_side: str | None = None
     structured_price: Decimal | None = None
     structured_quantity: Decimal | None = None
+    structured_amount: Decimal | None = None
+    structured_note: str | None = None
     bundle_id: str | None = None
 
 
@@ -281,6 +286,15 @@ async def create_author_recommendation(
     message = _build_message_entity(author, data, uploaded_by_user_id=uploaded_by_user_id)
     repository.add(message)
     await repository.flush()
+    await _store_attachments(
+        repository,
+        message,
+        attachments=data.attachments,
+        uploaded_by_user_id=uploaded_by_user_id,
+        storage=storage or LocalFilesystemStorage(),
+    )
+    _validate_message_contract(message)
+    _apply_publish_state(message)
     _finalize_root_thread(message)
     await repository.commit()
     await repository.refresh(message)
@@ -289,6 +303,7 @@ async def create_author_recommendation(
 
 async def update_author_recommendation(
     repository: AuthorRepository,
+    author: AuthorProfile,
     message: Message,
     data: RecommendationFormData,
     *,
@@ -297,7 +312,7 @@ async def update_author_recommendation(
 ) -> Message:
     if message.status not in {MessageStatus.DRAFT.value, MessageStatus.REVIEW.value}:
         raise ValueError("Редактировать можно только сообщения в статусах «Черновик» и «На модерации».")
-    updated = _build_message_entity(author=message.author or author, data=data, uploaded_by_user_id=uploaded_by_user_id, existing=message)
+    updated = _build_message_entity(author=author, data=data, uploaded_by_user_id=uploaded_by_user_id, existing=message)
     message.strategy_id = updated.strategy_id
     message.bundle_id = updated.bundle_id
     message.author_id = updated.author_id
@@ -319,6 +334,15 @@ async def update_author_recommendation(
     message.channel = updated.channel
     message.thread = updated.thread
     message.parent = updated.parent
+    await _store_attachments(
+        repository,
+        message,
+        attachments=data.attachments,
+        uploaded_by_user_id=uploaded_by_user_id,
+        storage=storage or LocalFilesystemStorage(),
+    )
+    _validate_message_contract(message)
+    _apply_publish_state(message)
     await repository.commit()
     await repository.refresh(message)
     return message
@@ -339,7 +363,7 @@ async def remove_recommendation_attachments(
     documents = [item for item in recommendation.documents if str(item.get("id")) not in targets]
     removed = [item for item in recommendation.documents if str(item.get("id")) in targets]
     for attachment in removed:
-        object_key = attachment.get("object_key")
+        object_key = attachment.get("key") or attachment.get("object_key")
         if object_key:
             runtime_storage.delete_object(str(object_key))
     recommendation.documents = documents
@@ -367,18 +391,18 @@ def build_recommendation_form_data(
     structured_side_value: str = "",
     structured_price: str = "",
     structured_quantity: str = "",
+    structured_tp: str = "",
+    structured_sl: str = "",
+    structured_note: str = "",
     text_body: str = "",
     text_plain: str = "",
     documents: Iterable[dict[str, object]] | None = None,
     deals: Iterable[dict[str, object]] | None = None,
-    summary: str = "",
-    thesis: str = "",
-    market_context: str = "",
     author_requires_moderation: bool,
     scheduled_for: str,
     allowed_strategy_ids: set[str],
     allowed_instrument_ids: set[str],
-    leg_rows: Iterable[dict[str, str]],
+    selected_instrument: Instrument | None = None,
     attachments: Iterable[IncomingAttachment],
 ) -> RecommendationFormData:
     normalized_strategy_id = strategy_id.strip()
@@ -401,28 +425,42 @@ def build_recommendation_form_data(
 
     parsed_documents = list(documents or [])
     parsed_deals = list(deals or [])
-    normalized_type = _normalize_message_type_value(type_value or message_mode or "")
-    if normalized_type not in {item.value for item in MessageType}:
-        raise ValueError("Некорректный type сообщения.")
-
     structured_side: str | None = None
     if structured_side_value.strip():
         structured_side = structured_side_value.strip()
 
     structured_price_value = _parse_decimal(structured_price.strip(), "Некорректная цена.") if structured_price.strip() else None
     structured_quantity_value = _parse_decimal(structured_quantity.strip(), "Некорректное количество.") if structured_quantity.strip() else None
+    structured_tp_value = _parse_decimal(structured_tp.strip(), "Некорректный TP.") if structured_tp.strip() else None
+    structured_sl_value = _parse_decimal(structured_sl.strip(), "Некорректный SL.") if structured_sl.strip() else None
     normalized_message_text = (text_body or message_text).strip() or None
     normalized_message_plain = text_plain.strip() or None
     normalized_document_caption = document_caption.strip() or None
     normalized_structured_instrument_id = structured_instrument_id.strip() or None
+    normalized_structured_note = structured_note.strip() or None
     parsed_attachments = list(attachments)
-    parsed_legs = _build_leg_rows(
-        leg_rows,
-        allowed_instrument_ids,
-        require_legs=False,
+    structured_deal = _build_structured_deal(
+        selected_instrument=selected_instrument,
+        instrument_id=normalized_structured_instrument_id,
+        side=structured_side,
+        price=structured_price_value,
+        quantity=structured_quantity_value,
+        take_profit=structured_tp_value,
+        stop_loss=structured_sl_value,
+        note=normalized_structured_note,
     )
-    if not parsed_deals and parsed_legs:
-        parsed_deals = [_deal_from_leg(leg) for leg in parsed_legs]
+    if structured_deal is not None:
+        parsed_deals = [structured_deal]
+
+    normalized_type = _normalize_message_type_value(type_value or message_mode or "")
+    if normalized_type not in {item.value for item in MessageType}:
+        normalized_type = _infer_message_type(
+            has_text=normalized_message_text is not None,
+            has_documents=bool(parsed_documents or parsed_attachments),
+            has_deal=bool(parsed_deals),
+        )
+    if normalized_type not in {item.value for item in MessageType}:
+        raise ValueError("Некорректный type сообщения.")
 
     if normalized_type == MessageType.TEXT.value:
         if normalized_message_text is None:
@@ -431,7 +469,7 @@ def build_recommendation_form_data(
         if not parsed_documents and not parsed_attachments:
             raise ValueError("Для document message нужен документ.")
     elif normalized_type == MessageType.DEAL.value:
-        if not parsed_deals and not parsed_legs:
+        if not parsed_deals:
             raise ValueError("Для deal message нужна сделка.")
     else:
         if normalized_message_text is None and not parsed_documents and not parsed_deals:
@@ -469,20 +507,24 @@ def build_recommendation_form_data(
         schedule=scheduled_for_value,
         published=None,
         archived=None,
-        summary=summary.strip() or None,
-        thesis=thesis.strip() or None,
-        market_context=market_context.strip() or None,
         requires_moderation=author_requires_moderation,
         scheduled_for=scheduled_for_value,
-        legs=parsed_legs,
+        legs=[],
         attachments=parsed_attachments,
         message_mode=normalized_type,
         message_text=normalized_message_text,
         document_caption=normalized_document_caption,
         structured_instrument_id=normalized_structured_instrument_id,
+        structured_instrument_ticker=selected_instrument.ticker if selected_instrument is not None else None,
+        structured_instrument_name=selected_instrument.name if selected_instrument is not None else None,
+        structured_instrument_board=selected_instrument.board if selected_instrument is not None else None,
+        structured_instrument_currency=selected_instrument.currency if selected_instrument is not None else None,
+        structured_instrument_lot=selected_instrument.lot_size if selected_instrument is not None else None,
         structured_side=structured_side,
         structured_price=structured_price_value,
         structured_quantity=structured_quantity_value,
+        structured_amount=(structured_price_value * structured_quantity_value) if structured_price_value is not None and structured_quantity_value is not None else None,
+        structured_note=normalized_structured_note,
         bundle_id=normalized_bundle_id,
     )
 
@@ -569,45 +611,30 @@ def recommendation_form_values(message: Message | None) -> dict[str, object]:
             "schedule": "",
             "published": "",
             "archived": "",
-            "summary": "",
-            "thesis": "",
-            "market_context": "",
             "requires_moderation": False,
             "scheduled_for": "",
-            "legs": [_blank_leg_value("0")],
             "message_mode": "mixed",
             "message_text": "",
             "document_caption": "",
             "structured_instrument_id": "",
+            "structured_instrument_query": "",
+            "structured_instrument_ticker": "",
+            "structured_instrument_name": "",
+            "structured_instrument_board": "",
+            "structured_instrument_currency": "",
+            "structured_instrument_lot": "",
             "structured_side": "",
             "structured_price": "",
             "structured_quantity": "",
+            "structured_amount": "",
+            "structured_tp": "",
+            "structured_sl": "",
+            "structured_note": "",
         }
 
     schedule = ""
     if message.schedule is not None:
         schedule = message.schedule.strftime("%Y-%m-%dT%H:%M")
-
-    legs: list[dict[str, str]] = []
-    for index, deal in enumerate(message.deals):
-        legs.append(
-            {
-                "row_id": str(index),
-                "instrument_id": str(deal.get("instrument_id") or ""),
-                "side": str(deal.get("side") or ""),
-                "entry_from": str(deal.get("entry_from") or ""),
-                "entry_to": str(deal.get("entry_to") or ""),
-                "stop_loss": str(deal.get("stop_loss") or ""),
-                "take_profit_1": str(deal.get("take_profit_1") or ""),
-                "take_profit_2": str(deal.get("take_profit_2") or ""),
-                "take_profit_3": str(deal.get("take_profit_3") or ""),
-                "time_horizon": str(deal.get("time_horizon") or ""),
-                "note": str(deal.get("note") or ""),
-            }
-        )
-
-    if not legs:
-        legs = [_blank_leg_value("0")]
 
     text_payload = message.text or {}
 
@@ -630,19 +657,29 @@ def recommendation_form_values(message: Message | None) -> dict[str, object]:
         "schedule": schedule,
         "published": message.published.strftime("%Y-%m-%dT%H:%M") if message.published else "",
         "archived": message.archived.strftime("%Y-%m-%dT%H:%M") if message.archived else "",
-        "summary": message.comment or "",
-        "thesis": "",
-        "market_context": "",
         "requires_moderation": message.moderation == MessageModeration.REQUIRED.value,
         "scheduled_for": schedule,
-        "legs": legs,
         "message_mode": message.type or MessageType.MIXED.value,
         "message_text": str(text_payload.get("body") or ""),
         "document_caption": str(text_payload.get("title") or ""),
-        "structured_instrument_id": str((message.deals[0] if message.deals else {}).get("instrument_id") or ""),
+        "structured_instrument_id": str((message.deals[0] if message.deals else {}).get("instrument") or (message.deals[0] if message.deals else {}).get("instrument_id") or ""),
+        "structured_instrument_query": str((message.deals[0] if message.deals else {}).get("ticker") or (message.deals[0] if message.deals else {}).get("instrument") or ""),
+        "structured_instrument_ticker": str((message.deals[0] if message.deals else {}).get("ticker") or ""),
+        "structured_instrument_name": str((message.deals[0] if message.deals else {}).get("name") or ""),
+        "structured_instrument_board": str((message.deals[0] if message.deals else {}).get("board") or ""),
+        "structured_instrument_currency": str((message.deals[0] if message.deals else {}).get("currency") or ""),
+        "structured_instrument_lot": str((message.deals[0] if message.deals else {}).get("lot") or ""),
         "structured_side": str((message.deals[0] if message.deals else {}).get("side") or ""),
-        "structured_price": str((message.deals[0] if message.deals else {}).get("entry_from") or ""),
+        "structured_price": str((message.deals[0] if message.deals else {}).get("price") or (message.deals[0] if message.deals else {}).get("entry_from") or ""),
         "structured_quantity": str((message.deals[0] if message.deals else {}).get("quantity") or ""),
+        "structured_amount": str((message.deals[0] if message.deals else {}).get("amount") or ""),
+        "structured_tp": str(
+            (message.deals[0] if message.deals else {}).get("take_profit_1")
+            or ((message.deals[0] if message.deals else {}).get("targets") or [""])[0]
+            or ""
+        ),
+        "structured_sl": str((message.deals[0] if message.deals else {}).get("stop_loss") or (message.deals[0] if message.deals else {}).get("stop") or ""),
+        "structured_note": str((message.deals[0] if message.deals else {}).get("note") or ""),
     }
 
 
@@ -774,17 +811,101 @@ def _build_leg_rows(
 
 def _deal_from_leg(leg: StructuredLegFormData) -> dict[str, object]:
     return {
+        "instrument": leg.instrument_id,
         "instrument_id": leg.instrument_id,
+        "ticker": leg.instrument_id,
+        "name": leg.instrument_id,
         "side": leg.side,
+        "price": _format_decimal(leg.entry_from),
         "entry_from": _format_decimal(leg.entry_from),
         "entry_to": _format_decimal(leg.entry_to),
+        "stop": _format_decimal(leg.stop_loss),
         "stop_loss": _format_decimal(leg.stop_loss),
+        "targets": [
+            value
+            for value in [
+                _format_decimal(leg.take_profit_1),
+                _format_decimal(leg.take_profit_2),
+                _format_decimal(leg.take_profit_3),
+            ]
+            if value is not None
+        ],
         "take_profit_1": _format_decimal(leg.take_profit_1),
         "take_profit_2": _format_decimal(leg.take_profit_2),
         "take_profit_3": _format_decimal(leg.take_profit_3),
+        "amount": None,
+        "quantity": None,
+        "board": None,
+        "currency": None,
+        "lot": None,
         "time_horizon": leg.time_horizon,
         "note": leg.note,
     }
+
+
+def _build_structured_deal(
+    *,
+    selected_instrument: Instrument | None,
+    instrument_id: str | None,
+    side: str | None,
+    price: Decimal | None,
+    quantity: Decimal | None,
+    take_profit: Decimal | None = None,
+    stop_loss: Decimal | None = None,
+    note: str | None = None,
+) -> dict[str, object] | None:
+    has_structured_input = any(
+        [
+            instrument_id,
+            side,
+            price is not None,
+            quantity is not None,
+            take_profit is not None,
+            stop_loss is not None,
+            note,
+        ]
+    )
+    if selected_instrument is None:
+        if has_structured_input:
+            raise ValueError("Для structured message нужны инструмент, Buy/Sell, цена и количество.")
+        return None
+    if not instrument_id or not side or price is None or quantity is None:
+        if has_structured_input:
+            raise ValueError("Для structured message нужны инструмент, Buy/Sell, цена и количество.")
+        return None
+    amount = price * quantity
+    targets = [value for value in (_format_decimal(take_profit),) if value]
+    return {
+        "instrument": selected_instrument.name,
+        "instrument_id": selected_instrument.id,
+        "ticker": selected_instrument.ticker,
+        "name": selected_instrument.name,
+        "board": selected_instrument.board,
+        "currency": selected_instrument.currency,
+        "lot": selected_instrument.lot_size,
+        "side": side,
+        "price": _format_decimal(price),
+        "quantity": _format_decimal(quantity),
+        "amount": _format_decimal(amount),
+        "stop": _format_decimal(stop_loss),
+        "stop_loss": _format_decimal(stop_loss),
+        "take_profit_1": _format_decimal(take_profit),
+        "targets": targets,
+        "note": note.strip() if note else None,
+    }
+
+
+def _infer_message_type(*, has_text: bool, has_documents: bool, has_deal: bool) -> str:
+    sections = sum(1 for value in (has_text, has_documents, has_deal) if value)
+    if sections <= 0:
+        return MessageType.MIXED.value
+    if sections == 1:
+        if has_text:
+            return MessageType.TEXT.value
+        if has_documents:
+            return MessageType.DOCUMENT.value
+        return MessageType.DEAL.value
+    return MessageType.MIXED.value
 
 
 def _sanitize_html(value: str | None) -> str:
@@ -850,8 +971,6 @@ def _build_message_entity(
     plain = data.text_plain or _html_to_plain(body)
     documents = list(data.documents)
     deals = list(data.deals)
-    if not deals and data.legs:
-        deals = [_deal_from_leg(item) for item in data.legs]
     if not body and data.message_type is MessageType.TEXT and plain:
         body = f"<p>{plain}</p>"
     if data.message_type is MessageType.DOCUMENT and data.document_caption and not body:
@@ -864,8 +983,8 @@ def _build_message_entity(
     message.type = MessageType(_normalize_message_type_value(getattr(data.message_type, "value", str(data.message_type))))
     message.status = MessageStatus(_normalize_message_status_value(getattr(data.status, "value", str(data.status))))
     message.moderation = MessageModeration(_normalize_message_moderation_value(data.moderation))
-    message.title = data.title
-    message.comment = data.document_caption or data.summary or data.thesis or data.market_context
+    message.title = _derive_message_title(data=data, body=body, plain=plain, documents=documents, deals=deals)
+    message.comment = data.document_caption
     message.deliver = list(dict.fromkeys(data.deliver or [MessageDeliver.STRATEGY.value]))
     message.channel = list(dict.fromkeys(data.channel or [MessageChannel.TELEGRAM.value, MessageChannel.MINIAPP.value]))
     message.thread = data.thread or message.thread
@@ -878,13 +997,61 @@ def _build_message_entity(
     message.text = {
         "body": body,
         "plain": plain,
-        "title": data.title,
+        "title": message.title,
     }
     if not message.thread:
         message.thread = message.id
-    _validate_message_contract(message)
-    _apply_publish_state(message)
     return message
+
+
+def _derive_message_title(
+    *,
+    data: RecommendationFormData,
+    body: str,
+    plain: str,
+    documents: list[dict[str, object]],
+    deals: list[dict[str, object]],
+) -> str:
+    normalized_title = str(data.title or "").strip()
+    if normalized_title:
+        return normalized_title
+
+    def _trim(text: str, limit: int = 60) -> str:
+        compact = re.sub(r"\s+", " ", text).strip()
+        if len(compact) <= limit:
+            return compact
+        return f"{compact[: limit - 3].rstrip()}..."
+
+    instrument = str(data.structured_instrument_ticker or data.structured_instrument_name or "").strip()
+    side = str(data.structured_side or "").strip()
+    deal = deals[0] if deals else {}
+    if not instrument:
+        instrument = str(deal.get("ticker") or deal.get("instrument") or "").strip()
+    if not side:
+        side = str(deal.get("side") or "").strip()
+
+    if instrument and side:
+        return f"{instrument} · {side.upper()}"
+
+    if data.message_type == MessageType.TEXT or body or plain:
+        snippet = plain or _html_to_plain(body)
+        if snippet.strip():
+            return _trim(snippet)
+
+    if data.message_type == MessageType.DOCUMENT or documents:
+        caption = str(data.document_caption or "").strip()
+        if caption:
+            return _trim(caption)
+        if documents:
+            first_doc = documents[0]
+            first_name = str(first_doc.get("name") or first_doc.get("title") or first_doc.get("original_filename") or "").strip()
+            if first_name:
+                return _trim(first_name)
+
+    if instrument:
+        return _trim(instrument)
+
+    return "Сообщение"
 
 
 def _validate_message_contract(message: Message) -> None:
@@ -928,15 +1095,17 @@ async def _store_attachments(
     for item in attachments:
         object_key = build_attachment_object_key(message.id, item.filename)
         stored = storage.upload_bytes(object_key, item.data, item.content_type)
+        digest = hashlib.sha256(item.data).hexdigest()
         documents.append(
             {
                 "id": str(uuid4()),
-                "object_key": stored.object_key,
-                "original_filename": item.filename,
-                "content_type": stored.content_type,
-                "size_bytes": stored.size_bytes,
-                "uploaded_by": uploaded_by_user_id,
-                "kind": "attachment",
+                "name": item.filename,
+                "title": item.filename,
+                "type": stored.content_type,
+                "size": stored.size_bytes,
+                "storage": "local",
+                "key": stored.object_key,
+                "hash": digest,
             }
         )
     message.documents = documents

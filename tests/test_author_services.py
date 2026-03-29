@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 from io import BytesIO
 from unittest.mock import AsyncMock
 
 import pytest
-from starlette.datastructures import FormData, Headers, UploadFile
+from starlette.datastructures import Headers, UploadFile
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy, SubscriptionProduct
@@ -13,9 +14,8 @@ from pitchcopytrade.db.models.commerce import Subscription
 from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.services.author import (
     RecommendationFormData,
-    StructuredLegFormData,
+    IncomingAttachment,
     add_author_watchlist_instrument,
-    build_leg_rows_from_form,
     build_recommendation_form_data,
     create_author_recommendation,
     normalize_attachment_uploads,
@@ -64,97 +64,294 @@ async def test_normalize_attachment_uploads_rejects_unsupported_type() -> None:
         await normalize_attachment_uploads([upload])
 
 
-def test_build_recommendation_form_data_parses_structured_leg() -> None:
+@pytest.mark.asyncio
+async def test_create_author_recommendation_stores_canonical_attachment_documents(tmp_path) -> None:
+    class DummyRepository:
+        def __init__(self) -> None:
+            self.added = None
+            self.flushed = 0
+            self.committed = 0
+            self.refreshed = 0
+
+        def add(self, entity) -> None:
+            self.added = entity
+
+        async def flush(self) -> None:
+            self.flushed += 1
+
+        async def commit(self) -> None:
+            self.committed += 1
+
+        async def refresh(self, entity) -> None:
+            self.refreshed += 1
+
+    author = AuthorProfile(
+        id="author-1",
+        user_id="user-1",
+        display_name="Desk",
+        slug="desk",
+        is_active=True,
+    )
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    storage = LocalFilesystemStorage(root_dir=tmp_path / "storage")
+    data = RecommendationFormData(
+        strategy_id="strategy-1",
+        kind=MessageKind.IDEA,
+        status=MessageStatus.DRAFT,
+        title="Документ",
+        deliver=["strategy"],
+        channel=["telegram"],
+        moderation="required",
+        message_type=MessageType.DOCUMENT,
+        text_body=None,
+        text_plain=None,
+        documents=[],
+        deals=[],
+        schedule=None,
+        published=None,
+        archived=None,
+        requires_moderation=False,
+        scheduled_for=None,
+        legs=[],
+        attachments=[
+            IncomingAttachment(
+                filename="idea.pdf",
+                content_type="application/pdf",
+                data=b"pdf-data",
+            )
+        ],
+        message_mode="document",
+        message_text="",
+        document_caption="",
+        structured_instrument_id="instrument-1",
+        structured_instrument_ticker=instrument.ticker,
+        structured_instrument_name=instrument.name,
+        structured_instrument_board=instrument.board,
+        structured_instrument_currency=instrument.currency,
+        structured_instrument_lot=instrument.lot_size,
+        structured_side="buy",
+        structured_price=None,
+        structured_quantity=None,
+        structured_amount=None,
+        structured_note=None,
+    )
+
+    message = await create_author_recommendation(
+        DummyRepository(),
+        author,
+        data,
+        uploaded_by_user_id=author.user_id,
+        storage=storage,
+    )
+
+    assert message.type == MessageType.DOCUMENT.value
+    assert len(message.documents) == 1
+    document = message.documents[0]
+    assert document["name"] == "idea.pdf"
+    assert document["title"] == "idea.pdf"
+    assert document["type"] == "application/pdf"
+    assert document["storage"] == "local"
+    assert document["key"].startswith("messages/")
+    assert document["hash"] == hashlib.sha256(b"pdf-data").hexdigest()
+    assert storage.download_bytes(str(document["key"])) == b"pdf-data"
+
+
+@pytest.mark.asyncio
+async def test_create_author_recommendation_auto_generates_title_from_text() -> None:
+    class DummyRepository:
+        def __init__(self) -> None:
+            self.added = None
+            self.flushed = 0
+            self.committed = 0
+            self.refreshed = 0
+
+        def add(self, entity) -> None:
+            self.added = entity
+
+        async def flush(self) -> None:
+            self.flushed += 1
+
+        async def commit(self) -> None:
+            self.committed += 1
+
+        async def refresh(self, entity) -> None:
+            self.refreshed += 1
+
+    author = AuthorProfile(
+        id="author-1",
+        user_id="user-1",
+        display_name="Desk",
+        slug="desk",
+        is_active=True,
+    )
+    data = RecommendationFormData(
+        strategy_id="strategy-1",
+        kind=MessageKind.IDEA,
+        status=MessageStatus.DRAFT,
+        title="",
+        deliver=["strategy"],
+        channel=["telegram"],
+        moderation="required",
+        message_type=MessageType.TEXT,
+        text_body="<p>Сильный спрос на SBER после отчета</p>",
+        text_plain="Сильный спрос на SBER после отчета",
+        documents=[],
+        deals=[],
+        schedule=None,
+        published=None,
+        archived=None,
+        requires_moderation=False,
+        scheduled_for=None,
+        legs=[],
+        attachments=[],
+        message_mode="text",
+        message_text="Сильный спрос на SBER после отчета",
+        document_caption="",
+    )
+
+    message = await create_author_recommendation(
+        DummyRepository(),
+        author,
+        data,
+        uploaded_by_user_id=author.user_id,
+    )
+
+    assert message.title.startswith("Сильный спрос на SBER")
+
+
+@pytest.mark.asyncio
+async def test_update_author_recommendation_keeps_existing_documents() -> None:
+    class DummyRepository:
+        async def flush(self) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def refresh(self, entity) -> None:
+            return None
+
+    author = AuthorProfile(
+        id="author-1",
+        user_id="user-1",
+        display_name="Desk",
+        slug="desk",
+        is_active=True,
+    )
+    existing_document = {
+        "id": "doc-1",
+        "name": "idea.pdf",
+        "title": "idea.pdf",
+        "type": "application/pdf",
+        "size": 8,
+        "storage": "local",
+        "key": "messages/msg-1/idea.pdf",
+        "hash": "deadbeef",
+    }
+    message = Message(
+        id="msg-1",
+        strategy_id="strategy-1",
+        author_id=author.id,
+        thread="msg-1",
+        kind=MessageKind.IDEA.value,
+        type=MessageType.DOCUMENT.value,
+        status=MessageStatus.DRAFT.value,
+        moderation="required",
+        title="Документ",
+        deliver=["strategy"],
+        channel=["telegram"],
+        text={"body": "", "plain": "", "title": "Документ"},
+        documents=[existing_document],
+        deals=[],
+    )
+    data = RecommendationFormData(
+        strategy_id="strategy-1",
+        kind=MessageKind.IDEA,
+        status=MessageStatus.DRAFT,
+        title="Документ",
+        deliver=["strategy"],
+        channel=["telegram"],
+        moderation="required",
+        message_type=MessageType.DOCUMENT,
+        text_body=None,
+        text_plain=None,
+        documents=[existing_document],
+        deals=[],
+        schedule=None,
+        published=None,
+        archived=None,
+        requires_moderation=False,
+        scheduled_for=None,
+        legs=[],
+        attachments=[],
+        message_mode="document",
+        message_text="",
+        document_caption="",
+    )
+
+    updated = await update_author_recommendation(
+        DummyRepository(),
+        author,
+        message,
+        data,
+        uploaded_by_user_id=author.user_id,
+    )
+
+    assert updated.documents == [existing_document]
+
+
+def test_build_recommendation_form_data_builds_canonical_deal() -> None:
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
     payload = build_recommendation_form_data(
         strategy_id="strategy-1",
         kind_value="new_idea",
         status_value="draft",
         title="Покупка SBER",
-        summary="summary",
-        thesis="thesis",
-        market_context="context",
+        structured_instrument_id="instrument-1",
+        structured_side_value="buy",
+        structured_price="101.5",
+        structured_quantity="2",
+        structured_tp="110.0",
+        structured_sl="98.0",
+        structured_note="Основной вход",
         author_requires_moderation=False,
         scheduled_for="",
         allowed_strategy_ids={"strategy-1"},
         allowed_instrument_ids={"instrument-1"},
-        leg_rows=[
-            {
-                "instrument_id": "instrument-1",
-                "side": "buy",
-                "entry_from": "101.5",
-                "entry_to": "102.1",
-                "stop_loss": "99.9",
-                "take_profit_1": "106.2",
-                "take_profit_2": "",
-                "take_profit_3": "",
-                "time_horizon": "1-3 дня",
-                "note": "Основной вход",
-            }
-        ],
+        selected_instrument=instrument,
         attachments=[],
     )
 
-    assert len(payload.legs) == 1
-    assert payload.legs[0].instrument_id == "instrument-1"
-    assert str(payload.legs[0].entry_from) == "101.5"
+    assert len(payload.deals) == 1
+    assert payload.deals[0]["instrument"] == "Sberbank"
+    assert payload.deals[0]["ticker"] == "SBER"
+    assert payload.deals[0]["side"] == "buy"
+    assert payload.deals[0]["price"] == "101.5"
+    assert payload.deals[0]["quantity"] == "2"
+    assert payload.deals[0]["amount"] == "203"
+    assert payload.deals[0]["take_profit_1"] == "110"
+    assert payload.deals[0]["stop_loss"] == "98"
     assert payload.kind == MessageKind.IDEA
     assert payload.status == MessageStatus.DRAFT
     assert payload.message_type == MessageType.MIXED
-
-
-def test_build_recommendation_form_data_allows_minimal_inline_leg() -> None:
-    payload = build_recommendation_form_data(
-        strategy_id="strategy-1",
-        kind_value="new_idea",
-        status_value="draft",
-        title="",
-        summary="",
-        thesis="",
-        market_context="",
-        author_requires_moderation=False,
-        scheduled_for="",
-        allowed_strategy_ids={"strategy-1"},
-        allowed_instrument_ids={"instrument-1"},
-        leg_rows=[
-            {
-                "instrument_id": "instrument-1",
-                "side": "buy",
-                "entry_from": "",
-                "entry_to": "",
-                "stop_loss": "",
-                "take_profit_1": "",
-                "take_profit_2": "",
-                "take_profit_3": "",
-                "time_horizon": "",
-                "note": "",
-            }
-        ],
-        attachments=[],
-    )
-
-    assert payload.kind.value == "idea"
-    assert payload.legs[0].instrument_id == "instrument-1"
-    assert payload.legs[0].entry_from is None
-    assert payload.legs[0].take_profit_1 is None
-
-
-def test_build_leg_rows_from_form_preserves_dynamic_indexes() -> None:
-    form = FormData(
-        {
-            "leg_7_instrument_id": "instrument-7",
-            "leg_7_side": "buy",
-            "leg_7_entry_from": "101.5",
-            "leg_12_instrument_id": "instrument-12",
-            "leg_12_side": "sell",
-            "leg_12_stop_loss": "99.2",
-        }
-    )
-
-    rows = build_leg_rows_from_form(form)
-
-    assert [row["row_id"] for row in rows] == ["7", "12"]
-    assert rows[0]["instrument_id"] == "instrument-7"
-    assert rows[1]["side"] == "sell"
 
 
 def test_build_recommendation_form_data_requires_content() -> None:
@@ -164,46 +361,27 @@ def test_build_recommendation_form_data_requires_content() -> None:
             kind_value="new_idea",
             status_value="draft",
             title="Покупка SBER",
-            summary="summary",
-            thesis="thesis",
-            market_context="context",
             author_requires_moderation=False,
             scheduled_for="",
             allowed_strategy_ids={"strategy-1"},
             allowed_instrument_ids={"instrument-1"},
-            leg_rows=[],
             attachments=[],
         )
 
 
-def test_build_recommendation_form_data_rejects_unknown_instrument() -> None:
-    with pytest.raises(ValueError, match="Leg 1: выберите допустимый инструмент"):
+def test_build_recommendation_form_data_rejects_missing_deal_fields() -> None:
+    with pytest.raises(ValueError, match="Для structured message нужны инструмент, Buy/Sell, цена и количество."):
         build_recommendation_form_data(
             strategy_id="strategy-1",
             kind_value="new_idea",
             status_value="draft",
             title="Покупка SBER",
-            summary="summary",
-            thesis="thesis",
-            market_context="context",
-                author_requires_moderation=False,
+            structured_instrument_id="instrument-1",
+            structured_side_value="buy",
+            author_requires_moderation=False,
             scheduled_for="",
             allowed_strategy_ids={"strategy-1"},
             allowed_instrument_ids={"instrument-1"},
-            leg_rows=[
-                {
-                    "instrument_id": "bad",
-                    "side": "buy",
-                    "entry_from": "101.5",
-                    "entry_to": "",
-                    "stop_loss": "99.9",
-                    "take_profit_1": "106.2",
-                    "take_profit_2": "",
-                    "take_profit_3": "",
-                    "time_horizon": "",
-                    "note": "",
-                }
-            ],
             attachments=[],
         )
 

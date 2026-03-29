@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.db.models.commerce import Payment, PromoCode
 from pitchcopytrade.db.models.enums import PaymentStatus
+from pitchcopytrade.db.models.commerce import Subscription
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 
@@ -66,15 +67,14 @@ async def sync_promo_redemption_counter(
         persisted = graph.promo_codes.get(promo_code.id)
         if persisted is None:
             return
-        persisted.current_redemptions = count_paid_redemptions_file(graph, persisted)
+        persisted.current_redemptions = count_redemptions_file(graph, persisted)
         graph.save(runtime_store)
         promo_code.current_redemptions = persisted.current_redemptions
         return
 
     result = await session.execute(
-        select(func.count(Payment.id)).where(
-            Payment.promo_code_id == promo_code.id,
-            Payment.status == PaymentStatus.PAID,
+        select(func.count(Subscription.id)).where(
+            Subscription.applied_promo_code_id == promo_code.id,
         )
     )
     promo_code.current_redemptions = int(result.scalar_one() or 0)
@@ -82,9 +82,9 @@ async def sync_promo_redemption_counter(
     await session.refresh(promo_code)
 
 
-def count_paid_redemptions_file(graph: FileDatasetGraph, promo_code: PromoCode) -> int:
+def count_redemptions_file(graph: FileDatasetGraph, promo_code: PromoCode) -> int:
     return sum(
         1
-        for payment in graph.payments.values()
-        if payment.promo_code_id == promo_code.id and payment.status == PaymentStatus.PAID
+        for subscription in graph.subscriptions.values()
+        if subscription.applied_promo_code_id == promo_code.id
     )

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 from pydantic import ValidationError
 
-from pitchcopytrade.core.config import Settings, reset_settings_cache
+from pitchcopytrade.core.config import LoggingSettings, Settings, reset_settings_cache
+from pitchcopytrade.core.logging import configure_logging
 from pitchcopytrade.core.runtime import validate_runtime_settings
 
 
@@ -39,11 +42,13 @@ def _base_env() -> dict[str, str]:
         "APP_STORAGE_ROOT": "storage",
         "LOG_LEVEL": "INFO",
         "LOG_JSON": "false",
+        "LOG_FILE": "",
     }
 
 
 def _make_settings(monkeypatch: pytest.MonkeyPatch, **overrides: str) -> Settings:
     reset_settings_cache()
+    monkeypatch.delenv("LOG_FILE", raising=False)
     for key, value in {**_base_env(), **overrides}.items():
         monkeypatch.setenv(key, value)
     return Settings()
@@ -67,6 +72,7 @@ def test_settings_expose_typed_sections(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.storage.seed_json_root == "storage/seed/json"
     assert settings.logging.level == "INFO"
     assert settings.logging.json_logs is False
+    assert settings.logging.file_path is None
 
 
 def test_validate_runtime_settings_fails_on_missing_bot_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -104,3 +110,19 @@ def test_file_mode_allows_missing_database_url(monkeypatch: pytest.MonkeyPatch) 
 def test_settings_validate_data_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValidationError, match="APP_DATA_MODE"):
         _make_settings(monkeypatch, APP_DATA_MODE="redis")
+
+
+def test_settings_expose_log_file_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _make_settings(monkeypatch, LOG_FILE="api.log")
+
+    assert settings.logging.file_path == "api.log"
+
+
+def test_configure_logging_writes_to_file(tmp_path) -> None:
+    log_file = tmp_path / "api.log"
+    configure_logging(LoggingSettings(level="INFO", json_logs=False, file_path=str(log_file)))
+
+    logging.getLogger("pitchcopytrade.tests").info("hello file logging")
+
+    assert log_file.exists()
+    assert "hello file logging" in log_file.read_text(encoding="utf-8")

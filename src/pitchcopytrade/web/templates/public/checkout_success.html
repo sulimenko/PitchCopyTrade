@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 
+{% set payment = result.payment if result.payment is defined else None %}
+{% set payment_required = payment is not none %}
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/status{% else %}/app/payments{% endif %}{% else %}/catalog{% endif %}">{% if miniapp_mode %}{% if preview_mode %}Preview status{% else %}Оплаты{% endif %}{% else %}Каталог{% endif %}</a>
+  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/status{% elif payment_required %}/app/payments{% else %}/app/subscriptions{% endif %}{% else %}/catalog{% endif %}">{% if miniapp_mode %}{% if preview_mode %}Preview status{% elif payment_required %}Оплаты{% else %}Подписки{% endif %}{% else %}Каталог{% endif %}</a>
 </div>
 {% endblock %}
 
@@ -15,26 +17,38 @@
   <div class="eyebrow">заявка создана</div>
   <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.95;letter-spacing:-0.06em;">Заявка создана</h1>
   <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
-    Мы создали payment и pending subscription. Если провайдер уже реальный, оплату можно завершить сразу по ссылке ниже.
+    {% if payment_required %}
+    Мы создали payment и активировали subscription для этого сценария. Если провайдер уже реальный, оплату можно завершить сразу по ссылке ниже.
+    {% else %}
+    Оплата не требуется: subscription уже активирована, и дальнейшее взаимодействие продолжается через Telegram Mini App.
+    {% endif %}
   </p>
-  <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">
-    После подтверждения оплаты основное взаимодействие продолжается через Telegram Mini App. Отдельный клиентский пароль не нужен.
-  </p>
+  {% if payment_required %}
+  <p class="muted" style="max-width:760px;line-height:1.7;margin:12px 0 0;">После подтверждения оплаты основное взаимодействие продолжается через Telegram Mini App. Отдельный клиентский пароль не нужен.</p>
+  {% endif %}
 </section>
 
 <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
     <div class="eyebrow">оплата</div>
-    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.payment.final_amount_rub }} руб</strong>
-    <div class="muted" style="margin-top:10px;">статус: {{ label_payment_status(result.payment.status) }}</div>
-    <div class="muted" style="margin-top:6px;">reference: {{ result.payment.stub_reference }}</div>
+    {% if payment_required %}
+    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ payment.final_amount_rub }} руб</strong>
+    <div class="muted" style="margin-top:10px;">статус: {{ label_payment_status(payment.status) }}</div>
+    <div class="muted" style="margin-top:6px;">reference: {{ payment.stub_reference }}</div>
     {% if result.applied_promo_code %}
-    <div class="muted" style="margin-top:6px;">промокод: {{ result.applied_promo_code.code }} / скидка {{ result.payment.discount_rub }} руб</div>
+    <div class="muted" style="margin-top:6px;">промокод: {{ result.applied_promo_code.code }} / скидка {{ payment.discount_rub }} руб</div>
     {% endif %}
     {% if result.payment_url %}
     <div style="margin-top:14px;">
       <a class="action" href="{{ result.payment_url }}">Оплатить по СБП</a>
     </div>
+    {% endif %}
+    {% else %}
+    <strong style="display:block;margin-top:10px;font-size:1.25rem;">0 руб</strong>
+    <div class="muted" style="margin-top:10px;">статус: оплата не требуется</div>
+    {% if result.applied_promo_code %}
+    <div class="muted" style="margin-top:6px;">промокод: {{ result.applied_promo_code.code }}</div>
+    {% endif %}
     {% endif %}
   </article>
   <article class="surface" style="padding:24px;">
