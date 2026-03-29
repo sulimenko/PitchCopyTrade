@@ -14,8 +14,8 @@ COPY pyproject.toml README.md /app/
 COPY src /app/src
 COPY tests /app/tests
 
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && python -m pip install --no-cache-dir --prefer-binary .
 
 EXPOSE 8000
 
