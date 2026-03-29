@@ -12,9 +12,12 @@
 За review gate отвечает [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).  
 За server deploy и clean DB reset отвечает [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md).
 
+Если входите в новый implementation pass как worker, сначала прочитайте стратегический блок `P25` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md).
+
 ## Правила работы
 
 - перед реализацией читайте [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+- для нового worker-pass сначала сверяйтесь с архитектурной стратегией `P25` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 - если задача затрагивает UX или data contract, сначала сверяйтесь с [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
 - после завершения задачи обновляйте статус в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 - не переходите к следующему блоку backlog, пока текущий не зафиксирован в задаче и review
@@ -42,6 +45,7 @@ Storage modes:
 - `api` не стартует без `INTERNAL_API_SECRET`
 - `db`-mode является приоритетным runtime path для текущей разработки
 - `file`-mode можно использовать для быстрой верстки, preview и compatibility smoke, но не как основной критерий готовности product-flow
+- `db`-mode сейчас не означает полный business seed: после clean reset автоматически поднимаются только schema, `instruments` и bootstrap `admin`; полный dataset пока требует отдельного importer/seed pass
 
 ## Подготовка окружения
 
@@ -141,6 +145,7 @@ export TELEGRAM_BOT_USERNAME=<real-bot-username>
 
 - `file` больше не считается главным режимом приемки product-flow;
 - если задача работает только в `file`, но не работает в `db`, она не считается закрытой;
+- `db`-mode пока не дает полный business seed автоматически, это только primary runtime path для schema/startup verification;
 - детальный db-mode runbook и текущие ограничения описаны в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md).
 
 Сам сценарий reset/migrate намеренно вынесен в [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md), чтобы не дублировать server/db runbook здесь.

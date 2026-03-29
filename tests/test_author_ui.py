@@ -99,6 +99,7 @@ def test_author_dashboard_renders_message_cards(monkeypatch) -> None:
         instrument_type=InstrumentType.EQUITY,
         is_active=True,
     )
+    call_args: list[tuple[int, bool]] = []
 
     monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_workspace_stats", lambda _repository, _author: _async_return(type("Stats", (), {
         "strategies_total": 1,
@@ -109,7 +110,19 @@ def test_author_dashboard_renders_message_cards(monkeypatch) -> None:
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([message]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_watchlist", lambda _repository, _author: _async_return([instrument]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.build_instrument_payloads", lambda items: _async_return([{"id": item.id, "ticker": item.ticker, "name": item.name, "board": item.board, "currency": item.currency} for item in items]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.list_active_instruments",
+        lambda _repository: _async_return([instrument]),
+    )
+
+    async def fake_build_instrument_payloads(items, allow_live_fetch=True):
+        call_args.append((len(items), allow_live_fetch))
+        return [
+            {"id": item.id, "ticker": item.ticker, "name": item.name, "board": item.board, "currency": item.currency}
+            for item in items
+        ]
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.build_instrument_payloads", fake_build_instrument_payloads)
 
     with _build_client(user) as client:
         response = client.get("/author/dashboard")
@@ -123,6 +136,50 @@ def test_author_dashboard_renders_message_cards(monkeypatch) -> None:
         assert "author-editor-composer" in response.text
         assert "dashboard-message-modal" not in response.text
         assert "message_modal_url" not in response.text
+        assert call_args == [(1, False)]
+        assert 'fetch("/api/instruments"' in response.text
+        assert "window.PCTAuthorInstrumentState" in response.text
+
+
+def test_author_dashboard_avoids_live_quote_provider(monkeypatch) -> None:
+    user = _make_author_user()
+    message = _make_message()
+    strategy = message.strategy
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_workspace_stats", lambda _repository, _author: _async_return(type("Stats", (), {
+        "strategies_total": 1,
+        "messages_total": 1,
+        "draft_messages": 0,
+        "live_messages": 1,
+    })()))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([message]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_watchlist", lambda _repository, _author: _async_return([instrument]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([instrument]))
+
+    def fail_on_live_fetch(**_kwargs):
+        raise AssertionError("live quote provider should not be called on author dashboard")
+
+    monkeypatch.setattr("pitchcopytrade.services.instruments.httpx.AsyncClient", fail_on_live_fetch)
+
+    with _build_client(user) as client:
+        response = client.get("/author/dashboard")
+
+        assert response.status_code == 200
+        assert "Последние сообщения" in response.text
+        assert "author-editor-composer" in response.text
+        assert 'fetch("/api/instruments"' in response.text
+        assert "window.PCTAuthorInstrumentState" in response.text
 
 
 def test_author_editor_is_message_centric(monkeypatch) -> None:
@@ -194,6 +251,8 @@ def test_author_editor_is_message_centric(monkeypatch) -> None:
         assert "rows=\"14\"" in response.text
         assert "rows=\"2\"" in response.text
         assert "composer-dock-frame" not in response.text
+        assert 'fetch("/api/instruments"' in response.text
+        assert "window.PCTAuthorInstrumentState" in response.text
 
 
 def test_author_message_create_returns_422_on_missing_strategy(monkeypatch) -> None:
@@ -210,7 +269,10 @@ def test_author_message_create_returns_422_on_missing_strategy(monkeypatch) -> N
     )
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([instrument]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.build_instrument_payloads", lambda items: _async_return([{"id": item.id, "ticker": item.ticker, "name": item.name} for item in items]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([{"id": item.id, "ticker": item.ticker, "name": item.name} for item in items]),
+    )
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([]))
 
     with _build_client(user) as client:
@@ -251,7 +313,10 @@ def test_author_message_list_omits_inline_form(monkeypatch) -> None:
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([message]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.build_instrument_payloads", lambda items: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([]),
+    )
 
     with _build_client(user) as client:
         response = client.get("/author/messages")
@@ -291,7 +356,10 @@ def test_author_draft_message_edit_flow(monkeypatch) -> None:
     monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", fake_get_message)
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", fake_list_strategies)
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", fake_list_instruments)
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.build_instrument_payloads", lambda items: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([]),
+    )
 
     with _build_client(user) as client:
         response = client.get(f"/author/messages/{draft_message.id}/edit")
@@ -302,6 +370,8 @@ def test_author_draft_message_edit_flow(monkeypatch) -> None:
         assert draft_message.title in response.text
         assert 'data-composer-default-open="1"' in response.text
         assert 'name="message_text"' in response.text
+        assert "Доставка" in response.text
+        assert "Каналы" not in response.text
 
 
 def test_author_message_edit_dock_has_new_reset_link(monkeypatch) -> None:
@@ -319,7 +389,10 @@ def test_author_message_edit_dock_has_new_reset_link(monkeypatch) -> None:
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([draft_message]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
     monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.build_instrument_payloads", lambda items: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([]),
+    )
 
     with _build_client(user) as client:
         response = client.get(f"/author/messages/{draft_message.id}/edit")
@@ -328,6 +401,50 @@ def test_author_message_edit_dock_has_new_reset_link(monkeypatch) -> None:
         assert "+ Новое" in response.text
         assert 'href="/author/messages"' in response.text
         assert "composer-dock-mode is-edit" in response.text
+
+
+def test_author_document_message_edit_preserves_existing_documents(monkeypatch) -> None:
+    user = _make_author_user()
+    strategy = _make_strategy()
+    document_message = _make_message()
+    document_message.status = MessageStatus.DRAFT.value
+    document_message.type = "document"
+    document_message.text = {"body": "", "plain": "", "title": "Idea PDF"}
+    document_message.documents = [
+        {
+            "id": "doc-1",
+            "name": "idea.pdf",
+            "title": "idea.pdf",
+            "type": "application/pdf",
+            "size": 8,
+            "storage": "local",
+            "key": "messages/msg-1/idea.pdf",
+            "hash": "deadbeef",
+        }
+    ]
+    document_message.strategy = strategy
+
+    async def fake_get_message(_repository, _author, _message_id):
+        assert _message_id == document_message.id
+        return document_message
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", fake_get_message)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([document_message]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([]),
+    )
+
+    with _build_client(user) as client:
+        response = client.get(f"/author/messages/{document_message.id}/edit")
+
+        assert response.status_code == 200
+        assert 'value="document"' in response.text
+        assert "1 файлов" in response.text
+        assert "idea.pdf" in response.text
+        assert "document_caption" in response.text
 
 
 async def _async_return(value):

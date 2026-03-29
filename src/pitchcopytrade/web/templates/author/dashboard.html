@@ -242,6 +242,100 @@
     let currentSuggestions = [];
     let gridApi = null;
 
+    const instrumentState = window.PCTAuthorInstrumentState || {
+      items: watchlist.slice(),
+      listeners: [],
+      refreshPromise: null,
+    };
+    window.PCTAuthorInstrumentState = instrumentState;
+    if (!Array.isArray(instrumentState.listeners)) {
+      instrumentState.listeners = [];
+    }
+    if (!Array.isArray(instrumentState.items) || !instrumentState.items.length) {
+      instrumentState.items = watchlist.slice();
+    }
+
+    function instrumentKey(item) {
+      if (!item) return "";
+      return String(item.id || item.ticker || "").trim();
+    }
+
+    function mergeWatchlistQuotes(items) {
+      const byId = new Map();
+      items.forEach(function (item) {
+        const key = instrumentKey(item);
+        if (key) {
+          byId.set(key, item);
+        }
+      });
+      watchlist = watchlist.map(function (item) {
+        const refreshed = byId.get(instrumentKey(item));
+        if (!refreshed) {
+          return item;
+        }
+        return Object.assign({}, item, refreshed, {
+          quote_last_price_text: refreshed.quote_last_price_text || refreshed.last_price_text || item.quote_last_price_text || "—",
+          quote_change_text: refreshed.quote_change_text || item.quote_change_text || "—",
+          quote: refreshed.quote || item.quote,
+        });
+      });
+    }
+
+    function refreshAuthorInstruments() {
+      if (instrumentState.refreshPromise) {
+        return instrumentState.refreshPromise;
+      }
+      if (typeof fetch !== "function") {
+        return Promise.resolve(watchlist);
+      }
+      instrumentState.refreshPromise = fetch("/api/instruments", {
+        headers: {
+          Accept: "application/json",
+        },
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            return [];
+          }
+          return response.json();
+        })
+        .then(function (payload) {
+          if (Array.isArray(payload)) {
+            instrumentState.items = payload.slice();
+            mergeWatchlistQuotes(payload);
+            updateWatchlistView(searchInput.value || "");
+            instrumentState.listeners.forEach(function (callback) {
+              try {
+                callback(instrumentState.items.slice());
+              } catch (_error) {
+                // Keep refresh non-blocking even if one subscriber fails.
+              }
+            });
+          }
+          return instrumentState.items.slice();
+        })
+        .catch(function () {
+          return instrumentState.items.slice();
+        })
+        .finally(function () {
+          instrumentState.refreshPromise = null;
+        });
+      return instrumentState.refreshPromise;
+    }
+
+    instrumentState.refresh = refreshAuthorInstruments;
+    instrumentState.subscribe = function (callback) {
+      if (typeof callback === "function") {
+        instrumentState.listeners.push(callback);
+      }
+    };
+    instrumentState.subscribe(function (items) {
+      instrumentState.items = Array.isArray(items) ? items.slice() : instrumentState.items;
+      mergeWatchlistQuotes(instrumentState.items);
+      renderGrid(filterWatchlist(searchInput.value || ""));
+      updateWatchlistView(searchInput.value || "");
+    });
+
     function htmlCellRenderer(params) {
       const wrapper = document.createElement("div");
       wrapper.innerHTML = params.value || "";
@@ -373,6 +467,9 @@
     }
 
     updateWatchlistView(searchInput.value || "");
+    window.requestAnimationFrame(function () {
+      refreshAuthorInstruments();
+    });
   })();
 </script>
 {% endblock %}

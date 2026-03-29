@@ -5151,3 +5151,718 @@ sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called
 ./.venv/bin/python -m pytest -q tests/test_acl_delivery_services.py
 ./.venv/bin/python -m pytest -q tests/test_public_catalog_checkout.py
 ```
+
+## Блок P25 — Архитектурная стратегия следующего worker-pass (2026-03-29)
+
+### Зачем нужен этот блок
+
+Проект вышел из фазы, где основной задачей было просто “поднять экраны и убрать первые 500”.
+
+Сейчас состояние другое:
+- основные вкладки и entry points уже открываются;
+- checkout и admin surface в целом ожили;
+- message-centric модель внедрена;
+- `db` стал основным runtime-контуром;
+- но проект все еще уязвим к regressions, которые появляются на стыке:
+  - UI label vs real data contract
+  - async service path vs ORM behavior
+  - author/admin/public surfaces vs общая доменная модель `messages`
+  - docs/status claims vs реально воспроизводимый runtime
+
+Следующий worker-pass должен быть не “хаотичным добиванием багов”, а управляемым stabilization cycle.
+
+### Главная цель следующего цикла
+
+Перевести проект из состояния “основные сценарии уже открываются” в состояние “основной `db`-контур семантически консистентен, операционно предсказуем и защищен regression-тестами”.
+
+Ключевая идея:
+- больше нельзя считать результатом просто отсутствие 500 на экране;
+- теперь каждая доработка должна подтверждать:
+  - корректный domain contract,
+  - корректный UI semantics,
+  - корректный async/db behavior,
+  - корректный regression gate.
+
+### Что считать основным архитектурным фокусом
+
+1. `db`-mode first
+- все product-critical проверки сначала проходят в `APP_DATA_MODE=db`;
+- `file` допускается только как secondary compatibility/smoke path;
+- worker не должен закрывать задачу формулировкой “в file работает”, если `db` path не проверен.
+
+2. `messages` как корневая доменная сущность
+- больше не допускать обратно legacy-thinking вокруг `recommendations`;
+- во всех новых решениях исходить из того, что:
+  - author пишет `message`,
+  - moderation проверяет `message`,
+  - delivery отправляет `message`,
+  - admin наблюдает жизненный цикл `message`.
+
+3. Одна семантика на одно поле
+- `deliver` = audience routing;
+- `channel` = transport/publish surface;
+- `status` = lifecycle;
+- UI не должен переименовывать или смешивать эти сущности произвольно.
+
+4. Async-safe backend
+- в async SQLAlchemy нельзя опираться на скрытый lazy behavior;
+- worker обязан считать suspect-pattern-ами:
+  - relationship append на незагруженные коллекции,
+  - доступ к expired attributes после commit,
+  - implicit lazy load в template-oriented path.
+
+5. Operator-first admin semantics
+- admin/list/grid surfaces должны помогать оператору принять решение из списка, а не заставлять открывать detail page ради базового контекста;
+- если в реестре показана колонка, ее название должно точно соответствовать данным, которые реально отображаются.
+
+6. Тесты как часть фикса, а не follow-up
+- если был production/local runtime bug, worker обязан добавить regression test в тот же pass;
+- doc-only закрытие без теста допустимо только для чисто документных блоков.
+
+### Что не является целью следующего цикла
+
+- новый крупный redesign продукта;
+- расширение domain model новыми большими сущностями без крайней необходимости;
+- возврат к file-first архитектуре;
+- dual source of truth между docs, seed data и runtime behavior;
+- рефакторинг “на всякий случай” без подтвержденного product/runtime выигрыша.
+
+### Порядок работы worker-а
+
+#### Итерация 1 — Семантическая консистентность UI
+
+Цель:
+- убрать места, где интерфейс визуально “работает”, но показывает неправильный смысл.
+
+Типовые задачи этого класса:
+- колонка подписана `Каналы`, а показывает `deliver`;
+- список подписок падает из-за ожидания поля `slug`, которого нет в модели;
+- admin grid показывает недостаточный операторский контекст.
+
+Definition of done:
+- label соответствует реальным данным;
+- список не падает на реальных db-объектах;
+- тест на сериализацию или UI-страницу добавлен.
+
+#### Итерация 2 — Domain-contract hardening
+
+Цель:
+- убрать места, где data contract уже объявлен, но runtime следует старой логике.
+
+Типовые задачи:
+- route/service/repository живут на разных assumptions;
+- `deliver`/`channel`/`status` смешиваются между слоями;
+- worker fixes должны завершать rename/refactor end-to-end, а не в одном слое.
+
+Definition of done:
+- один и тот же термин означает одно и то же в модели, сервисе, шаблоне и тесте;
+- в коде нет “временных” fallback-веток, которые возвращают старую семантику без явной причины.
+
+#### Итерация 3 — Async/db runtime hardening
+
+Цель:
+- убрать backend-patterns, которые на sqlite/file/in-memory выглядят безопасно, но ломаются в реальном async PostgreSQL path.
+
+Типовые задачи:
+- `MissingGreenlet`;
+- lazy-load после commit;
+- implicit ORM mutations через collections;
+- DB-only падения в admin/public flow.
+
+Definition of done:
+- bug воспроизводится или подтверждается логом;
+- fix убирает сам рискованный pattern, а не маскирует симптом;
+- regression test проходит через реальный async path.
+
+#### Итерация 4 — Operator workflow hardening
+
+Цель:
+- довести admin/author surfaces до состояния, где оператор может принять решение без лишних кликов и без скрытых ambiguities.
+
+Типовые задачи:
+- списки delivery/payments/subscriptions/staff;
+- достаточный reference/context прямо в таблице;
+- корректные action labels;
+- predictable detail links.
+
+Definition of done:
+- оператор получает из таблицы минимальный контекст для действия;
+- основной workflow не требует ручного угадывания по ID или открытия 3 экранов подряд.
+
+#### Итерация 5 — Documentation and merge gate
+
+Цель:
+- после каждой substantive итерации привести docs в соответствие с runtime, но только после реального подтверждения поведения.
+
+Definition of done:
+- `doc/task.md` обновлен по факту выполненной работы;
+- `doc/review.md` не содержит устаревших открытых/закрытых claims;
+- `doc/README.md` и `deploy/README.md` не обещают больше, чем реально умеет runtime.
+
+### Правила принятия решений для worker
+
+1. Если баг проявляется в `db`, сначала исправлять `db`, потом проверять, не сломали ли `file`.
+2. Если rename уже начат, доводить его до конца в пределах affected path, а не оставлять смешанный vocabulary.
+3. Если UI label спорит с данными, менять либо label, либо данные, но не оставлять semantic mismatch.
+4. Если ошибка связана с async ORM, искать и устранять trigger-pattern, а не добавлять случайные `refresh()` без понимания причины.
+5. Если route уже чинится, worker обязан проверить:
+   - page load,
+   - submit path,
+   - serialization,
+   - regression test.
+6. Если после фикса нужно обновить docs, делать это в том же pass только после проверки кода/тестов.
+
+### Обязательный формат отчета worker-а
+
+Каждый worker-pass должен заканчиваться коротким отчетом:
+
+1. Что было причиной проблемы.
+2. Какой архитектурный риск был устранен.
+3. Какие файлы изменены.
+4. Какие тесты добавлены или обновлены.
+5. Какие команды проверки выполнены и их результат.
+6. Какие остаточные риски остались.
+
+### Worker Prompt — Strategic Stabilization Pass
+
+```text
+Ты работаешь как implementation worker в проекте PitchCopyTrade.
+
+Контекст:
+- проект уже перешел на `messages` как основную сущность;
+- основной runtime-контур текущего цикла = `APP_DATA_MODE=db`;
+- главная задача следующего цикла не в том, чтобы “открывался еще один экран”, а в том, чтобы довести runtime до семантически консистентного и regression-safe состояния;
+- file-mode теперь secondary compatibility/smoke слой, а не основной критерий готовности.
+
+Твоя цель:
+- брать только один подтвержденный backlog-блок или один подтвержденный runtime bug за pass;
+- исправлять его end-to-end: модель/сервис/route/template/test/docs, если это нужно;
+- не оставлять partial rename, partial semantics или doc-only closure без runtime подтверждения.
+
+Архитектурные правила:
+1. Сначала думай про `db`-mode path.
+2. `messages` — корневая сущность; не возвращай legacy `recommendations`-мышление в новые решения.
+3. `deliver` = audience, `channel` = transport. Не смешивай их.
+4. Не используй async-unsafe ORM patterns:
+   - lazy relationship append
+   - implicit lazy load после commit
+   - надежду на in-memory behavior вместо реального AsyncSession path
+5. Если UI label не соответствует данным, это баг, а не косметика.
+6. Любой runtime bug должен получить regression test в том же pass.
+
+Порядок работы:
+1. Прочитай `doc/task.md`, `doc/blueprint.md`, `doc/review.md`.
+2. Возьми один конкретный открытый блок или один подтвержденный runtime bug.
+3. Локализуй root cause.
+4. Внеси минимальный, но законченный fix.
+5. Добавь/обнови тесты именно на тот path, который ломался.
+6. Обнови docs только если runtime/test поведение реально изменилось.
+
+Что нельзя делать:
+- закрывать задачу формулировкой “в file работает”, если `db` не проверен;
+- оставлять смешанные имена старой и новой модели в одном path;
+- маскировать symptom без устранения root cause;
+- делать большой рефактор без прямой необходимости для текущего бага;
+- обновлять документацию так, будто проблема закрыта, если тестов и runtime-проверки нет.
+
+Что должно быть в финальном отчете:
+- root cause
+- решение
+- changed files
+- tests run + results
+- residual risks
+```
+
+## Блок P26 — Переключение в author mode подвисает из-за синхронного quote fan-out на серверном рендере (2026-03-29, reopened)
+
+### Контекст
+
+По пользовательскому сценарию admin -> author режим визуально выглядит как “зависание браузера”: после нажатия на кнопку режима автора переход не происходит сразу.
+
+Подтвержденные факты:
+- сам `/auth/mode` уже умеет переключать cookie и делать `303` на `/author/dashboard`;
+- текущие auth tests покрывают только redirect contract, а не время рендера author surface;
+- в логах при входе в author mode видно, что `/author/dashboard` начинает строить instrument payloads и дергать внешний quote provider:
+
+```text
+Building instrument payloads for 12 instruments, provider_enabled=True
+Building instrument payloads for 12 instruments, provider_enabled=True
+Fetching quote for CHMF ...
+Fetching quote for GAZP ...
+...
+Instrument quote lookup failed for ...: All connection attempts failed
+```
+
+Из этого следует:
+1. проблема не в cookie-switch как таковом;
+2. проблема в том, что redirect target `/author/dashboard` блокируется на внешнем quote-provider path;
+3. author surface сейчас нарушает архитектурное правило soft-dependency: live quotes ведут себя как hard prerequisite для первого HTML response.
+
+### Статус после первого fix-pass
+
+Промежуточный фикс уже снял основной latency-symptom:
+- initial author SSR больше не должен ждать полный live quote batch;
+- duplicate payload build в одном request частично убран;
+- переключение `admin -> author` больше не выглядит как жесткое зависание.
+
+Но задача не закрыта.
+
+Подтвержденный остаточный дефект:
+- current author SSR path теперь системно вызывает `build_instrument_payloads(..., allow_live_fetch=False)`;
+- если quote cache холодный, author UI стабильно получает только `empty` quotes;
+- structured composer теряет нормальную автоподстановку цены;
+- watchlist и instrument picker могут оставаться на `—` бесконечно долго, пока кэш не прогреется каким-то другим путём.
+
+Итог:
+- latency исправлен;
+- полноценный quote UX не восстановлен;
+- `P26` должен считаться частично выполненным, но не закрытым.
+
+### Root cause
+
+Сейчас author bootstrap делает слишком много синхронной работы до первого ответа:
+
+1. `switch_staff_mode()` отправляет пользователя на `/author/dashboard`.
+2. `author_dashboard()`:
+   - строит `watchlist_items = await build_instrument_payloads(watchlist)`
+   - затем вызывает `_get_composer_context(...)`
+3. `_get_composer_context()` снова делает:
+   - `instrument_items = await build_instrument_payloads(loaded_instruments)`
+4. `build_instrument_payloads()` вызывает `get_instrument_quote()` для каждого тикера.
+5. Если provider недоступен, каждая партия ждет сетевые timeout/failure path.
+6. При этом один и тот же набор инструментов может запрашиваться дважды в одном HTML render pass.
+
+Архитектурная проблема здесь двойная:
+- quote enrichment стоит на критическом пути server-side render для author surface;
+- внутри одного page load нет защиты от duplicate in-flight quote resolution для одинаковых тикеров.
+
+### Почему это важно
+
+Для текущего цикла author surface — рабочий staff-интерфейс, а не secondary demo.
+
+Следовательно:
+- переключение режима не должно визуально зависать из-за внешнего market data API;
+- недоступность quote provider не должна блокировать доступ автора к сообщениям, стратегии и composer;
+- live quotes на author-экране — enhancement, а не prerequisite для загрузки страницы.
+
+### Архитектурное решение
+
+Canonical rule для worker:
+
+`author` HTML surfaces должны рендериться без жесткой зависимости от live quote provider, но после first paint должны уметь самостоятельно добирать актуальные quotes асинхронно.
+
+Это означает:
+1. Первый HTML response для `/author/dashboard` и `/author/messages*` должен быть быстрым даже при полностью недоступном provider.
+2. Initial SSR может отдать:
+   - cached quote,
+   - stale quote,
+   - empty quote,
+   но только как стартовое состояние.
+3. После first paint author UI должен запустить отдельный async quote refresh через API и обновить:
+   - watchlist prices,
+   - instrument autocomplete popup,
+   - structured composer price autofill.
+4. Одинаковые тикеры в одном page load не должны инициировать повторный полный network fan-out.
+5. Отсутствие live quotes на cold cache допустимо только как краткое transitional state, а не как постоянное состояние страницы.
+
+### Правильный целевой вариант
+
+Целевое поведение должно быть именно таким:
+
+1. `POST /auth/mode` быстро переводит пользователя на `/author/dashboard`
+2. server-side render не ходит во внешний quote provider на критическом пути HTML
+3. author page открывается с instrument metadata и placeholder/stale values
+4. сразу после first paint клиент делает отдельный async запрос за quotes
+5. UI обновляет price fields без перезагрузки страницы
+6. если provider недоступен, UI остается рабочим и просто сохраняет `—`/stale значения
+
+Для текущего проекта предпочтительный вариант реализации:
+- не возвращать blocking live-fetch обратно в SSR path;
+- использовать уже существующий `/api/instruments` как первый источник async quote refresh;
+- если этого endpoint окажется недостаточно по payload size или контракту, выделить отдельный lightweight batch endpoint, но только после явного подтверждения, что `/api/instruments` не подходит.
+
+### Рекомендуемый порядок реализации
+
+#### P26.1 — Убрать quotes с критического пути initial author render `[x]`
+
+Минимально приемлемая цель:
+- `/author/dashboard`
+- `/author/messages`
+- `/author/messages/new`
+- `/author/messages/{id}/edit`
+
+должны возвращать HTML без ожидания полного remote quote batch.
+
+Предпочтительные варианты решения:
+
+Вариант A. Быстрый stabilization fix:
+- server-side author pages используют только:
+  - cached quote,
+  - stale quote,
+  - empty quote,
+  если live provider сейчас недоступен;
+- network fetch не должен растягивать initial render на полные provider timeouts.
+
+Вариант B. Целевой более чистый контракт:
+- initial SSR рендерит instrument metadata без live quote dependency;
+- quotes догружаются отдельным JSON endpoint после first paint;
+- composer/watchlist обновляются на клиенте асинхронно.
+
+Для worker:
+- если времени мало, сначала делай Вариант A;
+- если write scope позволяет сделать clean split, предпочитай Вариант B.
+
+Уточнение по статусу:
+- `P26.1` уже дал полезный stabilization effect;
+- но этот пункт сам по себе не закрывает весь `P26`, если после него quotes так и не возвращаются в UI асинхронно.
+
+#### P26.2 — Устранить duplicate quote fan-out в одном author request `[x]`
+
+Что нужно зафиксировать:
+- один page load не должен дважды запрашивать одинаковый набор тикеров только потому, что:
+  - watchlist строится отдельно;
+  - composer instrument list строится отдельно.
+
+Приемлемые решения:
+- request-level reuse уже построенных payloads;
+- reuse по `instrument.id -> payload`;
+- in-flight dedupe по ticker в `services/instruments.py`;
+- либо комбинация этих подходов.
+
+Неприемлемо:
+- оставить два независимых batch-вызова и надеяться только на cache после завершения первого;
+- считать проблему решенной, если duplicate calls просто стали чуть быстрее.
+
+#### P26.3 — Сделать provider failure cheap and quiet `[x]`
+
+Что нужно:
+- недоступность provider должна быстро деградировать в `empty`/`stale`, а не превращаться в секунды ожидания;
+- логирование должно помогать диагностике, но не засорять startup/page switch десятками почти одинаковых warning на каждый тикер.
+
+Рекомендуемый подход:
+- короткий timeout budget для author/live quote path;
+- batch-aware logging summary или rate-limited warnings;
+- если provider живет в той же Docker network, server env должен уметь ходить на него по внутреннему service URL/alias, а не только через внешний internet URL;
+- отдельное различие между:
+  - provider disabled
+  - provider unavailable
+  - stale cache used
+  - no cache available
+
+#### P26.4 — Покрыть именно UX-критичный flow тестами `[x]`
+
+Нужны тесты на:
+- `POST /auth/mode` + последующий `GET /author/dashboard`
+- author page render при quote provider failure
+- отсутствие duplicate payload build в одном render path
+- корректный fallback UI, если live quotes пустые
+
+Важно:
+- существующие tests на redirect `303` не считаются достаточным покрытием этого бага.
+
+#### P26.5 — Вернуть quotes в author UI через async after-paint refresh `[x]`
+
+Что нужно:
+- после initial SSR author screen должен делать отдельный клиентский запрос за instrument payloads с quotes;
+- полученные данные должны переписывать server-rendered placeholder rows и popup data source;
+- structured composer должен снова получать цену инструмента автоматически, если пользователь еще не ввел ее вручную.
+
+Предпочтительный путь:
+- first implementation: использовать существующий `/api/instruments`;
+- dedupe на клиенте по `instrument.id`/`ticker`;
+- не отправлять отдельный request на каждый тикер;
+- один page load = один async quote refresh batch.
+
+Минимум, который должен заработать:
+- `/author/dashboard`
+- `/author/messages`
+- `/author/messages/new`
+- `/author/messages/{id}/edit`
+
+Неприемлемо:
+- считать `empty quotes forever` допустимым итогом только потому, что latency ушел;
+- возвращать blocking server-side live fetch обратно в author render path.
+
+### Что должен сделать worker
+
+#### P26.1 — Stabilize author entry latency `[x]`
+
+- [x] **P26.1.1** Проанализировать все author routes, где `_get_composer_context()` вызывает `build_instrument_payloads()`
+- [x] **P26.1.2** Вывести live quotes из hard-blocking initial render path для `/author/dashboard` и message surfaces
+- [x] **P26.1.3** Сохранить работоспособность composer и watchlist, даже если quotes пустые
+
+#### P26.2 — Remove duplicate quote work `[x]`
+
+- [x] **P26.2.1** Убрать двойное построение payloads для одинаковых instrument sets в одном request
+- [x] **P26.2.2** Если нужно, добавить in-flight dedupe в `services/instruments.py`
+- [x] **P26.2.3** Если watchlist является subset полного instrument list, не дергать provider второй раз для тех же тикеров
+
+#### P26.3 — Harden provider failure behavior `[x]`
+
+- [x] **P26.3.1** Сделать provider failure быстрым fallback-сценарием для author surfaces
+- [x] **P26.3.2** Уменьшить шум логов до диагностически полезного уровня
+- [x] **P26.3.3** Явно зафиксировать разницу между `disabled`, `empty`, `stale`
+
+#### P26.4 — Add regression tests `[x]`
+
+- [x] **P26.4.1** Добавить regression test на author page load при падающем quote provider
+- [x] **P26.4.2** Добавить test, который не допускает duplicate batch build в одном author render path
+- [x] **P26.4.3** Обновить auth/author tests так, чтобы переключение в author mode считалось успешным только если целевая страница реально рендерится без блокирующего внешнего зависимости
+
+#### P26.5 — Restore quote UX after first paint `[x]`
+
+- [x] **P26.5.1** Подключить client-side async quote refresh для author surfaces через `/api/instruments` или согласованный lightweight batch endpoint
+- [x] **P26.5.2** Обновлять watchlist/grid rows новыми quote values без full page reload
+- [x] **P26.5.3** Обновлять datasource instrument autocomplete/picker после async quote refresh
+- [x] **P26.5.4** Вернуть structured price autofill на cold cache после загрузки async quotes
+- [x] **P26.5.5** Добавить UI/regression tests именно на сценарий `cold cache -> page open -> async quotes appear`
+
+### Файлы в scope
+
+- `src/pitchcopytrade/api/routes/author.py`
+- `src/pitchcopytrade/api/routes/instruments.py`
+- `src/pitchcopytrade/services/instruments.py`
+- `src/pitchcopytrade/services/author.py`
+- `src/pitchcopytrade/web/templates/author/*.html`
+- `tests/test_author_ui.py`
+- `tests/test_auth_ui.py`
+- `tests/test_instruments_api.py`
+- `tests/test_instruments_service.py`
+- при необходимости: `doc/README.md`, если меняется локальный quote-provider runbook
+
+### Acceptance P26
+
+1. Переключение `admin -> author` больше не выглядит как зависание браузера при недоступном quote provider
+2. `POST /auth/mode` по-прежнему делает `303`, а целевой `/author/dashboard` быстро рендерится даже без внешних котировок
+3. На cold cache author UI сначала открывается быстро, а затем отдельным async path добирает quotes
+4. Watchlist и instrument picker обновляют цены без full page reload
+5. Structured composer снова умеет подставлять цену инструмента после async quote refresh, если поле цены еще пустое
+6. Один author page load не делает duplicate full quote fan-out для одинаковых тикеров
+7. Недоступный provider не блокирует author composer и watchlist: UI остается рабочим и деградирует в `stale`/`—`
+8. Regression tests покрывают не только redirect и fast render, но и `cold cache -> async quote hydrate`
+
+### Минимальная проверка
+
+```bash
+./.venv/bin/python -m pytest -q tests/test_author_ui.py
+./.venv/bin/python -m pytest -q tests/test_auth_ui.py
+./.venv/bin/python -m pytest -q tests/test_instruments_api.py
+./.venv/bin/python -m pytest -q tests/test_instruments_service.py
+```
+
+### Worker Prompt — Author Mode Switch Must Not Block On Live Quotes
+
+```text
+Ты делаешь отдельную стабилизационную задачу по author mode.
+
+Проблема:
+- переключение из admin в author mode визуально выглядит как зависание;
+- redirect `/auth/mode` уже работает, но target page `/author/dashboard` блокируется на live quote provider path;
+- author dashboard и composer сейчас синхронно строят instrument payloads и могут дважды дергать один и тот же набор тикеров;
+- при недоступном provider page load ждет failure/timeouts вместо быстрого degraded render.
+
+Что нужно обеспечить:
+- author surface должен открываться быстро даже если quote provider полностью недоступен;
+- live quotes для author UI должны быть soft dependency, а не hard prerequisite для initial HTML;
+- duplicate quote fan-out в одном request нужно убрать;
+- UI должен продолжать работать с `empty` или `stale` quotes;
+- fast SSR сам по себе не считается достаточным результатом, если после этого цены больше никогда не появляются на cold cache.
+
+Архитектурные правила:
+1. Не лечи это только косметическим скрытием warning-логов.
+2. Не считай проблему закрытой, если `/auth/mode` отдает 303, но `/author/dashboard` все еще ждёт remote provider.
+3. Не оставляй двойной build одного и того же набора instrument payloads в одном render path.
+4. Если делаешь deferred quotes, initial HTML все равно должен быть полностью рабочим без них.
+5. Предпочитай reuse существующего `/api/instruments`, если он покрывает async quote refresh без лишнего write scope.
+6. Не закрепляй в tests поведение “author dashboard никогда не ходит за live quotes вообще”; закрепляй именно non-blocking contract и async hydration.
+7. Любой runtime fix обязан сопровождаться regression tests.
+
+Рекомендуемая стратегия:
+- first pass: оставить initial render быстрым и неблокирующим;
+- second pass inside same task: подключить async after-paint quote refresh для watchlist и composer;
+- third pass: dedupe identical ticker requests внутри одного page load;
+- затем закрыть tests на provider failure, author mode switch и cold-cache hydration.
+
+Что проверить после фикса:
+- `POST /auth/mode` -> `/author/dashboard`
+- `/author/messages`
+- `/author/messages/new`
+- watchlist/composer при provider failure
+- cold cache -> page open -> quotes appear asynchronously
+- отсутствие duplicate batch quote calls
+
+Финальный отчет:
+- root cause
+- выбранный архитектурный подход
+- changed files
+- tests run + results
+- residual risks
+```
+
+## Блок P27 — Рекомендация не отправляется, потому что author publish path валится до доставки (2026-03-29)
+
+### Контекст
+
+По пользовательскому сценарию автор публикует сообщение, но подписчик ничего не получает.
+
+Подтвержденные сигналы:
+- на author-экране появляется ошибка `Для published нужен published.`
+- в логах нет записей вида:
+  - `Delivery for message ...`
+  - `No recipients for message ...`
+  - `notification.delivery`
+  - `author_publish_create`
+  - `author_publish_update`
+- worker тоже ничего не публиковал:
+  - `scheduled_publish tick: 0 published`
+- bot polling живой, но следов отправки публикации нет
+
+Это означает:
+- до delivery path выполнение не дошло;
+- причина находится в author create/update publish contract, а не в Telegram delivery layer.
+
+### Root cause
+
+В author service нарушен порядок server-side publish normalization и validation:
+
+1. `build_recommendation_form_data()` возвращает `status=published`, но `published=None`
+2. `create_author_recommendation()` делает:
+   - `_validate_message_contract(message)`
+   - `_apply_publish_state(message)`
+3. `update_author_recommendation()` делает то же самое
+4. `_validate_message_contract()` содержит правило:
+   - если `message.status == published` и `message.published is None` -> `ValueError("Для published нужен published.")`
+5. Из-за этого publish path падает до commit и до `_deliver_author_publish_notifications()`
+
+Следствие:
+- сообщение либо вообще не коммитится как published, либо update-path откатывается до доставки;
+- подписчику нечего отправлять, потому что runtime не дошел до notification service.
+
+### Почему это главная причина, а не quote provider
+
+Логи quotes действительно показывают отдельную проблему:
+- server env не может получить котировки от provider;
+- author page из-за этого деградирует медленно.
+
+Но quote failure не объясняет отсутствие delivery по опубликованному сообщению.
+
+Главный индикатор здесь другой:
+- publish contract сам выбрасывает `ValueError("Для published нужен published.")`
+- следов вызова delivery service после публикации нет вообще
+
+Поэтому:
+- quote-provider issue = secondary infra/runtime problem;
+- publish-contract order bug = primary причина, почему рекомендация не дошла.
+
+### Архитектурное решение
+
+Canonical rule:
+
+`published` timestamp для author publish flow должен назначаться сервером, а не ожидаться как входное обязательное поле формы.
+
+Это означает:
+1. Author UI может просить статус `published` или action `publish_now`
+2. Backend сам должен выставлять `message.published = now`
+3. Validation должна проверять уже нормализованное server-side состояние, а не сырой pre-normalized объект
+
+Правильный порядок должен быть таким:
+- build message
+- apply publish/schedule/archive state
+- validate normalized message contract
+- commit
+- deliver notifications if message is newly published
+
+### Что должен сделать worker
+
+#### P27.1 — Исправить порядок publish normalization и validation `[x]`
+
+- [x] **P27.1.1** В `create_author_recommendation()` переставить `_apply_publish_state(message)` раньше `_validate_message_contract(message)`
+- [x] **P27.1.2** В `update_author_recommendation()` сделать тот же порядок
+- [x] **P27.1.3** Проверить, нет ли аналогичного pre-normalization validation в других publish paths
+
+#### P27.2 — Зафиксировать server-owned publish contract `[x]`
+
+- [x] **P27.2.1** Убедиться, что author form не обязана передавать `published`
+- [x] **P27.2.2** Убедиться, что `status=published` и `workflow_action=publish_now` приводят к серверному `published=now`
+- [x] **P27.2.3** Если сообщение уже было published, не слать повторную доставку без явной причины
+
+#### P27.3 — Довести delivery path после publish `[x]`
+
+- [x] **P27.3.1** После успешного commit author publish должен доходить до `_deliver_author_publish_notifications()`
+- [x] **P27.3.2** В логах и audit должен появляться понятный delivery trace
+- [x] **P27.3.3** Если recipients = 0, это должен быть диагностируемый controlled outcome, а не “тишина”
+
+#### P27.4 — Добавить regression tests именно на publish -> delivery `[x]`
+
+- [x] **P27.4.1** Test на author create с `published`, который раньше падал на `Для published нужен published.`
+- [x] **P27.4.2** Аналогичный test на author update
+- [x] **P27.4.3** Test на то, что newly published author message реально вызывает delivery path
+- [x] **P27.4.4** Test на то, что повторное редактирование уже published message не шлет duplicate delivery без explicit trigger
+
+### Файлы в scope
+
+- `src/pitchcopytrade/services/author.py`
+- `src/pitchcopytrade/api/routes/author.py`
+- `src/pitchcopytrade/services/notifications.py`
+- `tests/test_author_services.py`
+- `tests/test_author_ui.py`
+- при необходимости: `tests/test_notifications_service.py`
+
+### Acceptance P27
+
+1. Автор может опубликовать сообщение без ручной передачи `published` из формы
+2. `Для published нужен published.` больше не появляется на нормальном publish flow
+3. После успешной author publish операции вызывается delivery path
+4. В логах появляется либо успешная доставка, либо явный trace `0 recipients`, но не silent failure
+5. Regression tests покрывают create/update published path
+
+### Минимальная проверка
+
+```bash
+./.venv/bin/python -m pytest -q tests/test_author_services.py
+./.venv/bin/python -m pytest -q tests/test_author_ui.py
+./.venv/bin/python -m pytest -q tests/test_notifications_service.py
+```
+
+### Worker Prompt — Author Publish Must Reach Delivery
+
+```text
+Ты делаешь отдельную задачу по publish/delivery path для author surface.
+
+Симптом:
+- автор публикует сообщение;
+- подписчик ничего не получает;
+- в UI всплывает ошибка `Для published нужен published.`;
+- в логах нет признаков того, что delivery service вообще был вызван.
+
+Root cause:
+- author publish path валидирует сообщение до того, как сервер сам выставляет `published=now`;
+- из-за этого `status=published` падает на pre-normalized contract;
+- commit и immediate delivery не происходят.
+
+Что нужно обеспечить:
+1. `published` timestamp должен быть server-owned, а не обязательным полем формы.
+2. Порядок должен быть:
+   - apply publish state
+   - validate normalized message
+   - commit
+   - deliver notifications
+3. После publish должен появляться диагностируемый delivery trace.
+
+Что нельзя делать:
+- лечить это обходом на фронте;
+- требовать от формы присылать `published`;
+- считать задачу закрытой, если ошибка исчезла, но delivery path не покрыт тестом.
+
+Что проверить:
+- author create with publish
+- author update with publish
+- immediate delivery trigger
+- no duplicate delivery for already-published message
+
+Финальный отчет:
+- root cause
+- changed files
+- tests run + results
+- residual risks
+```

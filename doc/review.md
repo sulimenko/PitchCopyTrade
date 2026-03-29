@@ -9,7 +9,7 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `233 passed`
+- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `242 passed`
 
 Но merge нельзя считать полностью чистым: post-implementation review все еще держит открытыми несколько реальных product regressions в author edit flow.
 
@@ -24,61 +24,47 @@
 
 ## Findings
 
+Open findings: none.
+
+## Resolved In This Pass
+
 ### [P1] Structured deal edit round-trip ломает повторное сохранение уже созданного сообщения
 
-Проблема:
-- `_build_structured_deal()` сохраняет `deal.instrument` как человекочитаемое имя инструмента, а `deal.instrument_id` как реальный ID;
-- `recommendation_form_values()` при заполнении edit form сначала берет `deal.instrument`, а только потом `deal.instrument_id`;
-- в результате скрытое поле `structured_instrument_id` получает значение вроде `Sberbank` вместо `instrument-1`.
-
-Следствие:
-- повторное открытие и сохранение structured message без ручного повторного выбора инструмента может падать на backend validation;
-- edit round-trip нового canonical payload сейчас не является стабильным.
-
-Файлы:
-- `src/pitchcopytrade/services/author.py`
+Resolved:
+- `recommendation_form_values()` теперь предпочитает `deal.instrument_id`, а не human-readable `deal.instrument`
+- structured edit form больше не подставляет display name в скрытое ID-поле
 
 ### [P1] Document-only edit/preview path не учитывает уже прикрепленные документы
 
-Проблема:
-- `hasDocumentFiles()` в author composer считает только новые файлы из `<input type="file">`;
-- уже существующие `composer.documents` в client-side type detection не участвуют;
-- preview gate считает такую форму пустой, а hidden `message_type` может быть переопределен в `mixed`.
-
-Следствие:
-- существующее document-only сообщение нельзя надежно открыть и пересохранить без повторной загрузки файла;
-- document-only edit flow остается неполноценным несмотря на зеленый test suite.
-
-Файлы:
-- `src/pitchcopytrade/web/templates/author/message_form.html`
+Resolved:
+- edit form и composer теперь сохраняют уже прикрепленные документы как часть canonical state;
+- добавлен regression test на document-only edit flow с existing attachment payload
 
 ### [P2] Author history table подписана как `Каналы`, но показывает `deliver`
 
-Проблема:
-- в таблице сообщений колонка называется `Каналы`;
-- в ячейке рендерится `message.deliver`, а не `message.channel`.
-
-Следствие:
-- оператор видит audience routing под меткой transport channels;
-- это создает UX ambiguity и затрудняет ручную проверку delivery contract.
-
-Файлы:
-- `src/pitchcopytrade/web/templates/author/message_form.html`
+Resolved:
+- колонка в composer history table переименована в `Доставка`
+- подпись больше не смешивает audience routing с transport channels
 
 ### [P2] DB-mode документация нельзя трактовать как “полный business seed готов”
 
-Проблема:
-- `deploy/migrate.sh --reset` и startup path в `APP_DATA_MODE=db` по-прежнему auto-seed-ят только `instruments` и bootstrap `admin`;
-- importer для полного business dataset в PostgreSQL не появился.
+Resolved:
+- `doc/README.md` и `deploy/README.md` теперь явно говорят, что `APP_DATA_MODE=db` пока не означает full business seed
+- документация разделяет primary runtime path и полный importer/seed pipeline
 
-Следствие:
-- `db`-mode подходит для schema/startup verification, но не как полноценный replacement file-mode dataset для ручного QA;
-- документация должна это подчеркивать явно, иначе инженер ожидает больше, чем реально умеет репозиторий.
+### [P1] Переключение в author mode блокируется на live quote provider path
 
-Файлы:
-- `deploy/README.md`
-- `src/pitchcopytrade/api/lifespan.py`
-- `src/pitchcopytrade/db/seeders/*`
+Resolved:
+- author SSR больше не блокирует переход на live quote provider;
+- initial render использует cached/stale/empty payloads и затем делает async quote hydrate after first paint;
+- добавлены regression tests на `POST /auth/mode` + real author dashboard render.
+
+### [P1] Author publish path валится до delivery, потому что validation идет раньше server-side `published`
+
+Resolved:
+- `_apply_publish_state()` теперь вызывается до `_validate_message_contract()` в create/update publish paths;
+- `published` назначается сервером, а не ожидается от формы;
+- publish path доходит до delivery trace, и regression tests это покрывают.
 
 ## Открытые задачи
 

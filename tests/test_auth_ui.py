@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.deps.repositories import get_auth_repository
+from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.auth.staff_mode import resolve_staff_mode
@@ -22,7 +23,8 @@ from pitchcopytrade.auth.session import (
 )
 from pitchcopytrade.core.config import get_settings, reset_settings_cache
 from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
-from pitchcopytrade.db.models.enums import RoleSlug, UserStatus
+from pitchcopytrade.db.models.catalog import Instrument, Strategy
+from pitchcopytrade.db.models.enums import InstrumentType, RoleSlug, RiskLevel, StrategyStatus, UserStatus
 
 
 class FakeAuthRepository:
@@ -82,6 +84,16 @@ class FakePublicRepository:
         return None
 
 
+class FakeAuthorRepository:
+    def __init__(self, user: User) -> None:
+        self.user = user
+
+    async def get_author_by_user_id(self, user_id: str) -> AuthorProfile | None:
+        if user_id == self.user.id:
+            return self.user.author_profile
+        return None
+
+
 def _make_user() -> User:
     user = User(
         id="user-1",
@@ -118,7 +130,11 @@ def _make_moderator_user() -> User:
     return user
 
 
-def _build_client(repository: FakeAuthRepository, public_repository: FakePublicRepository | None = None) -> TestClient:
+def _build_client(
+    repository: FakeAuthRepository,
+    public_repository: FakePublicRepository | None = None,
+    author_repository: FakeAuthorRepository | None = None,
+) -> TestClient:
     app = create_app()
 
     async def override_auth_repository():
@@ -127,8 +143,12 @@ def _build_client(repository: FakeAuthRepository, public_repository: FakePublicR
     async def override_public_repository():
         return public_repository or FakePublicRepository()
 
+    async def override_author_repository():
+        return author_repository
+
     app.dependency_overrides[get_auth_repository] = override_auth_repository
     app.dependency_overrides[get_public_repository] = override_public_repository
+    app.dependency_overrides[get_author_repository] = override_author_repository
     return TestClient(app)
 
 
@@ -481,6 +501,79 @@ def test_dual_role_can_switch_to_author_mode() -> None:
         assert response.status_code == 303
         assert response.headers["location"] == "/author/dashboard"
         assert "pitchcopytrade_session_staff_mode=author" in response.headers["set-cookie"]
+
+
+def test_dual_role_can_switch_to_author_mode_and_render_dashboard(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    user = _make_dual_role_user()
+    repository.users_by_id[user.id] = user
+    author_repository = FakeAuthorRepository(user)
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    strategy = Strategy(
+        id="strategy-1",
+        author_id=user.author_profile.id,
+        slug="momentum-ru",
+        title="Momentum RU",
+        short_description="desc",
+        full_description="full",
+        risk_level=RiskLevel.MEDIUM,
+        status=StrategyStatus.PUBLISHED,
+        min_capital_rub=150000,
+        is_public=True,
+    )
+    async def fake_stats(_repository, _author):
+        return type("Stats", (), {
+            "strategies_total": 1,
+            "messages_total": 0,
+            "draft_messages": 0,
+            "live_messages": 0,
+        })()
+
+    async def fake_strategies(_repository, _author):
+        return [strategy]
+
+    async def fake_recommendations(_repository, _author):
+        return []
+
+    async def fake_watchlist(_repository, _author):
+        return [instrument]
+
+    async def fake_instruments(_repository):
+        return [instrument]
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.get_author_workspace_stats",
+        fake_stats,
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", fake_strategies)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", fake_recommendations)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_watchlist", fake_watchlist)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", fake_instruments)
+
+    def fail_on_live_fetch(**_kwargs):
+        raise AssertionError("live quote provider should not be called during author dashboard render")
+
+    monkeypatch.setattr("pitchcopytrade.services.instruments.httpx.AsyncClient", fail_on_live_fetch)
+
+    with _build_client(repository, author_repository=author_repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.post("/auth/mode", data={"mode": "author", "next": "/admin/authors"}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+
+        dashboard = client.get("/author/dashboard")
+        assert dashboard.status_code == 200
+        assert "Авторский кабинет" in dashboard.text or "Последние сообщения" in dashboard.text
 
 
 def test_dual_role_can_switch_back_to_admin_mode() -> None:

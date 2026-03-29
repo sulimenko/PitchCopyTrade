@@ -181,3 +181,42 @@ async def test_get_instrument_quote_returns_empty_on_failure_without_cache(monke
     assert quote.status == "empty"
     assert quote.is_stale is False
     assert quote.last_price is None
+
+
+@pytest.mark.asyncio
+async def test_get_instrument_quote_skips_live_fetch_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    instrument_service.clear_instrument_quote_cache()
+    _enable_quotes(monkeypatch)
+
+    def fail_on_client(**_kwargs):
+        raise AssertionError("live fetch should not be used when allow_live_fetch is False")
+
+    monkeypatch.setattr(instrument_service.httpx, "AsyncClient", fail_on_client)
+
+    quote = await instrument_service.get_instrument_quote("NVTK", allow_live_fetch=False)
+
+    assert quote.status == "empty"
+    assert quote.is_stale is False
+    assert quote.last_price is None
+
+
+@pytest.mark.asyncio
+async def test_build_instrument_payloads_deduplicates_instruments_by_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    instrument_service.clear_instrument_quote_cache()
+    calls: list[str] = []
+
+    async def fake_build_instrument_payload(instrument, *, allow_live_fetch: bool = True):
+        calls.append(f"{instrument.id}:{allow_live_fetch}")
+        return {"id": instrument.id, "ticker": instrument.ticker}
+
+    monkeypatch.setattr(instrument_service, "build_instrument_payload", fake_build_instrument_payload)
+
+    instruments = [
+        SimpleNamespace(id="instrument-1", ticker="NVTK"),
+        SimpleNamespace(id="instrument-1", ticker="NVTK"),
+    ]
+
+    payloads = await instrument_service.build_instrument_payloads(instruments, allow_live_fetch=False)
+
+    assert payloads == [{"id": "instrument-1", "ticker": "NVTK"}]
+    assert calls == ["instrument-1:False"]

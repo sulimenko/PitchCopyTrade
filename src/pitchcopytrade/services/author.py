@@ -293,8 +293,8 @@ async def create_author_recommendation(
         uploaded_by_user_id=uploaded_by_user_id,
         storage=storage or LocalFilesystemStorage(),
     )
-    _validate_message_contract(message)
     _apply_publish_state(message)
+    _validate_message_contract(message)
     _finalize_root_thread(message)
     await repository.commit()
     await repository.refresh(message)
@@ -341,8 +341,8 @@ async def update_author_recommendation(
         uploaded_by_user_id=uploaded_by_user_id,
         storage=storage or LocalFilesystemStorage(),
     )
-    _validate_message_contract(message)
     _apply_publish_state(message)
+    _validate_message_contract(message)
     await repository.commit()
     await repository.refresh(message)
     return message
@@ -662,8 +662,13 @@ def recommendation_form_values(message: Message | None) -> dict[str, object]:
         "message_mode": message.type or MessageType.MIXED.value,
         "message_text": str(text_payload.get("body") or ""),
         "document_caption": str(text_payload.get("title") or ""),
-        "structured_instrument_id": str((message.deals[0] if message.deals else {}).get("instrument") or (message.deals[0] if message.deals else {}).get("instrument_id") or ""),
-        "structured_instrument_query": str((message.deals[0] if message.deals else {}).get("ticker") or (message.deals[0] if message.deals else {}).get("instrument") or ""),
+        "structured_instrument_id": str((message.deals[0] if message.deals else {}).get("instrument_id") or (message.deals[0] if message.deals else {}).get("instrument") or ""),
+        "structured_instrument_query": str(
+            (message.deals[0] if message.deals else {}).get("ticker")
+            or (message.deals[0] if message.deals else {}).get("instrument_id")
+            or (message.deals[0] if message.deals else {}).get("instrument")
+            or ""
+        ),
         "structured_instrument_ticker": str((message.deals[0] if message.deals else {}).get("ticker") or ""),
         "structured_instrument_name": str((message.deals[0] if message.deals else {}).get("name") or ""),
         "structured_instrument_board": str((message.deals[0] if message.deals else {}).get("board") or ""),

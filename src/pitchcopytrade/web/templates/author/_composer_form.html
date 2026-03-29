@@ -328,9 +328,140 @@
     const instrumentPopup = document.getElementById("instrument-autocomplete");
     const historyGridEl = document.getElementById("author-history-grid");
     const historyData = {{ _history_json | tojson }};
-    const instruments = {{ _instrument_items | tojson }};
+    let instruments = {{ _instrument_items | tojson }};
     const screenButtons = Array.from(document.querySelectorAll("[data-screen-button]"));
     const structuredSideRadios = Array.from(document.querySelectorAll('[name="structured_side"]'));
+
+    const instrumentState = window.PCTAuthorInstrumentState || {
+      items: instruments.slice(),
+      listeners: [],
+      refreshPromise: null,
+    };
+    window.PCTAuthorInstrumentState = instrumentState;
+    if (!Array.isArray(instrumentState.listeners)) {
+      instrumentState.listeners = [];
+    }
+    if (Array.isArray(instrumentState.items) && instrumentState.items.length) {
+      instruments = instrumentState.items.slice();
+    } else {
+      instrumentState.items = instruments.slice();
+    }
+
+    function instrumentKey(item) {
+      if (!item) return "";
+      return String(item.id || item.ticker || "").trim();
+    }
+
+    function mergeInstruments(baseItems, nextItems) {
+      const merged = new Map();
+      baseItems.forEach(function (item) {
+        const key = instrumentKey(item);
+        if (key) {
+          merged.set(key, item);
+        }
+      });
+      nextItems.forEach(function (item) {
+        const key = instrumentKey(item);
+        if (!key) return;
+        const previous = merged.get(key) || {};
+        merged.set(key, Object.assign({}, previous, item));
+      });
+      return Array.from(merged.values());
+    }
+
+    function notifyInstrumentListeners() {
+      instrumentState.listeners.forEach(function (callback) {
+        try {
+          callback(instruments.slice());
+        } catch (_error) {
+          // Listener failures must not break the author UI.
+        }
+      });
+    }
+
+    function syncStructuredSelectionFromInstruments() {
+      if (!instrumentIdInput || !instrumentIdInput.value) return;
+      const currentKey = String(instrumentIdInput.value || "").trim();
+      if (!currentKey) return;
+      const currentItem = instruments.find(function (item) {
+        return String(item.id || "").trim() === currentKey;
+      });
+      if (!currentItem) return;
+      if (instrumentInput && !String(instrumentInput.value || "").trim()) {
+        instrumentInput.value = `${currentItem.ticker || ""} · ${currentItem.name || ""}`.trim();
+      }
+      if (hiddenTicker) hiddenTicker.value = currentItem.ticker || hiddenTicker.value;
+      if (hiddenName) hiddenName.value = currentItem.name || hiddenName.value;
+      if (structuredPrice && !String(structuredPrice.value || "").trim() && currentItem.last_price != null) {
+        structuredPrice.value = String(currentItem.last_price);
+      }
+      syncAmount();
+      validateDealBlock();
+    }
+
+    function applyInstrumentRefresh(nextItems) {
+      if (!Array.isArray(nextItems) || !nextItems.length) {
+        return instruments;
+      }
+      instruments = mergeInstruments(instruments, nextItems);
+      instrumentState.items = instruments.slice();
+      syncStructuredSelectionFromInstruments();
+      if (instrumentInput && instrumentPopup && !instrumentPopup.hidden) {
+        renderInstrumentPopup(instrumentInput.value || "", true);
+      }
+      return instruments;
+    }
+
+    function refreshAuthorInstruments() {
+      if (instrumentState.refreshPromise) {
+        return instrumentState.refreshPromise;
+      }
+      if (typeof fetch !== "function") {
+        return Promise.resolve(instruments);
+      }
+      instrumentState.refreshPromise = fetch("/api/instruments", {
+        headers: {
+          Accept: "application/json",
+        },
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            return [];
+          }
+          return response.json();
+        })
+        .then(function (payload) {
+          if (Array.isArray(payload)) {
+            applyInstrumentRefresh(payload);
+            notifyInstrumentListeners();
+          }
+          return instruments;
+        })
+        .catch(function () {
+          return instruments;
+        })
+        .finally(function () {
+          instrumentState.refreshPromise = null;
+        });
+      return instrumentState.refreshPromise;
+    }
+
+    instrumentState.refresh = refreshAuthorInstruments;
+    instrumentState.subscribe = function (callback) {
+      if (typeof callback === "function") {
+        instrumentState.listeners.push(callback);
+      }
+    };
+    instrumentState.subscribe(function (nextItems) {
+      instruments = nextItems.slice();
+      if (instrumentPopup && instrumentInput && !instrumentPopup.hidden) {
+        renderInstrumentPopup(instrumentInput.value || "", true);
+      }
+    });
+
+    window.requestAnimationFrame(function () {
+      refreshAuthorInstruments();
+    });
 
     function escapeHtml(value) {
       return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -414,7 +545,7 @@
           { title: "Превью", field: "preview", widthGrow: 3, tooltip: function (_e, cell) { return cell.getRow().getData().preview_full; }, formatter: function (cell) { return `<div class="author-history-message-preview" title="${escapeHtml(cell.getRow().getData().preview_full || cell.getValue() || "")}">${escapeHtml(cell.getValue() || "")}</div>`; } },
           { title: "Стратегия", field: "strategy", width: 140 },
           { title: "Статус", field: "status", width: 110 },
-          { title: "Каналы", field: "channels", width: 100 },
+          { title: "Доставка", field: "channels", width: 100 },
           { title: "Действия", field: "edit_url", width: 100, formatter: function (cell) { var url = cell.getValue(); return url ? `<a class="action ghost" href="${escapeHtml(url)}">Открыть</a>` : ""; }, headerSort: false },
         ],
       });

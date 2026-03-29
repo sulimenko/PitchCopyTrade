@@ -76,7 +76,7 @@ def clear_instrument_quote_cache() -> None:
     _QUOTE_CACHE.clear()
 
 
-async def get_instrument_quote(ticker: str) -> InstrumentQuote:
+async def get_instrument_quote(ticker: str, *, allow_live_fetch: bool = True) -> InstrumentQuote:
     settings = get_settings().instrument_quotes
     normalized_ticker = _normalize_ticker(ticker)
     logger.info(
@@ -95,6 +95,12 @@ async def get_instrument_quote(ticker: str) -> InstrumentQuote:
     if cached_quote is not None:
         return cached_quote
 
+    if not allow_live_fetch:
+        stale_quote = await _get_stale_cached_quote(normalized_ticker)
+        if stale_quote is not None:
+            return stale_quote
+        return _empty_quote(normalized_ticker, source=_provider_source(settings), status="empty")
+
     try:
         quote = await _fetch_quote(normalized_ticker, settings=settings)
     except Exception as exc:  # pragma: no cover - defensive logging, covered by tests via fallback
@@ -108,10 +114,11 @@ async def get_instrument_quote(ticker: str) -> InstrumentQuote:
     return quote
 
 
-async def build_instrument_payload(instrument) -> dict[str, object]:
-    quote = await get_instrument_quote(instrument.ticker)
+async def build_instrument_payload(instrument, *, allow_live_fetch: bool = True) -> dict[str, object]:
+    quote = await get_instrument_quote(instrument.ticker, allow_live_fetch=allow_live_fetch)
     if quote.status in {"empty", "disabled"}:
-        logger.warning("No quote for %s: status=%s", instrument.ticker, quote.status)
+        log = logger.warning if allow_live_fetch else logger.info
+        log("No quote for %s: status=%s", instrument.ticker, quote.status)
     logger.info(
         "Instrument payload for %s: quote_status=%s, last_price=%s",
         instrument.ticker,
@@ -139,8 +146,18 @@ async def build_instrument_payload(instrument) -> dict[str, object]:
     return payload
 
 
-async def build_instrument_payloads(instruments) -> list[dict[str, object]]:
-    return await asyncio.gather(*(build_instrument_payload(instrument) for instrument in instruments))
+async def build_instrument_payloads(instruments, *, allow_live_fetch: bool = True) -> list[dict[str, object]]:
+    unique_instruments = []
+    seen: set[str] = set()
+    for instrument in instruments:
+        key = str(getattr(instrument, "id", "") or getattr(instrument, "ticker", "")).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique_instruments.append(instrument)
+    return await asyncio.gather(
+        *(build_instrument_payload(instrument, allow_live_fetch=allow_live_fetch) for instrument in unique_instruments)
+    )
 
 
 async def build_quote_strip(tickers: list[str]) -> list[InstrumentQuote]:

@@ -86,6 +86,7 @@ Product contract, backlog и review gate вынесены в:
 Это значит:
 
 - `messages.json`, `users.json`, `strategies.json`, `products.json`, `subscriptions.json` и прочие file-mode datasets сейчас не импортируются в PostgreSQL автоматически;
+- `db`-mode здесь следует читать как primary schema/startup runtime, а не как “полный business seed готов”;
 - для полного business seed в db-mode нужен отдельный importer или явный seed pipeline;
 - post-implementation review от `2026-03-28` подтверждает, что этот статус все еще актуален;
 - текущая follow-up работа по полному db seed описана в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md) в блоке `L5`.
@@ -96,7 +97,7 @@ Product contract, backlog и review gate вынесены в:
 2. выполнить `bash deploy/migrate.sh --reset`
 3. поднять `api`
 4. дождаться auto-seed инструментов и bootstrap admin
-5. если нужен полный dataset для manual QA, нельзя считать `file` заменой основного runtime: нужно закрыть/import `L5` и получить полный business seed именно в PostgreSQL
+5. если нужен полный dataset для manual QA, нельзя считать `file` заменой основного runtime: нужно закрыть/import `L5` и получить полный business seed именно в PostgreSQL; до этого момента `db` не должен трактоваться как уже полноценно seeded business environment
 
 ## Команды миграции
 

@@ -70,19 +70,23 @@ async def author_dashboard(
     recommendations = await list_author_recommendations(repository, author)
     watchlist = await list_author_watchlist(repository, author)
     instruments = await list_active_instruments(repository)
+    combined_instruments = _unique_instruments_by_id([*watchlist, *instruments])
     logger.info(
         "Building instrument payloads for %d instruments, provider_enabled=%s",
-        len(watchlist),
+        len(combined_instruments),
         get_settings().instrument_quotes.provider_enabled,
     )
-    watchlist_items = await build_instrument_payloads(watchlist)
+    instrument_items = await build_instrument_payloads(combined_instruments, allow_live_fetch=False)
     composer_context = await _get_composer_context(
         repository,
         author,
         strategies=strategies,
         instruments=instruments,
+        instrument_items=instrument_items,
         composer_default_open=False,
     )
+    instrument_items_by_id = _index_instrument_items(instrument_items)
+    watchlist_items = [instrument_items_by_id[item.id] for item in watchlist if item.id in instrument_items_by_id]
     return templates.TemplateResponse(
         request,
         "author/dashboard.html",
@@ -360,13 +364,13 @@ async def author_watchlist_add_item(
         1,
         get_settings().instrument_quotes.provider_enabled,
     )
-    added_payload = (await build_instrument_payloads([instrument]))[0]
+    added_payload = (await build_instrument_payloads([instrument], allow_live_fetch=False))[0]
     logger.info(
         "Building instrument payloads for %d instruments, provider_enabled=%s",
         len(watchlist),
         get_settings().instrument_quotes.provider_enabled,
     )
-    watchlist_payload = await build_instrument_payloads(watchlist)
+    watchlist_payload = await build_instrument_payloads(watchlist, allow_live_fetch=False)
     return JSONResponse(
         {
             "added": added_payload,
@@ -393,7 +397,7 @@ async def author_watchlist_remove_item(
         len(watchlist),
         get_settings().instrument_quotes.provider_enabled,
     )
-    watchlist_payload = await build_instrument_payloads(watchlist)
+    watchlist_payload = await build_instrument_payloads(watchlist, allow_live_fetch=False)
     return JSONResponse(
         {
             "removed_id": instrument_id,
@@ -1148,17 +1152,19 @@ async def _get_composer_context(
     form_values: dict[str, object] | None = None,
     strategies: list[Strategy] | None = None,
     instruments: list[Instrument] | None = None,
+    instrument_items: list[dict[str, object]] | None = None,
     history_messages: list[Message] | None = None,
     composer_default_open: bool = False,
 ) -> dict[str, object]:
     loaded_strategies = strategies if strategies is not None else await list_author_strategies(repository, author)
     loaded_instruments = instruments if instruments is not None else await list_active_instruments(repository)
-    logger.info(
-        "Building instrument payloads for %d instruments, provider_enabled=%s",
-        len(loaded_instruments),
-        get_settings().instrument_quotes.provider_enabled,
-    )
-    instrument_items = await build_instrument_payloads(loaded_instruments)
+    if instrument_items is None:
+        logger.info(
+            "Building instrument payloads for %d instruments, provider_enabled=%s",
+            len(loaded_instruments),
+            get_settings().instrument_quotes.provider_enabled,
+        )
+        instrument_items = await build_instrument_payloads(loaded_instruments, allow_live_fetch=False)
     if form_values is None:
         form_values = recommendation_form_values(recommendation)
     if history_messages is None:
@@ -1174,6 +1180,27 @@ async def _get_composer_context(
         "history_json": _build_history_grid_rows(history_messages),
         "show_history": True,
     }
+
+
+def _unique_instruments_by_id(instruments: list[Instrument]) -> list[Instrument]:
+    unique: list[Instrument] = []
+    seen: set[str] = set()
+    for item in instruments:
+        key = str(getattr(item, "id", "") or getattr(item, "ticker", "")).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
+
+
+def _index_instrument_items(instrument_items: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    indexed: dict[str, dict[str, object]] = {}
+    for item in instrument_items:
+        item_id = str(item.get("id") or "").strip()
+        if item_id:
+            indexed[item_id] = item
+    return indexed
 
 
 def _author_recommendations_list_path(*, q: str, status_filter: str, sort_by: str, direction: str) -> str:

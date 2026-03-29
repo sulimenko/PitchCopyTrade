@@ -23,6 +23,7 @@ from pitchcopytrade.services.author import (
     search_author_watchlist_candidates,
     update_author_recommendation,
 )
+from pitchcopytrade.services import author as author_service
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
     InstrumentType,
@@ -309,6 +310,173 @@ async def test_update_author_recommendation_keeps_existing_documents() -> None:
     assert updated.documents == [existing_document]
 
 
+@pytest.mark.asyncio
+async def test_create_author_recommendation_applies_publish_state_before_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyRepository:
+        def __init__(self) -> None:
+            self.added = None
+
+        def add(self, entity) -> None:
+            self.added = entity
+
+        async def flush(self) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def refresh(self, entity) -> None:
+            return None
+
+    author = AuthorProfile(
+        id="author-1",
+        user_id="user-1",
+        display_name="Desk",
+        slug="desk",
+        is_active=True,
+    )
+    data = RecommendationFormData(
+        strategy_id="strategy-1",
+        kind=MessageKind.IDEA,
+        status=MessageStatus.PUBLISHED,
+        title="Покупка SBER",
+        deliver=["strategy"],
+        channel=["telegram"],
+        moderation="required",
+        message_type=MessageType.TEXT,
+        text_body="<p>Сильный спрос</p>",
+        text_plain="Сильный спрос",
+        documents=[],
+        deals=[],
+        schedule=None,
+        published=None,
+        archived=None,
+        requires_moderation=False,
+        scheduled_for=None,
+        legs=[],
+        attachments=[],
+        message_mode="text",
+        message_text="Сильный спрос",
+        document_caption="",
+    )
+
+    order: list[str] = []
+    original_apply = author_service._apply_publish_state
+    original_validate = author_service._validate_message_contract
+
+    def fake_apply_publish_state(message) -> None:
+        order.append("apply")
+        original_apply(message)
+
+    def fake_validate_message_contract(message) -> None:
+        order.append("validate")
+        assert message.published is not None
+        original_validate(message)
+
+    monkeypatch.setattr(author_service, "_apply_publish_state", fake_apply_publish_state)
+    monkeypatch.setattr(author_service, "_validate_message_contract", fake_validate_message_contract)
+
+    message = await create_author_recommendation(
+        DummyRepository(),
+        author,
+        data,
+        uploaded_by_user_id=author.user_id,
+    )
+
+    assert order[:2] == ["apply", "validate"]
+    assert message.status == MessageStatus.PUBLISHED.value
+    assert message.published is not None
+
+
+@pytest.mark.asyncio
+async def test_update_author_recommendation_applies_publish_state_before_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyRepository:
+        async def flush(self) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def refresh(self, entity) -> None:
+            return None
+
+    author = AuthorProfile(
+        id="author-1",
+        user_id="user-1",
+        display_name="Desk",
+        slug="desk",
+        is_active=True,
+    )
+    message = Message(
+        id="msg-1",
+        strategy_id="strategy-1",
+        author_id=author.id,
+        thread="msg-1",
+        kind=MessageKind.IDEA.value,
+        type=MessageType.TEXT.value,
+        status=MessageStatus.DRAFT.value,
+        moderation="required",
+        title="Покупка SBER",
+        deliver=["strategy"],
+        channel=["telegram"],
+        text={"body": "<p>Сильный спрос</p>", "plain": "Сильный спрос"},
+        documents=[],
+        deals=[],
+    )
+    data = RecommendationFormData(
+        strategy_id="strategy-1",
+        kind=MessageKind.IDEA,
+        status=MessageStatus.PUBLISHED,
+        title="Покупка SBER",
+        deliver=["strategy"],
+        channel=["telegram"],
+        moderation="required",
+        message_type=MessageType.TEXT,
+        text_body="<p>Сильный спрос</p>",
+        text_plain="Сильный спрос",
+        documents=[],
+        deals=[],
+        schedule=None,
+        published=None,
+        archived=None,
+        requires_moderation=False,
+        scheduled_for=None,
+        legs=[],
+        attachments=[],
+        message_mode="text",
+        message_text="Сильный спрос",
+        document_caption="",
+    )
+
+    order: list[str] = []
+    original_apply = author_service._apply_publish_state
+    original_validate = author_service._validate_message_contract
+
+    def fake_apply_publish_state(message_obj) -> None:
+        order.append("apply")
+        original_apply(message_obj)
+
+    def fake_validate_message_contract(message_obj) -> None:
+        order.append("validate")
+        assert message_obj.published is not None
+        original_validate(message_obj)
+
+    monkeypatch.setattr(author_service, "_apply_publish_state", fake_apply_publish_state)
+    monkeypatch.setattr(author_service, "_validate_message_contract", fake_validate_message_contract)
+
+    updated = await update_author_recommendation(
+        DummyRepository(),
+        author,
+        message,
+        data,
+        uploaded_by_user_id=author.user_id,
+    )
+
+    assert order[:2] == ["apply", "validate"]
+    assert updated.status == MessageStatus.PUBLISHED.value
+    assert updated.published is not None
+
+
 def test_build_recommendation_form_data_builds_canonical_deal() -> None:
     instrument = Instrument(
         id="instrument-1",
@@ -352,6 +520,40 @@ def test_build_recommendation_form_data_builds_canonical_deal() -> None:
     assert payload.kind == MessageKind.IDEA
     assert payload.status == MessageStatus.DRAFT
     assert payload.message_type == MessageType.MIXED
+
+
+def test_recommendation_form_values_prefers_structured_instrument_id() -> None:
+    message = Message(
+        id="msg-1",
+        strategy_id="strategy-1",
+        author_id="author-1",
+        thread="msg-1",
+        kind=MessageKind.IDEA.value,
+        type=MessageType.DEAL.value,
+        status=MessageStatus.DRAFT.value,
+        moderation="required",
+        title="Покупка SBER",
+        deliver=["strategy"],
+        channel=["telegram"],
+        text={"body": "", "plain": "", "title": "Покупка SBER"},
+        documents=[],
+        deals=[
+            {
+                "instrument": "Sberbank",
+                "instrument_id": "instrument-1",
+                "ticker": "SBER",
+                "name": "Sberbank",
+                "side": "buy",
+                "price": "101.5",
+            }
+        ],
+    )
+
+    values = author_service.recommendation_form_values(message)
+
+    assert values["structured_instrument_id"] == "instrument-1"
+    assert values["structured_instrument_query"] == "SBER"
+    assert values["structured_instrument_name"] == "Sberbank"
 
 
 def test_build_recommendation_form_data_requires_content() -> None:

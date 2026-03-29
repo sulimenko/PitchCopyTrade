@@ -36,7 +36,7 @@ def test_api_instruments_returns_quote_fields(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.instruments.build_instrument_payloads",
-        lambda instruments: _async_return(
+        lambda instruments, allow_live_fetch=True: _async_return(
             [
                 {
                     "id": item.id,
