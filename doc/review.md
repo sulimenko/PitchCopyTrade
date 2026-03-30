@@ -11,7 +11,7 @@
 - unified composer, preview и history table уже есть
 - локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `263 passed`
 
-P27 теперь закрыт в коде и документации.
+P27 и P31 теперь закрыты в коде и документации.
 
 ## Подтвержденные факты
 
@@ -272,6 +272,13 @@ Resolved:
 - regression tests cover cookie-driven binding, the no-cookie path, and preserving an existing Telegram identity;
 - `deploy/fix_user_8b2a3642.sql` provides the diagnostics for the affected user.
 
+### [P31] Mini App-intended onboarding leaking into public checkout
+Resolved:
+- public checkout now logs request path, referer, lead source, cookie presence, and resolved Telegram identity on entry;
+- Telegram-intended public checkout requests without Telegram context are redirected to `/verify/telegram?next=/app/checkout/{slug}`;
+- public checkout no longer silently creates an email-only user when the request looks like Mini App onboarding;
+- regression tests cover the redirect, diagnostics, and both public vs Mini App checkout surfaces.
+
 ### P27 — Публичный checkout: привязка telegram_user_id из cookie `[x]`
 
 - [x] P27.1: `CheckoutRequest` + `create_stub_checkout` — новое поле `telegram_user_id`, привязка к User
@@ -279,13 +286,20 @@ Resolved:
 - [x] P27.3: SQL-диагностика для пользователя 8b2a3642
 - [x] P27.4: Тесты на привязку telegram_user_id через публичный checkout
 
+### P31 — Mini App-intended onboarding leaking into public checkout `[x]`
+
+- [x] P31.1: Доказать источник перехода
+- [x] P31.2: Закрыть silent downgrade
+- [x] P31.3: Проверить template/surface contract
+- [x] P31.4: Regression tests
+
 **Подробные инструкции:** `doc/task.md` → Блок P27
 
 ## Gate
 
 Open findings: **none**
 
-Все ранее заблокированные gate items закрыты. Текущий gate: **green**.
+Текущий gate: **green**.
 
 ## Что считать готовностью текущего pass
 

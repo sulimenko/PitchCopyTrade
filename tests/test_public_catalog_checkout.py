@@ -481,6 +481,50 @@ def test_checkout_submit_links_cookie_telegram_user_id(monkeypatch) -> None:
         assert captured["request"].telegram_user_id == 12345
 
 
+def test_checkout_submit_redirects_telegram_intended_flow_without_context(monkeypatch, capsys) -> None:
+    _strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    create_stub_called = False
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+
+    async def fail_if_called(*_args, **_kwargs):
+        nonlocal create_stub_called
+        create_stub_called = True
+        raise AssertionError("create_stub_checkout should not be called for telegram-intended public checkout without context")
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.public.create_stub_checkout", fail_if_called)
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.post(
+            "/checkout/momentum-ru-month",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "lead_source_name": "telegram_miniapp",
+                "accepted_document_ids": [item.id for item in documents],
+            },
+            follow_redirects=False,
+        )
+
+    captured = capsys.readouterr()
+    assert response.status_code == 303
+    assert response.headers["location"] == "/verify/telegram?next=/app/checkout/momentum-ru-month"
+    assert create_stub_called is False
+    assert "Public checkout route path=/checkout/momentum-ru-month" in captured.out
+    assert "lead_source=telegram_miniapp" in captured.out
+    assert "telegram_cookie_present=False" in captured.out
+    assert "auth_telegram_user_id=None" in captured.out
+
+
 def test_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
     _strategy, product = _make_strategy_and_product()
     product.price_rub = 0

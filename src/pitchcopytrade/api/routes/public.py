@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
@@ -200,18 +200,36 @@ async def checkout_submit(
     checkout_ready = len(documents) == 4
     detected_lead_source = lead_source_name.strip() or _detect_lead_source_name(request)
     telegram_user_id = None
+    telegram_cookie_present = False
     telegram_cookie = request.cookies.get(get_telegram_fallback_cookie_name())
     if telegram_cookie:
+        telegram_cookie_present = True
         telegram_user = await get_user_from_telegram_fallback_cookie(auth_repository, telegram_cookie)
         if telegram_user is not None:
             telegram_user_id = telegram_user.telegram_user_id
+    telegram_intended = _is_telegram_intended_checkout(request, detected_lead_source)
     logger.info(
-        "Public checkout route path=%s auth_telegram_user_id=%s checkout_email=%s product_ref=%s",
+        "Public checkout route path=%s referer=%s lead_source=%s telegram_cookie_present=%s auth_user_cookie_present=%s auth_telegram_user_id=%s product_ref=%s",
         request.url.path,
+        request.headers.get("referer") or "-",
+        detected_lead_source,
+        telegram_cookie_present,
+        bool(request.cookies.get(get_settings().auth.session_cookie_name)),
         telegram_user_id,
-        email.strip().lower() or None,
         product_ref,
     )
+    if telegram_intended and telegram_user_id is None:
+        logger.warning(
+            "Public checkout blocked for Telegram-intended flow without telegram context: path=%s referer=%s lead_source=%s product_ref=%s",
+            request.url.path,
+            request.headers.get("referer") or "-",
+            detected_lead_source,
+            product_ref,
+        )
+        return RedirectResponse(
+            url=f"/verify/telegram?next={quote(f'/app/checkout/{product_ref}', safe='/')}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
     try:
         result = await create_stub_checkout(
             repository,
@@ -320,3 +338,13 @@ def _detect_lead_source_name(request: Request) -> str:
             return "telegram"
 
     return "website"
+
+
+def _is_telegram_intended_checkout(request: Request, lead_source_name: str) -> bool:
+    if lead_source_name == "telegram_miniapp":
+        return True
+    referer = request.headers.get("referer") or ""
+    if not referer:
+        return False
+    parsed = urlparse(referer)
+    return parsed.path.startswith("/app/") or parsed.path.startswith("/miniapp")

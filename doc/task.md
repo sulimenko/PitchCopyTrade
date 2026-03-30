@@ -7069,3 +7069,136 @@ COMMIT;
 3. Если User уже имеет telegram_user_id — не перезаписывается другим из cookie
 4. Все тесты проходят: `pytest -q` → 0 failures
 5. SQL-диагностика для пользователя 8b2a3642 создана
+
+---
+
+## P31 — Mini App-intended subscriber flow все еще может попасть в public checkout и создать email-only user
+
+> **Новый подтвержденный кейс (2026-03-30):**
+>
+> Пользователь Diana (`44e87818`, `danilevskaiadiana@gmail.com`) снова создан без `telegram_user_id`.
+>
+> Ключевой log line:
+>
+> ```text
+> 2026-03-30 05:59:17,189 | INFO | pitchcopytrade.api.routes.public | Public checkout route path=/checkout/sl auth_telegram_user_id=None checkout_email=danilevskaiadiana@gmail.com product_ref=sl
+> ```
+>
+> Это уже прямое доказательство, что checkout прошел через **public** route, а не через Mini App route `/app/checkout/{product_ref}`.
+
+### Почему это важно
+
+Если пользователь ожидает Mini App / Telegram-bound onboarding, но фактически попадает в public checkout:
+
+- создается user без `telegram_user_id`;
+- подписка не становится recipient-ом для Telegram delivery;
+- fallback email и bot delivery начинают чинить следствие, а не причину;
+- оператор считает, что “подписка оформлена через Mini App”, хотя серверный log показывает обратное.
+
+### Подтвержденные факты
+
+1. Current public templates выбирают `/app/checkout/...` только если `miniapp_mode=True`:
+   - [catalog.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/catalog.html)
+   - [strategy_detail.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/strategy_detail.html)
+2. Public routes всегда рендерят `miniapp_mode=False`:
+   - [public.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/public.py#L81)
+   - [public.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/public.py#L102)
+   - [public.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/public.py#L125)
+3. Mini App routes рендерят тот же шаблон, но через `_build_miniapp_context(...)`:
+   - [app.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L49)
+   - [app.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L72)
+   - [app.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L101)
+4. Для Diana server log показывает именно `Public checkout route`, а `auth_telegram_user_id=None`.
+
+### Архитектурный вывод
+
+Проблема уже не сводится к “привязать cookie в public checkout”.
+
+Нужно считать открытым более высокий invariant:
+
+- user, начавший flow из Telegram/Mini App, не должен silently downgrade-иться в public checkout;
+- если система не может доказать Telegram-bound context, она должна либо:
+  - явно перевести пользователя в verify/bind flow,
+  - либо loud показать, что текущий checkout публичный и Telegram delivery потом не гарантируется.
+
+### Что должен сделать worker
+
+#### P31.1 — Доказать источник перехода `[x]`
+
+- [x] **P31.1.1** Добавить более сильную диагностику на checkout entry:
+  - request path
+  - referer
+  - cookie presence
+  - miniapp/webapp markers
+  - resolved auth user id
+  - resolved telegram_user_id
+- [x] **P31.1.2** Проверить, нет ли surface, где supposedly Mini App user получает public `/catalog` вместо `/app/catalog`
+- [x] **P31.1.3** Проверить, нет ли client-side redirect / form action / bootstrap path, который теряет Mini App context
+
+#### P31.2 — Закрыть silent downgrade `[x]`
+
+- [x] **P31.2.1** Если Telegram-intended user попал на public checkout без Telegram context, не создавать silently email-only user
+- [x] **P31.2.2** В таком случае:
+  - либо redirect на `/verify/telegram?next=/app/checkout/{slug}`
+  - либо controlled blocking page с понятным объяснением
+- [x] **P31.2.3** Public checkout success path не должен выглядеть “нормальным Mini App onboarding”, если `auth_telegram_user_id=None`
+
+#### P31.3 — Проверить template/surface contract `[x]`
+
+- [x] **P31.3.1** Аудит всех CTA на подписку:
+  - catalog cards
+  - strategy detail
+  - bot web_app entrypoints
+  - Mini App bootstrap
+  - any share/deep-link surfaces
+- [x] **P31.3.2** Для Mini App surfaces CTA must always resolve to `/app/checkout/{slug}`
+- [x] **P31.3.3** Если используется общий шаблон, worker должен доказать, что `miniapp_mode` не теряется по пути
+
+#### P31.4 — Regression tests `[x]`
+
+- [x] **P31.4.1** Test: Mini App catalog/detail surfaces render `/app/checkout/{slug}`
+- [x] **P31.4.2** Test: public catalog/detail surfaces render `/checkout/{slug}`
+- [x] **P31.4.3** Test: public checkout without Telegram context does not masquerade as Mini App success path
+- [x] **P31.4.4** Test: Telegram-intended flow cannot silently end with user without `telegram_user_id`
+
+### Acceptance P31
+
+1. Для реального Mini App flow checkout использует `/app/checkout/{slug}`, а не `/checkout/{slug}`
+2. Серверная диагностика позволяет доказать источник checkout path
+3. Telegram-intended flow не может silently создать user без `telegram_user_id`
+4. Если Telegram context потерян, система ведет пользователя в explicit verify/bind flow или loud объясняет ограничение
+
+### Worker Prompt — Mini App Flow Is Leaking Into Public Checkout
+
+```text
+Ты проверяешь defect, при котором пользователь считает, что оформляет подписку через Mini App, но серверный log показывает public checkout:
+
+Public checkout route path=/checkout/sl auth_telegram_user_id=None checkout_email=... product_ref=sl
+
+Это уже не просто bug привязки `telegram_user_id`. Это surface invariant problem:
+- flow оказался в public route;
+- telegram context отсутствует;
+- создается email-only user;
+- потом Telegram delivery не находит recipient-а.
+
+Что нужно сделать:
+1. доказать, откуда именно пользователь попадает в `/checkout/{slug}` вместо `/app/checkout/{slug}`;
+2. проверить templates, route entrypoints, bot web_app buttons, bootstrap flow и любые redirects;
+3. закрыть silent downgrade:
+   - либо redirect в `/verify/telegram?next=/app/checkout/{slug}`,
+   - либо loud blocking UX;
+4. добавить диагностику, по которой следующий такой кейс будет сразу понятен из логов;
+5. покрыть tests на public vs miniapp surface contract.
+
+Что нельзя делать:
+- считать задачу закрытой только потому, что public checkout умеет читать Telegram cookie;
+- silently создавать email-only user для Telegram-intended onboarding;
+- чинить только SQL-ом уже созданных пользователей, не закрыв route/source invariant.
+
+Финальный отчет:
+- root cause
+- доказательство источника неверного route
+- changed files
+- tests run + results
+- residual risks
+```
