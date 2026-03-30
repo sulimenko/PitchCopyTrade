@@ -9,9 +9,9 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `263 passed`
+- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `270 passed`
 
-P27 и P31 теперь закрыты в коде и документации.
+P27, P31 и P32 теперь закрыты в коде и документации.
 
 ## Подтвержденные факты
 
@@ -24,7 +24,7 @@ P27 и P31 теперь закрыты в коде и документации.
 
 ## Findings
 
-Open findings: **none**
+Open findings: none.
 
 ## Resolved In This Pass
 
@@ -91,6 +91,13 @@ Resolved:
 - fallback email uses the same assembled content order as preview/Telegram;
 - `ADMIN_EMAIL` is sent as `BCC`, and notification_log/audit capture both primary and fallback attempts;
 - regression tests cover success, Telegram failure, missing Telegram ID, missing email, and admin copy.
+
+### [P1] Mini App-intended onboarding все еще может уходить в public checkout и создавать user без `telegram_user_id`
+
+Resolved:
+- canonical Mini App entrypoint now goes through `/app`, not direct `/app/catalog`;
+- `/verify/telegram` is now a recovery surface with normalized `surface_next=/app/catalog` and internal `requested_next`;
+- request tracing now records first HTML surface and verify reasons, so the source invariant is observable end-to-end;
 
 ## Открытые задачи
 
@@ -274,10 +281,10 @@ Resolved:
 
 ### [P31] Mini App-intended onboarding leaking into public checkout
 Resolved:
-- public checkout now logs request path, referer, lead source, cookie presence, and resolved Telegram identity on entry;
+- public checkout now logs request path, referer, query, source markers, cookie presence, and resolved Telegram identity on entry;
 - Telegram-intended public checkout requests without Telegram context are redirected to `/verify/telegram?next=/app/checkout/{slug}`;
 - public checkout no longer silently creates an email-only user when the request looks like Mini App onboarding;
-- regression tests cover the redirect, diagnostics, and both public vs Mini App checkout surfaces.
+- regression tests cover the redirect, diagnostics, entry-id propagation, and both public vs Mini App checkout surfaces.
 
 ### P27 — Публичный checkout: привязка telegram_user_id из cookie `[x]`
 
@@ -293,11 +300,11 @@ Resolved:
 - [x] P31.3: Проверить template/surface contract
 - [x] P31.4: Regression tests
 
-**Подробные инструкции:** `doc/task.md` → Блок P27
+**Подробные инструкции:** `doc/task.md` → Блок P31
 
 ## Gate
 
-Open findings: **none**
+Open findings: none.
 
 Текущий gate: **green**.
 

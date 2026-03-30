@@ -6,10 +6,11 @@ from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.deps.repositories import get_auth_repository
+from pitchcopytrade.api.request_trace import attach_journey_cookie, get_entry_marker, get_or_create_journey_id, log_request_trace
 from pitchcopytrade.auth.telegram_login_widget import TelegramLoginWidgetError, verify_telegram_login_widget
 from pitchcopytrade.auth.telegram_webapp import (
     TelegramWebAppAuthError,
@@ -116,17 +117,36 @@ async def telegram_widget_callback(
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, repository: AuthRepository = Depends(get_auth_repository)) -> Response:
+    journey_id = get_or_create_journey_id(request)
+    auth_user_id = None
+    telegram_user_id = None
     token = request.cookies.get(get_settings().auth.session_cookie_name)
+    if token:
+        user = await get_user_from_session_token(repository, token)
+        if user is not None:
+            auth_user_id = user.id
+            telegram_user_id = user.telegram_user_id
+    log_request_trace(
+        logger,
+        request,
+        stage="login_page",
+        journey_id=journey_id,
+        surface="bootstrap",
+        auth_user_id=auth_user_id,
+        telegram_user_id=telegram_user_id,
+    )
     user = await get_user_from_session_token(repository, token) if token else None
     if user is not None and user.status == UserStatus.ACTIVE:
         redirect_url, _staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
-        return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+        return attach_journey_cookie(response, journey_id)
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
     tg_user = await get_user_from_telegram_fallback_cookie(repository, tg_token) if tg_token else None
     if tg_user is not None:
-        return RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
+        response = RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
+        return attach_journey_cookie(response, journey_id)
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "auth/login.html",
         _build_login_template_context(
@@ -134,6 +154,7 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
             invite_token=str(request.query_params.get("invite_token", "") or ""),
         ),
     )
+    return attach_journey_cookie(response, journey_id)
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -227,12 +248,36 @@ async def telegram_auth_login(
 
 @router.post("/tg-webapp/auth", include_in_schema=False)
 async def telegram_webapp_auth(
+    request: Request,
     init_data: str = Form(...),
     next: str = Form("/app/catalog"),  # Z5: Default to catalog for better UX
     timezone_name: str = Form("Europe/Moscow"),
+    auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: PublicRepository = Depends(get_public_repository),
 ) -> Response:
     settings = get_settings()
+    journey_id = get_or_create_journey_id(request)
+    next_entry_marker = (parse_qs(urlparse(next).query).get("entry") or [None])[0]
+    auth_user_id = None
+    telegram_user_id = None
+    token = request.cookies.get(get_settings().auth.session_cookie_name)
+    if token:
+        auth_user = await get_user_from_session_token(auth_repository, token)
+        if auth_user is not None:
+            auth_user_id = auth_user.id
+            telegram_user_id = auth_user.telegram_user_id
+    log_request_trace(
+        logger,
+        request,
+        stage="tg_webapp_auth_entry",
+        journey_id=journey_id,
+        surface="bootstrap",
+        auth_user_id=auth_user_id,
+        telegram_user_id=telegram_user_id,
+        entry_marker=next_entry_marker,
+        entry_id=journey_id,
+        entry_surface="bootstrap",
+    )
     try:
         validated = validate_telegram_webapp_init_data(
             init_data,
@@ -241,6 +286,21 @@ async def telegram_webapp_auth(
         )
         profile = extract_telegram_webapp_profile(validated)
     except TelegramWebAppAuthError as exc:
+        log_request_trace(
+            logger,
+            request,
+            stage="tg_webapp_auth_failed",
+            journey_id=journey_id,
+            surface="bootstrap",
+            auth_user_id=auth_user_id,
+            telegram_user_id=telegram_user_id,
+            entry_marker=next_entry_marker,
+            entry_id=journey_id,
+            entry_surface="bootstrap",
+            first_html_surface="miniapp_entry",
+            requested_next=_sanitize_subscriber_next_path(next),
+            block_reason="auth_failure",
+        )
         return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_401_UNAUTHORIZED)
 
     user = await upsert_telegram_subscriber(
@@ -265,30 +325,75 @@ async def telegram_webapp_auth(
         secure=settings.app.base_url.startswith("https://"),
         path="/",
     )
-    return response
+    return attach_journey_cookie(response, journey_id)
 
 
 @router.get("/app", response_class=HTMLResponse)
 async def app_home(request: Request, repository: AuthRepository = Depends(get_auth_repository)) -> Response:
+    journey_id = get_or_create_journey_id(request)
+    entry_marker = get_entry_marker(request) or "bot_start"
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
     if tg_token:
         subscriber = await get_user_from_telegram_fallback_cookie(repository, tg_token)
         if subscriber is not None:
-            return RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
+            log_request_trace(
+                logger,
+                request,
+                stage="app_home_entry",
+                journey_id=journey_id,
+                surface="bootstrap",
+                entry_marker=entry_marker,
+                first_html_surface="app/catalog",
+                requested_next="/app/catalog",
+                rendered_href="/app/catalog",
+                block_reason="has_telegram_cookie",
+            )
+            response = RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
+            return attach_journey_cookie(response, journey_id)
 
     try:
         user = await _require_authenticated_user(request, repository)
     except HTTPException:
-        # Не перенаправляем на /login — в Telegram Mini App WebView он не работает.
-        # Показываем landing-страницу: JS автоматически шлёт initData → авторизует → перенаправляет.
-        return templates.TemplateResponse(
+        bot_url = f"https://t.me/{get_settings().telegram.bot_username}"
+        log_request_trace(
+            logger,
+            request,
+            stage="app_home_entry",
+            journey_id=journey_id,
+            surface="bootstrap",
+            entry_marker=entry_marker,
+            first_html_surface="miniapp_entry",
+            requested_next="/app/catalog",
+            rendered_href="/app",
+            block_reason="no_telegram_cookie",
+        )
+        response = templates.TemplateResponse(
             request,
             "app/miniapp_entry.html",
-            {"title": "PitchCopyTrade", "login_url": "/login"},
+            {
+                "title": "PitchCopyTrade",
+                "telegram_bot_username": get_settings().telegram.bot_username,
+                "bot_url": bot_url,
+                "next_path": "/app/catalog",
+            },
         )
+        return attach_journey_cookie(response, journey_id)
 
     redirect_url, _staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    log_request_trace(
+        logger,
+        request,
+        stage="app_home_entry",
+        journey_id=journey_id,
+        surface="bootstrap",
+        entry_marker=entry_marker,
+        first_html_surface="app/catalog",
+        requested_next="/app/catalog",
+        rendered_href=redirect_url,
+        block_reason="authenticated_session",
+    )
+    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    return attach_journey_cookie(response, journey_id)
 
 
 @router.get("/workspace", response_class=HTMLResponse)

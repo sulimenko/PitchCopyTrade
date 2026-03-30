@@ -52,7 +52,7 @@ def test_main_keyboard_returns_keyboard_for_https(monkeypatch) -> None:
     labels = [button.text for row in markup.inline_keyboard for button in row]
     urls = [button.web_app.url for row in markup.inline_keyboard for button in row if button.web_app is not None]
     assert "Открыть каталог" in labels
-    assert any(url.endswith("/app/catalog") for url in urls)
+    assert any(url.endswith("/app?entry=bot_start") for url in urls)
 
 
 def test_build_dispatcher_registers_start_handler() -> None:

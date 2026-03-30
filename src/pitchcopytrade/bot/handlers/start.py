@@ -24,7 +24,7 @@ def _webapp_keyboard(label: str, path: str) -> InlineKeyboardMarkup | None:
 
 
 def _main_keyboard() -> InlineKeyboardMarkup | None:
-    return _webapp_keyboard("Открыть каталог", "/app/catalog")
+    return _webapp_keyboard("Открыть каталог", "/app?entry=bot_start")
 
 
 async def handle_start(message: Message) -> None:

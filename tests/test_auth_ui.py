@@ -14,6 +14,7 @@ from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.auth.passwords import hash_password
 from pitchcopytrade.auth.staff_mode import resolve_staff_mode
+from pitchcopytrade.auth.staff_mode import get_staff_mode_cookie_name
 from pitchcopytrade.auth.session import (
     build_staff_invite_token,
     build_session_cookie_value,
@@ -570,6 +571,7 @@ def test_dual_role_can_switch_to_author_mode_and_render_dashboard(monkeypatch) -
 
         assert response.status_code == 303
         assert response.headers["location"] == "/author/dashboard"
+        client.cookies.set(get_staff_mode_cookie_name(), "author")
 
         dashboard = client.get("/author/dashboard")
         assert dashboard.status_code == 200
@@ -657,20 +659,48 @@ def test_workspace_session_does_not_open_subscriber_feed() -> None:
         response = client.get("/app/feed", follow_redirects=False)
 
         assert response.status_code == 303
-        assert response.headers["location"].startswith("/verify/telegram?next=/app/feed")
+        assert response.headers["location"].startswith("/verify/telegram?next=/app/catalog&requested_next=/app/feed")
+
+
+def test_app_home_renders_bootstrap_page() -> None:
+    repository = FakeAuthRepository()
+
+    with _build_client(repository) as client:
+        response = client.get("/app")
+
+        assert response.status_code == 200
+        assert "Открываем каталог стратегий" in response.text
+        assert "Открыть Telegram" in response.text
+
+
+def test_app_home_redirects_to_catalog_with_telegram_cookie() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.telegram_user_id = 12345
+    repository.users_by_id[user.id] = user
+    repository.users_by_telegram_id[12345] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set(get_telegram_fallback_cookie_name(), build_telegram_fallback_cookie_value(user))
+        response = client.get("/app", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/catalog"
 
 
 def test_verify_telegram_page_renders() -> None:
     repository = FakeAuthRepository()
 
     with _build_client(repository) as client:
-        response = client.get("/verify/telegram")
+        response = client.get("/verify/telegram?requested_next=/app/help")
 
         assert response.status_code == 200
-        assert "Подтвердите доступ через Telegram" in response.text
-        assert "Mini App автоматически подтвердит" in response.text
+        assert "Подтверждение через" in response.text
+        assert "После подтверждения откроется каталог стратегий" in response.text
         assert "Открыть бота" in response.text
         assert "/app/catalog" in response.text
+        assert "requested_next" not in response.text
+        assert "/app/help" not in response.text
         assert "Открыть Mini App" in response.text
 
 
@@ -700,6 +730,37 @@ def test_tg_webapp_auth_sets_cookie_and_returns_redirect(monkeypatch) -> None:
         assert response.status_code == 200
         assert response.json()["redirect_url"] == "/app/status"
         assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
+    assert "pct_journey_id=" in response.headers["set-cookie"]
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_redirects_to_canonical_catalog(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    public_repository = FakePublicRepository()
+    auth_date = int(datetime.now(timezone.utc).timestamp())
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository, public_repository) as client:
+        response = client.post(
+            "/tg-webapp/auth",
+            data={"init_data": init_data, "next": "/app/catalog"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["redirect_url"] == "/app/catalog"
+        assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
+        assert "pct_journey_id=" in response.headers["set-cookie"]
     reset_settings_cache()
 
 

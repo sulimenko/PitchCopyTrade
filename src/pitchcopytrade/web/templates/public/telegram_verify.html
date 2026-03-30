@@ -2,16 +2,16 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/catalog">Сайт-витрина</a>
+  <a class="action" href="/catalog">перейти на Витрину</a>
 </div>
 {% endblock %}
 
 {% block content %}
 <section class="surface" style="padding:30px;">
-  <div class="eyebrow">подтверждение через telegram</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.94;letter-spacing:-0.05em;">Подтвердите доступ через Telegram</h1>
+  <div class="eyebrow">подтверждение через</div>
+  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.5rem);line-height:0.94;letter-spacing:-0.05em;">Telegram</h1>
   <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.7;">
-    Клиентский доступ в PitchCopyTrade открывается только после подтверждения через Telegram. Целевой экран после входа:
+    PitchCopyTrade работает через Telegram. После подтверждения откроется каталог стратегий:
     <code>{{ surface_next }}</code>.
   </p>
 </section>
@@ -20,28 +20,22 @@
   <article class="surface" style="padding:24px;">
     <strong>Как войти</strong>
     <ol class="muted" style="margin:14px 0 0;padding-left:20px;line-height:1.8;">
-      <li>Откройте Telegram и найдите бота <strong>@{{ telegram_bot_username }}</strong>.</li>
-      <li>Отправьте <code>/start</code>, если еще не запускали бота.</li>
-      <li>Откройте Mini App из меню бота.</li>
-      <li>Mini App автоматически подтвердит ваш Telegram-профиль и откроет каталог стратегий как первый экран <code>{{ surface_next }}</code>.</li>
+      <li>Откройте Telegram бот <strong>@{{ telegram_bot_username }}</strong>.</li>
+      <li>Отправьте <code>/start</code>.</li>
+      <li>Откройте Mini App.</li>
+      <li>После подтверждения откроется каталог стратегий <code>{{ surface_next }}</code>.</li>
     </ol>
-    {% if webapp_enabled %}
-    <p class="muted" style="margin:16px 0 0;line-height:1.7;">
-      На текущем `https`-стенде Mini App уже доступен и является основным клиентским интерфейсом.
-    </p>
-    {% else %}
-    <p class="muted" style="margin:16px 0 0;line-height:1.7;">
-      Mini App появится автоматически после перевода стенда на `https`.
-    </p>
-    {% endif %}
   </article>
 
   <article class="surface" style="padding:24px;">
     <strong>Быстрые действия</strong>
     <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
       <a class="action" href="https://t.me/{{ telegram_bot_username }}">Открыть бота @{{ telegram_bot_username }}</a>
-      <a class="action ghost" href="/miniapp">Открыть Mini App</a>
+      <a class="action" href="/app?entry=verify_telegram">Открыть Mini App</a>
     </div>
+    {% if requested_next %}
+    <div class="muted" style="margin-top:14px;line-height:1.6;">Внутренний маршрут сохранён отдельно для диагностики.</div>
+    {% endif %}
   </article>
 </section>
 

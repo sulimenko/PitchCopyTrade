@@ -7,6 +7,12 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
 from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
+from pitchcopytrade.api.request_trace import (
+    attach_journey_cookie,
+    get_entry_marker,
+    get_or_create_journey_id,
+    log_request_trace,
+)
 from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
@@ -54,6 +60,17 @@ router = APIRouter(prefix="/app", tags=["app"])
 logger = logging.getLogger(__name__)
 
 
+def _with_entry_marker(url: str, entry_marker: str | None) -> str:
+    if not entry_marker:
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}entry={entry_marker}"
+
+
+def _verify_redirect_url(requested_next: str) -> str:
+    return f"/verify/telegram?next=/app/catalog&requested_next={quote(requested_next, safe='/')}"
+
+
 @router.get("/catalog", response_class=HTMLResponse)
 async def app_catalog(
     request: Request,
@@ -65,20 +82,43 @@ async def app_catalog(
     if isinstance(user, Response):
         return user
 
+    journey_id = get_or_create_journey_id(request)
+    entry_marker = get_entry_marker(request) or "bot_start"
     strategies = await list_public_strategies(public_repository)
     for strategy in strategies:
+        strategy.detail_href = _with_entry_marker(f"/app/strategies/{strategy.slug}", "miniapp_catalog")
+        for product in strategy.subscription_products:
+            product.checkout_href = _with_entry_marker(f"/app/checkout/{product.slug}", "miniapp_catalog")
         strategy.story = build_strategy_story(strategy)
         strategy.quotes = await build_strategy_quote_strip(strategy)
-    return templates.TemplateResponse(
+    log_request_trace(
+        logger,
+        request,
+        stage="app_catalog_render",
+        journey_id=journey_id,
+        surface="miniapp",
+        auth_user_id=user.id,
+        telegram_user_id=user.telegram_user_id,
+        rendered_href=_with_entry_marker("/app/catalog", entry_marker),
+        checkout_surface="miniapp",
+        entry_marker=entry_marker,
+        entry_id=journey_id,
+        entry_surface="miniapp",
+        first_html_surface="app/catalog",
+        requested_next="/app/catalog",
+    )
+    response = templates.TemplateResponse(
         request,
         "public/catalog.html",
         {
             "title": "Каталог Mini App",
             "strategies": strategies,
             "telegram_bot_username": get_settings().telegram.bot_username,
+            "entry_marker": entry_marker,
             **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
         },
     )
+    return attach_journey_cookie(response, journey_id)
 
 
 @router.get("/strategies/{slug}", response_class=HTMLResponse)
@@ -93,21 +133,44 @@ async def app_strategy_detail(
     if isinstance(user, Response):
         return user
 
+    journey_id = get_or_create_journey_id(request)
+    entry_marker = get_entry_marker(request) or "bot_start"
     strategy = await get_public_strategy_by_slug(public_repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    strategy.detail_href = _with_entry_marker(f"/app/strategies/{strategy.slug}", "miniapp_strategy")
     strategy.story = build_strategy_story(strategy)
     strategy.quotes = await build_strategy_quote_strip(strategy)
-    return templates.TemplateResponse(
+    for product in strategy.subscription_products:
+        product.checkout_href = _with_entry_marker(f"/app/checkout/{product.slug}", "miniapp_strategy")
+    log_request_trace(
+        logger,
+        request,
+        stage="app_strategy_render",
+        journey_id=journey_id,
+        surface="miniapp",
+        auth_user_id=user.id,
+        telegram_user_id=user.telegram_user_id,
+        rendered_href=_with_entry_marker(f"/app/strategies/{slug}", entry_marker),
+        checkout_surface="miniapp",
+        entry_marker=entry_marker,
+        entry_id=journey_id,
+        entry_surface="miniapp",
+        first_html_surface="app/catalog",
+        requested_next="/app/catalog",
+    )
+    response = templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
         {
             "title": strategy.title,
             "strategy": strategy,
             "billing_period_label": billing_period_label,
+            "entry_marker": entry_marker,
             **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
         },
     )
+    return attach_journey_cookie(response, journey_id)
 
 
 @router.get("/checkout/{product_ref}", response_class=HTMLResponse)
@@ -122,13 +185,33 @@ async def app_checkout_page(
     if isinstance(user, Response):
         return user
 
+    journey_id = get_or_create_journey_id(request)
+    entry_marker = get_entry_marker(request) or "bot_start"
     product = await get_public_product(public_repository, product_ref)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     product_title = product.title
+    entry_marker = get_entry_marker(request) or "bot_start"
     documents = await list_active_checkout_documents(public_repository)
     checkout_ready = len(documents) == 4
-    return templates.TemplateResponse(
+    log_request_trace(
+        logger,
+        request,
+        stage="app_checkout_render",
+        journey_id=journey_id,
+        surface="miniapp",
+        auth_user_id=user.id,
+        telegram_user_id=user.telegram_user_id,
+        rendered_href=_with_entry_marker(f"/app/checkout/{product_ref}", entry_marker),
+        checkout_surface="miniapp",
+        telegram_intended=True,
+        entry_marker=entry_marker,
+        entry_id=journey_id,
+        entry_surface="miniapp",
+        first_html_surface="app/catalog",
+        requested_next="/app/catalog",
+    )
+    response = templates.TemplateResponse(
         request,
         "public/checkout.html",
         {
@@ -137,6 +220,7 @@ async def app_checkout_page(
             "documents": documents,
             "checkout_ready": checkout_ready,
             "payment_provider": get_settings().payments.provider,
+            "entry_marker": entry_marker,
             "error": None,
             "form_values": {
                 "full_name": user.full_name or "",
@@ -145,10 +229,13 @@ async def app_checkout_page(
                 "lead_source_name": "telegram_miniapp",
                 "promo_code_value": "",
                 "accepted_document_ids": [],
+                "entry_id": journey_id,
+                "entry_surface": "miniapp",
             },
             **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
         },
     )
+    return attach_journey_cookie(response, journey_id)
 
 
 @router.post("/checkout/{product_ref}", response_class=HTMLResponse)
@@ -163,19 +250,59 @@ async def app_checkout_submit(
     timezone_name: str = Form("Europe/Moscow"),
     accepted_document_ids: list[str] = Form(...),
     promo_code_value: str = Form(""),
+    entry_id: str = Form(""),
+    entry_surface: str = Form(""),
 ) -> Response:
     user = await _get_subscriber_or_redirect(request, auth_repository)
     if isinstance(user, Response):
         return user
+    journey_id = get_or_create_journey_id(request)
+    resolved_entry_id = entry_id.strip() or journey_id
+    resolved_entry_surface = entry_surface.strip() or "miniapp"
     if not user.telegram_user_id:
         logger.error("Mini App checkout: user %s has no telegram_user_id", user.id)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Telegram ID не найден. Пожалуйста, откройте Mini App заново.",
+        block = RedirectResponse(url=_verify_redirect_url(f"/app/checkout/{product_ref}"), status_code=status.HTTP_303_SEE_OTHER)
+        log_request_trace(
+            logger,
+            request,
+            stage="app_checkout_blocked",
+            journey_id=journey_id,
+            surface="miniapp",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            rendered_href=_with_entry_marker(f"/app/checkout/{product_ref}", get_entry_marker(request) or resolved_entry_surface),
+            checkout_surface="miniapp",
+            telegram_intended=True,
+            block_reason="missing_telegram_user_id",
+            entry_marker=get_entry_marker(request) or resolved_entry_surface,
+            entry_id=resolved_entry_id,
+            entry_surface=resolved_entry_surface,
+            first_html_surface="telegram_verify",
+            requested_next=f"/app/checkout/{product_ref}",
         )
+        return attach_journey_cookie(block, journey_id)
     snapshot = await get_subscriber_status_snapshot(access_repository, telegram_user_id=user.telegram_user_id)
     if snapshot is None:
-        return RedirectResponse(url="/verify/telegram?next=/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
+        response = RedirectResponse(url=_verify_redirect_url(f"/app/checkout/{product_ref}"), status_code=status.HTTP_303_SEE_OTHER)
+        log_request_trace(
+            logger,
+            request,
+            stage="app_checkout_blocked",
+            journey_id=journey_id,
+            surface="miniapp",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            rendered_href=_with_entry_marker(f"/app/checkout/{product_ref}", get_entry_marker(request) or resolved_entry_surface),
+            checkout_surface="miniapp",
+            telegram_intended=True,
+            block_reason="missing_subscriber_snapshot",
+            entry_marker=get_entry_marker(request) or resolved_entry_surface,
+            entry_id=resolved_entry_id,
+            entry_surface=resolved_entry_surface,
+            first_html_surface="telegram_verify",
+            requested_next=f"/app/checkout/{product_ref}",
+        )
+        return attach_journey_cookie(response, journey_id)
 
     product = await get_public_product(public_repository, product_ref)
     if product is None:
@@ -191,6 +318,23 @@ async def app_checkout_submit(
         user.telegram_user_id,
         checkout_email,
         product_ref,
+    )
+    log_request_trace(
+        logger,
+        request,
+        stage="app_checkout_submit",
+        journey_id=journey_id,
+        surface="miniapp",
+        auth_user_id=user.id,
+        telegram_user_id=user.telegram_user_id,
+        rendered_href=_with_entry_marker(f"/app/checkout/{product_ref}", get_entry_marker(request) or resolved_entry_surface),
+        checkout_surface="miniapp",
+        telegram_intended=True,
+        entry_marker=get_entry_marker(request) or resolved_entry_surface,
+        entry_id=resolved_entry_id,
+        entry_surface=resolved_entry_surface,
+        first_html_surface="app/catalog",
+        requested_next=f"/app/checkout/{product_ref}",
     )
     try:
         result = await create_telegram_stub_checkout(
@@ -210,7 +354,7 @@ async def app_checkout_submit(
             promo_code_value=promo_code_value.strip().upper() or None,
         )
     except ValueError as exc:
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             request,
             "public/checkout.html",
             {
@@ -227,14 +371,17 @@ async def app_checkout_submit(
                     "lead_source_name": "telegram_miniapp",
                     "promo_code_value": promo_code_value,
                     "accepted_document_ids": accepted_document_ids,
-                },
+                    "entry_id": resolved_entry_id,
+                "entry_surface": resolved_entry_surface,
+            },
                 **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
+        return attach_journey_cookie(response, journey_id)
     except Exception:
         logger.exception("Mini App checkout creation failed for product %s", product_ref)
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             request,
             "public/checkout.html",
             {
@@ -251,13 +398,16 @@ async def app_checkout_submit(
                     "lead_source_name": "telegram_miniapp",
                     "promo_code_value": promo_code_value,
                     "accepted_document_ids": accepted_document_ids,
-                },
+                    "entry_id": resolved_entry_id,
+                "entry_surface": resolved_entry_surface,
+            },
                 **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
             },
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
+        return attach_journey_cookie(response, journey_id)
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "public/checkout_success.html",
         {
@@ -265,10 +415,13 @@ async def app_checkout_submit(
             "product": product,
             "result": result,
             "payment_provider": get_settings().payments.provider,
+            "entry_id": resolved_entry_id,
+            "entry_surface": resolved_entry_surface,
             **_build_miniapp_context("payments", user=user, snapshot=snapshot),
         },
         status_code=status.HTTP_201_CREATED,
     )
+    return attach_journey_cookie(response, journey_id)
 
 
 @router.get("/feed", response_class=HTMLResponse)
@@ -732,18 +885,47 @@ async def recommendation_attachment_download(
 
 
 async def _get_subscriber_or_redirect(request: Request, repository: AuthRepository) -> User | Response:
+    journey_id = get_or_create_journey_id(request)
+    requested_next = request.url.path
+    entry_marker = get_entry_marker(request)
     token = request.cookies.get(get_telegram_fallback_cookie_name())
-    redirect_url = f"/verify/telegram?next={quote(request.url.path, safe='/')}"
     if not token:
-        return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+        log_request_trace(
+            logger,
+            request,
+            stage="subscriber_redirect_blocked",
+            journey_id=journey_id,
+            surface="miniapp",
+            entry_marker=entry_marker,
+            entry_id=journey_id,
+            entry_surface="bootstrap",
+            first_html_surface="telegram_verify",
+            requested_next=requested_next,
+            block_reason="no_telegram_cookie",
+        )
+        response = RedirectResponse(url=_verify_redirect_url(requested_next), status_code=status.HTTP_303_SEE_OTHER)
+        return attach_journey_cookie(response, journey_id)
 
     user = await get_user_from_telegram_fallback_cookie(repository, token)
     if user is not None:
         return user
 
-    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    log_request_trace(
+        logger,
+        request,
+        stage="subscriber_redirect_blocked",
+        journey_id=journey_id,
+        surface="miniapp",
+        entry_marker=entry_marker,
+        entry_id=journey_id,
+        entry_surface="bootstrap",
+        first_html_surface="telegram_verify",
+        requested_next=requested_next,
+        block_reason="invalid_telegram_cookie",
+    )
+    response = RedirectResponse(url=_verify_redirect_url(requested_next), status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(get_telegram_fallback_cookie_name(), path="/")
-    return response
+    return attach_journey_cookie(response, journey_id)
 
 
 async def _get_subscriber_snapshot_or_redirect(
@@ -756,10 +938,27 @@ async def _get_subscriber_snapshot_or_redirect(
         return user, None
     telegram_user_id = _require_telegram_user_id_or_redirect(user, request)
     if isinstance(telegram_user_id, Response):
-        return telegram_user_id, None
+        return attach_journey_cookie(telegram_user_id, get_or_create_journey_id(request)), None
     snapshot = await get_subscriber_status_snapshot(access_repository, telegram_user_id=telegram_user_id)
     if snapshot is None:
-        return RedirectResponse(url="/verify/telegram?next=/app/catalog", status_code=status.HTTP_303_SEE_OTHER), None
+        journey_id = get_or_create_journey_id(request)
+        log_request_trace(
+            logger,
+            request,
+            stage="subscriber_snapshot_blocked",
+            journey_id=journey_id,
+            surface="miniapp",
+            auth_user_id=user.id,
+            telegram_user_id=telegram_user_id,
+            entry_marker=get_entry_marker(request),
+            entry_id=journey_id,
+            entry_surface="bootstrap",
+            first_html_surface="telegram_verify",
+            requested_next=request.url.path,
+            block_reason="missing_subscriber_snapshot",
+        )
+        response = RedirectResponse(url=_verify_redirect_url(request.url.path), status_code=status.HTTP_303_SEE_OTHER)
+        return attach_journey_cookie(response, journey_id), None
     return user, snapshot
 
 
@@ -782,8 +981,24 @@ def _require_telegram_user_id_or_redirect(user: User, request: Request) -> int |
     if telegram_user_id is not None:
         return telegram_user_id
     logger.warning("Mini App user %s has no telegram_user_id; redirecting to verification", user.id)
+    journey_id = get_or_create_journey_id(request)
+    log_request_trace(
+        logger,
+        request,
+        stage="subscriber_identity_blocked",
+        journey_id=journey_id,
+        surface="miniapp",
+        auth_user_id=user.id,
+        telegram_user_id=user.telegram_user_id,
+        entry_marker=get_entry_marker(request),
+        entry_id=journey_id,
+        entry_surface="bootstrap",
+        first_html_surface="telegram_verify",
+        requested_next=request.url.path,
+        block_reason="missing_telegram_user_id",
+    )
     return RedirectResponse(
-        url=f"/verify/telegram?next={quote(request.url.path, safe='/')}",
+        url=_verify_redirect_url(request.url.path),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

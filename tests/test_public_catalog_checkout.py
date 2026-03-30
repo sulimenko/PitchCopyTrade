@@ -163,13 +163,22 @@ def test_root_redirects_to_catalog() -> None:
         assert response.headers["location"] == "/catalog"
 
 
-def test_miniapp_renders_bootstrap_page() -> None:
+def test_app_renders_bootstrap_page() -> None:
     with _build_client(FakePublicRepository()) as client:
-        response = client.get("/miniapp")
+        response = client.get("/app?entry=bot_start")
 
         assert response.status_code == 200
         assert "Открываем каталог стратегий" in response.text
-        assert "Mini App подтверждает ваш Telegram-профиль и сразу открывает витрину стратегий" in response.text
+        assert "Открыть Telegram" in response.text
+        assert "pct_journey_id=" in response.headers["set-cookie"]
+
+
+def test_miniapp_alias_redirects_to_canonical_app_entry() -> None:
+    with _build_client(FakePublicRepository()) as client:
+        response = client.get("/miniapp", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app?entry=miniapp_bootstrap"
 
 
 def test_catalog_renders_strategies(monkeypatch) -> None:
@@ -189,7 +198,8 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Витрина стратегий" in response.text
         assert "Momentum RU" in response.text
-        assert "/catalog/strategies/momentum-ru" in response.text
+        assert "/catalog/strategies/momentum-ru?entry=public_catalog" in response.text
+        assert "/checkout/momentum-ru-month?entry=public_catalog" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
 
 
@@ -226,8 +236,10 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
         assert "/app/payments" in response.text
         assert "/tg-webapp/auth" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
-        assert f"/app/checkout/{strategy.subscription_products[0].slug}" in response.text
+        assert f"/app/strategies/{strategy.slug}?entry=bot_start" in response.text
+        assert f"/app/checkout/{strategy.subscription_products[0].slug}?entry=bot_start" in response.text
         assert f'href="/checkout/{strategy.subscription_products[0].slug}"' not in response.text
+        assert "pct_journey_id=" in response.headers["set-cookie"]
 
 
 def test_strategy_detail_renders_products(monkeypatch) -> None:
@@ -247,7 +259,7 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Momentum RU" in response.text
         assert product.title in response.text
-        assert f"/checkout/{product.slug}" in response.text
+        assert f"/checkout/{product.slug}?entry=public_strategy" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
         assert "Короткий тезис" in response.text
         assert "Тарифы и CTA" in response.text
@@ -275,10 +287,172 @@ def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
         response = client.get("/app/strategies/momentum-ru")
 
         assert response.status_code == 200
-        assert f"/app/checkout/{product.slug}" in response.text
+        assert f"/app/checkout/{product.slug}?entry=bot_start" in response.text
         assert f'href="/checkout/{product.slug}"' not in response.text
         assert "Короткий тезис" in response.text
         assert "Выбрать подписку" in response.text
+
+
+def test_public_checkout_tracing_chain_logs_entry_markers(monkeypatch, capsys) -> None:
+    strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    result = SimpleNamespace(
+        user=User(id="user-1", email="lead@example.com", full_name="Lead User", timezone="Europe/Moscow"),
+        payment=None,
+        subscription=Subscription(
+            id="subscription-1",
+            user_id="user-1",
+            product_id="product-1",
+            payment_id=None,
+            status=SubscriptionStatus.ACTIVE,
+            autorenew_enabled=True,
+            is_trial=True,
+            manual_discount_rub=0,
+            start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+            end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+        ),
+        required_documents=documents,
+    )
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_public_strategies",
+        lambda _repository: _async_return([strategy]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return([SimpleNamespace(ticker="NVTK", last_price_text="123.45", change_text="+1.20%")]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.create_stub_checkout",
+        lambda _repository, **kwargs: _async_return(result),
+    )
+
+    with _build_client(FakePublicRepository()) as client:
+        catalog_response = client.get("/catalog?entry=public_catalog")
+        journey_cookie = catalog_response.headers["set-cookie"]
+        journey_id = journey_cookie.split("pct_journey_id=")[1].split(";", 1)[0]
+        client.cookies.set("pct_journey_id", journey_id)
+
+        checkout_response = client.get("/checkout/momentum-ru-month?entry=public_catalog")
+        assert f"/catalog/strategies/{strategy.slug}?entry=public_catalog" in catalog_response.text
+        assert f"/checkout/{product.slug}?entry=public_catalog" in catalog_response.text
+        assert 'name="entry_id" value="' in checkout_response.text
+        assert 'name="entry_surface" value="public"' in checkout_response.text
+
+        response = client.post(
+            "/checkout/momentum-ru-month?entry=public_catalog",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "lead_source_name": "ads",
+                "accepted_document_ids": [item.id for item in documents],
+                "entry_id": journey_id,
+                "entry_surface": "public",
+            },
+        )
+
+    captured = capsys.readouterr()
+    assert response.status_code == 201
+    assert f"catalog_render trace journey_id={journey_id}" in captured.out
+    assert f"checkout_render trace journey_id={journey_id}" in captured.out
+    assert f"checkout_submit trace journey_id={journey_id}" in captured.out
+    assert "entry_marker=public_catalog" in captured.out
+    assert "entry_surface=public" in captured.out
+
+
+def test_app_checkout_tracing_chain_logs_entry_markers(monkeypatch, capsys) -> None:
+    strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
+    result = SimpleNamespace(
+        user=user,
+        payment=None,
+        subscription=Subscription(
+            id="subscription-1",
+            user_id="user-1",
+            product_id="product-1",
+            payment_id=None,
+            status=SubscriptionStatus.ACTIVE,
+            autorenew_enabled=True,
+            is_trial=True,
+            manual_discount_rub=0,
+            start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+            end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+        ),
+        required_documents=documents,
+    )
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_public_strategies",
+        lambda _repository: _async_return([strategy]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.build_strategy_quote_strip",
+        lambda _strategy: _async_return([SimpleNamespace(ticker="NVTK", last_price_text="123.45", change_text="+1.20%")]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.create_telegram_stub_checkout",
+        lambda _repository, **kwargs: _async_return(result),
+    )
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        catalog_response = client.get("/app/catalog?entry=miniapp_catalog")
+        journey_cookie = catalog_response.headers["set-cookie"]
+        journey_id = journey_cookie.split("pct_journey_id=")[1].split(";", 1)[0]
+        client.cookies.set("pct_journey_id", journey_id)
+
+        checkout_response = client.get("/app/checkout/momentum-ru-month?entry=miniapp_catalog")
+        assert f"/app/strategies/{strategy.slug}?entry=miniapp_catalog" in catalog_response.text
+        assert f"/app/checkout/{product.slug}?entry=miniapp_catalog" in catalog_response.text
+        assert 'name="entry_id" value="' in checkout_response.text
+        assert 'name="entry_surface" value="miniapp"' in checkout_response.text
+
+        response = client.post(
+            "/app/checkout/momentum-ru-month?entry=miniapp_catalog",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "accepted_document_ids": [item.id for item in documents],
+                "promo_code_value": "",
+                "entry_id": journey_id,
+                "entry_surface": "miniapp",
+            },
+        )
+
+    captured = capsys.readouterr()
+    assert response.status_code == 201
+    assert f"app_catalog_render trace journey_id={journey_id}" in captured.out
+    assert f"app_checkout_render trace journey_id={journey_id}" in captured.out
+    assert f"app_checkout_submit trace journey_id={journey_id}" in captured.out
+    assert "entry_marker=miniapp_catalog" in captured.out
+    assert "entry_surface=miniapp" in captured.out
 
 
 def test_checkout_page_renders_documents(monkeypatch) -> None:
@@ -301,6 +475,8 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
         assert "Momentum RU" in response.text
         assert "Согласие на оплату" in response.text
         assert "/legal/doc-payment_consent" in response.text
+        assert 'name="entry_id" value="' in response.text
+        assert 'name="entry_surface" value="public"' in response.text
 
 
 def test_app_checkout_prefills_telegram_user(monkeypatch) -> None:
@@ -339,6 +515,8 @@ def test_app_checkout_prefills_telegram_user(monkeypatch) -> None:
         assert "Lead User" in response.text
         assert "lead@example.com" in response.text
         assert "/app/catalog" in response.text
+        assert 'name="entry_id" value="' in response.text
+        assert 'name="entry_surface" value="miniapp"' in response.text
 
 
 def test_legal_document_page_reads_local_markdown(monkeypatch) -> None:
@@ -517,12 +695,13 @@ def test_checkout_submit_redirects_telegram_intended_flow_without_context(monkey
 
     captured = capsys.readouterr()
     assert response.status_code == 303
-    assert response.headers["location"] == "/verify/telegram?next=/app/checkout/momentum-ru-month"
+    assert response.headers["location"] == "/verify/telegram?next=/app/catalog&requested_next=/checkout/momentum-ru-month"
     assert create_stub_called is False
     assert "Public checkout route path=/checkout/momentum-ru-month" in captured.out
     assert "lead_source=telegram_miniapp" in captured.out
     assert "telegram_cookie_present=False" in captured.out
     assert "auth_telegram_user_id=None" in captured.out
+    assert "pct_journey_id=" in response.headers["set-cookie"]
 
 
 def test_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
@@ -684,10 +863,11 @@ def test_app_checkout_submit_rejects_missing_telegram_id(monkeypatch) -> None:
                 "accepted_document_ids": [item.id for item in documents],
                 "promo_code_value": "",
             },
+            follow_redirects=False,
         )
 
-        assert response.status_code == 403
-        assert "Telegram ID не найден" in response.text
+        assert response.status_code == 303
+        assert response.headers["location"] == "/verify/telegram?next=/app/catalog&requested_next=/app/checkout/momentum-ru-month"
 
 
 def test_app_subscription_renew_redirects_missing_telegram_id() -> None:
@@ -702,7 +882,7 @@ def test_app_subscription_renew_redirects_missing_telegram_id() -> None:
         response = client.post("/app/subscriptions/sub-1/renew", data={"promo_code_value": ""}, follow_redirects=False)
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/verify/telegram?next=/app/subscriptions/sub-1/renew"
+        assert response.headers["location"] == "/verify/telegram?next=/app/catalog&requested_next=/app/subscriptions/sub-1/renew"
 
 
 def test_app_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:

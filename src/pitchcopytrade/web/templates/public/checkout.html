@@ -5,7 +5,7 @@
   {% if product.strategy %}
   <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ product.strategy.slug }}{% else %}/app/strategies/{{ product.strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ product.strategy.slug }}{% endif %}">К стратегии</a>
   {% endif %}
-  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}">Каталог</a>
+  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Каталог</a>
 </div>
 {% endblock %}
 
@@ -51,6 +51,8 @@
     {% endif %}
     <input type="hidden" name="timezone_name" id="timezone_name" value="{{ form_values.timezone_name }}" />
     <input type="hidden" name="lead_source_name" value="{{ form_values.lead_source_name }}" />
+    <input type="hidden" name="entry_id" value="{{ form_values.entry_id or '' }}" />
+    <input type="hidden" name="entry_surface" value="{{ form_values.entry_surface or '' }}" />
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
       <label style="display:grid;gap:8px;">
         <strong>Имя, если хотите оставить</strong>

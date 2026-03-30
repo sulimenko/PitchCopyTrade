@@ -1,5 +1,5 @@
 # PitchCopyTrade — Active Tasks
-> Обновлено: 2026-03-29
+> Обновлено: 2026-03-30
 > Это единый backlog-файл проекта. Все активные задачи ведутся только здесь.
 
 ## Статусы
@@ -7072,11 +7072,13 @@ COMMIT;
 
 ---
 
-## P31 — Mini App-intended subscriber flow все еще может попасть в public checkout и создать email-only user
+## P31 — Mini App-intended subscriber flow все еще может попасть в public checkout и создать email-only user `[reopened]`
 
-> **Новый подтвержденный кейс (2026-03-30):**
+> **Подтвержденные кейсы (2026-03-30):**
 >
 > Пользователь Diana (`44e87818`, `danilevskaiadiana@gmail.com`) снова создан без `telegram_user_id`.
+>
+> Пользователь Виктор (`6b99f353`, full_name=`Виктор`) также создан без `telegram_user_id`.
 >
 > Ключевой log line:
 >
@@ -7085,6 +7087,19 @@ COMMIT;
 > ```
 >
 > Это уже прямое доказательство, что checkout прошел через **public** route, а не через Mini App route `/app/checkout/{product_ref}`.
+>
+> Новый production log по Виктору:
+>
+> ```text
+> 2026-03-30 06:24:34,488 | INFO | pitchcopytrade.api.routes.public | Public checkout route path=/checkout/sl referer=https://pct.test.ptfin.ru/checkout/sl lead_source=website telegram_cookie_present=False auth_user_cookie_present=False auth_telegram_user_id=None product_ref=sl
+> ```
+>
+> Это означает:
+> - POST пришел в public checkout;
+> - обе cookies отсутствовали;
+> - `lead_source` остался `website`;
+> - `referer` указывает уже на сам public checkout page;
+> - текущей telemetry недостаточно, чтобы доказать, **откуда пользователь попал на GET `/checkout/sl`**.
 
 ### Почему это важно
 
@@ -7109,6 +7124,10 @@ COMMIT;
    - [app.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L72)
    - [app.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L101)
 4. Для Diana server log показывает именно `Public checkout route`, а `auth_telegram_user_id=None`.
+5. Для Виктора server log показывает еще и отсутствие обеих cookies:
+   - `telegram_cookie_present=False`
+   - `auth_user_cookie_present=False`
+6. Значит в проде сейчас надо диагностировать не только POST `/checkout/{slug}`, но и всю entry chain до него.
 
 ### Архитектурный вывод
 
@@ -7123,7 +7142,7 @@ COMMIT;
 
 ### Что должен сделать worker
 
-#### P31.1 — Доказать источник перехода `[x]`
+#### P31.1 — Доказать источник перехода `[reopened]`
 
 - [x] **P31.1.1** Добавить более сильную диагностику на checkout entry:
   - request path
@@ -7134,8 +7153,37 @@ COMMIT;
   - resolved telegram_user_id
 - [x] **P31.1.2** Проверить, нет ли surface, где supposedly Mini App user получает public `/catalog` вместо `/app/catalog`
 - [x] **P31.1.3** Проверить, нет ли client-side redirect / form action / bootstrap path, который теряет Mini App context
+- [x] **P31.1.4** Добавить production tracing не только на POST `/checkout/{slug}`, но и на GET-цепочку:
+  - GET `/miniapp`
+  - POST `/tg-webapp/auth`
+  - GET `/app/catalog`
+  - GET `/catalog`
+  - GET `/app/strategies/{slug}`
+  - GET `/catalog/strategies/{slug}`
+  - GET `/app/checkout/{slug}`
+  - GET `/checkout/{slug}`
+- [x] **P31.1.5** Для каждого шага логировать:
+  - request path
+  - full query string
+  - referer
+  - origin
+  - user-agent
+  - `Sec-Fetch-Site`
+  - `Sec-Fetch-Mode`
+  - наличие Telegram fallback cookie
+  - наличие auth session cookie
+  - resolved `user_id`
+  - resolved `telegram_user_id`
+  - classified surface: `public|miniapp|verify|bootstrap`
+- [x] **P31.1.6** Добавить `journey_id` / `entry_id`, который создается на первом entrypoint и прокидывается до checkout POST
+- [x] **P31.1.7** На checkout render и submit логировать, какой href/flow реально выбран:
+  - rendered checkout href
+  - entry surface
+  - checkout surface
+  - telegram_intended flag
+  - block_reason, если flow заблокирован
 
-#### P31.2 — Закрыть silent downgrade `[x]`
+#### P31.2 — Закрыть silent downgrade `[reopened]`
 
 - [x] **P31.2.1** Если Telegram-intended user попал на public checkout без Telegram context, не создавать silently email-only user
 - [x] **P31.2.2** В таком случае:
@@ -7143,7 +7191,7 @@ COMMIT;
   - либо controlled blocking page с понятным объяснением
 - [x] **P31.2.3** Public checkout success path не должен выглядеть “нормальным Mini App onboarding”, если `auth_telegram_user_id=None`
 
-#### P31.3 — Проверить template/surface contract `[x]`
+#### P31.3 — Проверить template/surface contract `[reopened]`
 
 - [x] **P31.3.1** Аудит всех CTA на подписку:
   - catalog cards
@@ -7153,13 +7201,21 @@ COMMIT;
   - any share/deep-link surfaces
 - [x] **P31.3.2** Для Mini App surfaces CTA must always resolve to `/app/checkout/{slug}`
 - [x] **P31.3.3** Если используется общий шаблон, worker должен доказать, что `miniapp_mode` не теряется по пути
+- [x] **P31.3.4** Добавить явные source markers, чтобы production RCA не зависел только от `referer`:
+  - bot webapp button -> например `?entry=bot_start`
+  - `/miniapp` bootstrap -> `?entry=miniapp_bootstrap`
+  - public catalog/detail -> `?entry=public_catalog` / `public_strategy`
+  - checkout form submit должен нести `entry_id` / `entry_surface`
 
-#### P31.4 — Regression tests `[x]`
+#### P31.4 — Regression tests `[reopened]`
 
 - [x] **P31.4.1** Test: Mini App catalog/detail surfaces render `/app/checkout/{slug}`
 - [x] **P31.4.2** Test: public catalog/detail surfaces render `/checkout/{slug}`
 - [x] **P31.4.3** Test: public checkout without Telegram context does not masquerade as Mini App success path
 - [x] **P31.4.4** Test: Telegram-intended flow cannot silently end with user without `telegram_user_id`
+- [x] **P31.4.5** Test: tracing covers GET `/catalog|/app/catalog` -> GET checkout -> POST checkout chain
+- [x] **P31.4.6** Test: rendered checkout href is logged and can distinguish `/app/checkout` vs `/checkout`
+- [x] **P31.4.7** Test: `journey_id` survives to checkout submit
 
 ### Acceptance P31
 
@@ -7167,6 +7223,7 @@ COMMIT;
 2. Серверная диагностика позволяет доказать источник checkout path
 3. Telegram-intended flow не может silently создать user без `telegram_user_id`
 4. Если Telegram context потерян, система ведет пользователя в explicit verify/bind flow или loud объясняет ограничение
+5. Production logs позволяют восстановить полный путь пользователя до checkout POST, а не только последнюю POST-строку
 
 ### Worker Prompt — Mini App Flow Is Leaking Into Public Checkout
 
@@ -7188,7 +7245,8 @@ Public checkout route path=/checkout/sl auth_telegram_user_id=None checkout_emai
    - либо redirect в `/verify/telegram?next=/app/checkout/{slug}`,
    - либо loud blocking UX;
 4. добавить диагностику, по которой следующий такой кейс будет сразу понятен из логов;
-5. покрыть tests на public vs miniapp surface contract.
+5. покрыть tests на public vs miniapp surface contract;
+6. добавить production-grade tracing: GET chain + journey marker + rendered checkout href logging.
 
 Что нельзя делать:
 - считать задачу закрытой только потому, что public checkout умеет читать Telegram cookie;
@@ -7198,6 +7256,156 @@ Public checkout route path=/checkout/sl auth_telegram_user_id=None checkout_emai
 Финальный отчет:
 - root cause
 - доказательство источника неверного route
+- changed files
+- tests run + results
+- residual risks
+```
+
+---
+
+## P32 — Single Canonical Mini App Entry: первый экран должен быть bootstrap, а не verify/documentation
+
+> **Контекст:** Пользователь ожидает открыть Mini App и сразу попасть в витрину стратегий. Фактически первым экраном периодически становится не каталог, а промежуточная документация/verify screen.
+>
+> Текущий happy path разорван:
+> - bot entrypoint сейчас ведет напрямую в `/app/catalog`;
+> - `/app/catalog` уже является защищенным route и требует Telegram fallback cookie;
+> - если cookie еще нет, app routes уводят пользователя на `/verify/telegram`;
+> - в результате первым экраном становится documentation/verify screen, а не catalog.
+
+### Root cause
+
+Сейчас в проекте смешаны два разных контракта входа:
+
+1. **Protected surface**
+   - `/app/catalog`
+   - `/app/strategies/{slug}`
+   - `/app/checkout/{slug}`
+   Эти routes предполагают, что Telegram cookie уже существует.
+
+2. **Bootstrap surface**
+   - `/app`
+   - `/miniapp`
+   - `app/miniapp_entry.html`
+   - `public/miniapp_bootstrap.html`
+   Эти routes умеют:
+   - взять `Telegram.WebApp.initData`
+   - вызвать `/tg-webapp/auth`
+   - поставить cookie
+   - только потом перевести пользователя в `/app/catalog`
+
+Пока bot/webapp entrypoints открывают protected route напрямую, verify/documentation screen остается нормальным fallback и периодически становится первым экраном.
+
+### Архитектурное решение
+
+Нужен один канонический entrypoint для Mini App:
+
+- bot должен открывать не `/app/catalog`, а единый bootstrap route;
+- рекомендованный canonical entrypoint: `/app`;
+- `/app` должен быть единственным публично рекламируемым входом в Mini App;
+- `/verify/telegram` должен остаться только failure / recovery screen, а не normal first screen;
+- user-facing `surface_next` на verify screen должен всегда быть `/app/catalog`, а не текущий route вроде `/app/help`;
+- если исходный requested path нужен для диагностики или recovery logic, его нужно хранить отдельно как internal field (`requested_next` / `return_to`), не показывая пользователю;
+- copy на bootstrap screen должен быть коротким и service-like, без длинной документации;
+- catalog должен открываться первым клиентским экраном только после успешного bootstrap/auth.
+
+### Что должен сделать worker
+
+#### P32.1 — Закрепить один canonical entrypoint `[x]`
+
+- [x] **P32.1.1** Выбрать и зафиксировать один canonical Mini App entry URL
+  - рекомендовано: `/app`
+- [x] **P32.1.2** Перевести bot WebApp buttons на этот canonical URL
+- [x] **P32.1.3** Проверить все остальные Mini App entry surfaces и убрать прямой вход в `/app/catalog`, если он используется как first-touch URL
+
+#### P32.2 — Разделить bootstrap и failure screens `[x]`
+
+- [x] **P32.2.1** `miniapp_entry` / bootstrap screen должен быть минимальным:
+  - логотип
+  - короткая фраза “Открываем каталог стратегий”
+  - spinner
+  - минимальный fallback CTA
+- [x] **P32.2.2** `telegram_verify` должен быть recovery screen only
+- [x] **P32.2.3** Verify screen не должен появляться первым экраном для normal bot → Mini App path
+- [x] **P32.2.4** На verify screen поле `surface_next` должно всегда нормализоваться к `/app/catalog`
+- [x] **P32.2.5** `request.url.path` не должен напрямую утекать в user-facing `surface_next`
+- [x] **P32.2.6** Если системе нужно помнить исходный route (`/app/help`, `/app/payments/...` и т.п.), worker должен хранить его отдельно как internal `requested_next`, не показывая его в copy verify screen
+
+#### P32.3 — Упростить copy `[x]`
+
+- [x] **P32.3.1** Убрать длинные инструкции с первого экрана входа
+- [x] **P32.3.2** Оставить в bootstrap только короткий operational text
+- [x] **P32.3.3** Все длинные объяснения перенести в help/recovery surface
+- [x] **P32.3.4** Worker не должен самостоятельно усложнять copy; текст должен быть intentionally short
+
+#### P32.4 — Добавить tracing для first-screen resolution `[x]`
+
+- [x] **P32.4.1** Логировать, какой экран реально стал first HTML surface:
+  - `miniapp_entry`
+  - `miniapp_bootstrap`
+  - `telegram_verify`
+  - `app/catalog`
+- [x] **P32.4.2** Логировать причину ухода в verify:
+  - no cookie
+  - invalid cookie
+  - no initData
+  - auth failure
+  - no telegram_user_id
+- [x] **P32.4.2.1** Отдельно логировать оба поля:
+  - user-facing `surface_next`
+  - internal `requested_next`
+- [x] **P32.4.3** В production должно быть видно, почему user не попал сразу в catalog
+
+#### P32.5 — Regression tests `[x]`
+
+- [x] **P32.5.1** Test: bot/canonical entry no longer targets `/app/catalog` directly
+- [x] **P32.5.2** Test: canonical entry with valid initData resolves to `/app/catalog`
+- [x] **P32.5.3** Test: verify screen appears only on failed bootstrap / missing Telegram context
+- [x] **P32.5.4** Test: first-screen copy on bootstrap remains minimal
+- [x] **P32.5.5** Test: verify screen always renders `surface_next=/app/catalog`, even if original requested route was `/app/help`
+- [x] **P32.5.6** Test: original requested route is preserved only in internal tracing / recovery field, not in visible copy
+
+### Acceptance P32
+
+1. Пользователь из бота заходит в Mini App через один canonical entrypoint
+2. Первый нормальный клиентский экран после успешного bootstrap — `catalog`
+3. `verify/telegram` не является normal first screen
+4. На verify screen пользователю всегда показывается `/app/catalog` как следующий экран
+5. Bootstrap copy минимален и не выглядит как документация
+6. Логи позволяют доказать, почему user попал не в catalog, если это снова произойдет
+
+### Worker Prompt — Canonical Mini App Entry Instead Of Verify Screen
+
+```text
+Ты исправляешь архитектурную проблему первого входа в Mini App.
+
+Сейчас пользователь иногда видит первым экраном verify/documentation screen вместо каталога стратегий.
+
+Почему это происходит:
+- bot открывает protected route `/app/catalog`;
+- protected route ожидает уже готовую Telegram cookie;
+- если cookie еще нет, user уходит в `/verify/telegram`;
+- verify screen становится first-touch surface.
+
+Что нужно сделать:
+1. закрепить один canonical Mini App entrypoint;
+2. рекомендовано использовать `/app` как единую входную точку;
+3. bot/webapp buttons должны открывать canonical entrypoint, а не `/app/catalog` напрямую;
+4. bootstrap screen должен быть минимальным и не содержать длинной документации;
+5. verify screen оставить только как recovery/failure screen;
+6. на verify screen user-facing `surface_next` всегда должен быть `/app/catalog`, даже если пользователь реально пытался попасть в `/app/help` или другой protected route;
+7. если original requested route нужен, хранить его отдельно как internal `requested_next`, не показывая пользователю;
+8. добавить tracing, чтобы на production было видно, какой first screen реально открылся и почему.
+
+Что нельзя делать:
+- считать `/verify/telegram` нормальным первым экраном;
+- оставлять несколько равноправных entrypoints без явного contract;
+- показывать пользователю raw `request.url.path` как “следующий экран”;
+- решать проблему только переписыванием текста, не исправив входной URL contract.
+
+Финальный отчет:
+- root cause
+- chosen canonical entrypoint
 - changed files
 - tests run + results
 - residual risks
