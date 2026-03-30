@@ -6070,3 +6070,440 @@ Acceptance:
 - tests run + results
 - residual risks
 ```
+
+---
+
+## Блок P23 — Оптимизация Docker build: multi-stage + кэш зависимостей (2026-03-29)
+
+### Контекст
+
+Docker build (`docker compose up -d --build`) занимает 5+ минут. Зависимости лёгкие (нет pandas/numpy/torch), но:
+- `cryptography>=45` компилируется из C (~2-3 мин)
+- `asyncpg` — C-расширение (~1 мин)
+- `build-essential` скачивается при каждом build (~30 сек)
+- Нет кэширования слоя зависимостей — любое изменение кода пересобирает pip install
+
+**Файл:** `Dockerfile`
+
+### P23.1 — Multi-stage build с кэшированием pip `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P23.1.1** Переписать `Dockerfile` на multi-stage:
+
+  ```dockerfile
+  # Stage 1: dependencies (кэшируется пока pyproject.toml не изменился)
+  FROM python:3.12-slim-bookworm AS deps
+
+  RUN apt-get update \
+      && apt-get install -y --no-install-recommends build-essential \
+      && rm -rf /var/lib/apt/lists/*
+
+  WORKDIR /app
+  COPY pyproject.toml README.md /app/
+  COPY src /app/src
+
+  RUN python -m pip install --no-cache-dir --prefer-binary .
+
+  # Stage 2: runtime (без build-essential, компактнее)
+  FROM python:3.12-slim-bookworm
+
+  ENV PYTHONDONTWRITEBYTECODE=1 \
+      PYTHONUNBUFFERED=1 \
+      PYTHONPATH=/app/src
+
+  WORKDIR /app
+
+  # Копируем только установленные пакеты из stage 1
+  COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+  COPY --from=deps /usr/local/bin /usr/local/bin
+
+  COPY src /app/src
+
+  EXPOSE 8000
+  CMD ["uvicorn", "pitchcopytrade.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+  ```
+
+  **Выигрыш:**
+  - `build-essential` только в stage 1 — runtime image меньше на ~200 МБ
+  - Слой `pip install` кэшируется пока `pyproject.toml` не менялся
+  - Повторные build при изменении кода — ~5 секунд вместо 5 минут
+
+- [x] **P23.1.2** Проверить что все 3 сервиса (api, bot, worker) работают с новым Dockerfile. Проверка выполнена статически; `docker`/`podman` недоступны в этом окружении.
+
+- [x] **P23.1.3** Убрать `tests/` из production image — тесты не нужны в контейнере:
+  - Удалить `COPY tests /app/tests` из runtime stage
+  - Не включать `[dev]` зависимости (pytest) в production build
+
+---
+
+### Acceptance P23
+
+1. `docker compose -f deploy/docker-compose.server.yml up -d --build` — повторный build (без изменения pyproject.toml) < 30 секунд
+2. Первый build с нуля < 3 минут (было 5+)
+3. Runtime image не содержит `build-essential`, `tests/`, pytest
+4. api, bot, worker стартуют корректно
+
+---
+
+## Блок P24 — Улучшить лог котировок: body preview + response debug (2026-03-29)
+
+### Контекст
+
+На сервере все котировки возвращают `status=empty`, но нет логов с телом ответа API. Невозможно диагностировать почему — формат другой? Ответ пустой? Ошибка?
+
+**Файл:** `src/pitchcopytrade/services/instruments.py`
+
+### P24.1 — Добавить debug-лог тела ответа `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P24.1.1** В `_fetch_quote()` (строка ~237) — добавить краткий debug-preview тела ответа:
+
+  **После строки:**
+  ```python
+  logger.info("Quote HTTP response: status=%s, body_length=%s", response.status_code, len(response_body))
+  ```
+
+  **Добавить:**
+  ```python
+  if len(response_body) < 2000:
+      logger.debug("Quote response body for %s: %s", ticker, response_body.decode("utf-8", errors="replace")[:500])
+  ```
+
+- [x] **P24.1.2** Убрать лишние debug-логи из `_normalize_provider_payload()`:
+
+  - не логировать keys parsed dict на каждом запросе;
+  - оставить только краткий preview ответа из `_fetch_quote()`.
+
+- [x] **P24.1.3** В `.env` добавить комментарий:
+  ```
+  # Для дебага котировок: LOG_LEVEL=DEBUG (по умолчанию INFO)
+  ```
+
+---
+
+### Acceptance P24
+
+1. При `LOG_LEVEL=DEBUG` — видно краткий body preview ответа API
+2. При `LOG_LEVEL=INFO` — поведение не меняется (debug-логи не появляются)
+3. Тело ответа обрезается до 500 символов (не засорять лог)
+
+---
+
+## Блок P25 — Bugfix: telegram_user_id=NULL после checkout через Mini App (2026-03-30)
+
+### Контекст
+
+Подписки созданные через Mini App имеют `telegram_user_id=NULL` у связанного User. Это блокирует доставку сообщений: `notifications.py` фильтрует подписчиков по `telegram_user_id IS NOT NULL`.
+
+**Root cause** (два сценария):
+
+**Сценарий A — Дублирование пользователей:**
+1. Admin создаёт User (email, без telegram_user_id)
+2. Подписчик заходит через Mini App → auth создаёт НОВОГО User с telegram_user_id
+3. Fallback cookie ссылается на нового User
+4. НО если подписчик УЖЕ имел email-User и cookie привязан к нему → checkout читает СТАРОГО User → `telegram_user_id=None`
+
+**Сценарий B — `or 0` превращает None в 0:**
+Строка `app.py:182`: `telegram_user_id=user.telegram_user_id or 0`
+Если `user.telegram_user_id = None` → передаётся `0` → `get_user_by_telegram_id(0)` не находит никого → создаётся новый User с `telegram_user_id=0` → подписка привязывается к этому "нулевому" пользователю.
+
+**Файлы:**
+- `src/pitchcopytrade/api/routes/app.py`
+- `src/pitchcopytrade/services/public.py`
+
+### P25.1 — Убрать `or 0` и добавить валидацию telegram_user_id `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P25.1.1** В `app.py`, функция `app_checkout_submit` (строка ~182) — УБРАТЬ `or 0`:
+
+  **Текущий код:**
+  ```python
+  profile=TelegramSubscriberProfile(
+      telegram_user_id=user.telegram_user_id or 0,
+      ...
+  )
+  ```
+
+  **Заменить на:**
+  ```python
+  if not user.telegram_user_id:
+      logger.error("Mini App checkout: user %s has no telegram_user_id", user.id)
+      raise HTTPException(
+          status_code=status.HTTP_403_FORBIDDEN,
+          detail="Telegram ID не найден. Пожалуйста, откройте Mini App заново.",
+      )
+  profile=TelegramSubscriberProfile(
+      telegram_user_id=user.telegram_user_id,
+      ...
+  )
+  ```
+
+- [x] **P25.1.2** Проверить ВСЕ использования `user.telegram_user_id or 0` в `app.py` — заменить на проверку и ошибку:
+  - `_get_subscriber_snapshot_or_redirect()` строка ~721: `telegram_user_id=user.telegram_user_id or 0`
+  - Любые другие места
+
+  **Заменить каждое на:**
+  ```python
+  if not user.telegram_user_id:
+      return RedirectResponse(url="/verify/telegram?next=...", status_code=303), None
+  snapshot = await get_subscriber_status_snapshot(access_repository, telegram_user_id=user.telegram_user_id)
+  ```
+
+---
+
+### P25.2 — Auth flow: обновлять telegram_user_id существующего User `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P25.2.1** В `auth.py`, функция `telegram_webapp_auth` (~строка 246) — после `upsert_telegram_subscriber`, проверить: если User уже существовал (найден по email) но `telegram_user_id` был NULL — обновить:
+
+  Сейчас `upsert_telegram_subscriber()` ищет User **только** по `telegram_user_id`. Если User с таким telegram_user_id не найден — создаёт нового. Но User с тем же email может уже существовать.
+
+  **Добавить в `upsert_telegram_subscriber()` (public.py строка ~393) второй lookup по email:**
+
+  ```python
+  async def upsert_telegram_subscriber(repository: PublicRepository, profile: TelegramSubscriberProfile) -> User:
+      # 1. Ищем по telegram_user_id (основной путь)
+      user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
+      if user is not None:
+          # Обновляем поля и возвращаем
+          ...
+          return user
+
+      # 2. Ищем по email (если User уже существует без telegram_user_id)
+      normalized_email = (profile.email or "").strip().lower() or None
+      if normalized_email:
+          user = await repository.find_user_by_email(normalized_email)
+          if user is not None and user.telegram_user_id is None:
+              # Привязываем telegram_user_id к существующему User
+              user.telegram_user_id = profile.telegram_user_id
+              user.username = profile.username
+              ...
+              return user
+
+      # 3. Создаём нового User
+      user = User(
+          telegram_user_id=profile.telegram_user_id,
+          ...
+      )
+      ...
+      return user
+  ```
+
+- [x] **P25.2.2** Добавить лог при привязке telegram_user_id к существующему User:
+  ```python
+  logger.info("Linked telegram_user_id=%s to existing user %s (email=%s)", profile.telegram_user_id, user.id, normalized_email)
+  ```
+
+---
+
+### P25.3 — Миграция данных: установить telegram_user_id для существующих подписок `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P25.3.1** Создать SQL-миграцию или скрипт для ручного запуска:
+  ```sql
+  -- Показать проблемные подписки
+  SELECT s.id, s.status, u.id as user_id, u.email, u.telegram_user_id
+  FROM subscriptions s
+  JOIN users u ON s.user_id = u.id
+  WHERE s.status IN ('active', 'trial')
+  AND u.telegram_user_id IS NULL;
+  ```
+
+  Исправление — **вручную** (через admin или SQL), т.к. нужно знать реальный telegram_user_id подписчика:
+  ```sql
+  UPDATE users SET telegram_user_id = <REAL_TELEGRAM_ID> WHERE id = '<user_uuid>';
+  ```
+
+  Worker НЕ должен автоматически назначать telegram_user_id — его нужно получить из Telegram.
+
+- [x] **P25.3.2** `python3 -m compileall src tests` — без ошибок
+
+---
+
+### Acceptance P25
+
+1. `user.telegram_user_id or 0` → **заменён** на валидацию с ошибкой 403
+2. Auth flow: если User с email уже существует но без telegram_user_id → привязывается telegram_user_id (не создаётся дубликат)
+3. Checkout через Mini App — подписка привязывается к User с ненулевым `telegram_user_id`
+4. Delivery: подписчик с `telegram_user_id` получает сообщения
+5. `python3 -m compileall src tests` — без ошибок
+
+---
+
+## Блок P26 — Миграция: объединить дубликаты пользователей и перенести подписки (2026-03-30)
+
+### Контекст
+
+Баг P25 создал **дубликаты** пользователей. Реальный пользователь:
+```
+id: a1f35a46-252b-4b94-84c5-5a8b59465301
+email: sulimenkoas@gmail.com
+telegram_user_id: 368288031
+full_name: Администратор
+```
+
+Дубликаты (без telegram_user_id, созданы checkout-ом):
+```
+bee0cd23-af1c-4781-9d55-ef947e560904
+e9ff7dba-5a7d-4253-bfbf-1d64b932e7a7
+05c3b691-5674-43d4-85d9-d99d08ec8331
+```
+
+Unique constraint `uq_users_telegram_user_id` не даёт назначить один `telegram_user_id` нескольким пользователям. Правильное решение — **перенести** все связанные записи (subscriptions, payments, consents) на реального пользователя и удалить дубликаты.
+
+### P26.1 — SQL-скрипт миграции `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P26.1.1** Создать файл `deploy/fix_duplicate_users.sql` с SQL-скриптом:
+
+  ```sql
+  -- P26: Миграция дубликатов пользователей на реального (с telegram_user_id)
+  -- Реальный пользователь:
+  --   a1f35a46-252b-4b94-84c5-5a8b59465301 (telegram_user_id=368288031)
+  -- Дубликаты (telegram_user_id IS NULL):
+  --   bee0cd23-af1c-4781-9d55-ef947e560904
+  --   e9ff7dba-5a7d-4253-bfbf-1d64b932e7a7
+  --   05c3b691-5674-43d4-85d9-d99d08ec8331
+
+  BEGIN;
+
+  -- 1. Перенести подписки
+  UPDATE subscriptions
+  SET user_id = 'a1f35a46-252b-4b94-84c5-5a8b59465301'
+  WHERE user_id IN (
+    'bee0cd23-af1c-4781-9d55-ef947e560904',
+    'e9ff7dba-5a7d-4253-bfbf-1d64b932e7a7',
+    '05c3b691-5674-43d4-85d9-d99d08ec8331'
+  );
+
+  -- 2. Перенести платежи
+  UPDATE payments
+  SET user_id = 'a1f35a46-252b-4b94-84c5-5a8b59465301'
+  WHERE user_id IN (
+    'bee0cd23-af1c-4781-9d55-ef947e560904',
+    'e9ff7dba-5a7d-4253-bfbf-1d64b932e7a7',
+    '05c3b691-5674-43d4-85d9-d99d08ec8331'
+  );
+
+  -- 3. Перенести согласия (consents)
+  UPDATE user_consents
+  SET user_id = 'a1f35a46-252b-4b94-84c5-5a8b59465301'
+  WHERE user_id IN (
+    'bee0cd23-af1c-4781-9d55-ef947e560904',
+    'e9ff7dba-5a7d-4253-bfbf-1d64b932e7a7',
+    '05c3b691-5674-43d4-85d9-d99d08ec8331'
+  );
+
+  -- 4. Удалить дубликаты
+  DELETE FROM users
+  WHERE id IN (
+    'bee0cd23-af1c-4781-9d55-ef947e560904',
+    'e9ff7dba-5a7d-4253-bfbf-1d64b932e7a7',
+    '05c3b691-5674-43d4-85d9-d99d08ec8331'
+  );
+
+  -- 5. Проверить результат
+  SELECT s.id AS subscription_id, s.status, u.telegram_user_id, u.email, sp.slug
+  FROM subscriptions s
+  JOIN users u ON s.user_id = u.id
+  JOIN subscription_products sp ON s.product_id = sp.id
+  WHERE s.status IN ('active', 'trial');
+
+  COMMIT;
+  ```
+
+- [x] **P26.1.2** Добавить generic-скрипт для будущих случаев `deploy/merge_duplicate_users.sql`:
+
+  ```sql
+  -- Generic: найти дубликаты (пользователи без telegram_user_id с активными подписками)
+  SELECT u.id, u.email, u.telegram_user_id, u.full_name, COUNT(s.id) AS sub_count
+  FROM users u
+  LEFT JOIN subscriptions s ON s.user_id = u.id
+  WHERE u.telegram_user_id IS NULL
+  AND EXISTS (SELECT 1 FROM subscriptions WHERE user_id = u.id AND status IN ('active', 'trial'))
+  GROUP BY u.id
+  ORDER BY u.created_at;
+
+  -- Generic: найти "реального" пользователя по email
+  -- SELECT * FROM users WHERE email = 'xxx@yyy.com' AND telegram_user_id IS NOT NULL;
+
+  -- Затем: UPDATE subscriptions/payments/user_consents SET user_id = <real_id> WHERE user_id = <dup_id>;
+  -- Затем: DELETE FROM users WHERE id = <dup_id>;
+  ```
+
+---
+
+### P26.2 — Код: автоматическое объединение дубликатов при auth `[x]`
+
+**Что должен сделать worker:**
+
+- [x] **P26.2.1** В `upsert_telegram_subscriber()` (`services/public.py` ~строка 393) — добавить **merge-логику**:
+
+  ```python
+  async def upsert_telegram_subscriber(repository: PublicRepository, profile: TelegramSubscriberProfile) -> User:
+      display_name = (profile.full_name or "").strip() or " ".join(
+          part for part in [profile.first_name, profile.last_name] if part
+      ).strip() or None
+      normalized_email = (profile.email or "").strip().lower() or None
+
+      # 1. Ищем по telegram_user_id (основной путь)
+      user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
+      if user is not None:
+          user.username = profile.username
+          user.full_name = display_name
+          if normalized_email is not None:
+              user.email = normalized_email
+          user.timezone = profile.timezone_name
+          if user.consents is None:
+              user.consents = []
+          return user
+
+      # 2. Ищем по email (User мог быть создан ранее без telegram_user_id)
+      if normalized_email:
+          existing_by_email = await repository.find_user_by_email(normalized_email)
+          if existing_by_email is not None and existing_by_email.telegram_user_id is None:
+              # Привязываем Telegram ID к существующему User
+              existing_by_email.telegram_user_id = profile.telegram_user_id
+              existing_by_email.username = profile.username
+              existing_by_email.full_name = display_name
+              existing_by_email.timezone = profile.timezone_name
+              if existing_by_email.consents is None:
+                  existing_by_email.consents = []
+              logger.info(
+                  "Linked telegram_user_id=%s to existing user %s (email=%s)",
+                  profile.telegram_user_id, existing_by_email.id, normalized_email,
+              )
+              return existing_by_email
+
+      # 3. Создаём нового User
+      user = User(
+          telegram_user_id=profile.telegram_user_id,
+          username=profile.username,
+          full_name=display_name,
+          email=normalized_email,
+          status=UserStatus.ACTIVE,
+          timezone=profile.timezone_name,
+      )
+      user.consents = []
+      user.payments = []
+      user.subscriptions = []
+      repository.add(user)
+      return user
+  ```
+
+- [x] **P26.2.2** `python3 -m compileall src tests` — без ошибок
+
+---
+
+### Acceptance P26
+
+1. SQL-скрипт: 3 подписки перенесены на `a1f35a46`, 3 дубликата удалены
+2. После миграции: `SELECT telegram_user_id FROM users JOIN subscriptions ON ...` — все активные подписки имеют ненулевой telegram_user_id
+3. `upsert_telegram_subscriber()` — при auth через Mini App если User с email уже есть → привязывает telegram_user_id (не создаёт дубликат)
+4. Доставка сообщений работает для подписчика с telegram_user_id=368288031

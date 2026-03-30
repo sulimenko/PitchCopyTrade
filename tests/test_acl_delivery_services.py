@@ -16,6 +16,7 @@ from pitchcopytrade.services.public import (
     TelegramSubscriberProfile,
     create_stub_checkout,
     create_telegram_stub_checkout,
+    upsert_telegram_subscriber,
 )
 from pitchcopytrade.db.models.catalog import Strategy
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
@@ -75,6 +76,23 @@ class FakeSession:
     async def refresh(self, entity):
         self.refreshed.append(entity)
         return None
+
+
+class FakeMergeRepository:
+    def __init__(self, existing_user: User | None = None) -> None:
+        self.existing_user = existing_user
+        self.added = []
+
+    async def get_user_by_telegram_id(self, telegram_user_id: int):
+        return None
+
+    async def find_user_by_email(self, email: str):
+        if self.existing_user is not None and self.existing_user.email == email:
+            return self.existing_user
+        return None
+
+    def add(self, entity):
+        self.added.append(entity)
 
 
 def _make_documents() -> list[LegalDocument]:
@@ -175,6 +193,38 @@ async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() ->
     assert product in session.refreshed
     assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 4
     assert result.payment.consents == []
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_links_existing_user_by_email(caplog) -> None:
+    existing_user = User(
+        id="user-1",
+        email="lead@example.com",
+        telegram_user_id=None,
+        full_name="Lead User",
+        timezone="Europe/Moscow",
+    )
+    repository = FakeMergeRepository(existing_user)
+
+    with caplog.at_level("INFO"):
+        user = await upsert_telegram_subscriber(
+            repository,
+            TelegramSubscriberProfile(
+                telegram_user_id=12345,
+                username="leaduser",
+                first_name="Lead",
+                last_name="User",
+                full_name="Lead User",
+                email="lead@example.com",
+                timezone_name="Europe/Moscow",
+                lead_source_name="telegram_bot",
+            ),
+        )
+
+    assert user is existing_user
+    assert user.telegram_user_id == 12345
+    assert user.username == "leaduser"
+    assert "Linked telegram_user_id=12345 to existing user user-1 (email=lead@example.com)" in caplog.text
 
 
 @pytest.mark.asyncio

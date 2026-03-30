@@ -164,9 +164,18 @@ async def app_checkout_submit(
     accepted_document_ids: list[str] = Form(...),
     promo_code_value: str = Form(""),
 ) -> Response:
-    user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
+    user = await _get_subscriber_or_redirect(request, auth_repository)
     if isinstance(user, Response):
         return user
+    if not user.telegram_user_id:
+        logger.error("Mini App checkout: user %s has no telegram_user_id", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Telegram ID не найден. Пожалуйста, откройте Mini App заново.",
+        )
+    snapshot = await get_subscriber_status_snapshot(access_repository, telegram_user_id=user.telegram_user_id)
+    if snapshot is None:
+        return RedirectResponse(url="/verify/telegram?next=/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
     product = await get_public_product(public_repository, product_ref)
     if product is None:
@@ -179,7 +188,7 @@ async def app_checkout_submit(
             public_repository,
             product=product,
             profile=TelegramSubscriberProfile(
-                telegram_user_id=user.telegram_user_id or 0,
+                telegram_user_id=user.telegram_user_id,
                 username=user.username,
                 first_name=None,
                 last_name=None,
@@ -388,9 +397,12 @@ async def app_subscription_autorenew(
     user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
     if isinstance(user, Response):
         return user
+    telegram_user_id = _require_telegram_user_id_or_redirect(user, request)
+    if isinstance(telegram_user_id, Response):
+        return telegram_user_id
     subscription = await toggle_subscription_autorenew(
         public_repository,
-        telegram_user_id=user.telegram_user_id or 0,
+        telegram_user_id=telegram_user_id,
         subscription_id=subscription_id,
         enabled=enabled == "1",
     )
@@ -411,9 +423,12 @@ async def app_subscription_renew(
     user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
     if isinstance(user, Response):
         return user
+    telegram_user_id = _require_telegram_user_id_or_redirect(user, request)
+    if isinstance(telegram_user_id, Response):
+        return telegram_user_id
     result = await renew_subscription_checkout(
         public_repository,
-        telegram_user_id=user.telegram_user_id or 0,
+        telegram_user_id=telegram_user_id,
         subscription_id=subscription_id,
         promo_code_value=promo_code_value.strip().upper() or None,
     )
@@ -433,9 +448,12 @@ async def app_subscription_cancel(
     user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
     if isinstance(user, Response):
         return user
+    telegram_user_id = _require_telegram_user_id_or_redirect(user, request)
+    if isinstance(telegram_user_id, Response):
+        return telegram_user_id
     subscription = await cancel_subscription(
         public_repository,
-        telegram_user_id=user.telegram_user_id or 0,
+        telegram_user_id=telegram_user_id,
         subscription_id=subscription_id,
     )
     if subscription is None:
@@ -573,9 +591,12 @@ async def app_payment_cancel(
     user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
     if isinstance(user, Response):
         return user
+    telegram_user_id = _require_telegram_user_id_or_redirect(user, request)
+    if isinstance(telegram_user_id, Response):
+        return telegram_user_id
     payment = await cancel_pending_payment(
         public_repository,
-        telegram_user_id=user.telegram_user_id or 0,
+        telegram_user_id=telegram_user_id,
         payment_id=payment_id,
     )
     if payment is None:
@@ -594,9 +615,12 @@ async def app_payment_refresh(
     user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
     if isinstance(user, Response):
         return user
+    telegram_user_id = _require_telegram_user_id_or_redirect(user, request)
+    if isinstance(telegram_user_id, Response):
+        return telegram_user_id
     payment = await refresh_pending_payment(
         public_repository,
-        telegram_user_id=user.telegram_user_id or 0,
+        telegram_user_id=telegram_user_id,
         payment_id=payment_id,
     )
     if payment is None:
@@ -616,9 +640,12 @@ async def app_payment_retry(
     user, _snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, access_repository)
     if isinstance(user, Response):
         return user
+    telegram_user_id = _require_telegram_user_id_or_redirect(user, request)
+    if isinstance(telegram_user_id, Response):
+        return telegram_user_id
     result = await retry_payment_checkout(
         public_repository,
-        telegram_user_id=user.telegram_user_id or 0,
+        telegram_user_id=telegram_user_id,
         payment_id=payment_id,
         promo_code_value=promo_code_value.strip().upper() or None,
     )
@@ -718,7 +745,10 @@ async def _get_subscriber_snapshot_or_redirect(
     user = await _get_subscriber_or_redirect(request, auth_repository)
     if isinstance(user, Response):
         return user, None
-    snapshot = await get_subscriber_status_snapshot(access_repository, telegram_user_id=user.telegram_user_id or 0)
+    telegram_user_id = _require_telegram_user_id_or_redirect(user, request)
+    if isinstance(telegram_user_id, Response):
+        return telegram_user_id, None
+    snapshot = await get_subscriber_status_snapshot(access_repository, telegram_user_id=telegram_user_id)
     if snapshot is None:
         return RedirectResponse(url="/verify/telegram?next=/app/catalog", status_code=status.HTTP_303_SEE_OTHER), None
     return user, snapshot
@@ -736,6 +766,17 @@ def _build_miniapp_context(
         "miniapp_user": user,
         "miniapp_snapshot": snapshot,
     }
+
+
+def _require_telegram_user_id_or_redirect(user: User, request: Request) -> int | Response:
+    telegram_user_id = user.telegram_user_id
+    if telegram_user_id is not None:
+        return telegram_user_id
+    logger.warning("Mini App user %s has no telegram_user_id; redirecting to verification", user.id)
+    return RedirectResponse(
+        url=f"/verify/telegram?next={quote(request.url.path, safe='/')}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 # Phase 9 routes: /my, /strategy/{slug}, /auth redirect

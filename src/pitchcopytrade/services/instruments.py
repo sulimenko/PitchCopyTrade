@@ -235,6 +235,12 @@ async def _fetch_quote(ticker: str, *, settings) -> InstrumentQuote:
         response = await client.get(url, params={"symbol": ticker})
     response_body = getattr(response, "content", b"") or b""
     logger.info("Quote HTTP response: status=%s, body_length=%s", response.status_code, len(response_body))
+    if len(response_body) < 2000:
+        logger.debug(
+            "Quote response body for %s: %s",
+            ticker,
+            response_body.decode("utf-8", errors="replace")[:500],
+        )
     response.raise_for_status()
     payload = response.json()
     normalized = _normalize_provider_payload(ticker, payload, source=_provider_source(settings))
@@ -252,13 +258,6 @@ def _normalize_provider_payload(ticker: str, payload: object, *, source: str) ->
     if not isinstance(data, dict):
         logger.warning("Provider payload for %s is not a dict: %s", ticker, type(data))
         return None
-    logger.debug(
-        "Normalizing provider payload for %s: keys=%s, has_trade=%s, has_daily_bar=%s",
-        ticker,
-        list(data.keys())[:10],
-        "trade" in data,
-        "daily-bar" in data,
-    )
 
     symbol = _first_text(
         data,

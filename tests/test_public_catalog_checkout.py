@@ -541,6 +541,62 @@ def test_app_checkout_submit_creates_telegram_linked_flow(monkeypatch) -> None:
         assert "/app/payments" in response.text
 
 
+def test_app_checkout_submit_rejects_missing_telegram_id(monkeypatch) -> None:
+    _strategy, _product = _make_strategy_and_product()
+    documents = _make_documents()
+    user = User(
+        id="user-1",
+        telegram_user_id=None,
+        username="leaduser",
+        full_name="Lead User",
+        email="lead@example.com",
+        timezone="Europe/Moscow",
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_product",
+        lambda _repository, _product_id: _async_return(_product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.post(
+            "/app/checkout/momentum-ru-month",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "accepted_document_ids": [item.id for item in documents],
+                "promo_code_value": "",
+            },
+        )
+
+        assert response.status_code == 403
+        assert "Telegram ID не найден" in response.text
+
+
+def test_app_subscription_renew_redirects_missing_telegram_id() -> None:
+    user = User(id="user-1", telegram_user_id=None, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.post("/app/subscriptions/sub-1/renew", data={"promo_code_value": ""}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/verify/telegram?next=/app/subscriptions/sub-1/renew"
+
+
 def test_app_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
     _strategy, product = _make_strategy_and_product()
     product.price_rub = 0

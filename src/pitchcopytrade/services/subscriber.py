@@ -490,8 +490,10 @@ async def cancel_subscription(
 def _build_profile_from_user(user: User):
     from pitchcopytrade.services.public import TelegramSubscriberProfile
 
+    if user.telegram_user_id is None:
+        raise ValueError("Telegram ID не найден. Пожалуйста, откройте Mini App заново.")
     return TelegramSubscriberProfile(
-        telegram_user_id=user.telegram_user_id or 0,
+        telegram_user_id=user.telegram_user_id,
         username=user.username,
         first_name=None,
         last_name=None,

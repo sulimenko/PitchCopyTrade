@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import logging
 import re
 from secrets import token_hex
 
@@ -25,6 +26,8 @@ from pitchcopytrade.services.compliance import bind_consents_to_payment, record_
 from pitchcopytrade.services.promo import apply_promo_to_amount, sync_promo_redemption_counter, validate_promo_code_for_checkout
 from pitchcopytrade.services.subscriber import billing_period_label
 
+
+logger = logging.getLogger(__name__)
 
 REQUIRED_CHECKOUT_DOCUMENT_TYPES = (
     LegalDocumentType.DISCLAIMER,
@@ -391,11 +394,38 @@ async def find_user_by_email(repository: PublicRepository, email: str) -> User |
 
 
 async def upsert_telegram_subscriber(repository: PublicRepository, profile: TelegramSubscriberProfile) -> User:
-    user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
     display_name = (profile.full_name or "").strip() or " ".join(
         part for part in [profile.first_name, profile.last_name] if part
     ).strip() or None
     normalized_email = (profile.email or "").strip().lower() or None
+    user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
+    if user is not None:
+        user.username = profile.username
+        user.full_name = display_name
+        if normalized_email is not None:
+            user.email = normalized_email
+        user.timezone = profile.timezone_name
+        if user.consents is None:
+            user.consents = []
+        return user
+
+    if normalized_email is not None:
+        user = await repository.find_user_by_email(normalized_email)
+        if user is not None and user.telegram_user_id is None:
+            user.telegram_user_id = profile.telegram_user_id
+            user.username = profile.username
+            user.full_name = display_name
+            user.timezone = profile.timezone_name
+            if user.consents is None:
+                user.consents = []
+            logger.info(
+                "Linked telegram_user_id=%s to existing user %s (email=%s)",
+                profile.telegram_user_id,
+                user.id,
+                normalized_email,
+            )
+            return user
+
     if user is None:
         user = User(
             telegram_user_id=profile.telegram_user_id,

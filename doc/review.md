@@ -1,5 +1,5 @@
 # PitchCopyTrade — Current Review Gate
-> Обновлено: 2026-03-29
+> Обновлено: 2026-03-30
 > Этот файл хранит только актуальные findings и merge gate после перехода проекта на `messages` и unified author composer.
 
 ## Общий вывод
@@ -9,7 +9,7 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `248 passed`
+- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `251 passed`
 
 Открытых findings в этом gate нет.
 
@@ -222,14 +222,34 @@ Resolved:
 
 **Подробные инструкции:** `doc/task.md` → Блок P22
 
-## Gate на следующий implementation pass
+### [P23] Docker build
+Resolved:
+- multi-stage Dockerfile added;
+- runtime image no longer copies `tests/`;
+- pip install is isolated in deps stage.
 
-Следующий merge считается полностью чистым только после:
+### [P24] Quote logging
+Resolved:
+- `_fetch_quote()` now logs a bounded response body preview at debug level;
+- `_normalize_provider_payload()` logs normalized data keys at debug level;
+- `.env` and `.env.example` document `LOG_LEVEL=DEBUG` for the short quote body preview only.
 
-1. ~~фикса structured deal edit round-trip~~ → **resolved** (P1)
-2. ~~фикса preview/type detection для existing document-only messages~~ → **resolved** (P1)
-3. ~~синхронизации history table: channel vs deliver~~ → **resolved** (P2)
-4. ~~db seed contract~~ → **resolved** (P2, documented as-is)
+### [P25] Telegram checkout/auth merge
+Resolved:
+- `app.py` no longer uses `telegram_user_id or 0`;
+- checkout now rejects missing `telegram_user_id` with 403;
+- `upsert_telegram_subscriber()` now merges by email when needed;
+- migration SQL diagnostic script added.
+
+### [P26] Duplicate-user merge
+Resolved:
+- `deploy/fix_duplicate_users.sql` переносит records from duplicates to the real user;
+- `deploy/merge_duplicate_users.sql` documents the generic merge flow;
+- merge-by-email auth path is implemented and covered by regression tests.
+
+## Gate
+
+Open findings: none.
 
 Все ранее заблокированные gate items закрыты. Текущий gate: **green**.
 
