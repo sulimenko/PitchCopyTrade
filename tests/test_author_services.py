@@ -519,7 +519,7 @@ def test_build_recommendation_form_data_builds_canonical_deal() -> None:
     assert payload.deals[0]["stop_loss"] == "98"
     assert payload.kind == MessageKind.IDEA
     assert payload.status == MessageStatus.DRAFT
-    assert payload.message_type == MessageType.MIXED
+    assert payload.message_type == MessageType.DEAL
 
 
 def test_recommendation_form_values_prefers_structured_instrument_id() -> None:
@@ -571,8 +571,57 @@ def test_build_recommendation_form_data_requires_content() -> None:
         )
 
 
+def test_build_recommendation_form_data_allows_text_only_with_default_side_selected() -> None:
+    payload = build_recommendation_form_data(
+        strategy_id="strategy-1",
+        kind_value="new_idea",
+        status_value="draft",
+        title="Комментарий по рынку",
+        message_text="Свободное текстовое сообщение",
+        structured_side_value="buy",
+        author_requires_moderation=False,
+        scheduled_for="",
+        allowed_strategy_ids={"strategy-1"},
+        allowed_instrument_ids={"instrument-1"},
+        attachments=[],
+    )
+
+    assert payload.message_type == MessageType.TEXT
+    assert payload.text_body == "Свободное текстовое сообщение"
+    assert payload.deals == []
+
+
+def test_build_recommendation_form_data_allows_document_only_with_default_side_selected() -> None:
+    payload = build_recommendation_form_data(
+        strategy_id="strategy-1",
+        kind_value="new_idea",
+        status_value="draft",
+        title="OnePager",
+        document_caption="OnePager без текста",
+        structured_side_value="buy",
+        documents=[
+            {
+                "id": "doc-1",
+                "name": "onepager.pdf",
+                "type": "application/pdf",
+                "size": 128,
+                "key": "messages/msg-1/onepager.pdf",
+            }
+        ],
+        author_requires_moderation=False,
+        scheduled_for="",
+        allowed_strategy_ids={"strategy-1"},
+        allowed_instrument_ids={"instrument-1"},
+        attachments=[],
+    )
+
+    assert payload.message_type == MessageType.DOCUMENT
+    assert len(payload.documents) == 1
+    assert payload.deals == []
+
+
 def test_build_recommendation_form_data_rejects_missing_deal_fields() -> None:
-    with pytest.raises(ValueError, match="Для structured message нужны инструмент, Buy/Sell, цена и количество."):
+    with pytest.raises(ValueError, match="Для structured message нужны инструмент, цена и количество."):
         build_recommendation_form_data(
             strategy_id="strategy-1",
             kind_value="new_idea",

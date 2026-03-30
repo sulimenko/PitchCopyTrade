@@ -311,6 +311,7 @@
     const instrumentInput = document.querySelector("[data-instrument-input]");
     const instrumentIdInput = document.querySelector("[data-instrument-id]");
     const messageText = document.querySelector("[data-message-text]");
+    const documentCaption = form ? form.querySelector('[name="document_caption"]') : null;
     const documentFiles = document.querySelector("[data-document-files]");
     const structuredPrice = document.querySelector("[data-structured-price]");
     const structuredQuantity = document.querySelector("[data-structured-quantity]");
@@ -331,6 +332,8 @@
     let instruments = {{ _instrument_items | tojson }};
     const screenButtons = Array.from(document.querySelectorAll("[data-screen-button]"));
     const structuredSideRadios = Array.from(document.querySelectorAll('[name="structured_side"]'));
+    const removeDocumentInputs = Array.from(document.querySelectorAll('input[name="remove_attachment_ids"]'));
+    let previewConfirmed = false;
 
     const instrumentState = window.PCTAuthorInstrumentState || {
       items: instruments.slice(),
@@ -520,6 +523,8 @@
           }
           clearInstrumentPopup();
           syncAmount();
+          syncMessageType();
+          validateDealBlock();
         });
         instrumentPopup.appendChild(button);
       });
@@ -550,7 +555,72 @@
         ],
       });
     }
-    function syncMessageType() { if (liveType && hiddenType) hiddenType.value = liveType.textContent || hiddenType.value; }
+    function selectedSideValue() {
+      const active = structuredSideRadios.find(function (radio) { return radio.checked; });
+      return active ? String(active.value || "").trim() : "";
+    }
+    function retainedDocumentNames() {
+      const existing = Array.from(document.querySelectorAll(".author-doc-item")).flatMap(function (item) {
+        const checkbox = item.querySelector('input[name="remove_attachment_ids"]');
+        if (checkbox && checkbox.checked) return [];
+        const title = item.querySelector("strong");
+        const value = title ? String(title.textContent || "").trim() : "";
+        return value ? [value] : [];
+      });
+      const fresh = Array.from((documentFiles && documentFiles.files) || []).map(function (file) {
+        return String(file.name || "").trim();
+      }).filter(Boolean);
+      return existing.concat(fresh);
+    }
+    function hasTextContent() {
+      return Boolean(String((messageText && messageText.value) || "").trim());
+    }
+    function structuredState() {
+      const instrumentLabel = String((instrumentInput && instrumentInput.value) || "").trim();
+      const instrumentId = String((instrumentIdInput && instrumentIdInput.value) || "").trim();
+      const price = parseDecimal(structuredPrice && structuredPrice.value);
+      const quantity = parseDecimal(structuredQuantity && structuredQuantity.value);
+      const tp = parseDecimal(structuredTp && structuredTp.value);
+      const sl = parseDecimal(structuredSl && structuredSl.value);
+      const note = String((dealNote && dealNote.value) || "").trim();
+      const side = selectedSideValue();
+      const started = Boolean(instrumentLabel || instrumentId || price != null || quantity != null || tp != null || sl != null || note);
+      const complete = Boolean(instrumentId && price != null && quantity != null && side);
+      return {
+        instrumentLabel,
+        instrumentId,
+        price,
+        quantity,
+        tp,
+        sl,
+        note,
+        side,
+        started,
+        complete,
+      };
+    }
+    function hasDocumentContent() {
+      return retainedDocumentNames().length > 0;
+    }
+    function detectMessageType() {
+      const sections = [
+        hasTextContent(),
+        hasDocumentContent(),
+        structuredState().complete,
+      ].filter(Boolean).length;
+      if (sections <= 0) return "mixed";
+      if (sections === 1) {
+        if (hasTextContent()) return "text";
+        if (hasDocumentContent()) return "document";
+        return "deal";
+      }
+      return "mixed";
+    }
+    function syncMessageType() {
+      const type = detectMessageType();
+      if (liveType) liveType.textContent = type;
+      if (hiddenType) hiddenType.value = type;
+    }
     function syncAmount() {
       const price = parseDecimal(structuredPrice && structuredPrice.value);
       const quantity = parseDecimal(structuredQuantity && structuredQuantity.value);
@@ -560,7 +630,81 @@
       if (amountField) amountField.value = formatted;
       if (hiddenAmount) hiddenAmount.value = formatted;
     }
-    function validateDealBlock() { return true; }
+    function validateDealBlock() {
+      const state = structuredState();
+      const invalid = state.started && !state.complete;
+      if (instrumentInput) instrumentInput.classList.toggle("is-invalid", invalid && !state.instrumentId);
+      if (structuredPrice) structuredPrice.classList.toggle("is-invalid", invalid && state.price == null);
+      if (structuredQuantity) structuredQuantity.classList.toggle("is-invalid", invalid && state.quantity == null);
+      return !invalid;
+    }
+    function buildPreviewHtml() {
+      const sections = [];
+      const textValue = String((messageText && messageText.value) || "").trim();
+      const documents = retainedDocumentNames();
+      const deal = structuredState();
+      const amountValue = String((hiddenAmount && hiddenAmount.value) || (amountField && amountField.value) || "—").trim() || "—";
+
+      if (textValue) {
+        sections.push(
+          `<section class="author-preview-block"><h4>Описание</h4><div>${escapeHtml(textValue).replace(/\n/g, "<br>")}</div></section>`
+        );
+      }
+      if (deal.complete) {
+        const sideLabel = deal.side === "sell" ? "Продать" : "Купить";
+        const dealMeta = [
+          ["Инструмент", deal.instrumentLabel],
+          ["Действие", sideLabel],
+          ["Цена", structuredPrice && structuredPrice.value],
+          ["Количество", structuredQuantity && structuredQuantity.value],
+          ["Сумма", amountValue],
+          ["TP", structuredTp && structuredTp.value],
+          ["SL", structuredSl && structuredSl.value],
+        ]
+          .filter(function (entry) { return String(entry[1] || "").trim(); })
+          .map(function (entry) { return `<div><strong>${escapeHtml(entry[0])}:</strong> ${escapeHtml(String(entry[1]))}</div>`; })
+          .join("");
+        const noteBlock = deal.note ? `<div style="margin-top:8px;">${escapeHtml(deal.note)}</div>` : "";
+        sections.push(`<section class="author-preview-block"><h4>Structured рекомендация</h4>${dealMeta}${noteBlock}</section>`);
+      }
+      if (documents.length) {
+        const caption = String((documentCaption && documentCaption.value) || "").trim();
+        const items = documents.map(function (name) {
+          return `<li>${escapeHtml(name)}</li>`;
+        }).join("");
+        sections.push(
+          `<section class="author-preview-block"><h4>Документы</h4>${caption ? `<div style="margin-bottom:8px;">${escapeHtml(caption)}</div>` : ""}<ul style="margin:0;padding-left:18px;">${items}</ul></section>`
+        );
+      }
+      return sections.join("");
+    }
+    function openPreviewModal() {
+      if (!previewModal || !previewBody) return;
+      previewBody.innerHTML = buildPreviewHtml();
+      if (typeof previewModal.showModal === "function") {
+        previewModal.showModal();
+        return;
+      }
+      previewModal.setAttribute("open", "open");
+    }
+    function closePreviewModal() {
+      if (!previewModal) return;
+      if (typeof previewModal.close === "function" && previewModal.open) {
+        previewModal.close();
+        return;
+      }
+      previewModal.removeAttribute("open");
+    }
+    function previewValidationError() {
+      const deal = structuredState();
+      if (deal.started && !deal.complete) {
+        return "Для structured сообщения укажите инструмент, цену и количество.";
+      }
+      if (!hasTextContent() && !hasDocumentContent() && !deal.complete) {
+        return "Заполните хотя бы один блок: описание, OnePager или structured сделку.";
+      }
+      return "";
+    }
     if (structuredPrice) structuredPrice.addEventListener("input", function () { syncAmount(); validateDealBlock(); });
     if (structuredQuantity) structuredQuantity.addEventListener("input", function () { syncAmount(); validateDealBlock(); });
     if (structuredTp) structuredTp.addEventListener("input", function () { syncMessageType(); validateDealBlock(); });
@@ -591,7 +735,52 @@
       window.addEventListener("resize", positionInstrumentPopup);
     }
     structuredSideRadios.forEach(function (radio) { radio.addEventListener("change", syncMessageType); });
-    [messageText, documentFiles, instrumentInput].forEach(function (field) { if (!field) return; field.addEventListener("input", syncAmount); field.addEventListener("change", syncAmount); });
+    [messageText, documentFiles, documentCaption, instrumentInput].forEach(function (field) {
+      if (!field) return;
+      field.addEventListener("input", function () { syncAmount(); syncMessageType(); validateDealBlock(); });
+      field.addEventListener("change", function () { syncAmount(); syncMessageType(); validateDealBlock(); });
+    });
+    removeDocumentInputs.forEach(function (field) {
+      field.addEventListener("change", function () {
+        syncMessageType();
+        validateDealBlock();
+      });
+    });
+    closePreviewButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        closePreviewModal();
+      });
+    });
+    if (confirmSubmitButton && form) {
+      confirmSubmitButton.addEventListener("click", function () {
+        previewConfirmed = true;
+        closePreviewModal();
+        if (typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+          return;
+        }
+        form.submit();
+      });
+    }
+    if (form) {
+      form.addEventListener("submit", function (event) {
+        if (previewConfirmed || !previewModal || !previewBody) {
+          previewConfirmed = false;
+          return;
+        }
+        const error = previewValidationError();
+        if (error) {
+          event.preventDefault();
+          validateDealBlock();
+          window.alert(error);
+          return;
+        }
+        event.preventDefault();
+        syncAmount();
+        syncMessageType();
+        openPreviewModal();
+      });
+    }
     renderHistoryGrid();
     syncAmount();
     syncMessageType();

@@ -1,7 +1,7 @@
 {% set _composer_recommendation = composer_recommendation if composer_recommendation is defined else recommendation if recommendation is defined else None %}
 {% set _composer_default_open = composer_default_open if composer_default_open is defined else request.url.path == "/author/messages" %}
 <aside class="composer-dock {% if not _composer_default_open %}is-collapsed{% endif %}" id="composer-dock" data-composer-dock{% if _composer_default_open %} data-composer-default-open="1"{% endif %}>
-  <div class="composer-dock-header" data-composer-dock-toggle>
+  <div class="composer-dock-header" data-composer-dock-header-toggle>
     <div class="composer-dock-title">
       {% if _composer_recommendation %}
       <span class="composer-dock-mode is-edit">✎ Редактирование</span>
@@ -126,7 +126,8 @@
     if (!dock) return;
     const STORAGE_KEY = "pct-composer-dock-collapsed";
     const defaultOpen = dock.hasAttribute("data-composer-default-open");
-    const toggleButtons = Array.from(dock.querySelectorAll("[data-composer-dock-toggle]"));
+    const headerToggle = dock.querySelector("[data-composer-dock-header-toggle]");
+    const toggleButton = dock.querySelector("[data-composer-dock-toggle]");
 
     function setCollapsed(collapsed) {
       dock.classList.toggle("is-collapsed", collapsed);
@@ -148,12 +149,22 @@
       }
     }
 
-    toggleButtons.forEach(function (button) {
-      button.addEventListener("click", function (event) {
+    if (headerToggle) {
+      headerToggle.addEventListener("click", function (event) {
+        if (event.target.closest("a, button, input, select, textarea, label")) {
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         setCollapsed(!dock.classList.contains("is-collapsed"));
       });
-    });
+    }
+    if (toggleButton) {
+      toggleButton.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        setCollapsed(!dock.classList.contains("is-collapsed"));
+      });
+    }
   })();
 </script>

@@ -251,6 +251,10 @@ def test_author_editor_is_message_centric(monkeypatch) -> None:
         assert "rows=\"14\"" in response.text
         assert "rows=\"2\"" in response.text
         assert "composer-dock-frame" not in response.text
+        assert 'data-preview-modal' in response.text
+        assert 'data-preview-body' in response.text
+        assert 'data-confirm-submit' in response.text
+        assert "showModal()" in response.text
         assert 'fetch("/api/instruments"' in response.text
         assert "window.PCTAuthorInstrumentState" in response.text
 

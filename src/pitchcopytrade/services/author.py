@@ -452,13 +452,14 @@ def build_recommendation_form_data(
     if structured_deal is not None:
         parsed_deals = [structured_deal]
 
-    normalized_type = _normalize_message_type_value(type_value or message_mode or "")
-    if normalized_type not in {item.value for item in MessageType}:
-        normalized_type = _infer_message_type(
-            has_text=normalized_message_text is not None,
-            has_documents=bool(parsed_documents or parsed_attachments),
-            has_deal=bool(parsed_deals),
-        )
+    has_text_content = normalized_message_text is not None
+    has_document_content = bool(parsed_documents or parsed_attachments)
+    has_deal_content = bool(parsed_deals)
+    normalized_type = _infer_message_type(
+        has_text=has_text_content,
+        has_documents=has_document_content,
+        has_deal=has_deal_content,
+    )
     if normalized_type not in {item.value for item in MessageType}:
         raise ValueError("Некорректный type сообщения.")
 
@@ -862,7 +863,6 @@ def _build_structured_deal(
     has_structured_input = any(
         [
             instrument_id,
-            side,
             price is not None,
             quantity is not None,
             take_profit is not None,
@@ -872,11 +872,11 @@ def _build_structured_deal(
     )
     if selected_instrument is None:
         if has_structured_input:
-            raise ValueError("Для structured message нужны инструмент, Buy/Sell, цена и количество.")
+            raise ValueError("Для structured message нужны инструмент, цена и количество.")
         return None
     if not instrument_id or not side or price is None or quantity is None:
         if has_structured_input:
-            raise ValueError("Для structured message нужны инструмент, Buy/Sell, цена и количество.")
+            raise ValueError("Для structured message нужны инструмент, цена и количество.")
         return None
     amount = price * quantity
     targets = [value for value in (_format_decimal(take_profit),) if value]

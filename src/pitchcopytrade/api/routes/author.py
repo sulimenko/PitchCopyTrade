@@ -1065,6 +1065,8 @@ def _build_inline_recommendation_feedback(error_text: str) -> dict[str, object]:
 
 
 def _friendly_recommendation_error_message(error_text: str) -> str:
+    if error_text == "Для structured message нужны инструмент, цена и количество.":
+        return "Для structured сообщения укажите инструмент, цену и количество."
     if error_text == "Для structured message нужен инструмент.":
         return "Выберите инструмент для structured сообщения."
     if error_text == "Для structured message нужно выбрать Buy или Sell.":
@@ -1073,6 +1075,8 @@ def _friendly_recommendation_error_message(error_text: str) -> str:
         return "Укажите цену для structured сообщения."
     if error_text == "Для structured message нужно количество.":
         return "Укажите количество для structured сообщения."
+    if error_text == "Для mixed message нужен хотя бы один блок контента.":
+        return "Заполните хотя бы один блок: описание, OnePager или structured сделку."
     if error_text == "Для text message нужен текст сообщения.":
         return "Введите текст сообщения."
     if error_text in {"Для document message нужен PDF или JPG.", "Для document message нужен документ."}:
