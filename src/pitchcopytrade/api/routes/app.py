@@ -629,6 +629,27 @@ async def app_help(
     auth_repository: AuthRepository = Depends(get_auth_repository),
     repository: AccessRepository = Depends(get_access_repository),
 ) -> Response:
+    journey_id = get_or_create_journey_id(request)
+    entry_marker = get_entry_marker(request) or "legacy_help"
+    tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
+    auth_cookie_present = bool(request.cookies.get(get_settings().auth.session_cookie_name))
+    if not tg_token and not auth_cookie_present:
+        log_request_trace(
+            logger,
+            request,
+            stage="app_help_legacy_entry",
+            journey_id=journey_id,
+            surface="bootstrap",
+            entry_marker=entry_marker,
+            entry_id=journey_id,
+            entry_surface="bootstrap",
+            first_html_surface="miniapp_bootstrap",
+            requested_next="/app/help",
+            legacy_entry=True,
+            block_reason="legacy_entry",
+        )
+        response = RedirectResponse(url="/app?entry=legacy_help", status_code=status.HTTP_303_SEE_OTHER)
+        return attach_journey_cookie(response, journey_id)
     user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
     if isinstance(user, Response):
         return user

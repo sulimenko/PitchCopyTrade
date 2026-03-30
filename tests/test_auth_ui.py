@@ -295,7 +295,8 @@ def test_app_requires_session_cookie() -> None:
         response = client.get("/app", follow_redirects=False)
 
         assert response.status_code == 200
-        assert "Открываем каталог стратегий" in response.text
+        assert "Запустите Mini App из бота" in response.text
+        assert "Открыть бота" in response.text
 
 
 def test_app_redirects_tg_fallback_user_to_catalog() -> None:
@@ -669,8 +670,8 @@ def test_app_home_renders_bootstrap_page() -> None:
         response = client.get("/app")
 
         assert response.status_code == 200
-        assert "Открываем каталог стратегий" in response.text
-        assert "Открыть Telegram" in response.text
+        assert "Запустите Mini App из бота" in response.text
+        assert "Открыть бота" in response.text
 
 
 def test_app_home_redirects_to_catalog_with_telegram_cookie() -> None:
@@ -696,12 +697,22 @@ def test_verify_telegram_page_renders() -> None:
 
         assert response.status_code == 200
         assert "Подтверждение через" in response.text
-        assert "После подтверждения откроется каталог стратегий" in response.text
+        assert "Похоже, Telegram-профиль еще не подтвержден" in response.text
         assert "Открыть бота" in response.text
         assert "/app/catalog" in response.text
         assert "requested_next" not in response.text
         assert "/app/help" not in response.text
-        assert "Открыть Mini App" in response.text
+        assert "Вернуться к запуску" in response.text
+
+
+def test_legacy_help_entry_redirects_to_canonical_app_entry() -> None:
+    repository = FakeAuthRepository()
+
+    with _build_client(repository) as client:
+        response = client.get("/app/help", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app?entry=legacy_help"
 
 
 def test_tg_webapp_auth_sets_cookie_and_returns_redirect(monkeypatch) -> None:
@@ -761,6 +772,93 @@ def test_tg_webapp_auth_redirects_to_canonical_catalog(monkeypatch) -> None:
         assert response.json()["redirect_url"] == "/app/catalog"
         assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
         assert "pct_journey_id=" in response.headers["set-cookie"]
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_rejects_empty_init_data(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": "", "next": "/app/catalog"})
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "empty_init_data"
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_rejects_invalid_hash(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    auth_date = int(datetime.now(timezone.utc).timestamp())
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+    init_data = init_data.replace("hash=", "hash=deadbeef")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": init_data, "next": "/app/catalog"})
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "invalid_hash"
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_rejects_expired_init_data(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    auth_date = int((datetime.now(timezone.utc).timestamp()) - 4000)
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": init_data, "next": "/app/catalog"})
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "expired_init_data"
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_logs_success(monkeypatch, capsys) -> None:
+    repository = FakeAuthRepository()
+    public_repository = FakePublicRepository()
+    auth_date = int(datetime.now(timezone.utc).timestamp())
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository, public_repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": init_data, "next": "/app/catalog"})
+
+        assert response.status_code == 200
+        assert response.json()["redirect_url"] == "/app/catalog"
+    captured = capsys.readouterr()
+    assert "tg_webapp_auth_success" in captured.out
+    assert "resolved_telegram_user_id=12345" in captured.out
     reset_settings_cache()
 
 

@@ -249,7 +249,7 @@ async def telegram_auth_login(
 @router.post("/tg-webapp/auth", include_in_schema=False)
 async def telegram_webapp_auth(
     request: Request,
-    init_data: str = Form(...),
+    init_data: str = Form(""),
     next: str = Form("/app/catalog"),  # Z5: Default to catalog for better UX
     timezone_name: str = Form("Europe/Moscow"),
     auth_repository: AuthRepository = Depends(get_auth_repository),
@@ -299,9 +299,13 @@ async def telegram_webapp_auth(
             entry_surface="bootstrap",
             first_html_surface="miniapp_entry",
             requested_next=_sanitize_subscriber_next_path(next),
-            block_reason="auth_failure",
+            block_reason=getattr(exc, "code", "auth_failure"),
+            block_detail=str(exc),
         )
-        return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_401_UNAUTHORIZED)
+        return JSONResponse(
+            {"detail": str(exc), "error_code": getattr(exc, "code", "auth_failure")},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
 
     user = await upsert_telegram_subscriber(
         repository,
@@ -314,6 +318,21 @@ async def telegram_webapp_auth(
         ),
     )
     await repository.commit()
+    log_request_trace(
+        logger,
+        request,
+        stage="tg_webapp_auth_success",
+        journey_id=journey_id,
+        surface="bootstrap",
+        auth_user_id=auth_user_id,
+        telegram_user_id=profile.telegram_user_id,
+        entry_marker=next_entry_marker,
+        entry_id=journey_id,
+        entry_surface="bootstrap",
+        first_html_surface="app/catalog",
+        requested_next=_sanitize_subscriber_next_path(next),
+        rendered_href=_sanitize_subscriber_next_path(next),
+    )
 
     response = JSONResponse({"redirect_url": _sanitize_subscriber_next_path(next)})
     response.set_cookie(
@@ -326,6 +345,42 @@ async def telegram_webapp_auth(
         path="/",
     )
     return attach_journey_cookie(response, journey_id)
+
+
+@router.post("/tg-webapp/bootstrap-trace", include_in_schema=False)
+async def telegram_webapp_bootstrap_trace(
+    request: Request,
+    reason: str = Form(...),
+    webapp_context_present: str = Form(""),
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+) -> Response:
+    journey_id = get_or_create_journey_id(request)
+    auth_user_id = None
+    telegram_user_id = None
+    token = request.cookies.get(get_settings().auth.session_cookie_name)
+    if token:
+        auth_user = await get_user_from_session_token(auth_repository, token)
+        if auth_user is not None:
+            auth_user_id = auth_user.id
+            telegram_user_id = auth_user.telegram_user_id
+    log_request_trace(
+        logger,
+        request,
+        stage="tg_webapp_bootstrap_trace",
+        journey_id=journey_id,
+        surface="bootstrap",
+        auth_user_id=auth_user_id,
+        telegram_user_id=telegram_user_id,
+        entry_marker=get_entry_marker(request) or "bot_start",
+        entry_id=journey_id,
+        entry_surface="bootstrap",
+        first_html_surface="miniapp_entry",
+        requested_next="/app/catalog",
+        block_reason=reason.strip().lower() or "bootstrap_trace",
+        rendered_href=reason.strip().lower() or "-",
+        webapp_context_present=webapp_context_present.strip().lower() in {"1", "true", "yes"},
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/app", response_class=HTMLResponse)

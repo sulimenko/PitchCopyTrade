@@ -65,11 +65,14 @@ def log_request_trace(
     checkout_surface: str | None = None,
     telegram_intended: bool | None = None,
     block_reason: str | None = None,
+    block_detail: str | None = None,
     entry_marker: str | None = None,
     entry_id: str | None = None,
     entry_surface: str | None = None,
     first_html_surface: str | None = None,
     requested_next: str | None = None,
+    webapp_context_present: bool | None = None,
+    legacy_entry: bool | None = None,
 ) -> None:
     settings = get_settings()
     telegram_cookie_name = f"{settings.auth.session_cookie_name}_tg"
@@ -78,7 +81,7 @@ def log_request_trace(
     if auth_cookie_present is None:
         auth_cookie_present = bool(request.cookies.get(settings.auth.session_cookie_name))
     logger.info(
-        "%s trace journey_id=%s surface=%s classified_surface=%s path=%s query=%s entry_marker=%s entry_id=%s entry_surface=%s first_html_surface=%s requested_next=%s referer=%s origin=%s user_agent=%s sec_fetch_site=%s sec_fetch_mode=%s telegram_cookie_present=%s auth_cookie_present=%s resolved_user_id=%s resolved_telegram_user_id=%s rendered_href=%s checkout_surface=%s telegram_intended=%s block_reason=%s",
+        "%s trace journey_id=%s surface=%s classified_surface=%s path=%s query=%s entry_marker=%s entry_id=%s entry_surface=%s first_html_surface=%s requested_next=%s webapp_context_present=%s legacy_entry=%s referer=%s origin=%s user_agent=%s sec_fetch_site=%s sec_fetch_mode=%s telegram_cookie_present=%s auth_cookie_present=%s resolved_user_id=%s resolved_telegram_user_id=%s rendered_href=%s checkout_surface=%s telegram_intended=%s block_reason=%s block_detail=%s",
         stage,
         journey_id,
         surface or "-",
@@ -90,6 +93,8 @@ def log_request_trace(
         entry_surface or "-",
         first_html_surface or "-",
         requested_next or "-",
+        webapp_context_present if webapp_context_present is not None else "-",
+        legacy_entry if legacy_entry is not None else "-",
         request.headers.get("referer") or "-",
         request.headers.get("origin") or "-",
         request.headers.get("user-agent") or "-",
@@ -103,4 +108,5 @@ def log_request_trace(
         checkout_surface or "-",
         telegram_intended if telegram_intended is not None else "-",
         block_reason or "-",
+        block_detail or "-",
     )

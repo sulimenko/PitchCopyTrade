@@ -7410,3 +7410,268 @@ Public checkout route path=/checkout/sl auth_telegram_user_id=None checkout_emai
 - tests run + results
 - residual risks
 ```
+
+---
+
+## P33 — Mini App bootstrap failure: current fallback screen hides the real failure reason
+
+> **Симптом:** В Telegram Mini App пользователь видит bootstrap screen с логотипом `PC`, подписью `Открываем каталог стратегий` и fallback-кнопкой вместо автоматического перехода в каталог.
+>
+> Это не verify/documentation screen и не обязательно старая версия. Это current bootstrap fallback из:
+> - [app/miniapp_entry.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/app/miniapp_entry.html)
+>
+> Экран появляется, если:
+> 1. `window.Telegram.WebApp.initData` отсутствует;
+> 2. `POST /tg-webapp/auth` вернул non-200;
+> 3. `POST /tg-webapp/auth` вернул non-JSON;
+> 4. `fetch` завершился transport error.
+
+### Почему текущей диагностики недостаточно
+
+Сейчас backend уже пишет:
+- `stage=tg_webapp_auth_entry`
+- `stage=tg_webapp_auth_failed`
+
+Но в failure log не фиксируется точный `detail` (`Empty init data`, `Missing hash`, `Invalid hash`, `Expired init data`, `Missing user payload`, `Invalid user payload`).
+
+Также client-side bootstrap fallback не различает:
+- нет `Telegram.WebApp`
+- есть `WebApp`, но нет `initData`
+- HTTP 401 от `/tg-webapp/auth`
+- non-JSON response
+- fetch/network error
+
+В итоге на production видно только “Mini App не открылся”, но не видно, это:
+- bad initData,
+- неверный bot token / hash mismatch,
+- истекший auth window,
+- reverse proxy / cookie / transport problem,
+- или user открыл `/app` вне настоящего Telegram WebApp context.
+
+### Что должен сделать worker
+
+#### P33.1 — Сделать backend failure observable `[x]`
+
+- [x] **P33.1.1** В `tg_webapp_auth_failed` логировать точный error detail из `TelegramWebAppAuthError`
+- [x] **P33.1.2** Различать коды причин:
+  - `empty_init_data`
+  - `missing_hash`
+  - `invalid_hash`
+  - `invalid_auth_date`
+  - `expired_init_data`
+  - `missing_user_payload`
+  - `invalid_user_payload`
+- [x] **P33.1.3** В success path логировать `tg_webapp_auth_success` с `resolved_telegram_user_id`
+
+#### P33.2 — Сделать client-side fallback observable `[x]`
+
+- [x] **P33.2.1** Различать на bootstrap screen:
+  - no `window.Telegram`
+  - no `WebApp`
+  - no `initData`
+  - auth HTTP failure
+  - auth non-JSON
+  - fetch/network error
+- [x] **P33.2.2** Отправлять lightweight trace на backend или логировать reason в query/endpoint-safe форме
+- [x] **P33.2.3** Не показывать пользователю сырые технические ошибки, но лог должен содержать machine-readable reason
+
+#### P33.3 — Production grep plan `[x]`
+
+- [x] **P33.3.1** Worker должен дать точные grep patterns для боевого сервера:
+  - `app_home_entry`
+  - `tg_webapp_auth_entry`
+  - `tg_webapp_auth_failed`
+  - `tg_webapp_auth_success`
+- [x] **P33.3.2** По одному `journey_id` должна собираться вся цепочка:
+  - first HTML surface
+  - initData/auth attempt
+  - exact failure reason
+  - fallback rendered
+
+#### P33.4 — Regression tests `[x]`
+
+- [x] **P33.4.1** Test: empty init data -> precise failure code
+- [x] **P33.4.2** Test: invalid hash -> precise failure code
+- [x] **P33.4.3** Test: expired init data -> precise failure code
+- [x] **P33.4.4** Test: success path logs `tg_webapp_auth_success`
+
+### Acceptance P33
+
+1. По production logs можно отличить `no initData` от `invalid hash` и от transport failure
+2. Bootstrap fallback больше не является “черным ящиком”
+3. Один `journey_id` позволяет понять, почему пользователь не дошел до `/app/catalog`
+
+### Worker Prompt — Mini App Bootstrap Fallback Needs Real Error Reasons
+
+```text
+Ты не чинишь сразу весь Mini App flow. Сначала делаешь нормальную observability на bootstrap failure.
+
+Симптом:
+- user в Telegram видит экран с `PC`, `Открываем каталог стратегий` и fallback button;
+- catalog не открывается автоматически.
+
+Это current bootstrap fallback из `app/miniapp_entry.html`, а не старая verify page.
+
+Что нужно сделать:
+1. на backend логировать точную причину `tg_webapp_auth_failed`;
+2. на client side различать no WebApp / no initData / HTTP failure / non-JSON / fetch error;
+3. дать production grep plan по `journey_id`;
+4. не показывать пользователю raw traceback, но сделать failure machine-readable.
+
+Что нельзя делать:
+- считать “Mini App не работает” достаточным диагнозом;
+- оставлять один общий `auth_failure` без detail;
+- смешивать verify-screen проблему и bootstrap-auth проблему.
+
+Финальный отчет:
+- root cause classes
+- changed files
+- tests run + results
+- grep plan for production
+- residual risks
+```
+
+---
+
+## P34 — False Mini App entrypoints: plain links to `/miniapp` and stale `/app/help` entries do not provide Telegram `initData`
+
+> **Новый подтвержденный production RCA (2026-03-30):**
+>
+> Для journey `2f4eb3af28ac1801` и `c6b66714daa3944b` в логах есть:
+> - `GET /miniapp -> 303 /app?entry=miniapp_bootstrap`
+> - `GET /app?entry=miniapp_bootstrap -> first_html_surface=miniapp_entry block_reason=no_telegram_cookie`
+> - repeated `GET /app/help -> 303 /verify/telegram?...requested_next=/app/help`
+> - **нет ни одного** `tg_webapp_auth_entry`
+> - **нет ни одного** `tg_webapp_auth_failed`
+> - **нет ни одного** `tg_webapp_auth_success`
+>
+> Это означает: bootstrap даже не дошел до server-side auth attempt.
+
+### Root cause
+
+Сейчас в системе есть entrypoints, которые визуально выглядят как “открыть Mini App”, но технически не являются настоящим Telegram WebApp launch:
+
+1. plain site link на `/miniapp`
+2. stale/external entry на `/app/help`
+
+Критичный нюанс:
+- `Telegram.WebApp.initData` приходит только когда страница открыта именно как Telegram **WebApp launch**
+- обычный `href="/miniapp"` внутри сайта или Telegram in-app browser **не может сам по себе создать `initData`**
+- поэтому пользователь может видеть Telegram UI shell, но bootstrap JS все равно не получает `initData`
+- в таком случае `app/miniapp_entry.html` сразу уходит в fallback и не вызывает `/tg-webapp/auth`
+
+Иными словами:
+- `/miniapp` как обычная ссылка — это не настоящий Mini App launch;
+- verify screen сейчас предлагает действие, которое не может гарантировать WebApp context;
+- прямые/stale entrypoints на `/app/help` тоже обходят canonical bootstrap и уводят пользователя в verify loop.
+
+### Что уже доказано логами
+
+1. Для проблемных journey нет server log `tg_webapp_auth_entry`
+   - значит JS не отправил `POST /tg-webapp/auth`
+2. Для тех же journey repeatedly открывается `/app/help` без cookies и без referer-а
+   - это похоже на внешний/stale Telegram entrypoint, а не на in-app navigation
+3. После verify user уходит в public `/catalog` и дальше в public `/checkout`
+   - отсюда и новые users без `telegram_user_id`
+
+### Архитектурное решение
+
+Нужно различать два принципиально разных действия:
+
+1. **Open bot / request real WebApp launch**
+   - только это гарантирует `initData`
+2. **Open plain website page**
+   - это не Mini App launch и не должно обещать пользователю автоматическую Telegram auth
+
+Следовательно:
+- нельзя продолжать называть plain `/miniapp` link “Открыть Mini App” без оговорок;
+- verify/recovery screens не должны обещать, что обычный href сам создаст Telegram context;
+- stale `/app/help` entrypoints должны быть удалены, перекинуты на canonical `/app`, либо явно marked as invalid legacy entry.
+
+### Что должен сделать worker
+
+#### P34.1 — Убрать ложные Mini App CTA `[x]`
+
+- [x] **P34.1.1** Проверить все места, где пользователю предлагается “Открыть Mini App”
+- [x] **P34.1.2** Если CTA является обычным `href`, worker должен:
+  - либо заменить его на “Открыть бота”
+  - либо явно обозначить как recovery path, а не real WebApp launch
+- [x] **P34.1.3** Verify screen не должен обещать, что обычный `/miniapp` link автоматически подтвердит Telegram-профиль
+
+#### P34.2 — Закрыть stale `/app/help` external entry `[x]`
+
+- [x] **P34.2.1** Найти все реальные внешние entrypoints на `/app/help`
+- [x] **P34.2.2** Проверить:
+  - старые bot messages
+  - pinned messages
+  - BotFather menu button / configured WebApp URL
+  - help command flows
+  - any share links
+- [x] **P34.2.3** Убрать `/app/help` как first-touch client entrypoint
+- [x] **P34.2.4** Если legacy `/app/help` entry еще какое-то время существует, он должен redirect-иться в canonical `/app` без verify loop semantics
+
+#### P34.3 — Разделить “real WebApp launch” и “site recovery link” `[x]`
+
+- [x] **P34.3.1** В docs/UI явно различать:
+  - Telegram WebApp launch from bot
+  - plain web link
+- [x] **P34.3.2** Если user открыл plain `/miniapp` link без `initData`, экран должен честно говорить:
+  - “Откройте Mini App из бота”
+  - а не создавать впечатление, что текущий URL и есть полноценный Mini App launch
+- [x] **P34.3.3** Bootstrap/fallback copy должен быть согласован с этим contract
+
+#### P34.4 — Observability `[x]`
+
+- [x] **P34.4.1** Логировать `webapp_context_present=True|False`
+- [x] **P34.4.2** Если `window.Telegram.WebApp` есть, но `initData` пустой, логировать отдельный reason `no_init_data`
+- [x] **P34.4.3** Для `/app/help` логировать `legacy_entry=true`, если request пришел без valid bootstrap context
+
+#### P34.5 — Acceptance / tests `[x]`
+
+- [x] **P34.5.1** Test: verify/recovery CTA no longer falsely implies a real WebApp launch
+- [x] **P34.5.2** Test: legacy `/app/help` external open redirects into canonical flow
+- [x] **P34.5.3** Test: plain `/miniapp` open without initData produces explicit recovery UX, not misleading “Mini App opened” semantics
+
+### Acceptance P34
+
+1. Пользователь больше не вводится в заблуждение обычной ссылкой `/miniapp`
+2. Внешние/stale entrypoints на `/app/help` больше не ломают onboarding
+3. Логи четко различают:
+   - real WebApp launch
+   - plain browser open
+   - legacy `/app/help` entry
+
+### Worker Prompt — Plain `/miniapp` Is Not A Real WebApp Launch
+
+```text
+Ты закрываешь архитектурную проблему ложных Mini App entrypoints.
+
+Что уже доказано production logs:
+- user repeatedly открывает `/miniapp` и `/app/help`;
+- для journey нет `tg_webapp_auth_entry`;
+- значит real WebApp auth attempt даже не стартует;
+- user потом уходит в public `/catalog` -> `/checkout`, и создается user без `telegram_user_id`.
+
+Root cause:
+- plain `/miniapp` link не является настоящим Telegram WebApp launch;
+- stale `/app/help` entries тоже обходят canonical bootstrap;
+- UI сейчас обещает больше, чем реально может сделать обычный href.
+
+Что нужно сделать:
+1. убрать misleading CTA “Открыть Mini App” там, где это всего лишь обычная ссылка;
+2. найти и закрыть внешние/stale entrypoints на `/app/help`;
+3. разделить recovery link и real WebApp launch в UI/copy;
+4. добавить observability, чтобы было видно, был ли у request настоящий WebApp context.
+
+Что нельзя делать:
+- считать `/miniapp` обычной ссылкой достаточным эквивалентом Telegram WebApp launch;
+- оставлять `/app/help` внешней точкой входа для клиента;
+- чинить только checkout, не исправив входной contract.
+
+Финальный отчет:
+- root cause
+- list of stale/false entrypoints
+- changed files
+- tests run + results
+- operational follow-ups outside repo (if any)
+```

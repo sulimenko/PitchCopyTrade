@@ -9,7 +9,10 @@ from urllib.parse import parse_qsl
 
 
 class TelegramWebAppAuthError(ValueError):
-    pass
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
 
 
 @dataclass(slots=True)
@@ -29,26 +32,29 @@ def validate_telegram_webapp_init_data(
     now: datetime | None = None,
 ) -> dict[str, str]:
     if not init_data.strip():
-        raise TelegramWebAppAuthError("Empty init data")
+        raise TelegramWebAppAuthError("empty_init_data", "Empty init data")
 
     items = dict(parse_qsl(init_data, keep_blank_values=True))
     received_hash = items.pop("hash", None)
     items.pop("signature", None)
     if not received_hash:
-        raise TelegramWebAppAuthError("Missing hash")
+        raise TelegramWebAppAuthError("missing_hash", "Missing hash")
 
     data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(items.items()))
     secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
     expected_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected_hash, received_hash):
-        raise TelegramWebAppAuthError("Invalid hash")
+        raise TelegramWebAppAuthError("invalid_hash", "Invalid hash")
 
-    auth_date = int(items.get("auth_date", "0"))
+    try:
+        auth_date = int(items.get("auth_date", "0"))
+    except (TypeError, ValueError):
+        raise TelegramWebAppAuthError("invalid_auth_date", "Invalid auth date")
     if auth_date <= 0:
-        raise TelegramWebAppAuthError("Invalid auth date")
+        raise TelegramWebAppAuthError("invalid_auth_date", "Invalid auth date")
     reference_now = now or datetime.now(timezone.utc)
     if int(reference_now.timestamp()) - auth_date > max_age_seconds:
-        raise TelegramWebAppAuthError("Expired init data")
+        raise TelegramWebAppAuthError("expired_init_data", "Expired init data")
 
     return items
 
@@ -56,13 +62,16 @@ def validate_telegram_webapp_init_data(
 def extract_telegram_webapp_profile(data: dict[str, str]) -> TelegramWebAppProfile:
     raw_user = data.get("user")
     if not raw_user:
-        raise TelegramWebAppAuthError("Missing user payload")
+        raise TelegramWebAppAuthError("missing_user_payload", "Missing user payload")
     try:
         user_payload = json.loads(raw_user)
     except json.JSONDecodeError as exc:
-        raise TelegramWebAppAuthError("Invalid user payload") from exc
+        raise TelegramWebAppAuthError("invalid_user_payload", "Invalid user payload") from exc
 
-    telegram_user_id = int(user_payload["id"])
+    try:
+        telegram_user_id = int(user_payload["id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise TelegramWebAppAuthError("invalid_user_payload", "Invalid user payload") from exc
     return TelegramWebAppProfile(
         telegram_user_id=telegram_user_id,
         username=user_payload.get("username"),

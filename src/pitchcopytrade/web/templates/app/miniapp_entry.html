@@ -19,15 +19,35 @@
 <body>
 <div class="entry-shell">
   <div class="entry-logo">PC</div>
-  <div class="entry-sub">Открываем каталог стратегий</div>
+  <div class="entry-sub">Запустите Mini App из бота</div>
   <div id="spinner" class="entry-spinner"></div>
   <div id="fallback" class="entry-fallback">
-    <a class="entry-btn" href="{{ bot_url }}">Открыть Telegram</a>
+    <a class="entry-btn" href="{{ bot_url }}">Открыть бота</a>
   </div>
 </div>
 <script>
 (function () {
   var webApp = window.Telegram && window.Telegram.WebApp;
+
+  function sendTrace(reason) {
+    try {
+      var body = new URLSearchParams();
+      body.set("reason", reason);
+      body.set("webapp_context_present", webApp ? "1" : "0");
+      body.set("entry_marker", "bot_start");
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/tg-webapp/bootstrap-trace", body);
+        return;
+      }
+      fetch("/tg-webapp/bootstrap-trace", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        credentials: "same-origin",
+        keepalive: true,
+        body: body.toString()
+      }).catch(function () {});
+    } catch (e) {}
+  }
 
   function showFallback() {
     document.getElementById("spinner").style.display = "none";
@@ -66,8 +86,18 @@
         }
         window.location.href = redirectUrl;
       })
-      .catch(showFallback);
+      .catch(function (error) {
+        var reason = "fetch_network_error";
+        if (error && error.message && error.message.indexOf("HTTP") >= 0) {
+          reason = "auth_http_failure";
+        } else if (error && error.message && error.message.indexOf("non-JSON") >= 0) {
+          reason = "auth_non_json";
+        }
+        sendTrace(reason);
+        showFallback();
+      });
   } else {
+    sendTrace(webApp ? "no_init_data" : "no_webapp");
     showFallback();
   }
 })();

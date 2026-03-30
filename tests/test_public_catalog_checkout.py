@@ -168,8 +168,8 @@ def test_app_renders_bootstrap_page() -> None:
         response = client.get("/app?entry=bot_start")
 
         assert response.status_code == 200
-        assert "Открываем каталог стратегий" in response.text
-        assert "Открыть Telegram" in response.text
+        assert "Запустите Mini App из бота" in response.text
+        assert "Открыть бота" in response.text
         assert "pct_journey_id=" in response.headers["set-cookie"]
 
 
