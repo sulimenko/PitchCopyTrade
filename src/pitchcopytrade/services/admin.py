@@ -30,6 +30,7 @@ from pitchcopytrade.auth.session import build_staff_invite_bot_link, build_staff
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.email_transport import send_smtp_email
 from pitchcopytrade.services.promo import sync_promo_redemption_counter
 
 logger = logging.getLogger(__name__)
@@ -1594,41 +1595,7 @@ async def _send_admin_oversight_email(
 
 
 async def _send_email_message(*, to_email: str | None, subject: str, body: str) -> tuple[bool, str | None]:
-    if not to_email:
-        return False, "email not set"
-    settings = get_settings()
-    smtp_password = settings.notifications.smtp_password.get_secret_value().strip()
-    if not smtp_password or smtp_password.startswith("__FILL_ME__"):
-        return False, "smtp is not configured"
-    try:
-        import asyncio
-        import aiosmtplib
-        from email.message import EmailMessage
-
-        message = EmailMessage()
-        message["From"] = f"{settings.notifications.smtp_from_name} <{settings.notifications.smtp_from}>"
-        message["To"] = to_email
-        message["Subject"] = subject
-        message.set_content(body)
-        # Y2: Add timeout to prevent hanging on unresponsive SMTP servers
-        await asyncio.wait_for(
-            aiosmtplib.send(
-                message,
-                hostname=settings.notifications.smtp_host,
-                port=settings.notifications.smtp_port,
-                use_tls=settings.notifications.smtp_ssl,
-                username=settings.notifications.smtp_user,
-                password=smtp_password,
-            ),
-            timeout=10.0,
-        )
-        return True, None
-    except asyncio.TimeoutError:
-        logger.warning("SMTP timeout for %s", to_email)
-        return False, "smtp timeout"
-    except Exception as exc:
-        logger.warning("email delivery failed for %s: %s", to_email, exc)
-        return False, str(exc)
+    return await send_smtp_email(to_email=to_email, subject=subject, body=body)
 
 
 async def toggle_admin_author(session: AsyncSession | None, author_id: str) -> AuthorProfile:

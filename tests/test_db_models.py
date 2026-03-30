@@ -30,6 +30,7 @@ def test_metadata_contains_required_foundation_tables() -> None:
         "legal_documents",
         "user_consents",
         "audit_events",
+        "notification_log",
     }
 
     assert expected_tables.issubset(Base.metadata.tables.keys())

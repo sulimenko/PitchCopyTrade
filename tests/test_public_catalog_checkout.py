@@ -226,6 +226,8 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
         assert "/app/payments" in response.text
         assert "/tg-webapp/auth" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
+        assert f"/app/checkout/{strategy.subscription_products[0].slug}" in response.text
+        assert f'href="/checkout/{strategy.subscription_products[0].slug}"' not in response.text
 
 
 def test_strategy_detail_renders_products(monkeypatch) -> None:
@@ -274,6 +276,7 @@ def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
 
         assert response.status_code == 200
         assert f"/app/checkout/{product.slug}" in response.text
+        assert f'href="/checkout/{product.slug}"' not in response.text
         assert "Короткий тезис" in response.text
         assert "Выбрать подписку" in response.text
 
@@ -415,6 +418,67 @@ def test_checkout_submit_creates_stub_flow(monkeypatch) -> None:
         assert response.status_code == 201
         assert "Заявка создана" in response.text
         assert "MANUAL-MOMENTUM-ABCD1234" in response.text
+
+
+def test_checkout_submit_links_cookie_telegram_user_id(monkeypatch) -> None:
+    _strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    user = User(
+        id="user-1",
+        telegram_user_id=12345,
+        username="leaduser",
+        full_name="Lead User",
+        email="lead@example.com",
+        timezone="Europe/Moscow",
+    )
+    captured = {}
+    subscription = Subscription(
+        id="subscription-1",
+        user_id="user-1",
+        product_id="product-1",
+        payment_id=None,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=True,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+
+    async def capture_checkout(_repository, product, request):
+        captured["request"] = request
+        return SimpleNamespace(user=user, payment=None, subscription=subscription, required_documents=documents)
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.public.create_stub_checkout", capture_checkout)
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.post(
+            "/checkout/momentum-ru-month",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "lead_source_name": "ads",
+                "accepted_document_ids": [item.id for item in documents],
+            },
+        )
+
+        assert response.status_code == 201
+        assert captured["request"].telegram_user_id == 12345
 
 
 def test_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:

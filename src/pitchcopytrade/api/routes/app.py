@@ -183,6 +183,15 @@ async def app_checkout_submit(
     product_title = product.title
     documents = await list_active_checkout_documents(public_repository)
     checkout_ready = len(documents) == 4
+    checkout_email = email.strip().lower() or user.email
+    logger.info(
+        "Mini App checkout route path=%s auth_user_id=%s auth_telegram_user_id=%s checkout_email=%s product_ref=%s",
+        request.url.path,
+        user.id,
+        user.telegram_user_id,
+        checkout_email,
+        product_ref,
+    )
     try:
         result = await create_telegram_stub_checkout(
             public_repository,
@@ -193,7 +202,7 @@ async def app_checkout_submit(
                 first_name=None,
                 last_name=None,
                 full_name=full_name.strip() or user.full_name,
-                email=email.strip().lower() or user.email,
+                email=checkout_email,
                 timezone_name=timezone_name.strip() or user.timezone or "Europe/Moscow",
                 lead_source_name="telegram_miniapp",
             ),
@@ -213,7 +222,7 @@ async def app_checkout_submit(
                 "error": str(exc),
                 "form_values": {
                     "full_name": full_name,
-                    "email": email,
+                    "email": checkout_email or "",
                     "timezone_name": timezone_name,
                     "lead_source_name": "telegram_miniapp",
                     "promo_code_value": promo_code_value,
@@ -237,7 +246,7 @@ async def app_checkout_submit(
                 "error": "Не удалось создать заявку на оплату. Попробуйте еще раз.",
                 "form_values": {
                     "full_name": full_name,
-                    "email": email,
+                    "email": checkout_email or "",
                     "timezone_name": timezone_name,
                     "lead_source_name": "telegram_miniapp",
                     "promo_code_value": promo_code_value,

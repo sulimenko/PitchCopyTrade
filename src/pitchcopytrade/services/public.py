@@ -46,6 +46,7 @@ class CheckoutRequest:
     lead_source_name: str | None = None
     promo_code_value: str | None = None
     ip_address: str | None = None
+    telegram_user_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -489,6 +490,7 @@ async def create_stub_checkout(
             status=UserStatus.ACTIVE,
             timezone=request.timezone_name,
             lead_source=lead_source,
+            telegram_user_id=request.telegram_user_id,
         )
         user.consents = []
         user.payments = []
@@ -500,6 +502,14 @@ async def create_stub_checkout(
         if lead_source is not None and user.lead_source is None:
             user.lead_source = lead_source
             user.lead_source_id = lead_source.id
+        if request.telegram_user_id is not None and user.telegram_user_id is None:
+            user.telegram_user_id = request.telegram_user_id
+            logger.info(
+                "Public checkout: linked telegram_user_id=%s to user %s (email=%s)",
+                request.telegram_user_id,
+                user.id,
+                user.email,
+            )
         if user.consents is None:
             user.consents = []
 
@@ -563,7 +573,21 @@ async def create_telegram_stub_checkout(
     if required_document_ids != set(accepted_document_ids):
         raise ValueError("Нужно принять все обязательные документы перед оплатой")
 
+    logger.info(
+        "Mini App checkout binding: telegram_user_id=%s email=%s product=%s",
+        profile.telegram_user_id,
+        profile.email,
+        product.slug,
+    )
     user = await upsert_telegram_subscriber(repository, profile)
+    if user.telegram_user_id is None:
+        logger.error(
+            "Mini App checkout invariant violated: profile_telegram_user_id=%s resolved_user_id=%s email=%s",
+            profile.telegram_user_id,
+            user.id,
+            profile.email,
+        )
+        raise ValueError("Telegram ID не найден. Пожалуйста, откройте Mini App заново.")
     promo_code = await _resolve_checkout_promo_code(
         repository,
         promo_code_value,
@@ -593,7 +617,7 @@ async def create_telegram_stub_checkout(
         user.lead_source = lead_source
         user.lead_source_id = lead_source.id
     if get_settings().payments.provider == "tbank":
-        return await _create_tbank_checkout_records(
+        result = await _create_tbank_checkout_records(
             repository,
             user=user,
             product=product,
@@ -605,8 +629,17 @@ async def create_telegram_stub_checkout(
             required_documents=required_documents,
             timestamp=timestamp,
         )
+        logger.info(
+            "Mini App checkout persisted: product=%s user_id=%s telegram_user_id=%s payment_id=%s subscription_id=%s",
+            product.slug,
+            result.user.id,
+            result.user.telegram_user_id,
+            result.payment.id if result.payment is not None else None,
+            result.subscription.id,
+        )
+        return result
 
-    return await _create_checkout_records(
+    result = await _create_checkout_records(
         repository,
         user=user,
         product=product,
@@ -619,6 +652,15 @@ async def create_telegram_stub_checkout(
         timestamp=timestamp,
         pricing=pricing,
     )
+    logger.info(
+        "Mini App checkout persisted: product=%s user_id=%s telegram_user_id=%s payment_id=%s subscription_id=%s",
+        product.slug,
+        result.user.id,
+        result.user.telegram_user_id,
+        result.payment.id if result.payment is not None else None,
+        result.subscription.id,
+    )
+    return result
 
 
 async def _create_checkout_records(

@@ -165,6 +165,59 @@ async def test_create_stub_checkout_auto_confirms_stub_manual_entities() -> None
 
 
 @pytest.mark.asyncio
+async def test_create_stub_checkout_links_telegram_user_id_when_provided() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+
+    result = await create_stub_checkout(
+        session,
+        product=product,
+        request=CheckoutRequest(
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            accepted_document_ids=[item.id for item in session.documents],
+            lead_source_name="ads",
+            telegram_user_id=12345,
+        ),
+        now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+
+    assert result.user.telegram_user_id == 12345
+    assert product in session.refreshed
+
+
+@pytest.mark.asyncio
+async def test_create_stub_checkout_preserves_existing_telegram_user_id() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+    session.user = User(
+        id="user-1",
+        email="lead@example.com",
+        telegram_user_id=777001,
+        full_name="Lead User",
+        timezone="Europe/Moscow",
+    )
+
+    result = await create_stub_checkout(
+        session,
+        product=product,
+        request=CheckoutRequest(
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            accepted_document_ids=[item.id for item in session.documents],
+            lead_source_name="ads",
+            telegram_user_id=12345,
+        ),
+        now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+
+    assert result.user.telegram_user_id == 777001
+    assert product in session.refreshed
+
+
+@pytest.mark.asyncio
 async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() -> None:
     session = FakeSession(_make_documents())
     product = _make_product()
@@ -193,6 +246,43 @@ async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() ->
     assert product in session.refreshed
     assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 4
     assert result.payment.consents == []
+
+
+@pytest.mark.asyncio
+async def test_create_telegram_stub_checkout_fails_loudly_if_user_loses_telegram_identity(monkeypatch) -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+
+    monkeypatch.setattr(
+        "pitchcopytrade.services.public.upsert_telegram_subscriber",
+        lambda _repository, _profile: _user_without_telegram(),
+    )
+
+    with pytest.raises(ValueError, match="Telegram ID не найден"):
+        await create_telegram_stub_checkout(
+            session,
+            product=product,
+            profile=TelegramSubscriberProfile(
+                telegram_user_id=12345,
+                username="leaduser",
+                first_name="Lead",
+                last_name="User",
+                timezone_name="Europe/Moscow",
+                lead_source_name="telegram_bot",
+            ),
+            accepted_document_ids=[document.id for document in _make_documents()],
+            now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        )
+
+
+async def _user_without_telegram() -> User:
+    return User(
+        id="user-1",
+        email="lead@example.com",
+        telegram_user_id=None,
+        full_name="Lead User",
+        timezone="Europe/Moscow",
+    )
 
 
 @pytest.mark.asyncio
@@ -228,7 +318,7 @@ async def test_upsert_telegram_subscriber_links_existing_user_by_email(caplog) -
 
 
 @pytest.mark.asyncio
-async def test_telegram_checkout_recipient_selection_reaches_active_subscriber(tmp_path) -> None:
+async def test_telegram_checkout_recipient_selection_reaches_active_subscriber(tmp_path, monkeypatch) -> None:
     session = FakeSession(_make_documents())
     product = _make_product()
     author_user = User(id="author-user-1", full_name="Alpha Desk", status=UserStatus.ACTIVE, timezone="Europe/Moscow")
@@ -299,11 +389,14 @@ async def test_telegram_checkout_recipient_selection_reaches_active_subscriber(t
             "session": type("FakeSession", (), {"close": AsyncMock()})(),
         },
     )()
+    fake_sender = AsyncMock()
+    monkeypatch.setattr("pitchcopytrade.services.notifications.send_smtp_email", fake_sender)
 
     await deliver_message_notifications_file(graph, store, message, fake_bot, trigger="checkout_publish")
 
     fake_bot.send_message.assert_awaited_once()
     assert fake_bot.send_message.await_args.args[0] == 12345
+    fake_sender.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -255,6 +255,9 @@ def test_author_editor_is_message_centric(monkeypatch) -> None:
         assert 'data-preview-body' in response.text
         assert 'data-confirm-submit' in response.text
         assert "showModal()" in response.text
+        assert "const renderContract =" in response.text
+        assert '"block_order"' in response.text
+        assert '"Structured сделка"' in response.text
         assert 'fetch("/api/instruments"' in response.text
         assert "window.PCTAuthorInstrumentState" in response.text
 

@@ -9,9 +9,9 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `251 passed`
+- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `263 passed`
 
-Открытых findings в этом gate нет.
+P27 теперь закрыт в коде и документации.
 
 ## Подтвержденные факты
 
@@ -24,7 +24,7 @@
 
 ## Findings
 
-Open findings: none.
+Open findings: **none**
 
 ## Resolved In This Pass
 
@@ -52,6 +52,13 @@ Resolved:
 - `doc/README.md` и `deploy/README.md` теперь явно говорят, что `APP_DATA_MODE=db` пока не означает full business seed
 - документация разделяет primary runtime path и полный importer/seed pipeline
 
+### [P2] Mixed message renderer contract
+
+Resolved:
+- backend now owns the canonical content contract for mixed messages;
+- Telegram delivery renders structured content as a separate multi-line block instead of `Deal: ...`;
+- author preview follows the same block order and labels as delivery.
+
 ### [P1] Переключение в author mode блокируется на live quote provider path
 
 Resolved:
@@ -67,13 +74,23 @@ Resolved:
 - `published` назначается сервером, а не ожидается от формы;
 - publish path доходит до delivery trace, и regression tests это покрывают.
 
-### [P1] DB runtime `0 recipients` теперь диагностируется и покрыт end-to-end checkout/publish regression tests
+### [P1] Mini App checkout все еще может закончиться user-ом без `telegram_user_id`
 
 Resolved:
-- recipient selection logs now distinguish `no active subscriptions`, `active subscriptions without telegram_user_id`, and `active subscriptions exist but do not match message audience`;
-- `tests/test_notifications_service.py` covers the negative diagnostic branches;
-- `tests/test_acl_delivery_services.py` covers the Telegram-bound checkout -> active subscription -> publish happy path with `recipient_count > 0`;
-- the earlier `0 recipients` trace is now a diagnosable contract, not a silent failure.
+- `app_checkout_submit()` now rejects Mini App checkout when auth user lacks `telegram_user_id`;
+- `create_telegram_stub_checkout()` now fails loud if the upserted user loses Telegram identity;
+- route and service logs now capture route path, auth user id, telegram id, checkout email, and persisted ids;
+- regression tests cover the hard-fail path and the app/public checkout link audit.
+
+### [P2] Telegram delivery still has no per-recipient email fallback for subscribers
+
+Resolved:
+- subscriber notifications now use a Telegram-first, per-recipient fallback pipeline;
+- fallback email is sent only when Telegram is unavailable or fails, and success never duplicates onto email;
+- SMTP sender was extracted into a reusable mail transport;
+- fallback email uses the same assembled content order as preview/Telegram;
+- `ADMIN_EMAIL` is sent as `BCC`, and notification_log/audit capture both primary and fallback attempts;
+- regression tests cover success, Telegram failure, missing Telegram ID, missing email, and admin copy.
 
 ## Открытые задачи
 
@@ -247,9 +264,26 @@ Resolved:
 - `deploy/merge_duplicate_users.sql` documents the generic merge flow;
 - merge-by-email auth path is implemented and covered by regression tests.
 
+### [P27] Public checkout telegram binding
+Resolved:
+- public `/checkout/{ref}` now reads the Telegram fallback cookie and resolves the user through `AuthRepository`;
+- `CheckoutRequest` carries `telegram_user_id`, and `create_stub_checkout()` binds it only when the user does not already have one;
+- the existing no-cookie behavior stays unchanged;
+- regression tests cover cookie-driven binding, the no-cookie path, and preserving an existing Telegram identity;
+- `deploy/fix_user_8b2a3642.sql` provides the diagnostics for the affected user.
+
+### P27 — Публичный checkout: привязка telegram_user_id из cookie `[x]`
+
+- [x] P27.1: `CheckoutRequest` + `create_stub_checkout` — новое поле `telegram_user_id`, привязка к User
+- [x] P27.2: Public checkout route — извлечение telegram_user_id из fallback cookie
+- [x] P27.3: SQL-диагностика для пользователя 8b2a3642
+- [x] P27.4: Тесты на привязку telegram_user_id через публичный checkout
+
+**Подробные инструкции:** `doc/task.md` → Блок P27
+
 ## Gate
 
-Open findings: none.
+Open findings: **none**
 
 Все ранее заблокированные gate items закрыты. Текущий gate: **green**.
 

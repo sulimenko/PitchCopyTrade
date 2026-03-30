@@ -33,6 +33,7 @@ from pitchcopytrade.db.models.enums import (
     SubscriptionStatus,
     UserStatus,
 )
+from pitchcopytrade.db.models.notification_log import NotificationChannelEnum, NotificationLog
 from pitchcopytrade.repositories.file_store import FileDataStore
 
 
@@ -84,6 +85,7 @@ class FileDatasetGraph:
     subscriptions: dict[str, Subscription]
     user_consents: dict[str, UserConsent]
     audit_events: dict[str, AuditEvent]
+    notification_logs: dict[str, NotificationLog]
     messages: dict[str, Message]
 
     @classmethod
@@ -493,6 +495,24 @@ class FileDatasetGraph:
             if message.bundle is not None and message not in message.bundle.messages:
                 message.bundle.messages.append(message)
 
+        notification_logs = {
+            item["id"]: NotificationLog(
+                id=item["id"],
+                message_id=item.get("message_id"),
+                user_id=item.get("user_id"),
+                channel=_enum(NotificationChannelEnum, item["channel"]),
+                sent_at=_parse_datetime(item.get("sent_at")),
+                success=item.get("success", False),
+                error_detail=item.get("error_detail"),
+                created_at=_parse_datetime(item.get("created_at")) or _utc_now(),
+                updated_at=_parse_datetime(item.get("updated_at")) or _utc_now(),
+            )
+            for item in raw.get("notification_log", [])
+        }
+        for log in notification_logs.values():
+            log.user = users.get(log.user_id)
+            log.message = messages.get(log.message_id)
+
         return cls(
             roles=roles,
             users=users,
@@ -510,6 +530,7 @@ class FileDatasetGraph:
             user_consents=user_consents,
             audit_events=audit_events,
             messages=messages,
+            notification_logs=notification_logs,
         )
 
     def add(self, entity: object) -> None:
@@ -556,6 +577,12 @@ class FileDatasetGraph:
             self.audit_events[entity.id] = entity
             if entity.actor_user is not None and entity not in entity.actor_user.audit_events:
                 entity.actor_user.audit_events.append(entity)
+        elif isinstance(entity, NotificationLog):
+            if getattr(entity, "user", None) is None and entity.user_id is not None:
+                entity.user = self.users.get(entity.user_id)
+            if getattr(entity, "message", None) is None and entity.message_id is not None:
+                entity.message = self.messages.get(entity.message_id)
+            self.notification_logs[entity.id] = entity
         elif isinstance(entity, Message):
             if getattr(entity, "author", None) is None and entity.author_id is not None:
                 entity.author = self.authors.get(entity.author_id)
@@ -613,6 +640,7 @@ class FileDatasetGraph:
                 "subscriptions": [self._subscription_record(item) for item in self.subscriptions.values()],
                 "user_consents": [self._user_consent_record(item) for item in self.user_consents.values()],
                 "audit_events": [self._audit_event_record(item) for item in self.audit_events.values()],
+                "notification_log": [self._notification_log_record(item) for item in self.notification_logs.values()],
                 "messages": [self._message_record(item) for item in self.messages.values()],
             }
         )
@@ -849,6 +877,16 @@ class FileDatasetGraph:
             "entity_id": entity.entity_id,
             "action": entity.action,
             "payload": entity.payload,
+        }
+
+    def _notification_log_record(self, entity: NotificationLog) -> dict[str, Any]:
+        return self._base_record(entity) | {
+            "message_id": entity.message_id or (entity.message.id if getattr(entity, "message", None) is not None else None),
+            "user_id": entity.user_id or (entity.user.id if getattr(entity, "user", None) is not None else None),
+            "channel": entity.channel.value,
+            "sent_at": _serialize_datetime(entity.sent_at),
+            "success": entity.success,
+            "error_detail": entity.error_detail,
         }
 
     def _message_record(self, entity: Message) -> dict[str, Any]:

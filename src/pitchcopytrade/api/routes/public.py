@@ -7,11 +7,12 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pitchcopytrade.api.deps.repositories import get_public_repository
+from pitchcopytrade.api.deps.repositories import get_auth_repository, get_public_repository
+from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
-from pitchcopytrade.repositories.contracts import PublicRepository
+from pitchcopytrade.repositories.contracts import AuthRepository, PublicRepository
 from pitchcopytrade.services.legal_documents import read_legal_document_markdown
 from pitchcopytrade.services.payment_sync import process_tbank_callback
 from pitchcopytrade.services.public import (
@@ -182,6 +183,7 @@ async def checkout_submit(
     product_ref: str,
     request: Request,
     repository: PublicRepository = Depends(get_public_repository),
+    auth_repository: AuthRepository = Depends(get_auth_repository),
     full_name: str = Form(""),
     email: str = Form(""),
     timezone_name: str = Form("Europe/Moscow"),
@@ -197,6 +199,19 @@ async def checkout_submit(
     documents = await list_active_checkout_documents(repository)
     checkout_ready = len(documents) == 4
     detected_lead_source = lead_source_name.strip() or _detect_lead_source_name(request)
+    telegram_user_id = None
+    telegram_cookie = request.cookies.get(get_telegram_fallback_cookie_name())
+    if telegram_cookie:
+        telegram_user = await get_user_from_telegram_fallback_cookie(auth_repository, telegram_cookie)
+        if telegram_user is not None:
+            telegram_user_id = telegram_user.telegram_user_id
+    logger.info(
+        "Public checkout route path=%s auth_telegram_user_id=%s checkout_email=%s product_ref=%s",
+        request.url.path,
+        telegram_user_id,
+        email.strip().lower() or None,
+        product_ref,
+    )
     try:
         result = await create_stub_checkout(
             repository,
@@ -209,6 +224,7 @@ async def checkout_submit(
                 lead_source_name=detected_lead_source,
                 promo_code_value=promo_code_value.strip().upper() or None,
                 ip_address=request.client.host if request.client else None,
+                telegram_user_id=telegram_user_id,
             ),
         )
     except ValueError as exc:

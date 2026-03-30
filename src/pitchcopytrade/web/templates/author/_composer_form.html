@@ -329,6 +329,7 @@
     const instrumentPopup = document.getElementById("instrument-autocomplete");
     const historyGridEl = document.getElementById("author-history-grid");
     const historyData = {{ _history_json | tojson }};
+    const renderContract = {{ message_render_contract | tojson }};
     let instruments = {{ _instrument_items | tojson }};
     const screenButtons = Array.from(document.querySelectorAll("[data-screen-button]"));
     const structuredSideRadios = Array.from(document.querySelectorAll('[name="structured_side"]'));
@@ -644,38 +645,60 @@
       const documents = retainedDocumentNames();
       const deal = structuredState();
       const amountValue = String((hiddenAmount && hiddenAmount.value) || (amountField && amountField.value) || "—").trim() || "—";
+      const blockOrder = Array.isArray(renderContract.block_order) && renderContract.block_order.length ? renderContract.block_order : ["text", "structured", "documents"];
+      const blockTitles = renderContract.block_titles || {};
+      const structuredFields = Array.isArray(renderContract.structured_fields) ? renderContract.structured_fields : [];
 
-      if (textValue) {
+      function pushTextBlock() {
+        if (!textValue) return;
         sections.push(
-          `<section class="author-preview-block"><h4>Описание</h4><div>${escapeHtml(textValue).replace(/\n/g, "<br>")}</div></section>`
+          `<section class="author-preview-block"><h4>${escapeHtml(String(blockTitles.text || "Описание"))}</h4><div>${escapeHtml(textValue).replace(/\n/g, "<br>")}</div></section>`
         );
       }
-      if (deal.complete) {
+      function pushStructuredBlock() {
+        if (!deal.complete) return;
         const sideLabel = deal.side === "sell" ? "Продать" : "Купить";
-        const dealMeta = [
-          ["Инструмент", deal.instrumentLabel],
-          ["Действие", sideLabel],
-          ["Цена", structuredPrice && structuredPrice.value],
-          ["Количество", structuredQuantity && structuredQuantity.value],
-          ["Сумма", amountValue],
-          ["TP", structuredTp && structuredTp.value],
-          ["SL", structuredSl && structuredSl.value],
-        ]
-          .filter(function (entry) { return String(entry[1] || "").trim(); })
-          .map(function (entry) { return `<div><strong>${escapeHtml(entry[0])}:</strong> ${escapeHtml(String(entry[1]))}</div>`; })
+        const values = new Map([
+          ["instrument", deal.instrumentLabel],
+          ["side", sideLabel],
+          ["price", structuredPrice && structuredPrice.value],
+          ["quantity", structuredQuantity && structuredQuantity.value],
+          ["amount", amountValue],
+          ["take_profit", structuredTp && structuredTp.value],
+          ["stop_loss", structuredSl && structuredSl.value],
+          ["note", deal.note],
+        ]);
+        const dealMeta = structuredFields
+          .map(function (entry) {
+            const key = entry[0];
+            const label = entry[1];
+            const value = values.get(key);
+            if (!String(value || "").trim()) return "";
+            return `<div><strong>${escapeHtml(String(label))}:</strong> ${escapeHtml(String(value))}</div>`;
+          })
+          .filter(Boolean)
           .join("");
-        const noteBlock = deal.note ? `<div style="margin-top:8px;">${escapeHtml(deal.note)}</div>` : "";
-        sections.push(`<section class="author-preview-block"><h4>Structured рекомендация</h4>${dealMeta}${noteBlock}</section>`);
+        sections.push(`<section class="author-preview-block"><h4>${escapeHtml(String(blockTitles.structured || "Structured сделка"))}</h4>${dealMeta}</section>`);
       }
-      if (documents.length) {
+      function pushDocumentsBlock() {
+        if (!documents.length) return;
         const caption = String((documentCaption && documentCaption.value) || "").trim();
         const items = documents.map(function (name) {
           return `<li>${escapeHtml(name)}</li>`;
         }).join("");
         sections.push(
-          `<section class="author-preview-block"><h4>Документы</h4>${caption ? `<div style="margin-bottom:8px;">${escapeHtml(caption)}</div>` : ""}<ul style="margin:0;padding-left:18px;">${items}</ul></section>`
+          `<section class="author-preview-block"><h4>${escapeHtml(String(blockTitles.documents || "Документы"))}</h4>${caption ? `<div style="margin-bottom:8px;">${escapeHtml(caption)}</div>` : ""}<ul style="margin:0;padding-left:18px;">${items}</ul></section>`
         );
       }
+      const blockRenderers = {
+        text: pushTextBlock,
+        structured: pushStructuredBlock,
+        documents: pushDocumentsBlock,
+      };
+      blockOrder.forEach(function (blockName) {
+        const renderer = blockRenderers[blockName];
+        if (renderer) renderer();
+      });
       return sections.join("");
     }
     function openPreviewModal() {
