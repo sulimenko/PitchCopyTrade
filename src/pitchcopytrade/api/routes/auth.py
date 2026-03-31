@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 from urllib.parse import parse_qs, urlparse
+from datetime import datetime, timezone
 
 from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.deps.repositories import get_auth_repository
@@ -14,6 +15,7 @@ from pitchcopytrade.api.request_trace import attach_journey_cookie, get_entry_ma
 from pitchcopytrade.auth.telegram_login_widget import TelegramLoginWidgetError, verify_telegram_login_widget
 from pitchcopytrade.auth.telegram_webapp import (
     TelegramWebAppAuthError,
+    describe_telegram_webapp_init_data,
     extract_telegram_webapp_profile,
     validate_telegram_webapp_init_data,
 )
@@ -32,6 +34,7 @@ from pitchcopytrade.auth.session import (
     get_user_from_telegram_login_token,
 )
 from pitchcopytrade.core.config import get_settings
+from pitchcopytrade.core.runtime import secret_fingerprint
 from pitchcopytrade.db.models.enums import RoleSlug, UserStatus
 from pitchcopytrade.repositories.contracts import AuthRepository
 from pitchcopytrade.repositories.contracts import PublicRepository
@@ -278,6 +281,7 @@ async def telegram_webapp_auth(
         entry_id=journey_id,
         entry_surface="bootstrap",
     )
+    init_data_metadata = describe_telegram_webapp_init_data(init_data, now=datetime.now(timezone.utc))
     try:
         validated = validate_telegram_webapp_init_data(
             init_data,
@@ -301,6 +305,12 @@ async def telegram_webapp_auth(
             requested_next=_sanitize_subscriber_next_path(next),
             block_reason=getattr(exc, "code", "auth_failure"),
             block_detail=str(exc),
+            init_data_length=init_data_metadata["length"],
+            init_data_has_hash=init_data_metadata["has_hash"],
+            init_data_has_auth_date=init_data_metadata["has_auth_date"],
+            init_data_has_user=init_data_metadata["has_user"],
+            init_data_has_signature=init_data_metadata["has_signature"],
+            auth_date_age_seconds=init_data_metadata["auth_date_age_seconds"],
         )
         return JSONResponse(
             {"detail": str(exc), "error_code": getattr(exc, "code", "auth_failure")},

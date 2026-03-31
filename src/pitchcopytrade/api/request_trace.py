@@ -73,6 +73,12 @@ def log_request_trace(
     requested_next: str | None = None,
     webapp_context_present: bool | None = None,
     legacy_entry: bool | None = None,
+    init_data_length: int | None = None,
+    init_data_has_hash: bool | None = None,
+    init_data_has_auth_date: bool | None = None,
+    init_data_has_user: bool | None = None,
+    init_data_has_signature: bool | None = None,
+    auth_date_age_seconds: int | None = None,
 ) -> None:
     settings = get_settings()
     telegram_cookie_name = f"{settings.auth.session_cookie_name}_tg"
@@ -81,7 +87,7 @@ def log_request_trace(
     if auth_cookie_present is None:
         auth_cookie_present = bool(request.cookies.get(settings.auth.session_cookie_name))
     logger.info(
-        "%s trace journey_id=%s surface=%s classified_surface=%s path=%s query=%s entry_marker=%s entry_id=%s entry_surface=%s first_html_surface=%s requested_next=%s webapp_context_present=%s legacy_entry=%s referer=%s origin=%s user_agent=%s sec_fetch_site=%s sec_fetch_mode=%s telegram_cookie_present=%s auth_cookie_present=%s resolved_user_id=%s resolved_telegram_user_id=%s rendered_href=%s checkout_surface=%s telegram_intended=%s block_reason=%s block_detail=%s",
+        "%s trace journey_id=%s surface=%s classified_surface=%s path=%s query=%s entry_marker=%s entry_id=%s entry_surface=%s first_html_surface=%s requested_next=%s webapp_context_present=%s legacy_entry=%s referer=%s origin=%s user_agent=%s sec_fetch_site=%s sec_fetch_mode=%s telegram_cookie_present=%s auth_cookie_present=%s resolved_user_id=%s resolved_telegram_user_id=%s rendered_href=%s checkout_surface=%s telegram_intended=%s block_reason=%s block_detail=%s init_data_length=%s init_data_has_hash=%s init_data_has_auth_date=%s init_data_has_user=%s init_data_has_signature=%s auth_date_age_seconds=%s",
         stage,
         journey_id,
         surface or "-",
@@ -109,4 +115,10 @@ def log_request_trace(
         telegram_intended if telegram_intended is not None else "-",
         block_reason or "-",
         block_detail or "-",
+        init_data_length if init_data_length is not None else "-",
+        init_data_has_hash if init_data_has_hash is not None else "-",
+        init_data_has_auth_date if init_data_has_auth_date is not None else "-",
+        init_data_has_user if init_data_has_user is not None else "-",
+        init_data_has_signature if init_data_has_signature is not None else "-",
+        auth_date_age_seconds if auth_date_age_seconds is not None else "-",
     )

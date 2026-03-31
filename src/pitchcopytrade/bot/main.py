@@ -17,6 +17,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 
 from pitchcopytrade.bot.dispatcher import build_dispatcher
 from pitchcopytrade.core.runtime import bootstrap_runtime
+from pitchcopytrade.core.runtime import secret_fingerprint
 
 logger = logging.getLogger(__name__)
 DEFAULT_POLLING_RETRY_DELAY_SECONDS = 2
@@ -182,6 +183,12 @@ async def run_bot() -> None:
 
     dp: Dispatcher = build_dispatcher()
     bot = create_bot(settings.telegram.bot_token.get_secret_value())
+    logger.info(
+        "Bot startup complete: telegram_bot_username=%s telegram_bot_token_fingerprint=%s mode=%s",
+        settings.telegram.bot_username,
+        secret_fingerprint(settings.telegram.bot_token.get_secret_value()),
+        "webhook" if settings.telegram.use_webhook else "polling",
+    )
 
     if settings.telegram.use_webhook:
         logger.info("Starting bot in webhook mode on port 8080")

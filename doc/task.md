@@ -7675,3 +7675,249 @@ Root cause:
 - tests run + results
 - operational follow-ups outside repo (if any)
 ```
+
+---
+
+## P35 — Real bot entry now reaches `/tg-webapp/auth`, but Telegram WebApp validation fails with `invalid_hash`
+
+> **Новый production RCA (2026-03-30):**
+>
+> Для реального bot entry теперь есть server-side auth attempt:
+>
+> ```text
+> app_home_entry ... path=/app query=entry=bot_start ... first_html_surface=miniapp_entry ... block_reason=no_telegram_cookie
+> tg_webapp_auth_entry ...
+> tg_webapp_auth_failed ... block_reason=invalid_hash block_detail=Invalid hash
+> tg_webapp_bootstrap_trace ... webapp_context_present=True ... block_reason=auth_http_failure
+> ```
+>
+> То есть:
+> - Mini App bootstrap реально стартует;
+> - `window.Telegram.WebApp` присутствует;
+> - client действительно делает `POST /tg-webapp/auth`;
+> - cookie не ставится, потому что backend отклоняет `initData` по cryptographic validation.
+
+### Почему это важно
+
+Это уже другой класс проблемы, чем `P31/P32/P34`:
+
+- entrypoint из бота теперь доходит до auth attempt;
+- значит проблема не только в “не тот экран открылся”;
+- теперь главный blocker: backend не принимает `initData`, полученный от Telegram WebApp;
+- пока это не исправлено, user всегда будет оставаться без Telegram cookie и дальше деградировать в verify/public flow.
+
+### Наиболее вероятные причины
+
+1. `TELEGRAM_BOT_TOKEN` в `pct-api` не совпадает с token-ом того же бота, из которого открыт WebApp
+2. `pct-api` и `pct-bot` используют разные env/runtime secrets
+3. request body / `init_data` искажается proxy / middleware / form-decoding path
+4. validation algorithm или preprocessing `init_data` несовместимы с фактическим payload Telegram
+
+### Что уже доказано логами
+
+1. Для `entry=bot_start` есть `tg_webapp_auth_entry`
+2. Сразу после него есть `tg_webapp_auth_failed` с:
+   - `block_reason=invalid_hash`
+   - `block_detail=Invalid hash`
+3. Есть `tg_webapp_bootstrap_trace` с:
+   - `webapp_context_present=True`
+   - `block_reason=auth_http_failure`
+4. Следовательно, это не `no_init_data` и не просто plain browser open. Это именно auth validation failure.
+
+### Что должен сделать worker
+
+-#### P35.1 — Доказать token/config consistency `[x]`
+
+- [x] **P35.1.1** Добавить безопасный startup log fingerprint для bot token в `pct-api` и `pct-bot`
+  - не логировать сам token
+  - логировать, например, SHA-256 fingerprint prefix
+- [x] **P35.1.2** На startup логировать `getMe`-совместимый bot identity или уже известный `bot_username`, чтобы доказать, что API и bot говорят об одном и том же Telegram bot
+- [x] **P35.1.3** Worker должен дать operational checklist: как сравнить runtime fingerprint в `pct-api` и `pct-bot`
+
+#### P35.2 — Сделать auth failure forensic-friendly `[x]`
+
+- [x] **P35.2.1** Для `tg_webapp_auth_failed` логировать безопасные metadata `init_data`:
+  - length
+  - has `hash`
+  - has `auth_date`
+  - has `user`
+  - has `signature`
+- [x] **P35.2.2** Логировать age от `auth_date`, если его можно распарсить до проверки hash
+- [x] **P35.2.3** Не логировать raw `init_data` и не логировать token
+
+#### P35.3 — Проверить preprocessing `init_data` `[x]`
+
+- [x] **P35.3.1** Проверить, не искажается ли `init_data` на пути:
+  - browser JS
+  - `URLSearchParams`
+  - form parser FastAPI/Starlette
+  - `validate_telegram_webapp_init_data`
+- [x] **P35.3.2** Добавить regression test с реальным/fixture payload, который воспроизводит current request shape
+- [x] **P35.3.3** Если проблема в preprocessing, worker должен исправить ее без logging secret material
+
+#### P35.4 — Distinguish this from legacy entry defects `[x]`
+
+- [x] **P35.4.1** Не смешивать `invalid_hash` case с `legacy_help` / `no_init_data` cases
+- [x] **P35.4.2** В review и docs явно разделить:
+  - false entrypoint defects
+  - cryptographic auth defect
+
+### Acceptance P35
+
+1. Production logs позволяют доказать, совпадает ли bot token identity между `pct-api` и `pct-bot`
+2. `invalid_hash` больше не является “черным ящиком”
+3. Worker либо находит config mismatch, либо доказывает preprocessing/validation bug
+4. После исправления реальный bot entry проходит `tg_webapp_auth_success` и ставит Telegram fallback cookie
+
+### Worker Prompt — Telegram WebApp Auth Fails With Invalid Hash
+
+```text
+Ты расследуешь и исправляешь production defect, где реальный вход из Telegram bot доходит до `/tg-webapp/auth`, но сервер отклоняет `initData` с `invalid_hash`.
+
+Что уже доказано:
+- это не просто неверный entrypoint;
+- bootstrap стартует;
+- `window.Telegram.WebApp` присутствует;
+- POST `/tg-webapp/auth` реально приходит;
+- backend отвечает `invalid_hash`.
+
+Что нужно сделать:
+1. доказать, совпадает ли bot token/runtime identity между `pct-api` и `pct-bot`;
+2. сделать failure forensic-friendly без логирования секретов;
+3. проверить preprocessing `init_data` end-to-end;
+4. разделить этот defect от legacy `/app/help` и plain `/miniapp` issues.
+
+Что нельзя делать:
+- смешивать `invalid_hash` с `no_init_data`;
+- логировать raw token или raw `init_data`;
+- считать проблему решенной только потому, что stale entrypoints закрыты.
+
+Финальный отчет:
+- root cause
+- config evidence
+- changed files
+- tests run + results
+- operational verification steps
+```
+
+
+---
+
+## P28 — Bugfix: `/miniapp` 303 redirect убивает Telegram initData
+
+> **Контекст:** Mini App перестал работать. При открытии через кнопку меню бота (BotFather setChatMenuButton) URL `/miniapp` делает 303 redirect на `/app?entry=miniapp_bootstrap`. **Telegram передаёт `initData` только для первоначального URL.** При серверном редиректе hash-фрагмент или native bridge data теряется. Результат: `webApp.initData === ""`, bootstrap показывает fallback «Открыть бота».
+>
+> Лог-подтверждение:
+> ```
+> GET /miniapp → 303 See Other
+> GET /app?entry=miniapp_bootstrap → 200 OK (block_reason=no_telegram_cookie)
+> POST /tg-webapp/bootstrap-trace → webapp_context_present=True, block_reason=no_init_data
+> ```
+>
+> **Это также объясняет баг с `telegram_user_id=NULL`**: если initData потеряна, пользователь не может пройти auth через `/tg-webapp/auth`. Он попадает на fallback-страницу. Если потом подписывается через публичный checkout (или через обходной путь) — User создаётся без telegram_user_id.
+
+### P28.1 — `/miniapp` route: рендерить bootstrap HTML напрямую (без redirect)
+
+**Файл:** `src/pitchcopytrade/api/routes/public.py`
+
+Заменить 303 redirect на прямой рендер `miniapp_entry.html`:
+
+```python
+@router.get("/miniapp", include_in_schema=False)
+async def miniapp_root(
+    request: Request,
+    auth_repository: AuthRepository = Depends(get_auth_repository),
+) -> Response:
+    journey_id = get_or_create_journey_id(request)
+    auth_user_id, telegram_user_id = await _resolve_request_identity(request, auth_repository)
+    entry_marker = get_entry_marker(request) or "miniapp_bootstrap"
+
+    # Если есть telegram cookie — можно сразу в каталог (initData не нужна)
+    tg_cookie = request.cookies.get(get_telegram_fallback_cookie_name())
+    if tg_cookie:
+        user = await get_user_from_telegram_fallback_cookie(auth_repository, tg_cookie)
+        if user is not None:
+            log_request_trace(
+                logger,
+                request,
+                stage="miniapp_root",
+                journey_id=journey_id,
+                surface="bootstrap",
+                auth_user_id=str(user.id),
+                telegram_user_id=user.telegram_user_id,
+                entry_marker=entry_marker,
+                entry_id=journey_id,
+                entry_surface="bootstrap",
+                first_html_surface="redirect_catalog",
+                requested_next="/app/catalog",
+                block_reason="has_telegram_cookie",
+            )
+            response = RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
+            return attach_journey_cookie(response, journey_id)
+
+    # Нет cookie → рендерим bootstrap страницу НАПРЯМУЮ (без redirect!)
+    # Это критично: 303 redirect теряет Telegram initData
+    bot_url = f"https://t.me/{get_settings().telegram.bot_username}"
+    log_request_trace(
+        logger,
+        request,
+        stage="miniapp_root",
+        journey_id=journey_id,
+        surface="bootstrap",
+        auth_user_id=auth_user_id,
+        telegram_user_id=telegram_user_id,
+        entry_marker=entry_marker,
+        entry_id=journey_id,
+        entry_surface="bootstrap",
+        first_html_surface="miniapp_entry",
+        requested_next="/app/catalog",
+        block_reason="render_bootstrap",
+    )
+    response = templates.TemplateResponse(
+        request,
+        "app/miniapp_entry.html",
+        {
+            "title": "PitchCopyTrade",
+            "telegram_bot_username": get_settings().telegram.bot_username,
+            "bot_url": bot_url,
+            "next_path": "/app/catalog",
+        },
+    )
+    return attach_journey_cookie(response, journey_id)
+```
+
+**Важно:** Нужен импорт `templates` из web и `get_telegram_fallback_cookie_name`, `get_user_from_telegram_fallback_cookie` из auth.session. Проверить, что эти импорты уже есть в файле (они могли быть добавлены в P27).
+
+### P28.2 — Аналогичная проверка для route `/app` (auth.py)
+
+**Файл:** `src/pitchcopytrade/api/routes/auth.py`
+
+Route `/app` (функция `app_home`) уже правильно рендерит `miniapp_entry.html` без redirect при отсутствии cookie (строка ~425). Убедиться, что:
+1. Если есть telegram cookie → redirect к `/app/catalog` (уже есть, строка ~406) — OK, initData не нужна
+2. Если нет cookie → рендер `miniapp_entry.html` (уже есть, строка ~425) — OK, initData доступна
+
+Никаких изменений не требуется, только проверка.
+
+### P28.3 — Убедиться что кнопка меню бота (BotFather) указывает на правильный URL
+
+Это ручное действие. Проверить в BotFather:
+- Menu Button URL должен быть `https://pct.test.ptfin.ru/miniapp` или `https://pct.test.ptfin.ru/app?entry=bot_menu`
+- Оба варианта теперь рабочие после фикса P28.1
+
+> **Для воркера:** реализовать только P28.1. P28.2 — только проверка (без изменений). P28.3 — ручное действие.
+
+### P28.4 — Тесты
+
+1. `test_miniapp_root_no_cookie_renders_bootstrap` — GET `/miniapp` без cookie → 200 (не 303!), body содержит `initData`
+2. `test_miniapp_root_with_cookie_redirects_to_catalog` — GET `/miniapp` с telegram cookie → 303 к `/app/catalog`
+
+- [x] `python3 -m compileall src tests` — без ошибок
+
+---
+
+### Acceptance P28
+
+1. `GET /miniapp` без telegram cookie → **200 OK**, рендерит `miniapp_entry.html` (НЕ 303 redirect)
+2. `GET /miniapp` с telegram cookie → 303 redirect к `/app/catalog`
+3. При открытии Mini App из бота → `webApp.initData` доступна → auth проходит → каталог открывается
+4. Все тесты проходят: `pytest -q` → 0 failures

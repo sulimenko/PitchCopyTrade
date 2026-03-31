@@ -11,7 +11,8 @@
 - unified composer, preview и history table уже есть
 - локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `275 passed`
 
-P27, P31, P32, P33 и P34 теперь закрыты в коде и документации.
+P27, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
+P35 закрыл диагностический блок: runtime fingerprint, auth-failure metadata, preprocessing regression coverage и separation от legacy entrypoints.
 
 ## Подтвержденные факты
 
@@ -38,6 +39,20 @@ Open:
 - plain `/miniapp` link и stale `/app/help` entries нельзя считать валидным Mini App launch contract.
 
 Подробные инструкции: `doc/task.md` -> Блоки P31, P32, P33, P34
+
+### [P1] Real Telegram bot entry reaches `/tg-webapp/auth`, but backend rejects `initData` with `invalid_hash`
+
+Open:
+- production logs now show `tg_webapp_auth_entry` for `entry=bot_start` and `entry=legacy_help`;
+- immediately after that, backend logs `tg_webapp_auth_failed ... block_reason=invalid_hash block_detail=Invalid hash`;
+- `tg_webapp_bootstrap_trace` then records `webapp_context_present=True` and `block_reason=auth_http_failure`.
+
+Это означает:
+- для реального bot entry bootstrap уже стартует;
+- проблема уже не только в false entrypoints;
+- cookie не ставится, потому что server-side WebApp validation не принимает Telegram `initData`.
+
+Подробные инструкции: `doc/task.md` -> Блок P35
 
 ## Resolved In This Pass
 
@@ -315,11 +330,20 @@ Resolved:
 
 **Подробные инструкции:** `doc/task.md` → Блок P31
 
+### P28 — Bugfix: `/miniapp` 303 redirect убивает Telegram initData `[ ]`
+
+- [ ] P28.1: `/miniapp` route — рендерить `miniapp_entry.html` напрямую (без 303 redirect)
+- [ ] P28.2: Проверка `/app` route в auth.py (ожидаем: уже корректно)
+- [ ] P28.3: BotFather menu button URL (ручная проверка)
+- [ ] P28.4: Тесты на `/miniapp` route
+
+**Подробные инструкции:** `doc/task.md` → Блок P28
+
 ## Gate
 
-Open findings: none.
+Open findings: **P28** (CRITICAL) — Mini App не работает: 303 redirect теряет initData.
 
-Текущий gate: **green**.
+Текущий gate: **red**.
 
 ## Что считать готовностью текущего pass
 

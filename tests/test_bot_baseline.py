@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -13,6 +14,7 @@ from pitchcopytrade.bot.handlers.start import HELP_HANDLER, START_HANDLER, _main
 from pitchcopytrade.bot.main import (
     _is_retryable_bot_transport_error,
     create_bot,
+    run_bot,
     run_bot_smoke_check,
     run_polling_with_backoff,
 )
@@ -114,3 +116,24 @@ async def test_run_bot_smoke_check_calls_get_me() -> None:
 
     assert me.username == "pct_test_bot"
     bot.get_me.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_bot_logs_startup_fingerprint(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
+    fake_settings = SimpleNamespace(
+        telegram=SimpleNamespace(
+            bot_token=SimpleNamespace(get_secret_value=lambda: "123456:valid-token"),
+            bot_username="pitchcopytrade_bot",
+            use_webhook=False,
+        )
+    )
+    monkeypatch.setattr("pitchcopytrade.bot.main.bootstrap_runtime", lambda service_name: fake_settings)
+    monkeypatch.setattr("pitchcopytrade.bot.main.run_polling_with_backoff", AsyncMock())
+    caplog.set_level(logging.INFO)
+
+    await run_bot()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Bot startup complete" in message for message in messages)
+    assert any("telegram_bot_username=pitchcopytrade_bot" in message for message in messages)
+    assert any("telegram_bot_token_fingerprint=" in message for message in messages)

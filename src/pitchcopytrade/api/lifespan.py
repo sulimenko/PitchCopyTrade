@@ -8,6 +8,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 
 from pitchcopytrade.core.config import get_settings
+from pitchcopytrade.core.runtime import secret_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,12 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _init_arq_pool(app, settings)
 
     app.state.ready = True
-    logger.info("API startup complete at %s", started_at.isoformat())
+    logger.info(
+        "API startup complete at %s telegram_bot_username=%s telegram_bot_token_fingerprint=%s",
+        started_at.isoformat(),
+        settings.telegram.bot_username,
+        secret_fingerprint(settings.telegram.bot_token.get_secret_value()),
+    )
 
     try:
         yield

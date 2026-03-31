@@ -59,6 +59,31 @@ def validate_telegram_webapp_init_data(
     return items
 
 
+def describe_telegram_webapp_init_data(
+    init_data: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, int | bool | None]:
+    items = dict(parse_qsl(init_data, keep_blank_values=True))
+    auth_date_age_seconds: int | None = None
+    raw_auth_date = items.get("auth_date")
+    try:
+        auth_date = int(raw_auth_date) if raw_auth_date is not None else None
+    except (TypeError, ValueError):
+        auth_date = None
+    if auth_date is not None and auth_date > 0:
+        reference_now = now or datetime.now(timezone.utc)
+        auth_date_age_seconds = int(reference_now.timestamp()) - auth_date
+    return {
+        "length": len(init_data),
+        "has_hash": "hash" in items,
+        "has_auth_date": "auth_date" in items,
+        "has_user": "user" in items,
+        "has_signature": "signature" in items,
+        "auth_date_age_seconds": auth_date_age_seconds,
+    }
+
+
 def extract_telegram_webapp_profile(data: dict[str, str]) -> TelegramWebAppProfile:
     raw_user = data.get("user")
     if not raw_user:

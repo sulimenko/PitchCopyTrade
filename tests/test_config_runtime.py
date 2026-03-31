@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 
 import pytest
+from fastapi import FastAPI
 from pydantic import ValidationError
 
+from pitchcopytrade.api.lifespan import app_lifespan
 from pitchcopytrade.core.config import LoggingSettings, Settings, reset_settings_cache
 from pitchcopytrade.core.logging import configure_logging
-from pitchcopytrade.core.runtime import validate_runtime_settings
+from pitchcopytrade.core.runtime import secret_fingerprint, validate_runtime_settings
 
 
 def _base_env() -> dict[str, str]:
@@ -136,3 +138,30 @@ def test_configure_logging_writes_to_file(tmp_path) -> None:
 
     assert log_file.exists()
     assert "hello file logging" in log_file.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_api_lifespan_logs_bot_fingerprint(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    _make_settings(
+        monkeypatch,
+        APP_DATA_MODE="file",
+        TELEGRAM_BOT_TOKEN="123456:valid-token",
+        TELEGRAM_BOT_USERNAME="pitchcopytrade_bot",
+    )
+    caplog.set_level(logging.INFO)
+
+    app = FastAPI()
+    async with app_lifespan(app):
+        pass
+
+    messages = [record.getMessage() for record in caplog.records]
+    fingerprint = secret_fingerprint("123456:valid-token")
+    assert any("API startup complete" in message for message in messages)
+    assert any(f"telegram_bot_username=pitchcopytrade_bot" in message for message in messages)
+    assert any(f"telegram_bot_token_fingerprint={fingerprint}" in message for message in messages)
+    reset_settings_cache()
+
+
+def test_secret_fingerprint_is_prefix_stable() -> None:
+    assert secret_fingerprint("123456:valid-token") == secret_fingerprint("123456:valid-token")
+    assert len(secret_fingerprint("123456:valid-token")) == 12

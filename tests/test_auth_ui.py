@@ -811,6 +811,41 @@ def test_tg_webapp_auth_rejects_invalid_hash(monkeypatch) -> None:
     reset_settings_cache()
 
 
+def test_tg_webapp_auth_logs_safe_metadata_on_invalid_hash(monkeypatch, capsys) -> None:
+    repository = FakeAuthRepository()
+    auth_date = int(datetime.now(timezone.utc).timestamp())
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+    init_data = f"{init_data}&signature=test-signature"
+    init_data = init_data.replace("hash=", "hash=deadbeef")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": init_data, "next": "/app/catalog"})
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "invalid_hash"
+    captured = capsys.readouterr()
+    assert "tg_webapp_auth_failed" in captured.out
+    assert "init_data_length=" in captured.out
+    assert "init_data_has_hash=True" in captured.out
+    assert "init_data_has_auth_date=True" in captured.out
+    assert "init_data_has_user=True" in captured.out
+    assert "init_data_has_signature=True" in captured.out
+    assert "auth_date_age_seconds=" in captured.out
+    assert "block_reason=invalid_hash" in captured.out
+    assert "test-bot-token" not in captured.out
+    reset_settings_cache()
+
+
 def test_tg_webapp_auth_rejects_expired_init_data(monkeypatch) -> None:
     repository = FakeAuthRepository()
     auth_date = int((datetime.now(timezone.utc).timestamp()) - 4000)

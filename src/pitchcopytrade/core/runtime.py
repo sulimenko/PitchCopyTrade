@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pitchcopytrade.core.config import Settings, _is_placeholder, get_settings
 from pitchcopytrade.core.logging import configure_logging
 
@@ -40,6 +41,11 @@ def validate_runtime_settings(settings: Settings, service_name: str) -> None:
     if missing:
         vars_joined = ", ".join(sorted(set(missing)))
         raise RuntimeError(f"Runtime configuration invalid for {service_name}: fill {vars_joined}")
+
+
+def secret_fingerprint(value: str, *, prefix_length: int = 12) -> str:
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return digest[:prefix_length]
 
 
 def bootstrap_runtime(service_name: str) -> Settings:
