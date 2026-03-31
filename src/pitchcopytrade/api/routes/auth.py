@@ -23,7 +23,6 @@ from pitchcopytrade.auth.roles import get_user_role_slugs
 from pitchcopytrade.auth.service import authenticate_user
 from pitchcopytrade.auth.staff_mode import get_staff_mode_cookie_name, resolve_staff_mode
 from pitchcopytrade.auth.session import (
-    build_staff_invite_bot_link,
     build_staff_invite_help_bot_link,
     build_session_cookie_value,
     build_telegram_fallback_cookie_value,
@@ -39,6 +38,7 @@ from pitchcopytrade.db.models.enums import RoleSlug, UserStatus
 from pitchcopytrade.repositories.contracts import AuthRepository
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.public import TelegramSubscriberProfile, upsert_telegram_subscriber
+from pitchcopytrade.services.staff_merge import apply_staff_surviving_metadata
 from pitchcopytrade.web.templates import templates
 
 
@@ -61,6 +61,22 @@ async def telegram_widget_callback(
     params = dict(request.query_params)
     invite_token = str(request.query_params.get("invite_token", "") or "")
     auth_params = {key: value for key, value in params.items() if key != "invite_token"}
+    journey_id = get_or_create_journey_id(request)
+    try:
+        telegram_user_id = int(params.get("id", "0"))
+    except ValueError:
+        telegram_user_id = 0
+
+    log_request_trace(
+        logger,
+        request,
+        stage="staff_widget_callback_entry",
+        journey_id=journey_id,
+        surface="bootstrap",
+        telegram_user_id=telegram_user_id or None,
+        entry_marker=get_entry_marker(request),
+        entry_surface="staff_invite" if invite_token else None,
+    )
 
     try:
         verify_telegram_login_widget(
@@ -69,17 +85,24 @@ async def telegram_widget_callback(
             max_age_seconds=300,
         )
     except TelegramLoginWidgetError:
+        log_request_trace(
+            logger,
+            request,
+            stage="staff_invite_bind_failed",
+            journey_id=journey_id,
+            surface="bootstrap",
+            telegram_user_id=telegram_user_id or None,
+            entry_marker=get_entry_marker(request),
+            entry_surface="staff_invite" if invite_token else None,
+            block_reason="invalid_auth",
+            block_detail="telegram_widget",
+        )
         return templates.TemplateResponse(
             request,
             "auth/login.html",
             _build_login_template_context(title="Вход", error="Ошибка авторизации Telegram"),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-
-    try:
-        telegram_user_id = int(params.get("id", "0"))
-    except ValueError:
-        telegram_user_id = 0
 
     user = await repository.get_user_by_telegram_id(telegram_user_id)
     if user is not None and user.status != UserStatus.ACTIVE:
@@ -88,6 +111,18 @@ async def telegram_widget_callback(
         try:
             bound_user = await _bind_staff_user_by_invite_token(repository, invite_token, telegram_user_id)
         except ValueError as exc:
+            log_request_trace(
+                logger,
+                request,
+                stage="staff_invite_bind_failed",
+                journey_id=journey_id,
+                surface="bootstrap",
+                telegram_user_id=telegram_user_id or None,
+                entry_marker=get_entry_marker(request),
+                entry_surface="staff_invite",
+                block_reason="bind_conflict",
+                block_detail=str(exc),
+            )
             return templates.TemplateResponse(
                 request,
                 "auth/login.html",
@@ -99,8 +134,31 @@ async def telegram_widget_callback(
                 status_code=status.HTTP_409_CONFLICT,
             )
         if bound_user is not None:
+            log_request_trace(
+                logger,
+                request,
+                stage="staff_invite_bind_success",
+                journey_id=journey_id,
+                surface="bootstrap",
+                auth_user_id=bound_user.id,
+                telegram_user_id=bound_user.telegram_user_id,
+                entry_marker=get_entry_marker(request),
+                entry_surface="staff_invite",
+            )
             user = bound_user
     if user is None:
+        log_request_trace(
+            logger,
+            request,
+            stage="staff_invite_bind_failed",
+            journey_id=journey_id,
+            surface="bootstrap",
+            telegram_user_id=telegram_user_id or None,
+            entry_marker=get_entry_marker(request),
+            entry_surface="staff_invite" if invite_token else None,
+            block_reason="missing_staff_user",
+            block_detail="telegram_identity_not_linked",
+        )
         return templates.TemplateResponse(
             request,
             "auth/login.html",
@@ -115,6 +173,19 @@ async def telegram_widget_callback(
     redirect_url, staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
     response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
     _set_staff_session_cookies(response, user, staff_mode)
+    log_request_trace(
+        logger,
+        request,
+        stage="staff_session_cookie_issued",
+        journey_id=journey_id,
+        surface="bootstrap",
+        auth_user_id=user.id,
+        telegram_user_id=user.telegram_user_id,
+        entry_marker=get_entry_marker(request),
+        entry_surface="staff_invite" if invite_token else None,
+        redirect_target=redirect_url,
+        block_detail=staff_mode,
+    )
     return response
 
 
@@ -800,7 +871,6 @@ def _build_login_template_context(
         "telegram_bot_username": settings.telegram.bot_username,
         "subscriber_verify_url": "/verify/telegram",
         "invite_link_url": f"{base_url}/login?invite_token={invite_token}" if invite_token else "",
-        "telegram_invite_bot_url": build_staff_invite_bot_link(invite_token) if invite_token else "",
         "telegram_request_invite_url": build_staff_invite_help_bot_link(invite_token) if invite_token else "",
         "google_oauth_enabled": bool(settings.google_client_id and settings.google_client_secret),
         "yandex_oauth_enabled": bool(settings.yandex_client_id and settings.yandex_client_secret),
@@ -831,7 +901,10 @@ async def _bind_staff_user_by_invite_token(
         raise ValueError("Приглашение недействительно или устарело.")
     existing_user = await repository.get_user_by_telegram_id(telegram_user_id)
     if existing_user is not None and existing_user.id != invited_user.id:
-        raise ValueError("Этот Telegram-аккаунт уже привязан к другому сотруднику.")
+        _merge_staff_user_identity(existing_user, invited_user, telegram_user_id)
+        await repository.delete(invited_user)
+        await repository.commit()
+        return existing_user
     if invited_user.telegram_user_id not in (None, telegram_user_id):
         raise ValueError("Приглашение уже связано с другим Telegram-аккаунтом.")
     invited_user.telegram_user_id = telegram_user_id
@@ -848,7 +921,7 @@ def _set_staff_session_cookies(response: Response, user, staff_mode: str) -> Non
         value=build_session_cookie_value(user),
         httponly=True,
         max_age=settings.auth.session_ttl_seconds,
-        samesite="strict",
+        samesite="lax",
         secure=secure,
         path="/",
     )
@@ -857,10 +930,37 @@ def _set_staff_session_cookies(response: Response, user, staff_mode: str) -> Non
         value=staff_mode,
         httponly=True,
         max_age=settings.auth.session_ttl_seconds,
-        samesite="strict",
+        samesite="lax",
         secure=secure,
         path="/",
     )
+
+
+def _merge_staff_user_identity(existing_user, invited_user, telegram_user_id: int) -> None:
+    existing_user.status = UserStatus.ACTIVE
+    apply_staff_surviving_metadata(
+        existing_user,
+        email=getattr(invited_user, "email", None) or getattr(existing_user, "email", None),
+        full_name=getattr(invited_user, "full_name", None) or getattr(existing_user, "full_name", None),
+        timezone_name=getattr(invited_user, "timezone", None) or getattr(existing_user, "timezone", None),
+        invite_token_version=getattr(invited_user, "invite_token_version", 1) or 1,
+        invite_delivery_status=getattr(invited_user, "invite_delivery_status", None),
+        invite_delivery_error=getattr(invited_user, "invite_delivery_error", None),
+        invite_delivery_updated_at=getattr(invited_user, "invite_delivery_updated_at", None),
+    )
+    existing_user.telegram_user_id = telegram_user_id
+    existing_roles = {getattr(role, "slug", None) for role in getattr(existing_user, "roles", [])}
+    for role in getattr(invited_user, "roles", []) or []:
+        if role in getattr(existing_user, "roles", []):
+            continue
+        existing_user.roles.append(role)
+        if hasattr(role, "users") and existing_user not in role.users:
+            role.users.append(existing_user)
+        existing_roles.add(getattr(role, "slug", None))
+    invited_profile = getattr(invited_user, "author_profile", None)
+    if invited_profile is not None and getattr(existing_user, "author_profile", None) is None:
+        existing_user.author_profile = invited_profile
+        invited_profile.user = existing_user
 
 
 def _canonical_staff_home(staff_mode: str) -> str:

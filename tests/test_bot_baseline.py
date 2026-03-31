@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -27,6 +28,23 @@ async def test_start_handler_sends_message() -> None:
     await handle_start(message)
     message.answer.assert_awaited_once()
     assert "каталог стратегий" in message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_start_handler_staff_invite_uses_plain_url_button() -> None:
+    message = AsyncMock()
+    invite_token = "invite-token-123"
+    payload = base64.urlsafe_b64encode(invite_token.encode("utf-8")).decode("ascii").rstrip("=")
+    message.text = f"/start staffinvite-{payload}"
+
+    await handle_start(message)
+
+    message.answer.assert_awaited_once()
+    markup = message.answer.await_args.kwargs["reply_markup"]
+    buttons = [button for row in markup.inline_keyboard for button in row]
+    assert buttons[0].url is not None
+    assert buttons[0].web_app is None
+    assert buttons[0].url.endswith("/login?invite_token=invite-token-123")
 
 
 @pytest.mark.asyncio

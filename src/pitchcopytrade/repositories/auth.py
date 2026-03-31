@@ -41,6 +41,9 @@ class SqlAlchemyAuthRepository(AuthRepository):
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
+    async def delete(self, entity: object) -> None:
+        await self.session.delete(entity)
+
     async def commit(self) -> None:
         await self.session.commit()
 
@@ -68,6 +71,9 @@ class FileAuthRepository(AuthRepository):
 
     async def get_user_by_id(self, user_id: str) -> User | None:
         return self.graph.users.get(user_id)
+
+    async def delete(self, entity: object) -> None:
+        self.graph.delete(entity)
 
     async def commit(self) -> None:
         self.graph.save(self.store)

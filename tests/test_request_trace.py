@@ -8,6 +8,8 @@ def test_compact_stage_name_shortens_trace_events() -> None:
     assert compact_stage_name("tg_webapp_auth_failed") == "auth_fail"
     assert compact_stage_name("app_catalog_render") == "app_catalog"
     assert compact_stage_name("app_checkout_submit") == "checkout_submit"
+    assert compact_stage_name("staff_widget_callback_entry") == "staff_callback_entry"
+    assert compact_stage_name("admin_dashboard_render_failed") == "admin_dashboard_fail"
 
 
 def test_checkout_validation_reason_is_machine_readable() -> None:

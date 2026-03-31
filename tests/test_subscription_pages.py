@@ -152,29 +152,32 @@ async def _async_return(value):
     return value
 
 
-def test_app_subscriptions_renders_without_promo_code(monkeypatch, capsys) -> None:
+def test_app_subscriptions_renders_without_promo_code(monkeypatch) -> None:
     user = _build_user()
     product = _make_product()
     subscription = _make_subscription(product=product)
     snapshot = _make_snapshot(user, subscription)
     _prepare_app_snapshot(monkeypatch, snapshot)
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.logger.info",
+        lambda message, *args, **kwargs: messages.append(message % args),
+    )
 
     with _client_with_snapshot(user) as client:
         client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
         response = client.get("/app/subscriptions")
 
-    captured = capsys.readouterr()
-    combined = captured.out + captured.err
     assert response.status_code == 200
     assert "Подписки" in response.text
     assert "Momentum RU" in response.text
     assert "Промокод:" not in response.text
     assert "Ручная скидка:" not in response.text
-    assert "('subs_render'" in combined
-    assert "'-'" in combined
+    assert any("subs_render trace" in message for message in messages)
+    assert any("resolved_user_id=" in message for message in messages)
 
 
-def test_app_subscriptions_renders_with_promo_code_and_manual_discount(monkeypatch, capsys) -> None:
+def test_app_subscriptions_renders_with_promo_code_and_manual_discount(monkeypatch) -> None:
     user = _build_user()
     product = _make_product()
     promo_code = PromoCode(
@@ -189,20 +192,23 @@ def test_app_subscriptions_renders_with_promo_code_and_manual_discount(monkeypat
     subscription = _make_subscription(product=product, applied_promo_code=promo_code, manual_discount_rub=150)
     snapshot = _make_snapshot(user, subscription)
     _prepare_app_snapshot(monkeypatch, snapshot)
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.logger.info",
+        lambda message, *args, **kwargs: messages.append(message % args),
+    )
 
     with _client_with_snapshot(user) as client:
         client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
         response = client.get("/app/subscriptions")
 
-    captured = capsys.readouterr()
-    combined = captured.out + captured.err
     assert response.status_code == 200
     assert "Промокод: WELCOME10" in response.text
     assert "Ручная скидка: 150 руб" in response.text
-    assert "('subs_render'" in combined
+    assert any("subs_render trace" in message for message in messages)
 
 
-def test_app_subscription_detail_renders_with_promo_code_and_manual_discount(monkeypatch, capsys) -> None:
+def test_app_subscription_detail_renders_with_promo_code_and_manual_discount(monkeypatch) -> None:
     user = _build_user()
     product = _make_product()
     promo_code = PromoCode(
@@ -217,20 +223,23 @@ def test_app_subscription_detail_renders_with_promo_code_and_manual_discount(mon
     subscription = _make_subscription(product=product, applied_promo_code=promo_code, manual_discount_rub=150)
     snapshot = _make_snapshot(user, subscription)
     _prepare_app_snapshot(monkeypatch, snapshot)
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.logger.info",
+        lambda message, *args, **kwargs: messages.append(message % args),
+    )
 
     with _client_with_snapshot(user) as client:
         client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
         response = client.get("/app/subscriptions/subscription-1")
 
-    captured = capsys.readouterr()
-    combined = captured.out + captured.err
     assert response.status_code == 200
     assert "Подписка" in response.text
     assert "Промокод:" in response.text
     assert "WELCOME10" in response.text
     assert "Ручная скидка:" in response.text
     assert "150 руб" in response.text
-    assert "('sub_detail'" in combined
+    assert any("sub_detail trace" in message for message in messages)
 
 
 @pytest.mark.asyncio
@@ -249,12 +258,17 @@ async def test_access_repository_prefetches_applied_promo_code() -> None:
     assert any("Subscription.applied_promo_code" in path for path in option_paths)
 
 
-def test_app_subscription_pages_emit_compact_render_failure_trace(monkeypatch, capsys) -> None:
+def test_app_subscription_pages_emit_compact_render_failure_trace(monkeypatch) -> None:
     user = _build_user()
     product = _make_product()
     subscription = _make_subscription(product=product)
     snapshot = _make_snapshot(user, subscription)
     _prepare_app_snapshot(monkeypatch, snapshot)
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.logger.info",
+        lambda message, *args, **kwargs: messages.append(message % args),
+    )
 
     def fail_template_response(*_args, **_kwargs):
         raise RuntimeError("template boom")
@@ -266,8 +280,6 @@ def test_app_subscription_pages_emit_compact_render_failure_trace(monkeypatch, c
         with pytest.raises(RuntimeError):
             client.get("/app/subscriptions")
 
-    captured = capsys.readouterr()
-    combined = captured.out + captured.err
-    assert "('subs_render_fail'" in combined
-    assert "template_render_error" in combined
-    assert "RuntimeError" in combined
+    assert any("subs_render_fail trace" in message for message in messages)
+    assert any("template_render_error" in message for message in messages)
+    assert any("RuntimeError" in message for message in messages)

@@ -20,6 +20,7 @@ from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.commerce import LegalDocument
 from pitchcopytrade.db.models.enums import (
     BillingPeriod,
+    InviteDeliveryStatus,
     LegalDocumentType,
     PaymentProvider,
     PaymentStatus,
@@ -32,6 +33,7 @@ from pitchcopytrade.db.models.enums import (
     SubscriptionStatus,
     UserStatus,
 )
+from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 
 
 class FakeAsyncSession:
@@ -313,6 +315,11 @@ def test_admin_dashboard_renders(monkeypatch) -> None:
     product = _make_product("product-1", strategy)
     payment = _make_payment("payment-1", product)
     session.users_by_id[admin.id] = admin
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.logger.info",
+        lambda message, *args, **kwargs: messages.append(message % args),
+    )
 
     monkeypatch.setattr(
         "pitchcopytrade.api.routes.admin.get_admin_dashboard_stats",
@@ -352,6 +359,31 @@ def test_admin_dashboard_renders(monkeypatch) -> None:
         assert "14" in response.text
         assert "Momentum RU Monthly" in response.text
         assert "Lead User" in response.text
+        assert any("admin_dashboard trace" in message for message in messages)
+
+
+def test_admin_dashboard_renders_failure_fallback(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.logger.info",
+        lambda message, *args, **kwargs: messages.append(message % args),
+    )
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.get_admin_dashboard_stats",
+        lambda _session: _async_raise(RuntimeError("boom")),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/dashboard")
+
+        assert response.status_code == 200
+        assert "Не удалось загрузить панель администратора" in response.text
+        assert any("admin_dashboard_fail trace" in message for message in messages)
+        assert any("dashboard_failure" in message for message in messages)
 
 
 def test_staff_shell_includes_local_ag_grid_vendor_assets(monkeypatch) -> None:
@@ -1313,6 +1345,69 @@ def test_staff_create_admin_renders_business_error(monkeypatch) -> None:
 
         assert response.status_code == 422
         assert "Пользователь с таким email уже существует." in response.text
+
+
+@pytest.mark.asyncio
+async def test_create_admin_staff_user_merges_existing_subscriber_metadata_in_file_mode(monkeypatch) -> None:
+    existing_user = _make_admin_user()
+    existing_user.id = "user-1"
+    existing_user.email = "lead@example.com"
+    existing_user.full_name = "Lead User"
+    existing_user.timezone = "Europe/Moscow"
+    existing_user.telegram_user_id = 777001
+    existing_user.invite_token_version = 2
+    existing_user.invite_delivery_status = InviteDeliveryStatus.FAILED
+    existing_user.invite_delivery_error = "stale invite"
+    existing_user.invite_delivery_updated_at = datetime(2026, 3, 20, tzinfo=timezone.utc)
+    existing_user.roles = []
+
+    graph = FileDatasetGraph(
+        roles={},
+        users={existing_user.id: existing_user},
+        authors={},
+        lead_sources={},
+        instruments={},
+        strategies={},
+        bundles={},
+        bundle_members=[],
+        products={},
+        promo_codes={},
+        legal_documents={},
+        payments={},
+        subscriptions={},
+        user_consents={},
+        audit_events={},
+        notification_logs={},
+        messages={},
+    )
+
+    class DummyStore:
+        def save_many(self, _datasets):
+            return None
+
+    monkeypatch.setattr("pitchcopytrade.services.admin._file_admin_graph", lambda: (graph, DummyStore()))
+
+    result = await admin_service.create_admin_staff_user(
+        None,
+        admin_service.StaffCreateData(
+            display_name="Ops Admin",
+            email="ops@example.com",
+            telegram_user_id=777001,
+            role_slugs=(RoleSlug.ADMIN,),
+        ),
+        skip_invite=True,
+    )
+
+    assert result.id == existing_user.id
+    assert result.email == "ops@example.com"
+    assert result.full_name == "Ops Admin"
+    assert result.timezone == "Europe/Moscow"
+    assert result.telegram_user_id == 777001
+    assert result.invite_token_version == 1
+    assert result.invite_delivery_status is None
+    assert result.invite_delivery_error is None
+    assert result.invite_delivery_updated_at is None
+    assert RoleSlug.ADMIN in {role.slug for role in result.roles}
 
 
 def test_staff_grant_admin_role_redirects(monkeypatch) -> None:

@@ -26,12 +26,13 @@ from pitchcopytrade.db.models.enums import (
     SubscriptionStatus,
     UserStatus,
 )
-from pitchcopytrade.auth.session import build_staff_invite_bot_link, build_staff_invite_link, build_staff_invite_token
+from pitchcopytrade.auth.session import build_staff_invite_link, build_staff_invite_token
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.services.email_transport import send_smtp_email
 from pitchcopytrade.services.promo import sync_promo_redemption_counter
+from pitchcopytrade.services.staff_merge import apply_staff_surviving_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -1128,8 +1129,30 @@ async def _create_staff_user(session: AsyncSession | None, data: StaffCreateData
                 _create_file_author_profile(graph, existing_user, normalized_display_name)
             graph.save(store)
             return existing_user
-        if data.telegram_user_id is not None and any(item.telegram_user_id == data.telegram_user_id for item in graph.users.values()):
-            raise ValueError("Пользователь с таким Telegram ID уже существует.")
+        existing_user_by_tg = (
+            next((item for item in graph.users.values() if item.telegram_user_id == data.telegram_user_id), None)
+            if data.telegram_user_id is not None
+            else None
+        )
+        if existing_user_by_tg is not None:
+            if _is_staff_user(existing_user_by_tg):
+                raise ValueError("Пользователь с таким Telegram ID уже существует.")
+            apply_staff_surviving_metadata(
+                existing_user_by_tg,
+                email=normalized_email,
+                full_name=normalized_display_name,
+                timezone_name=existing_user_by_tg.timezone,
+                invite_token_version=1,
+                invite_delivery_status=None,
+                invite_delivery_error=None,
+                invite_delivery_updated_at=None,
+            )
+            existing_user_by_tg.status = UserStatus.ACTIVE
+            existing_user_by_tg.roles = [_ensure_graph_role(graph, role_slug) for role_slug in role_slugs]
+            if RoleSlug.AUTHOR in role_slugs and not existing_user_by_tg.author_profile:
+                _create_file_author_profile(graph, existing_user_by_tg, normalized_display_name)
+            graph.save(store)
+            return existing_user_by_tg
 
         user = User(
             email=normalized_email,
@@ -1174,8 +1197,30 @@ async def _create_staff_user(session: AsyncSession | None, data: StaffCreateData
         return await _require_staff_user(session, existing_user.id)
     if data.telegram_user_id is not None:
         existing_user_by_tg = await session.execute(select(User).where(User.telegram_user_id == data.telegram_user_id))
-        if existing_user_by_tg.scalar_one_or_none() is not None:
-            raise ValueError("Пользователь с таким Telegram ID уже существует.")
+        existing_user_tg = existing_user_by_tg.scalar_one_or_none()
+        if existing_user_tg is not None:
+            if _is_staff_user(existing_user_tg):
+                raise ValueError("Пользователь с таким Telegram ID уже существует.")
+            apply_staff_surviving_metadata(
+                existing_user_tg,
+                email=normalized_email,
+                full_name=normalized_display_name,
+                timezone_name=existing_user_tg.timezone,
+                invite_token_version=1,
+                invite_delivery_status=None,
+                invite_delivery_error=None,
+                invite_delivery_updated_at=None,
+            )
+            existing_user_tg.status = UserStatus.ACTIVE
+            await _replace_staff_roles_sql(session, existing_user_tg, role_slugs)
+            if RoleSlug.AUTHOR in role_slugs:
+                author_result = await session.execute(
+                    select(AuthorProfile).where(AuthorProfile.user_id == existing_user_tg.id)
+                )
+                if author_result.scalar_one_or_none() is None:
+                    await _create_sql_author_profile(session, existing_user_tg, normalized_display_name)
+            await session.commit()
+            return await _require_staff_user(session, existing_user_tg.id)
 
     try:
         user = User(
@@ -1497,15 +1542,13 @@ async def _deliver_staff_invite(
 ) -> None:
     # X3.1+X3.2: Use bot deep link as primary, web link as fallback
     invite_token = build_staff_invite_token(user)
-    bot_link = build_staff_invite_bot_link(invite_token)
     invite_link = build_staff_invite_link(user)
     role_line = ", ".join(role.value for role in role_slugs)
     body = (
         f"Здравствуйте, {user.full_name or user.email or 'сотрудник'}!\n\n"
         "Для вас создан staff-доступ PitchCopyTrade.\n"
         f"Роли: {role_line}\n\n"
-        f"Основной способ - нажмите кнопку в Telegram: {bot_link}\n"
-        f"Альтернативно откройте через браузер: {invite_link}\n"
+        f"Откройте приглашение по ссылке: {invite_link}\n"
     )
     sent, error = await _send_email_message(
         to_email=user.email,

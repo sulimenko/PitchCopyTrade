@@ -1,5 +1,5 @@
 # PitchCopyTrade — Active Tasks
-> Обновлено: 2026-03-30
+> Обновлено: 2026-03-31
 > Это единый backlog-файл проекта. Все активные задачи ведутся только здесь.
 
 ## Статусы
@@ -8366,4 +8366,266 @@ def test_validate_init_data_hash_computed_with_signature():
 - changed files
 - tests run + results
 - residual risks
+```
+
+---
+
+## P39 — Staff/admin invite onboarding is split across incompatible Telegram flows and can loop/fail after approve
+
+> **Контекст (2026-03-31):**
+>
+> При создании нового admin/staff сейчас наблюдаются два production-симптома:
+>
+> 1. Пользователь получает два invite path/code варианта, и “основной” не работает.
+> 2. После Telegram approve/open flow пользователь попадает на ошибку; затем сайт долго выглядит “недоступным”, после нескольких reload возвращается на `/login`, и повторный вход через Telegram-icon снова ведет к тому же broken state.
+>
+> Дополнительно подтвержден production case identity collision:
+> - уже существует subscriber user:
+>   - `id=9d58fb0c-38e7-4263-91f8-057fefea7219`
+>   - `telegram_user_id=259941197`
+>   - `status=active`
+> - отдельно создается invited staff row:
+>   - `id=a2903647-21b7-4419-86c5-9fd17c47c669`
+>   - `email=rudenko@ptfin.kz`
+>   - `telegram_user_id=NULL`
+>   - `status=invited`
+>
+> Это означает, что один и тот же человек уже существует в `users` как subscriber, а staff onboarding пытается провести его через второй `users` row.
+
+### Root cause hypothesis
+
+Сейчас staff onboarding смешивает **минимум два разных Telegram auth контракта** и еще один browser fallback:
+
+- [admin.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/admin.py#L1498)
+  - `_deliver_staff_invite()` намеренно отправляет:
+    - `bot_link` как primary
+    - `invite_link` как fallback
+- [start.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/bot/handlers/start.py#L34)
+  - `staffinvite-*` deep link открывает `/login?invite_token=...` через `web_app=WebAppInfo(...)`
+- [login.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/auth/login.html#L31)
+  - `/login` при этом является **не Mini App bootstrap screen**, а classic Telegram Login Widget page
+- [auth.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L843)
+  - после widget callback `_set_staff_session_cookies()` ставит staff cookies c `samesite="strict"`
+- [auth.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L720)
+  - при этом OAuth callback использует `samesite="lax"`, то есть auth cookie policy уже не едина
+
+Это создает сразу несколько рисков:
+
+1. **Contract mismatch**
+   - `/login` page built around Telegram Login Widget,
+   - но primary bot deep link открывает ее как `WebAppInfo`, будто это Mini App screen.
+
+2. **Ambiguous operator/user journey**
+   - email и admin UI отдают разные invite artifacts;
+   - user видит несколько путей и не понимает, какой canonical.
+
+3. **Post-approve session loss / loop**
+   - Telegram widget callback — cross-site-ish / Telegram-mediated auth step;
+   - `SameSite=Strict` для staff session cookie может ломать immediate redirect chain после approve;
+   - это хорошо совпадает с симптомом “после approve возвращает на broken page / потом снова на `/login`”.
+
+4. **Observability gap**
+   - в `storage/api.log` сейчас нет достаточного compact tracing для:
+     - `/auth/telegram/callback`
+     - invite bind success/failure
+     - post-bind redirect target
+     - `/admin/dashboard` render success/failure
+   - поэтому production RCA по одному `storage/api.log` сейчас недостаточен.
+
+5. **Identity split inside `users`**
+   - [accounts.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/db/models/accounts.py#L37)
+     - `users.telegram_user_id` globally unique
+   - [admin.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/admin.py#L1150)
+     - `_create_staff_user()` умеет recovery только по `email`, но не по already-existing Telegram-bound subscriber identity
+   - [auth.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L832)
+     - `_bind_staff_user_by_invite_token()` жестко отказывает, если `telegram_user_id` уже занят другим user row
+
+   Это значит:
+   - текущий staff invite flow не умеет elevating/merging existing subscriber into staff identity;
+   - при попытке выдать staff-доступ существующему подписчику система создает второй invited-row и потом закономерно конфликтует на bind.
+
+### Что должен сделать worker
+
+#### P39.1 — Зафиксировать один canonical staff invite path `[x]`
+
+- [x] **P39.1.1** Убрать dual-path invite contract из staff onboarding
+- [x] **P39.1.2** Оставить один canonical user-facing invite flow
+- [x] **P39.1.3** Если `/login` остается Telegram Login Widget screen, не открывать его как `web_app=WebAppInfo`
+- [x] **P39.1.4** Согласовать email invite, bot invite и admin UI invite artifact вокруг одного пути
+
+#### P39.2 — Доказать, где ломается post-approve flow `[x]`
+
+- [x] **P39.2.1** Зафиксировать полный redirect chain после Telegram approve
+- [x] **P39.2.2** Доказать, теряется ли session cookie сразу после callback
+- [x] **P39.2.3** Проверить гипотезу про `SameSite=Strict` на staff session cookies
+- [x] **P39.2.4** Отделить session-loss case от dashboard-render failure case
+
+#### P39.2b — Зафиксировать identity collision contract `[x]`
+
+- [x] **P39.2b.1** Доказать path, в котором existing subscriber user и invited staff user относятся к одному человеку
+- [x] **P39.2b.2** Определить canonical behavior:
+  - reuse existing Telegram-bound user row
+  - attach staff roles to existing row
+  - перенести/объединить email и staff metadata
+  - не создавать second competing user identity
+- [x] **P39.2b.3** Явно запретить сценарий “subscriber row + invited staff row for same Telegram human” как допустимое steady state
+
+#### P39.3 — Нормализовать cookie/auth contract `[x]`
+
+- [x] **P39.3.1** Выбрать корректную SameSite policy для staff Telegram auth callback flow
+- [x] **P39.3.2** Согласовать policy с уже существующими OAuth/subscriber auth flows
+- [x] **P39.3.3** Не допускать state, где пользователь после approve сразу откатывается в broken `/login` loop
+
+#### P39.3b — Нормализовать identity merge contract `[x]`
+
+- [x] **P39.3b.1** Staff onboarding должен уметь работать с already-existing subscriber identity
+- [x] **P39.3b.2** Если user уже существует по `telegram_user_id`, система должна:
+  - либо превратить этот existing user в staff-capable user,
+  - либо deterministic-merge invited row into existing row
+- [x] **P39.3b.3** Не допускать bind-конфликта как normal path для существующего подписчика
+
+#### P39.4 — `storage/api.log` must be sufficient for staff onboarding RCA `[x]`
+
+- [x] **P39.4.1** Добавить compact events для:
+  - login page render
+  - Telegram widget callback entry
+  - invite bind success/failure
+  - session cookie issued
+  - redirect target chosen
+  - `/admin/dashboard` render success/failure
+- [x] **P39.4.2** Сделать короткие reason codes для:
+  - invalid invite token
+  - bind conflict
+  - cookie rejected / session missing
+  - redirect loop
+  - dashboard failure
+- [x] **P39.4.3** Сохранить compact contract из P37
+
+#### P39.5 — Regression coverage `[x]`
+
+- [x] **P39.5.1** Test: staff invite produces one canonical invite path
+- [x] **P39.5.2** Test: Telegram widget callback + valid invite binds Telegram ID and lands on staff home without login loop
+- [x] **P39.5.3** Test: new admin can reach `/admin/dashboard` after first successful Telegram approve
+- [x] **P39.5.4** Test: stale/invalid invite fails loud with clear operator-facing trace
+- [x] **P39.5.5** Test: existing subscriber with same `telegram_user_id` can be granted staff/admin access without creating a second conflicting `users` row
+- [x] **P39.5.6** Test: invite/bind flow does not leave orphan `invited` row for an already-existing Telegram human
+
+### Acceptance P39
+
+1. Новый admin/staff получает один понятный canonical invite flow, а не два конкурирующих кода/ссылки
+2. После Telegram approve пользователь не попадает в broken/unavailable loop и доходит до staff home
+3. Existing subscriber can be elevated to staff/admin without identity split across two `users` rows
+4. `storage/api.log` позволяет по одному файлу понять, где сорвался onboarding: invite, bind, merge, cookie, redirect или dashboard
+5. Admin UI, email и bot используют один и тот же onboarding contract
+
+### Worker Prompt — Fix Staff/Admin Telegram Invite Onboarding
+
+```text
+Ты расследуешь production defect в staff/admin onboarding через Telegram invite.
+
+Симптомы:
+1. user-facing invite сейчас раздвоен: primary path не работает, есть competing alternative path;
+2. после Telegram approve user попадает в broken page / unavailable state / login loop;
+3. operator использует только `storage/api.log`, но текущих trace events недостаточно.
+
+Что уже видно по коду:
+- `_deliver_staff_invite()` шлет dual-path invite;
+- bot `staffinvite-*` path открывает `/login?invite_token=...` как `web_app=WebAppInfo`, хотя `/login` — это Telegram Login Widget page, а не Mini App bootstrap;
+- `_set_staff_session_cookies()` ставит staff cookies с `SameSite=Strict`;
+- OAuth callback использует `SameSite=Lax`, так что auth cookie policy уже inconsistent.
+- `users.telegram_user_id` уникален глобально;
+- `_create_staff_user()` умеет recovery только по email, но не по existing Telegram-bound subscriber;
+- `_bind_staff_user_by_invite_token()` отвергает bind, если этот Telegram ID уже привязан к другому `users` row.
+
+Что нужно сделать:
+1. свести onboarding к одному canonical invite contract;
+2. доказать exact break point после Telegram approve;
+3. исправить cookie/session/redirect contract;
+4. исправить identity merge contract для existing subscribers;
+5. добавить compact RCA events в `storage/api.log`;
+6. покрыть regression tests на first-login success path и merge path.
+
+Что нельзя делать:
+- оставлять два параллельных invite path;
+- смешивать Mini App / WebAppInfo и Telegram Login Widget без явного контракта;
+- считать задачу закрытой, если bind проходит, но user все еще попадает в login loop;
+- считать вторую invited-row для already-existing Telegram human допустимым итоговым состоянием.
+
+Финальный отчет:
+- exact root cause
+- chosen canonical flow
+- changed files
+- tests run + results
+- residual risks
+```
+
+---
+
+## P40 — Staff merge path did not deterministically reconcile invited metadata onto an existing subscriber identity
+
+> **Контекст (2026-03-31 review):**
+>
+> `P39` закрыл основной blocker:
+> - canonical invite flow теперь один;
+> - Telegram approve больше не уводит пользователя в broken loop;
+> - existing subscriber может получить staff/admin access без второй competing `users` row.
+>
+> Но review выявил остаточный gap в metadata merge:
+> - [admin.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/admin.py#L1192)
+>   - direct “existing user by telegram id” path обновляет `email`, `full_name`, `status`
+> - [auth.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L938)
+>   - `_merge_staff_user_identity()` при callback merge копирует `email` и `full_name` только если они пустые
+>   - invite delivery fields / token lifecycle metadata вообще не reconcile-ятся
+>
+> Это значит, что один и тот же business сценарий сейчас может закончиться разными итоговыми данными:
+> - direct tg-elevation path обновляет staff metadata aggressively
+> - invite callback merge path сохраняет старые subscriber metadata, если они уже были заполнены
+
+### Почему это важно
+
+- existing subscriber с consumer email может остаться на старом email после staff merge;
+- admin UI и future password/email-based fallback могут видеть не тот staff email, который вводил оператор;
+- invite delivery audit может остаться на уже удаленном invited-row вместо surviving user identity.
+
+### Что должен сделать worker
+
+#### P40.1 — Определить canonical surviving metadata contract `[x]`
+
+- [x] **P40.1.1** Явно решить, какие поля surviving user должен брать из invited staff row:
+  - `email`
+  - `full_name`
+  - `timezone`
+  - `invite_delivery_status`
+  - `invite_delivery_error`
+  - `invite_delivery_updated_at`
+  - `invite_token_version`
+- [x] **P40.1.2** Сделать этот contract одинаковым для:
+  - direct tg-elevation path в `_create_staff_user()`
+  - callback merge path в `_merge_staff_user_identity()`
+
+#### P40.2 — Не терять operator-visible staff metadata `[x]`
+
+- [x] **P40.2.1** После merge surviving user должен содержать финальные staff metadata, а не случайный остаток subscriber state
+- [x] **P40.2.2** Если invited row удаляется, нужные invite-delivery fields должны быть перенесены или осознанно отброшены по documented rule
+- [x] **P40.2.3** Admin UI не должен после merge показывать устаревший email / missing invite state
+
+#### P40.3 — Regression coverage `[x]`
+
+- [x] **P40.3.1** Test: existing subscriber with already-filled email receives staff invite with different email -> final surviving user follows canonical merge rule
+- [x] **P40.3.2** Test: invite delivery metadata survives merge according to chosen rule
+- [x] **P40.3.3** Test: direct tg-elevation path and callback merge path end with the same normalized staff metadata
+
+### Acceptance P40
+
+1. Existing subscriber -> staff/admin merge ends with deterministic metadata, independent of which path was used
+2. Final surviving user row contains the intended staff email/full_name contract
+3. Admin UI and resend/invite lifecycle do not depend on deleted invited rows
+
+### Worker Prompt — Normalize Staff Metadata Merge
+
+```text
+P40 закрыт:
+- direct tg-elevation path и callback merge path используют один canonical surviving metadata contract;
+- surviving user получает staff email/full_name/timezone/invite metadata по documented rule;
+- regression tests покрывают conflicting identity и invite metadata survival cases.
 ```

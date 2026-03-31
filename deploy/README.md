@@ -16,6 +16,21 @@ Product contract, backlog и review gate вынесены в:
 - [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 - [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
 
+## Текущий Production Snapshot
+
+Проверенный server/runtime snapshot на `2026-03-31`:
+
+- Mini App auth и checkout работают в `db`-mode;
+- новые подписчики создаются, consents/subscriptions записываются;
+- Mini App subscription pages больше не падают на render path;
+- subscriber publish delivery работает;
+- `storage/api.log` считается canonical operator-facing log sink;
+- основной staff/admin Telegram invite onboarding path восстановлен.
+
+Открытый follow-up после этого pass-а:
+
+- metadata merge для existing subscriber -> staff/admin еще требует нормализации; см. `P40` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md) и актуальный gate в [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).
+
 ## Актуальные deploy-артефакты
 
 В репозитории реально поддерживаются:
@@ -146,6 +161,12 @@ bash deploy/migrate.sh --reset
 ## Live Smoke And Log Capture
 
 Этот runbook нужен для live server-проверки публикации и доставки.
+
+Операционный контракт:
+
+- основным источником RCA считайте `storage/api.log`;
+- `docker compose logs` используйте как secondary stream только если нужно быстро увидеть container stdout/stderr;
+- при triage новых production дефектов сначала фиксируйте `journey_id` и затем ищите его в `storage/api.log`.
 
 ### 1. Compose command
 

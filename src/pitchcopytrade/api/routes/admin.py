@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import require_admin
+from pitchcopytrade.api.request_trace import get_entry_marker, get_or_create_journey_id, log_request_trace
 from pitchcopytrade.auth.session import build_staff_invite_link
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
@@ -110,11 +111,46 @@ async def admin_dashboard(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
-    stats = await get_admin_dashboard_stats(session)
-    strategies = await list_admin_strategies(session)
-    products = await list_admin_products(session)
-    payments = await list_admin_payments(session)
-    subscriptions = await list_admin_subscriptions(session)
+    journey_id = get_or_create_journey_id(request)
+    try:
+        stats = await get_admin_dashboard_stats(session)
+        strategies = await list_admin_strategies(session)
+        products = await list_admin_products(session)
+        payments = await list_admin_payments(session)
+        subscriptions = await list_admin_subscriptions(session)
+    except Exception as exc:
+        log_request_trace(
+            logger,
+            request,
+            stage="admin_dashboard_render_failed",
+            journey_id=journey_id,
+            surface="staff",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            entry_marker=get_entry_marker(request),
+            block_reason="dashboard_failure",
+            block_detail=str(exc),
+        )
+        from types import SimpleNamespace
+
+        stats = SimpleNamespace(authors_total=0, strategies_total=0, strategies_public=0, active_subscriptions=0, messages_live=0)
+        strategies = []
+        products = []
+        payments = []
+        subscriptions = []
+        error = "Не удалось загрузить панель администратора. Повторите попытку и проверьте связанные данные."
+    else:
+        log_request_trace(
+            logger,
+            request,
+            stage="admin_dashboard_render",
+            journey_id=journey_id,
+            surface="staff",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            entry_marker=get_entry_marker(request),
+        )
+        error = None
     return templates.TemplateResponse(
         request,
         "admin/dashboard.html",
@@ -127,6 +163,7 @@ async def admin_dashboard(
             "recent_payments": payments[:5],
             "recent_subscriptions": subscriptions[:5],
             "authors_url": "/admin/authors",
+            "error": error,
         },
     )
 

@@ -9,7 +9,7 @@
   {% endif %}
   {% if invite_token %}
   <div class="auth-login-alert auth-login-alert--info">
-    Приглашение сотрудника активно. Нажмите кнопку Telegram ниже, чтобы завершить вход.
+    Приглашение сотрудника активно. Откройте его по кнопке ниже, чтобы завершить вход.
   </div>
   {% endif %}
   {% if not telegram_https_ready %}
@@ -37,8 +37,8 @@
         </script>
       </div>
       <div id="invite-fallback-alert" class="auth-login-alert auth-login-alert--fallback" {% if not is_staff_invite %}hidden{% endif %}>
-        <strong>Если кнопка Telegram не появилась, используйте fallback ниже.</strong>
-        <div class="muted">Откройте приглашение в Telegram, скопируйте ссылку или запросите новое приглашение без технических шагов.</div>
+        <strong>Если кнопка не появилась, используйте fallback ниже.</strong>
+        <div class="muted">Откройте приглашение, скопируйте ссылку или запросите новое приглашение без технических шагов.</div>
       </div>
       <div class="muted auth-login-hint">
         {% if is_staff_invite %}
@@ -54,10 +54,10 @@
     <section class="auth-login-section auth-login-section--fallback">
       <div class="auth-login-fallback-head">
         <strong>Fallback path</strong>
-        <div class="muted">Приглашение не должно зависеть только от Telegram Login Widget.</div>
+        <div class="muted">Приглашение не должно зависеть только от виджета авторизации.</div>
       </div>
       <div class="auth-login-actions">
-        <a class="action" href="{{ telegram_invite_bot_url }}">Открыть Telegram</a>
+        <a class="action" href="{{ invite_link_url }}">Открыть приглашение</a>
         <button class="action ghost" type="button" data-copy-text="{{ invite_link_url }}">Скопировать приглашение</button>
         <a class="action ghost" href="{{ telegram_request_invite_url }}">Запросить новое приглашение</a>
       </div>

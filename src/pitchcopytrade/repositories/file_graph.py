@@ -607,6 +607,27 @@ class FileDatasetGraph:
                 entity.bundle.messages.append(entity)
 
     def delete(self, entity: object) -> None:
+        if isinstance(entity, User):
+            self.users.pop(entity.id, None)
+            if entity.lead_source is not None and entity in entity.lead_source.users:
+                entity.lead_source.users.remove(entity)
+            if entity.author_profile is not None and entity.author_profile.user is entity:
+                self.delete(entity.author_profile)
+            for role in list(entity.roles):
+                if entity in role.users:
+                    role.users.remove(entity)
+            return
+        if isinstance(entity, AuthorProfile):
+            self.authors.pop(entity.id, None)
+            if entity.user is not None and entity.user.author_profile is entity:
+                entity.user.author_profile = None
+            for strategy in list(entity.strategies):
+                if strategy.author is entity:
+                    strategy.author = None
+            for product in list(entity.subscription_products):
+                if product.author is entity:
+                    product.author = None
+            return
         if isinstance(entity, Message):
             self.messages.pop(entity.id, None)
             if entity.author is not None and entity in entity.author.messages:

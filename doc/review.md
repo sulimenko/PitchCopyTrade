@@ -9,12 +9,14 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `275 passed`
+- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `294 passed`
 
 P27, P28, P29, P30, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
 P35 закрыл предыдущий auth blocker: production logs больше показывают `tg_webapp_auth_success`, а не `invalid_hash`.
 P36 и P37 закрыты в коде и документации.
 P38 закрыт в коде и документации.
+P39 закрыл основной staff/admin onboarding blocker.
+P40 закрыт в коде и документации.
 P32 cleanup remains open, но это не blocker.
 
 ## Подтвержденные факты
@@ -58,6 +60,28 @@ Resolved:
 - regression tests покрывают list/detail renders, promo/manual-discount сценарии и loader-contract regression.
 
 Подробные инструкции: `doc/task.md` -> Блок P38
+
+### [P1] Staff/admin onboarding still breaks when invitee already exists as subscriber with the same Telegram identity `[x]`
+
+Resolved:
+- staff invite flow now has one canonical user-facing path based on `/login?invite_token=...`;
+- `/login` is no longer opened as `web_app=WebAppInfo`, only as a classic Telegram Login Widget page with browser fallback;
+- staff session cookies now use `SameSite=Lax`, matching the callback/redirect flow;
+- `_bind_staff_user_by_invite_token()` now deterministically merges an already-existing Telegram-bound subscriber into the invited staff identity instead of rejecting the bind;
+- admin staff creation also elevates an existing subscriber by Telegram ID instead of creating a competing second row;
+- compact trace events now cover login render, callback entry, bind success/failure, cookie issuance, redirect target, and admin dashboard success/failure;
+- regression tests cover the canonical invite path, callback merge path, dashboard access, stale invite failure, and orphan-row prevention.
+
+Подробные инструкции: `doc/task.md` -> Блок P39
+
+### [P2] Staff metadata merge was still inconsistent between direct tg-elevation and invite callback merge `[x]`
+
+Resolved:
+- `_create_staff_user()` direct tg-elevation path and `_merge_staff_user_identity()` callback path now share the same surviving metadata contract;
+- surviving staff row receives canonical `email`, `full_name`, `timezone`, and invite lifecycle metadata from the invited staff row;
+- regression tests cover conflicting email cases and invite metadata survival.
+
+Подробные инструкции: `doc/task.md` -> Блок P40
 
 ## Resolved In This Pass
 

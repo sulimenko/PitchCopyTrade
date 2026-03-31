@@ -18,6 +18,11 @@
 
 {% block content %}
 <section class="staff-card staff-section-stack">
+  {% if error %}
+  <div class="auth-login-alert auth-login-alert--error" style="margin-bottom:18px;">
+    {{ error }}
+  </div>
+  {% endif %}
   <div class="staff-page-head">
     <div class="staff-page-head-copy">
       <div class="eyebrow">панель администратора</div>

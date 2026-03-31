@@ -36,6 +36,12 @@ _STAGE_ALIASES = {
     "subscriber_redirect_blocked": "sub_redirect_blocked",
     "subscriber_snapshot_blocked": "sub_snapshot_blocked",
     "subscriber_identity_blocked": "sub_identity_blocked",
+    "staff_widget_callback_entry": "staff_callback_entry",
+    "staff_invite_bind_success": "staff_bind_ok",
+    "staff_invite_bind_failed": "staff_bind_fail",
+    "staff_session_cookie_issued": "staff_cookie",
+    "admin_dashboard_render": "admin_dashboard",
+    "admin_dashboard_render_failed": "admin_dashboard_fail",
     "app_subscriptions_render": "subs_render",
     "app_subscriptions_render_failed": "subs_render_fail",
     "app_subscription_detail_render": "sub_detail",
@@ -128,6 +134,7 @@ def log_request_trace(
     init_data_has_user: bool | None = None,
     init_data_has_signature: bool | None = None,
     auth_date_age_seconds: int | None = None,
+    redirect_target: str | None = None,
 ) -> None:
     settings = get_settings()
     telegram_cookie_name = f"{settings.auth.session_cookie_name}_tg"
@@ -137,14 +144,16 @@ def log_request_trace(
         auth_cookie_present = bool(request.cookies.get(settings.auth.session_cookie_name))
     compact_stage = compact_stage_name(stage)
     logger.info(
-        "%s trace journey_id=%s path=%s surface=%s entry_marker=%s entry_surface=%s resolved_user_id=%s resolved_telegram_user_id=%s block_reason=%s block_detail=%s",
+        "%s trace journey_id=%s path=%s surface=%s entry_marker=%s entry_surface=%s resolved_user_id=%s resolved_telegram_user_id=%s redirect_target=%s block_reason=%s block_detail=%s",
         compact_stage,
         journey_id,
         request.url.path,
+        surface or "-",
         entry_marker or "-",
         entry_surface or "-",
         auth_user_id or "-",
         telegram_user_id if telegram_user_id is not None else "-",
+        redirect_target or "-",
         block_reason or "-",
         block_detail or "-",
     )

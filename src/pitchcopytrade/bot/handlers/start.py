@@ -38,13 +38,12 @@ async def handle_start(message: Message) -> None:
             await message.answer("Приглашение не удалось прочитать. Попросите администратора отправить новое.")
             return
         invite_url = f"{get_settings().app.base_url.rstrip('/')}/login?invite_token={quote(invite_token, safe='')}"
-        # X3.3: Use WebAppInfo to open invite page inside Telegram WebView
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[
-                InlineKeyboardButton(text="Открыть приглашение", web_app=WebAppInfo(url=invite_url)),
+                InlineKeyboardButton(text="Открыть приглашение", url=invite_url),
             ]]
         )
-        await message.answer("Приглашение сотрудника открыто. Откройте через кнопку ниже.", reply_markup=keyboard)
+        await message.answer("Приглашение сотрудника открыто. Откройте его по кнопке ниже.", reply_markup=keyboard)
         return
     if payload.startswith("staffinvitehelp-"):
         try:
