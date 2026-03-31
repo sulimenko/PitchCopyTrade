@@ -7803,121 +7803,21 @@ Root cause:
 
 ---
 
-## P28 — Bugfix: `/miniapp` 303 redirect убивает Telegram initData
+## P28 — CRITICAL Bugfix: `/miniapp` 303 redirect убивает Telegram initData `[x]`
 
-> **Контекст:** Mini App перестал работать. При открытии через кнопку меню бота (BotFather setChatMenuButton) URL `/miniapp` делает 303 redirect на `/app?entry=miniapp_bootstrap`. **Telegram передаёт `initData` только для первоначального URL.** При серверном редиректе hash-фрагмент или native bridge data теряется. Результат: `webApp.initData === ""`, bootstrap показывает fallback «Открыть бота».
->
-> Лог-подтверждение:
-> ```
-> GET /miniapp → 303 See Other
-> GET /app?entry=miniapp_bootstrap → 200 OK (block_reason=no_telegram_cookie)
-> POST /tg-webapp/bootstrap-trace → webapp_context_present=True, block_reason=no_init_data
-> ```
->
-> **Это также объясняет баг с `telegram_user_id=NULL`**: если initData потеряна, пользователь не может пройти auth через `/tg-webapp/auth`. Он попадает на fallback-страницу. Если потом подписывается через публичный checkout (или через обходной путь) — User создаётся без telegram_user_id.
+Resolved:
+- `/miniapp` теперь рендерит `app/miniapp_entry.html` напрямую и больше не теряет `initData` на серверном redirect;
+- если Telegram cookie уже есть, `/miniapp` делает короткий redirect сразу на `/app/catalog`;
+- regression tests cover both the no-cookie render path and the cookie-backed redirect path;
+- `python3 -m compileall src tests` and the full pytest suite pass.
 
-### P28.1 — `/miniapp` route: рендерить bootstrap HTML напрямую (без redirect)
+Changed files:
+- [src/pitchcopytrade/api/routes/public.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/public.py)
+- [tests/test_public_catalog_checkout.py](/Users/alexey/site/PitchCopyTrade/tests/test_public_catalog_checkout.py)
 
-**Файл:** `src/pitchcopytrade/api/routes/public.py`
+**Acceptance P28**
 
-Заменить 303 redirect на прямой рендер `miniapp_entry.html`:
-
-```python
-@router.get("/miniapp", include_in_schema=False)
-async def miniapp_root(
-    request: Request,
-    auth_repository: AuthRepository = Depends(get_auth_repository),
-) -> Response:
-    journey_id = get_or_create_journey_id(request)
-    auth_user_id, telegram_user_id = await _resolve_request_identity(request, auth_repository)
-    entry_marker = get_entry_marker(request) or "miniapp_bootstrap"
-
-    # Если есть telegram cookie — можно сразу в каталог (initData не нужна)
-    tg_cookie = request.cookies.get(get_telegram_fallback_cookie_name())
-    if tg_cookie:
-        user = await get_user_from_telegram_fallback_cookie(auth_repository, tg_cookie)
-        if user is not None:
-            log_request_trace(
-                logger,
-                request,
-                stage="miniapp_root",
-                journey_id=journey_id,
-                surface="bootstrap",
-                auth_user_id=str(user.id),
-                telegram_user_id=user.telegram_user_id,
-                entry_marker=entry_marker,
-                entry_id=journey_id,
-                entry_surface="bootstrap",
-                first_html_surface="redirect_catalog",
-                requested_next="/app/catalog",
-                block_reason="has_telegram_cookie",
-            )
-            response = RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
-            return attach_journey_cookie(response, journey_id)
-
-    # Нет cookie → рендерим bootstrap страницу НАПРЯМУЮ (без redirect!)
-    # Это критично: 303 redirect теряет Telegram initData
-    bot_url = f"https://t.me/{get_settings().telegram.bot_username}"
-    log_request_trace(
-        logger,
-        request,
-        stage="miniapp_root",
-        journey_id=journey_id,
-        surface="bootstrap",
-        auth_user_id=auth_user_id,
-        telegram_user_id=telegram_user_id,
-        entry_marker=entry_marker,
-        entry_id=journey_id,
-        entry_surface="bootstrap",
-        first_html_surface="miniapp_entry",
-        requested_next="/app/catalog",
-        block_reason="render_bootstrap",
-    )
-    response = templates.TemplateResponse(
-        request,
-        "app/miniapp_entry.html",
-        {
-            "title": "PitchCopyTrade",
-            "telegram_bot_username": get_settings().telegram.bot_username,
-            "bot_url": bot_url,
-            "next_path": "/app/catalog",
-        },
-    )
-    return attach_journey_cookie(response, journey_id)
-```
-
-**Важно:** Нужен импорт `templates` из web и `get_telegram_fallback_cookie_name`, `get_user_from_telegram_fallback_cookie` из auth.session. Проверить, что эти импорты уже есть в файле (они могли быть добавлены в P27).
-
-### P28.2 — Аналогичная проверка для route `/app` (auth.py)
-
-**Файл:** `src/pitchcopytrade/api/routes/auth.py`
-
-Route `/app` (функция `app_home`) уже правильно рендерит `miniapp_entry.html` без redirect при отсутствии cookie (строка ~425). Убедиться, что:
-1. Если есть telegram cookie → redirect к `/app/catalog` (уже есть, строка ~406) — OK, initData не нужна
-2. Если нет cookie → рендер `miniapp_entry.html` (уже есть, строка ~425) — OK, initData доступна
-
-Никаких изменений не требуется, только проверка.
-
-### P28.3 — Убедиться что кнопка меню бота (BotFather) указывает на правильный URL
-
-Это ручное действие. Проверить в BotFather:
-- Menu Button URL должен быть `https://pct.test.ptfin.ru/miniapp` или `https://pct.test.ptfin.ru/app?entry=bot_menu`
-- Оба варианта теперь рабочие после фикса P28.1
-
-> **Для воркера:** реализовать только P28.1. P28.2 — только проверка (без изменений). P28.3 — ручное действие.
-
-### P28.4 — Тесты
-
-1. `test_miniapp_root_no_cookie_renders_bootstrap` — GET `/miniapp` без cookie → 200 (не 303!), body содержит `initData`
-2. `test_miniapp_root_with_cookie_redirects_to_catalog` — GET `/miniapp` с telegram cookie → 303 к `/app/catalog`
-
-- [x] `python3 -m compileall src tests` — без ошибок
-
----
-
-### Acceptance P28
-
-1. `GET /miniapp` без telegram cookie → **200 OK**, рендерит `miniapp_entry.html` (НЕ 303 redirect)
-2. `GET /miniapp` с telegram cookie → 303 redirect к `/app/catalog`
-3. При открытии Mini App из бота → `webApp.initData` доступна → auth проходит → каталог открывается
-4. Все тесты проходят: `pytest -q` → 0 failures
+1. `GET /miniapp` без telegram cookie → `200 OK`, body содержит `miniapp_entry.html`
+2. `GET /miniapp` с telegram cookie → `303` redirect к `/app/catalog`
+3. `python3 -m compileall src tests` — без ошибок
+4. При открытии Mini App из бота → `webApp.initData` доступна → auth проходит → каталог открывается

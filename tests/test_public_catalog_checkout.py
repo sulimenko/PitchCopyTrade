@@ -173,12 +173,26 @@ def test_app_renders_bootstrap_page() -> None:
         assert "pct_journey_id=" in response.headers["set-cookie"]
 
 
-def test_miniapp_alias_redirects_to_canonical_app_entry() -> None:
+def test_miniapp_root_renders_entry_page() -> None:
     with _build_client(FakePublicRepository()) as client:
+        response = client.get("/miniapp")
+
+        assert response.status_code == 200
+        assert "Запустите Mini App из бота" in response.text
+        assert "Открыть бота" in response.text
+        assert "pct_journey_id=" in response.headers["set-cookie"]
+
+
+def test_miniapp_root_redirects_to_catalog_with_telegram_cookie() -> None:
+    user = User(id="user-1", telegram_user_id=12345, full_name="Lead User")
+    repository = FakePublicRepository()
+    auth_repository = FakeAuthRepository(user)
+    with _build_client(repository, auth_repository=auth_repository) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
         response = client.get("/miniapp", follow_redirects=False)
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/app?entry=miniapp_bootstrap"
+        assert response.headers["location"] == "/app/catalog"
 
 
 def test_catalog_renders_strategies(monkeypatch) -> None:

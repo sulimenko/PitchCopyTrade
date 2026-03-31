@@ -11,7 +11,7 @@
 - unified composer, preview и history table уже есть
 - локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `275 passed`
 
-P27, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
+P27, P28, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
 P35 закрыл диагностический блок: runtime fingerprint, auth-failure metadata, preprocessing regression coverage и separation от legacy entrypoints.
 
 ## Подтвержденные факты
@@ -330,18 +330,19 @@ Resolved:
 
 **Подробные инструкции:** `doc/task.md` → Блок P31
 
-### P28 — Bugfix: `/miniapp` 303 redirect убивает Telegram initData `[ ]`
+### P28 — CRITICAL: `/miniapp` 303 redirect убивает Telegram initData `[x]`
 
-- [ ] P28.1: `/miniapp` route — рендерить `miniapp_entry.html` напрямую (без 303 redirect)
-- [ ] P28.2: Проверка `/app` route в auth.py (ожидаем: уже корректно)
-- [ ] P28.3: BotFather menu button URL (ручная проверка)
-- [ ] P28.4: Тесты на `/miniapp` route
+Resolved:
+- `/miniapp` теперь рендерит `app/miniapp_entry.html` напрямую, без server-side redirect;
+- если Telegram cookie уже есть, route делает короткий redirect сразу на `/app/catalog`;
+- regression tests cover both the render path and the cookie-backed redirect path;
+- backlog and runtime code now match the expected Mini App launch contract.
 
 **Подробные инструкции:** `doc/task.md` → Блок P28
 
 ## Gate
 
-Open findings: **P28** (CRITICAL) — Mini App не работает: 303 redirect теряет initData.
+Open findings: **P1** (CRITICAL) — real Telegram bot entry still fails `initData` validation with `invalid_hash`.
 
 Текущий gate: **red**.
 

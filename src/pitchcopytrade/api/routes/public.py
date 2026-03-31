@@ -91,6 +91,27 @@ async def miniapp_root(
     journey_id = get_or_create_journey_id(request)
     auth_user_id, telegram_user_id = await _resolve_request_identity(request, auth_repository)
     entry_marker = get_entry_marker(request) or "miniapp_bootstrap"
+    tg_cookie = request.cookies.get(get_telegram_fallback_cookie_name())
+    if tg_cookie:
+        tg_user = await get_user_from_telegram_fallback_cookie(auth_repository, tg_cookie)
+        if tg_user is not None:
+            log_request_trace(
+                logger,
+                request,
+                stage="miniapp_root",
+                journey_id=journey_id,
+                surface="bootstrap",
+                auth_user_id=tg_user.id,
+                telegram_user_id=tg_user.telegram_user_id,
+                entry_marker=entry_marker,
+                entry_id=journey_id,
+                entry_surface="bootstrap",
+                first_html_surface="redirect_catalog",
+                requested_next="/app/catalog",
+                block_reason="has_telegram_cookie",
+            )
+            response = RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
+            return attach_journey_cookie(response, journey_id)
     log_request_trace(
         logger,
         request,
@@ -102,11 +123,18 @@ async def miniapp_root(
         entry_marker=entry_marker,
         entry_id=journey_id,
         entry_surface="bootstrap",
-        first_html_surface="miniapp_bootstrap",
+        first_html_surface="miniapp_entry",
         requested_next="/app/catalog",
-        block_reason="canonical_entry_redirect",
+        block_reason="render_miniapp_entry",
     )
-    response = RedirectResponse(url="/app?entry=miniapp_bootstrap", status_code=status.HTTP_303_SEE_OTHER)
+    response = templates.TemplateResponse(
+        request,
+        "app/miniapp_entry.html",
+        {
+            "title": "PitchCopyTrade",
+            "bot_url": f"https://t.me/{get_settings().telegram.bot_username}",
+        },
+    )
     return attach_journey_cookie(response, journey_id)
 
 
