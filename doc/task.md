@@ -7946,7 +7946,7 @@ def test_validate_init_data_hash_computed_with_signature():
     assert result["signature"] == "test_sig_value"
 ```
 
-- [ ] `python3 -m compileall src tests` — без ошибок
+- [x] `python3 -m compileall src tests` — без ошибок
 
 ---
 
@@ -8026,7 +8026,7 @@ def test_validate_init_data_hash_computed_with_signature():
 2. Тест: hash без signature → проходит (fallback/legacy)
 3. Тест: неверный hash → `invalid_hash`
 
-- [ ] `python3 -m compileall src tests` — без ошибок
+- [x] `python3 -m compileall src tests` — без ошибок
 
 ---
 
@@ -8248,5 +8248,122 @@ def test_validate_init_data_hash_computed_with_signature():
 - changed files
 - examples before/after
 - grep guide
+- residual risks
+```
+
+---
+
+## P38 — Mini App subscription pages return internal server error after successful checkout
+
+> **Контекст (2026-03-31):**
+>
+> Новый пользователь успешно проходит Mini App auth и checkout:
+> - в `users` есть row с `telegram_user_id`
+> - в `subscriptions` есть запись
+> - consents / subscription records создаются корректно
+>
+> Но после этого при открытии:
+> - `/app/subscriptions`
+> - `/app/subscriptions/{subscription_id}`
+>
+> пользователь получает `Internal Server Error`.
+>
+> В `storage/api.log` при этом нет ни одного явного compact event для render этих экранов, поэтому production RCA по одному только файлу сейчас затруднен.
+
+### Root cause hypothesis
+
+Наиболее вероятный сценарий — async ORM lazy-load в Jinja template path.
+
+Подозрительные точки:
+- [access.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/repositories/access.py#L100)
+  - `get_user_by_telegram_id()` prefetch-ит:
+    - `User.roles`
+    - `User.payments -> Payment.product`
+    - `User.subscriptions -> Subscription.product`
+    - `User.subscriptions -> Subscription.payment`
+    - `User.subscriptions -> Subscription.applied_promo_code`
+- [subscriptions.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/app/subscriptions.html#L28)
+  - шаблон читает `subscription.applied_promo_code`
+- [subscription_detail.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/app/subscription_detail.html#L25)
+  - detail screen тоже читает `subscription.applied_promo_code`
+
+Это хорошо совпадает с классом уже встречавшихся проблем:
+- async SQLAlchemy не поддерживает implicit lazy loading в template-oriented path;
+- результатом часто становится `MissingGreenlet` / template render 500.
+
+Отдельный observability gap:
+- [app.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L494) и [app.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L539) не пишут compact route trace в `storage/api.log`,
+- поэтому оператор видит checkout success, но не видит точку падения subscriber pages.
+
+### Что должен сделать worker
+
+#### P38.1 — Доказать exact server-side failure `[x]`
+
+- [x] **P38.1.1** Зафиксировать exact exception / traceback для `/app/subscriptions`
+- [x] **P38.1.2** Зафиксировать exact exception / traceback для `/app/subscriptions/{subscription_id}`
+- [x] **P38.1.3** Подтвердить или опровергнуть гипотезу про lazy access `Subscription.applied_promo_code`
+
+#### P38.2 — Убрать lazy-load из Mini App subscription render path `[x]`
+
+- [x] **P38.2.1** Сделать data contract для subscriber snapshot template-safe
+- [x] **P38.2.2** Либо eager-load `Subscription.applied_promo_code`, либо вынести promo display data в заранее собранный snapshot payload
+- [x] **P38.2.3** Проверить все поля, которые используются на `subscriptions.html` и `subscription_detail.html`, на implicit ORM access during render
+
+#### P38.3 — Сделать `storage/api.log` достаточным для RCA именно по subscription pages `[x]`
+
+- [x] **P38.3.1** Добавить compact trace events для:
+  - subscriptions list render
+  - subscription detail render
+  - render failure
+- [x] **P38.3.2** Если template render падает, `storage/api.log` должен содержать короткий machine-readable reason code
+- [x] **P38.3.3** Не раздувать log line; соблюсти новый compact logging contract из P37
+
+#### P38.4 — Regression coverage `[x]`
+
+- [x] **P38.4.1** Test: successful checkout -> `/app/subscriptions` renders 200
+- [x] **P38.4.2** Test: successful checkout -> `/app/subscriptions/{id}` renders 200
+- [x] **P38.4.3** Добавить test, который действительно ловит async ORM lazy-load regression, а не только fake snapshot objects
+- [x] **P38.4.4** Проверить сценарии:
+  - без promo code
+  - c `applied_promo_code`
+  - c `manual_discount_rub`
+
+### Acceptance P38
+
+1. После успешного Mini App checkout экраны `/app/subscriptions` и `/app/subscriptions/{id}` открываются без `500`
+2. `storage/api.log` показывает compact events для list/detail subscriber pages
+3. Template render больше не зависит от implicit async ORM lazy-load
+4. Regression tests реально ловят этот класс ошибок, а не маскируют его monkeypatch snapshot-ами
+
+### Worker Prompt — Fix Mini App Subscription Pages 500 After Successful Checkout
+
+```text
+Ты расследуешь новый production defect: после успешного Mini App checkout пользователь и подписка создаются, но экраны `/app/subscriptions` и `/app/subscriptions/{id}` падают с Internal Server Error.
+
+Что уже известно:
+- auth и checkout проходят успешно;
+- записи в `users`, `user_consents`, `subscriptions` создаются;
+- `storage/api.log` не показывает явного compact event для subscription pages;
+- templates читают `subscription.applied_promo_code`;
+- repository snapshot path не prefetch-ит `Subscription.applied_promo_code`.
+
+Самая вероятная причина:
+- implicit lazy-load relationship access в Jinja / async SQLAlchemy path (`MissingGreenlet`-class defect).
+
+Что нужно сделать:
+1. доказать exact traceback;
+2. убрать lazy-load из subscription render path;
+3. добавить compact route/error trace в `storage/api.log`;
+4. покрыть tests на real regression class.
+
+Что нельзя делать:
+- ограничиться “works on fake snapshot”;
+- оставлять subscription pages без operator-visible trace events;
+- добавлять шумный logging, который нарушит compact contract из P37.
+
+Финальный отчет:
+- exact root cause
+- changed files
+- tests run + results
 - residual risks
 ```

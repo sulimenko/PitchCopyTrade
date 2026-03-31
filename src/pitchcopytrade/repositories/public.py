@@ -149,6 +149,7 @@ class SqlAlchemyPublicRepository(PublicRepository):
                 selectinload(User.consents),
                 selectinload(User.payments).selectinload(Payment.product),
                 selectinload(User.subscriptions).selectinload(Subscription.product),
+                selectinload(User.subscriptions).selectinload(Subscription.applied_promo_code),
                 selectinload(User.subscriptions).selectinload(Subscription.payment),
             )
             .where(User.telegram_user_id == telegram_user_id)

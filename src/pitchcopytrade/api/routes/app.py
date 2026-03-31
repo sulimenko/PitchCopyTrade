@@ -500,18 +500,50 @@ async def app_subscriptions(
     user, snapshot = await _get_subscriber_snapshot_or_redirect(request, auth_repository, repository)
     if isinstance(user, Response):
         return user
-    return templates.TemplateResponse(
+    journey_id = get_or_create_journey_id(request)
+    try:
+        response = templates.TemplateResponse(
+            request,
+            "app/subscriptions.html",
+            {
+                "title": "Мои подписки",
+                "user": user,
+                "snapshot": snapshot,
+                "subscription_status_label": subscription_status_label,
+                "billing_period_label": billing_period_label,
+                **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
+            },
+        )
+    except Exception as exc:
+        log_request_trace(
+            logger,
+            request,
+            stage="app_subscriptions_render_failed",
+            journey_id=journey_id,
+            surface="miniapp",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            entry_marker=get_entry_marker(request),
+            entry_id=journey_id,
+            entry_surface="miniapp",
+            block_reason="template_render_error",
+            block_detail=exc.__class__.__name__,
+        )
+        logger.exception("Mini App subscriptions render failed for user %s", user.id)
+        raise
+    log_request_trace(
+        logger,
         request,
-        "app/subscriptions.html",
-        {
-            "title": "Мои подписки",
-            "user": user,
-            "snapshot": snapshot,
-            "subscription_status_label": subscription_status_label,
-            "billing_period_label": billing_period_label,
-            **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
-        },
+        stage="app_subscriptions_render",
+        journey_id=journey_id,
+        surface="miniapp",
+        auth_user_id=user.id,
+        telegram_user_id=user.telegram_user_id,
+        entry_marker=get_entry_marker(request),
+        entry_id=journey_id,
+        entry_surface="miniapp",
     )
+    return response
 
 
 @router.get("/payments", response_class=HTMLResponse)
@@ -549,20 +581,52 @@ async def app_subscription_detail(
     subscription = next((item for item in snapshot.subscriptions if item.id == subscription_id), None)
     if subscription is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
-    return templates.TemplateResponse(
+    journey_id = get_or_create_journey_id(request)
+    try:
+        response = templates.TemplateResponse(
+            request,
+            "app/subscription_detail.html",
+            {
+                "title": "Подписка",
+                "user": user,
+                "snapshot": snapshot,
+                "subscription": subscription,
+                "renewal_history": subscription_renewal_history(snapshot, subscription),
+                "subscription_status_label": subscription_status_label,
+                "billing_period_label": billing_period_label,
+                **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
+            },
+        )
+    except Exception as exc:
+        log_request_trace(
+            logger,
+            request,
+            stage="app_subscription_detail_render_failed",
+            journey_id=journey_id,
+            surface="miniapp",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            entry_marker=get_entry_marker(request),
+            entry_id=journey_id,
+            entry_surface="miniapp",
+            block_reason="template_render_error",
+            block_detail=exc.__class__.__name__,
+        )
+        logger.exception("Mini App subscription detail render failed for subscription %s", subscription_id)
+        raise
+    log_request_trace(
+        logger,
         request,
-        "app/subscription_detail.html",
-        {
-            "title": "Подписка",
-            "user": user,
-            "snapshot": snapshot,
-            "subscription": subscription,
-            "renewal_history": subscription_renewal_history(snapshot, subscription),
-            "subscription_status_label": subscription_status_label,
-            "billing_period_label": billing_period_label,
-            **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
-        },
+        stage="app_subscription_detail_render",
+        journey_id=journey_id,
+        surface="miniapp",
+        auth_user_id=user.id,
+        telegram_user_id=user.telegram_user_id,
+        entry_marker=get_entry_marker(request),
+        entry_id=journey_id,
+        entry_surface="miniapp",
     )
+    return response
 
 
 @router.post("/subscriptions/{subscription_id}/autorenew")

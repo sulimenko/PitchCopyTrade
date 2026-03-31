@@ -13,7 +13,9 @@
 
 P27, P28, P29, P30, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
 P35 закрыл предыдущий auth blocker: production logs больше показывают `tg_webapp_auth_success`, а не `invalid_hash`.
-P36 и P37 закрыты в коде и документации; в gate по-прежнему остается отдельный старый P32.
+P36 и P37 закрыты в коде и документации.
+P38 закрыт в коде и документации.
+P32 cleanup remains open, но это не blocker.
 
 ## Подтвержденные факты
 
@@ -45,6 +47,17 @@ Resolved:
 - short stage/reason codes и grep guide покрыты helper-тестами и обновленной документацией.
 
 Подробные инструкции: `doc/task.md` -> Блок P37
+
+### [P1] Mini App subscription pages can still fail with internal server error after successful checkout `[x]`
+
+Resolved:
+- production flow теперь доходит до успешного Mini App checkout: user, consents и subscription rows создаются;
+- subscription pages больше не падают на render path;
+- templates `app/subscriptions.html` и `app/subscription_detail.html` продолжают читать `subscription.applied_promo_code`, но repository snapshot path уже eager-load-ит этот relation;
+- subscriber routes пишут compact render events в `storage/api.log`, включая render failure reason code;
+- regression tests покрывают list/detail renders, promo/manual-discount сценарии и loader-contract regression.
+
+Подробные инструкции: `doc/task.md` -> Блок P38
 
 ## Resolved In This Pass
 

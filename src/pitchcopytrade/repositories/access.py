@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import BundleMember, Strategy, SubscriptionProduct
-from pitchcopytrade.db.models.commerce import Payment, Subscription
+from pitchcopytrade.db.models.commerce import Payment, PromoCode, Subscription
 from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.enums import MessageDeliver, MessageStatus, SubscriptionStatus
 from pitchcopytrade.repositories.contracts import AccessRepository
@@ -105,6 +105,8 @@ class SqlAlchemyAccessRepository(AccessRepository):
                 selectinload(User.roles),
                 selectinload(User.payments).selectinload(Payment.product),
                 selectinload(User.subscriptions).selectinload(Subscription.product),
+                selectinload(User.subscriptions).selectinload(Subscription.payment),
+                selectinload(User.subscriptions).selectinload(Subscription.applied_promo_code),
             )
             .where(User.telegram_user_id == telegram_user_id)
         )

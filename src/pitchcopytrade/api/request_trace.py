@@ -36,6 +36,10 @@ _STAGE_ALIASES = {
     "subscriber_redirect_blocked": "sub_redirect_blocked",
     "subscriber_snapshot_blocked": "sub_snapshot_blocked",
     "subscriber_identity_blocked": "sub_identity_blocked",
+    "app_subscriptions_render": "subs_render",
+    "app_subscriptions_render_failed": "subs_render_fail",
+    "app_subscription_detail_render": "sub_detail",
+    "app_subscription_detail_render_failed": "sub_detail_fail",
 }
 
 
