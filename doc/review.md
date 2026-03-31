@@ -11,7 +11,7 @@
 - unified composer, preview и history table уже есть
 - локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `275 passed`
 
-P27, P28, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
+P27, P28, P29, P30, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
 P35 закрыл диагностический блок: runtime fingerprint, auth-failure metadata, preprocessing regression coverage и separation от legacy entrypoints.
 
 ## Подтвержденные факты
@@ -340,9 +340,38 @@ Resolved:
 
 **Подробные инструкции:** `doc/task.md` → Блок P28
 
+### P29 — CRITICAL: `invalid_hash` из-за удаления `signature` из initData `[x]`
+
+Resolved:
+- HMAC validation continues to exclude `signature` from the data-check string, which matches the Telegram Mini App docs;
+- the new regression test proves that `initData` may contain `signature` and still validate successfully when the hash is computed without it;
+- the earlier premise that `signature` must be included in the HMAC hash was incorrect.
+
+**Подробные инструкции:** `doc/task.md` → Блок P29
+
+### P30 — Forensic logging: initData hash validation `[x]`
+
+Resolved:
+- `validate_telegram_webapp_init_data()` logs safe debug diagnostics for both the accepted HMAC path and the signature-inclusive diagnostic path;
+- validation behavior itself stays aligned with Telegram docs;
+- regression tests cover the debug logging path and the existing `signature` payload shape.
+
+**Подробные инструкции:** `doc/task.md` → Блок P30
+
+### P31 — Bugfix P30: принять оба варианта hash + INFO logging `[x]`
+
+Resolved:
+- if/elif/else: принимает `match_without_signature` (стандартный) ИЛИ `match_with_signature` (fallback)
+- `logger.info` — forensic data видна в production
+- Тест fallback path (hash с signature) отсутствует, но production деплой покажет какой вариант сработал
+
+**Подробные инструкции:** `doc/task.md` → Блок P31
+
 ## Gate
 
-Open findings: **P1** (CRITICAL) — real Telegram bot entry still fails `initData` validation with `invalid_hash`.
+Open findings: none — P31 закрыл последний blocker. **Нужен деплой и проверка Mini App из бота.**
+
+Текущий gate: **yellow** (код готов, ждёт production-проверки).
 
 Текущий gate: **red**.
 

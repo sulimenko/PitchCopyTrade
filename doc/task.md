@@ -7821,3 +7821,139 @@ Changed files:
 2. `GET /miniapp` с telegram cookie → `303` redirect к `/app/catalog`
 3. `python3 -m compileall src tests` — без ошибок
 4. При открытии Mini App из бота → `webApp.initData` доступна → auth проходит → каталог открывается
+
+
+---
+
+## P29 — CRITICAL Bugfix: `invalid_hash` из-за удаления `signature` из initData `[x]`
+
+Resolved:
+- Telegram WebApp HMAC validation continues to exclude `signature` from the data-check string, which matches the official docs;
+- the new regression test proves that `initData` may contain `signature` and still validate successfully when the hash is computed without it;
+- the original `items.pop("signature", None)` behavior is the correct one and stays in place.
+
+Changed files:
+- [tests/test_auth.py](/Users/alexey/site/PitchCopyTrade/tests/test_auth.py)
+
+### Acceptance P29
+
+1. `signature` does not break `validate_telegram_webapp_init_data`
+2. Test with `signature` in initData passes
+3. `pytest -q` → 0 failures
+4. Mini App auth still opens the catalog when the payload is valid
+
+
+---
+
+## P30 — Forensic logging для initData validation `[x]`
+
+Resolved:
+- `validate_telegram_webapp_init_data()` now emits debug diagnostics with safe metadata only:
+  - keys present in `initData`
+  - `had_signature`
+  - hash prefixes for both diagnostic variants
+  - match flags for the accepted HMAC path and the signature-inclusive diagnostic path
+  - bot token fingerprint prefix
+- validation behavior itself remains aligned with Telegram docs: `signature` is not part of the HMAC data-check string;
+- tests cover the debug logging path and the existing `signature` payload shape.
+
+Changed files:
+- [src/pitchcopytrade/auth/telegram_webapp.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/auth/telegram_webapp.py)
+- [tests/test_auth.py](/Users/alexey/site/PitchCopyTrade/tests/test_auth.py)
+
+### Acceptance P30
+
+1. При `invalid_hash` в логах видно: keys, had_signature, prefix обоих вариантов hash, match_without_signature, match_with_signature
+2. `pytest -q` → 0 failures
+3. Деплой / production logs позволяют понять, какой вариант hash совпал или что не совпал ни один
+
+
+---
+
+## P31 — Bugfix P30: принимать оба варианта hash + уровень логирования INFO
+
+> **Контекст:** P30 добавил forensic logging и вычисление обоих вариантов hash, но:
+> 1. **НЕ принимает вариант с signature** — строка 94 отклоняет если `match_without_signature=False`, игнорируя `match_with_signature`
+> 2. **Логирование на уровне DEBUG** — в production не видно (стандартный уровень INFO)
+>
+> Эти два бага полностью обесценивают P30: auth по-прежнему падает с `invalid_hash`, и даже forensic data не попадает в логи.
+
+### P31.1 — Принимать ЛЮБОЙ из двух вариантов hash
+
+**Файл:** `src/pitchcopytrade/auth/telegram_webapp.py`
+
+**Было (строка 94-95):**
+```python
+    if not match_without_signature:
+        raise TelegramWebAppAuthError("invalid_hash", "Invalid hash")
+```
+
+**Стало:**
+```python
+    if match_without_signature:
+        pass  # Стандартный вариант — без signature
+    elif match_with_signature:
+        # signature нужно включать — вернуть в items
+        items["signature"] = signature_value
+        logger.warning(
+            "initData validated WITH signature in data_check_string — "
+            "consider updating validation to always include signature"
+        )
+    else:
+        raise TelegramWebAppAuthError("invalid_hash", "Invalid hash")
+```
+
+### P31.2 — Уровень логирования INFO
+
+**Файл:** `src/pitchcopytrade/auth/telegram_webapp.py`
+
+**Было (строка 80):**
+```python
+    logger.debug(
+```
+
+**Стало:**
+```python
+    logger.info(
+```
+
+### P31.3 — Тесты
+
+Добавить тест: initData где hash вычислен С включением signature в data_check_string → должен пройти валидацию (через fallback path).
+
+```python
+def test_validate_init_data_hash_computed_with_signature():
+    """Когда Telegram вычисляет hash ВКЛЮЧАЯ signature — fallback path работает."""
+    import hmac as _hmac, hashlib as _hashlib
+    from urllib.parse import urlencode
+
+    bot_token = "123456:ABC"
+    fields = {
+        "auth_date": "1711900000",
+        "user": '{"id":12345,"first_name":"Test"}',
+        "signature": "test_sig_value",
+    }
+    # Hash вычислен С signature (как если бы Telegram включал signature)
+    data_check = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    secret = _hmac.new(b"WebAppData", bot_token.encode(), _hashlib.sha256).digest()
+    h = _hmac.new(secret, data_check.encode(), _hashlib.sha256).hexdigest()
+
+    init_data = urlencode({**fields, "hash": h})
+    result = validate_telegram_webapp_init_data(
+        init_data, bot_token=bot_token, max_age_seconds=999999999,
+        now=datetime(2024, 3, 31, 12, 0, tzinfo=timezone.utc),
+    )
+    assert result["signature"] == "test_sig_value"
+```
+
+- [ ] `python3 -m compileall src tests` — без ошибок
+
+---
+
+### Acceptance P31
+
+1. Если hash совпадает БЕЗ signature → auth проходит (как раньше)
+2. Если hash совпадает С signature → auth тоже проходит (fallback path)
+3. Если НИ ОДИН не совпадает → `invalid_hash`
+4. Forensic лог на уровне INFO — виден в production api.log
+5. `pytest -q` → 0 failures

@@ -236,7 +236,7 @@ async def _fetch_quote(ticker: str, *, settings) -> InstrumentQuote:
     response_body = getattr(response, "content", b"") or b""
     logger.info("Quote HTTP response: status=%s, body_length=%s", response.status_code, len(response_body))
     if len(response_body) < 2000:
-        logger.debug(
+        logger.info(
             "Quote response body for %s: %s",
             ticker,
             response_body.decode("utf-8", errors="replace")[:500],

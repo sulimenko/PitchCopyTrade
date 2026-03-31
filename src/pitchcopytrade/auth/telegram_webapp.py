@@ -3,9 +3,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl
+
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramWebAppAuthError(ValueError):
@@ -36,14 +40,63 @@ def validate_telegram_webapp_init_data(
 
     items = dict(parse_qsl(init_data, keep_blank_values=True))
     received_hash = items.pop("hash", None)
-    items.pop("signature", None)
+    had_signature = "signature" in items
+    signature_value = items.pop("signature", None)
     if not received_hash:
         raise TelegramWebAppAuthError("missing_hash", "Missing hash")
 
-    data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(items.items()))
+    data_check_items_without_signature = dict(items)
+    data_check_string_without_signature = "\n".join(
+        f"{key}={value}" for key, value in sorted(data_check_items_without_signature.items())
+    )
     secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
-    expected_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected_hash, received_hash):
+    expected_hash_without_signature = hmac.new(
+        secret_key,
+        data_check_string_without_signature.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    expected_hash_with_signature = None
+    data_check_string_with_signature = None
+    if had_signature and signature_value is not None:
+        items_with_signature = dict(items)
+        items_with_signature["signature"] = signature_value
+        data_check_string_with_signature = "\n".join(
+            f"{key}={value}" for key, value in sorted(items_with_signature.items())
+        )
+        expected_hash_with_signature = hmac.new(
+            secret_key,
+            data_check_string_with_signature.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    match_without_signature = hmac.compare_digest(expected_hash_without_signature, received_hash)
+    match_with_signature = (
+        hmac.compare_digest(expected_hash_with_signature, received_hash)
+        if expected_hash_with_signature is not None
+        else False
+    )
+
+    logger.info(
+        "initData validation keys=%s had_signature=%s received_hash_prefix=%s hash_without_signature_prefix=%s match_without_signature=%s hash_with_signature_prefix=%s match_with_signature=%s data_check_len_without_signature=%s data_check_len_with_signature=%s bot_token_fingerprint=%s",
+        sorted(items.keys()),
+        had_signature,
+        received_hash[:12] if received_hash else "-",
+        expected_hash_without_signature[:12],
+        match_without_signature,
+        expected_hash_with_signature[:12] if expected_hash_with_signature else "-",
+        match_with_signature,
+        len(data_check_string_without_signature),
+        len(data_check_string_with_signature) if data_check_string_with_signature is not None else "-",
+        hashlib.sha256(bot_token.encode("utf-8")).hexdigest()[:12],
+    )
+
+    if match_without_signature:
+        pass
+    elif match_with_signature:
+        items["signature"] = signature_value
+        logger.warning("initData validated WITH signature in data_check_string")
+    else:
         raise TelegramWebAppAuthError("invalid_hash", "Invalid hash")
 
     try:

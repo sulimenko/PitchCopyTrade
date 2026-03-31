@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import time
+from urllib.parse import urlencode
 
 import pytest
 from fastapi.testclient import TestClient
 
 from pitchcopytrade.auth.telegram_login_widget import TelegramLoginWidgetError, verify_telegram_login_widget
+from pitchcopytrade.auth.telegram_webapp import validate_telegram_webapp_init_data
 
 
 BOT_TOKEN = "test_bot_token_123"
@@ -66,6 +69,52 @@ class TestTelegramLoginWidget:
         params = _make_valid_params(bot_token=BOT_TOKEN)
         with pytest.raises(TelegramLoginWidgetError, match="Invalid hash"):
             verify_telegram_login_widget(params, "wrong_token_here")
+
+    def test_validate_webapp_init_data_accepts_signature_field(self):
+        bot_token = "123456:ABC"
+        fields = {
+            "auth_date": str(int(time.time())),
+            "query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
+            "signature": "signature-value",
+            "user": '{"id":123,"first_name":"Test","username":"tester"}',
+        }
+        data_check_string = "\n".join(
+            f"{k}={v}" for k, v in sorted({k: v for k, v in fields.items() if k != "signature"}.items())
+        )
+        secret = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+        correct_hash = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        init_data = urlencode({**fields, "hash": correct_hash})
+
+        result = validate_telegram_webapp_init_data(init_data, bot_token=bot_token, max_age_seconds=3600)
+
+        assert result["user"].startswith("{\"id\":123")
+        assert "signature" not in result
+
+    def test_validate_webapp_init_data_logs_both_hash_variants(self, caplog: pytest.LogCaptureFixture):
+        bot_token = "123456:ABC"
+        fields = {
+            "auth_date": str(int(time.time())),
+            "query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
+            "signature": "signature-value",
+            "user": '{"id":123,"first_name":"Test","username":"tester"}',
+        }
+        data_check_string = "\n".join(
+            f"{k}={v}" for k, v in sorted({k: v for k, v in fields.items() if k != "signature"}.items())
+        )
+        secret = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+        correct_hash = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        init_data = urlencode({**fields, "hash": correct_hash})
+
+        caplog.set_level(logging.DEBUG, logger="pitchcopytrade.auth.telegram_webapp")
+        result = validate_telegram_webapp_init_data(init_data, bot_token=bot_token, max_age_seconds=3600)
+
+        assert result["user"].startswith("{\"id\":123")
+        debug_messages = [record.getMessage() for record in caplog.records if record.name == "pitchcopytrade.auth.telegram_webapp"]
+        assert any("initData validation keys=" in message for message in debug_messages)
+        assert any("had_signature=True" in message for message in debug_messages)
+        assert any("match_without_signature=True" in message for message in debug_messages)
+        assert any("match_with_signature=False" in message for message in debug_messages)
+        assert any("bot_token_fingerprint=" in message for message in debug_messages)
 
 
 class TestProtectedRoutes:
