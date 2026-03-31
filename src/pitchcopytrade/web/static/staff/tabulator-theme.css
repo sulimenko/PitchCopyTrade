@@ -91,11 +91,6 @@
   color: #b63b3b;
 }
 
-/* P3.1: Allow dropdown menus to escape cell overflow */
-.pct-tabulator .tabulator-cell:has(.staff-row-menu) {
-  overflow: visible !important;
-}
-
 .pct-tabulator .tabulator-frozen.tabulator-frozen-right .tabulator-cell {
   overflow: visible !important;
 }

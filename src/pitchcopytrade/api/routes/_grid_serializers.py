@@ -166,16 +166,13 @@ def serialize_staff(staff: list, current_user_id: str | None = None, request_url
         if item.get("can_revoke_admin"):
             role_actions = f'<form method="post" action="/admin/staff/{staff_id}/roles/admin/remove" style="display:inline;"><button class="ghost" type="submit">Снять роль администратора</button></form>'
 
-        # Staff actions dropdown (P4.1: use data-open-staff-dialog instead of href)
-        actions_html = f'''<details class="staff-row-menu">
-  <summary class="staff-btn ghost">⋮ Действия</summary>
-  <div class="staff-row-menu-panel">
-    <button type="button" class="staff-btn ghost" data-open-staff-dialog="staff-edit-{staff_id}">Редактировать</button>
-    <button type="button" class="ghost" data-open-staff-dialog="staff-edit-{staff_id}">Диалог</button>
-    {role_actions}
-    {resend_button}
-  </div>
-</details>'''
+        actions_html = (
+            '<div class="staff-inline-actions">'
+            f'<button type="button" class="staff-btn ghost" data-open-staff-dialog="staff-edit-{staff_id}">Редактировать</button>'
+            f"{role_actions}"
+            f"{resend_button}"
+            "</div>"
+        )
 
         data.append({
             "name": f"<strong>{item.get('display_name', '—')}</strong><br>{item.get('email', '')}{name_suffix}",

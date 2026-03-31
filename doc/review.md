@@ -17,6 +17,7 @@ P36 и P37 закрыты в коде и документации.
 P38 закрыт в коде и документации.
 P39 закрыл основной staff/admin onboarding blocker.
 P40 закрыт в коде и документации.
+Новый открытый review follow-up: P41.
 P32 cleanup remains open, но это не blocker.
 
 ## Подтвержденные факты
@@ -82,6 +83,21 @@ Resolved:
 - regression tests cover conflicting email cases and invite metadata survival.
 
 Подробные инструкции: `doc/task.md` -> Блок P40
+
+### [P1] Existing auth context can still hijack `/login?invite_token=...` and trap staff onboarding in `/login` loop
+
+Open:
+- `GET /login` сейчас short-circuit-ит по existing staff session cookie раньше, чем учитывает `invite_token`;
+- если existing session принадлежит `active` user без staff roles, `_resolve_role_redirect()` возвращает `/login`, и route уходит в self-redirect loop;
+- если вместо staff session присутствует только Telegram fallback cookie, valid invite path может быть silently перехвачен и увести пользователя обратно в subscriber surface `/app/catalog`;
+- production symptom уже подтвержден `storage/api.log`: repeated `login trace` with the same `journey_id`, populated `resolved_user_id` / `resolved_telegram_user_id`, but without callback/bind progression.
+
+Это означает:
+- canonical invite link после P39 все еще не truly canonical для already-known subscriber в том же browser context;
+- existing auth cookies могут перехватить invite flow раньше, чем user дойдет до Telegram widget callback;
+- recreated admin invite для существующего subscriber остается нестабильным без manual cookie cleanup.
+
+Подробные инструкции: `doc/task.md` -> Блок P41
 
 ## Resolved In This Pass
 

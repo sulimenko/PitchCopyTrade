@@ -8629,3 +8629,146 @@ P40 закрыт:
 - surviving user получает staff email/full_name/timezone/invite metadata по documented rule;
 - regression tests покрывают conflicting identity и invite metadata survival cases.
 ```
+
+---
+
+## P41 — Existing auth context can hijack `/login?invite_token=...` and trap recreated staff invite in `/login` loop
+
+> **Контекст (2026-03-31 production logs):**
+>
+> После удаления старого admin user и повторного создания admin для человека, который уже существует как subscriber, письмо теперь содержит одну ссылку, но вход в кабинет ломается.
+>
+> Из `storage/api.log`:
+> - repeated `login trace` with one `journey_id`
+> - `path=/login`
+> - `resolved_user_id=9d58fb0c-38e7-4263-91f8-057fefea7219`
+> - `resolved_telegram_user_id=259941197`
+> - `redirect_target=-`
+> - `block_reason=-`
+>
+> Это показывает, что existing user уже резолвится на входе в `/login`, но invite flow дальше не продвигается в widget callback / bind / dashboard redirect.
+
+### Root cause hypothesis
+
+Сейчас [login_page()](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L192) обрабатывает existing auth context раньше, чем учитывает `invite_token`:
+
+- [auth.py:197](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L197)
+  - route сначала читает обычный staff session cookie
+- [auth.py:213](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L213)
+  - если user найден и `status == active`, route сразу делает redirect через `_resolve_role_redirect()`
+- [auth.py:217](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L217)
+  - затем, если есть только Telegram fallback cookie, route уводит на `/app/catalog`
+- `invite_token` попадает только в template context на [auth.py:228](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L228), но до этого код может вообще не дойти
+
+Дополнительный дефект:
+
+- [auth.py:820](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/auth.py#L820)
+  - `_resolve_role_redirect()` возвращает `/login`, если у user нет staff roles
+
+Это создает два broken path-а:
+
+1. **Self-loop**
+   - если в session cookie лежит `active` user без `admin/author/moderator`,
+   - `login_page()` делает redirect на `/login`,
+   - resulting request снова попадает в тот же branch.
+
+2. **Invite bypass to subscriber surface**
+   - если у пользователя нет staff session, но есть Telegram fallback cookie от subscriber flow,
+   - `/login?invite_token=...` может быть silently перехвачен и увести в `/app/catalog`,
+   - то есть existing subscriber auth context съедает staff invite.
+
+### Почему это важно
+
+- user-facing promise “одно canonical invite link” после P39 остается неполным;
+- invite onboarding для already-existing subscriber все еще не deterministic;
+- operator может правильно пересоздать invite, но user все равно не попадет в кабинет;
+- текущий log contract не фиксирует explicit reason вроде `invite_bypassed_by_session` / `self_redirect_blocked`.
+
+### Что должен сделать worker
+
+#### P41.1 — Invite token must have priority over existing auth context `[ ]`
+
+- [ ] **P41.1.1** Если `invite_token` присутствует в `/login`, route не должен silently short-circuit-ить в:
+  - `/login`
+  - `/app/catalog`
+  - любой другой surface, пока invite flow не обработан по canonical rule
+- [ ] **P41.1.2** Existing session/tg cookie можно использовать только как input для merge/bind decision, но не как повод bypass-нуть invite flow
+
+#### P41.2 — Убрать `/login -> /login` self-loop `[ ]`
+
+- [ ] **P41.2.1** Запретить redirect на `/login` для already-authenticated non-staff user
+- [ ] **P41.2.2** Если resolved user не имеет staff roles, route должен:
+  - либо показать invite-aware login screen,
+  - либо явно очистить/игнорировать неподходящий staff session,
+  - но не уходить в self-redirect
+
+#### P41.3 — Existing subscriber invite onboarding must stay deterministic `[ ]`
+
+- [ ] **P41.3.1** Subscriber with Telegram-bound identity должен иметь возможность открыть `invite_token` link, не очищая вручную cookies
+- [ ] **P41.3.2** Если same human already authenticated as subscriber, route должен сохранить invite context и довести до staff bind/role elevation
+- [ ] **P41.3.3** Если existing auth context конфликтует с invite target, user должен получить loud controlled screen, а не endless redirect
+
+#### P41.4 — `storage/api.log` must show invite bypass / loop reason `[ ]`
+
+- [ ] **P41.4.1** Добавить compact reason codes:
+  - `invite_bypassed_by_staff_session`
+  - `invite_bypassed_by_tg_cookie`
+  - `non_staff_session_on_login`
+  - `self_redirect_blocked`
+- [ ] **P41.4.2** При redirect decision логировать explicit `redirect_target`
+- [ ] **P41.4.3** Развести cases:
+  - invite honored
+  - invite bypassed
+  - invite blocked
+  - existing staff session reused
+
+#### P41.5 — Regression coverage `[ ]`
+
+- [ ] **P41.5.1** Test: `/login?invite_token=...` with existing non-staff session does not loop to `/login`
+- [ ] **P41.5.2** Test: `/login?invite_token=...` with existing Telegram fallback cookie does not silently redirect to `/app/catalog`
+- [ ] **P41.5.3** Test: existing subscriber can complete staff invite without manual cookie clearing
+- [ ] **P41.5.4** Test: already-staff user opening valid invite is redirected deterministically to staff home, not re-onboarded
+
+### Acceptance P41
+
+1. `invite_token` link is always processed as canonical onboarding entry, even when the same browser already has subscriber/staff cookies
+2. `/login` never loops to itself for an authenticated non-staff user
+3. Existing subscriber can accept a recreated staff/admin invite without manual cookie cleanup
+4. `storage/api.log` explains whether invite was honored, bypassed, blocked or resolved through existing staff session
+
+### Worker Prompt — Fix Invite Token Priority Over Existing Auth Context
+
+```text
+Ты расследуешь production defect в staff/admin onboarding после P39.
+
+Симптом:
+- user уже существует как subscriber;
+- старый admin row удалили и создали новый invite;
+- письмо содержит одну правильную ссылку;
+- но `/login?invite_token=...` не доводит user до кабинета;
+- в `storage/api.log` видно repeated `login trace` with resolved existing user/telegram id, но нет bind/callback progression.
+
+Что уже видно по коду:
+- `login_page()` short-circuit-ит по existing staff session раньше, чем учитывает `invite_token`;
+- затем short-circuit-ит по Telegram fallback cookie в `/app/catalog`;
+- `_resolve_role_redirect()` возвращает `/login` для active user без staff roles, что создает self-loop.
+
+Что нужно:
+1. сделать `invite_token` приоритетным сигналом на `/login`;
+2. запретить `/login -> /login` self-loop;
+3. не позволять subscriber cookies silently съедать staff invite;
+4. добавить compact RCA events в `storage/api.log`;
+5. покрыть tests на existing session / tg-cookie / existing subscriber invite path.
+
+Что нельзя делать:
+- требовать от пользователя manual cookie cleanup как normal path;
+- сохранять hidden redirect в subscriber surface при наличии `invite_token`;
+- считать задачу закрытой, если ссылка работает только в incognito.
+
+Финальный отчет:
+- exact root cause
+- chosen login/invite precedence rule
+- changed files
+- tests run + results
+- residual risks
+```

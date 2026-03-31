@@ -1269,8 +1269,9 @@ def test_staff_registry_renders_filters_and_actions(monkeypatch) -> None:
         assert "Dual Role" in response.text
         assert "multi-role" in response.text
         assert "Снять роль администратора" in response.text
+        assert "Редактировать" in response.text
         assert "invite_token=" in response.text
-        assert "staff-row-menu-panel" in response.text
+        assert "staff-row-menu-panel" not in response.text
         assert 'class="staff-content"' in response.text
         assert "height: 100vh;" in response.text
         assert "flex-direction: column;" in response.text
