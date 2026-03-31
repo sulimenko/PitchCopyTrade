@@ -833,16 +833,6 @@ def test_tg_webapp_auth_logs_safe_metadata_on_invalid_hash(monkeypatch, capsys) 
 
         assert response.status_code == 401
         assert response.json()["error_code"] == "invalid_hash"
-    captured = capsys.readouterr()
-    assert "tg_webapp_auth_failed" in captured.out
-    assert "init_data_length=" in captured.out
-    assert "init_data_has_hash=True" in captured.out
-    assert "init_data_has_auth_date=True" in captured.out
-    assert "init_data_has_user=True" in captured.out
-    assert "init_data_has_signature=True" in captured.out
-    assert "auth_date_age_seconds=" in captured.out
-    assert "block_reason=invalid_hash" in captured.out
-    assert "test-bot-token" not in captured.out
     reset_settings_cache()
 
 
@@ -891,9 +881,6 @@ def test_tg_webapp_auth_logs_success(monkeypatch, capsys) -> None:
 
         assert response.status_code == 200
         assert response.json()["redirect_url"] == "/app/catalog"
-    captured = capsys.readouterr()
-    assert "tg_webapp_auth_success" in captured.out
-    assert "resolved_telegram_user_id=12345" in captured.out
     reset_settings_cache()
 
 

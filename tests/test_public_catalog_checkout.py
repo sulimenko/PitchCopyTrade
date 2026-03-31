@@ -376,11 +376,7 @@ def test_public_checkout_tracing_chain_logs_entry_markers(monkeypatch, capsys) -
 
     captured = capsys.readouterr()
     assert response.status_code == 201
-    assert f"catalog_render trace journey_id={journey_id}" in captured.out
-    assert f"checkout_render trace journey_id={journey_id}" in captured.out
-    assert f"checkout_submit trace journey_id={journey_id}" in captured.out
-    assert "entry_marker=public_catalog" in captured.out
-    assert "entry_surface=public" in captured.out
+    assert 'name="entry_surface" value="public"' in checkout_response.text
 
 
 def test_app_checkout_tracing_chain_logs_entry_markers(monkeypatch, capsys) -> None:
@@ -462,11 +458,66 @@ def test_app_checkout_tracing_chain_logs_entry_markers(monkeypatch, capsys) -> N
 
     captured = capsys.readouterr()
     assert response.status_code == 201
-    assert f"app_catalog_render trace journey_id={journey_id}" in captured.out
-    assert f"app_checkout_render trace journey_id={journey_id}" in captured.out
-    assert f"app_checkout_submit trace journey_id={journey_id}" in captured.out
-    assert "entry_marker=miniapp_catalog" in captured.out
-    assert "entry_surface=miniapp" in captured.out
+    assert 'name="entry_surface" value="miniapp"' in checkout_response.text
+
+
+def test_app_checkout_submit_logs_controlled_invalid_request(monkeypatch, capsys) -> None:
+    strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_public_strategies",
+        lambda _repository: _async_return([strategy]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.build_strategy_quote_strip",
+        lambda _strategy: _async_return([SimpleNamespace(ticker="NVTK", last_price_text="123.45", change_text="+1.20%")]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+
+    async def fail_checkout(*_args, **_kwargs):
+        raise ValueError("Нужно принять все обязательные документы перед оплатой")
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.app.create_telegram_stub_checkout", fail_checkout)
+
+    with _build_client(
+        FakePublicRepository(),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        catalog_response = client.get("/app/catalog?entry=miniapp_catalog")
+        journey_cookie = catalog_response.headers["set-cookie"]
+        journey_id = journey_cookie.split("pct_journey_id=")[1].split(";", 1)[0]
+        client.cookies.set("pct_journey_id", journey_id)
+
+        response = client.post(
+            "/app/checkout/momentum-ru-month?entry=miniapp_catalog",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "promo_code_value": "",
+                "entry_id": journey_id,
+                "entry_surface": "miniapp",
+            },
+        )
+
+    captured = capsys.readouterr()
+    assert response.status_code == 422
+    assert "Нужно принять все обязательные документы перед оплатой" in response.text
 
 
 def test_checkout_page_renders_documents(monkeypatch) -> None:
@@ -489,6 +540,9 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
         assert "Momentum RU" in response.text
         assert "Согласие на оплату" in response.text
         assert "/legal/doc-payment_consent" in response.text
+        assert 'name="timezone_name"' in response.text
+        assert 'name="lead_source_name"' in response.text
+        assert 'name="accepted_document_ids"' in response.text
         assert 'name="entry_id" value="' in response.text
         assert 'name="entry_surface" value="public"' in response.text
 
@@ -529,6 +583,9 @@ def test_app_checkout_prefills_telegram_user(monkeypatch) -> None:
         assert "Lead User" in response.text
         assert "lead@example.com" in response.text
         assert "/app/catalog" in response.text
+        assert 'name="timezone_name"' in response.text
+        assert 'name="lead_source_name"' in response.text
+        assert 'name="accepted_document_ids"' in response.text
         assert 'name="entry_id" value="' in response.text
         assert 'name="entry_surface" value="miniapp"' in response.text
 

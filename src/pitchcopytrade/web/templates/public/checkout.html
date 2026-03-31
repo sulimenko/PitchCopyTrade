@@ -92,6 +92,9 @@
       </label>
       {% endfor %}
     </div>
+    <div id="checkout-client-error" hidden style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
+      Подтвердите все обязательные документы перед отправкой формы.
+    </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
       <button id="checkout-submit-button" class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Создать заявку на оплату</button>
       <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}">Вернуться в каталог</a>
@@ -133,6 +136,8 @@
     const form = document.getElementById("checkout-form");
     const submitButton = document.getElementById("checkout-submit-button");
     const timezoneInput = document.getElementById("timezone_name");
+    const clientError = document.getElementById("checkout-client-error");
+    const acceptedDocumentCheckboxes = Array.from(document.querySelectorAll('input[name="accepted_document_ids"]'));
     if (!timezoneInput) {
       return;
     }
@@ -153,9 +158,24 @@
       console.error(error);
     }
 
+    acceptedDocumentCheckboxes.forEach((checkbox) => {
+      checkbox.addEventListener("change", function () {
+        if (clientError) {
+          clientError.hidden = true;
+        }
+      });
+    });
+
     if (form) {
       form.addEventListener("submit", async function (event) {
         if (form.dataset.pctNativeSubmit === "1") {
+          return;
+        }
+        if (acceptedDocumentCheckboxes.length > 0 && !acceptedDocumentCheckboxes.every((checkbox) => checkbox.checked)) {
+          event.preventDefault();
+          if (clientError) {
+            clientError.hidden = false;
+          }
           return;
         }
         event.preventDefault();

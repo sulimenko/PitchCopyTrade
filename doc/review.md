@@ -1,5 +1,5 @@
 # PitchCopyTrade — Current Review Gate
-> Обновлено: 2026-03-30
+> Обновлено: 2026-03-31
 > Этот файл хранит только актуальные findings и merge gate после перехода проекта на `messages` и unified author composer.
 
 ## Общий вывод
@@ -12,7 +12,8 @@
 - локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `275 passed`
 
 P27, P28, P29, P30, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
-P35 закрыл диагностический блок: runtime fingerprint, auth-failure metadata, preprocessing regression coverage и separation от legacy entrypoints.
+P35 закрыл предыдущий auth blocker: production logs больше показывают `tg_webapp_auth_success`, а не `invalid_hash`.
+P36 и P37 закрыты в коде и документации; в gate по-прежнему остается отдельный старый P32.
 
 ## Подтвержденные факты
 
@@ -25,34 +26,25 @@ P35 закрыл диагностический блок: runtime fingerprint, a
 
 ## Findings
 
-### [P1] Mini App onboarding still leaks through false entrypoints and never reaches WebApp auth
+### [P1] Mini App checkout can still return `422` after successful Telegram auth, leaving a partially created user `[x]`
 
-Open:
-- production traces for journeys `2f4eb3af28ac1801` and `c6b66714daa3944b` show `/miniapp` -> `/app` -> fallback/verify/public flow;
-- for these journeys there is no `tg_webapp_auth_entry`, `tg_webapp_auth_failed`, or `tg_webapp_auth_success`;
-- repeated `GET /app/help` without cookies strongly suggests stale/external help entrypoints still exist;
-- public checkout then proceeds with `entry=public_catalog`, which explains creation of users without `telegram_user_id`.
+Resolved:
+- `accepted_document_ids` больше не падает на FastAPI validation layer до входа в handler;
+- Mini App checkout form блокирует submit, если обязательные документы не подтверждены;
+- invalid checkout теперь логируется как machine-readable `checkout_invalid` с коротким reason code;
+- regression tests покрывают valid submit, missing documents и HTML form contract.
 
-Это означает:
-- проблема уже не только в checkout;
-- real Telegram WebApp auth attempt часто вообще не стартует;
-- plain `/miniapp` link и stale `/app/help` entries нельзя считать валидным Mini App launch contract.
+Подробные инструкции: `doc/task.md` -> Блок P36
 
-Подробные инструкции: `doc/task.md` -> Блоки P31, P32, P33, P34
+### [P2] `storage/api.log` still carries too much noise to be the sole operator-facing runtime log `[x]`
 
-### [P1] Real Telegram bot entry reaches `/tg-webapp/auth`, but backend rejects `initData` with `invalid_hash`
+Resolved:
+- `storage/api.log` закреплен как основной operator-facing sink;
+- trace lines сокращены до компактного набора полей;
+- long header payloads и forensic extras больше не попадают в default trace line;
+- short stage/reason codes и grep guide покрыты helper-тестами и обновленной документацией.
 
-Open:
-- production logs now show `tg_webapp_auth_entry` for `entry=bot_start` and `entry=legacy_help`;
-- immediately after that, backend logs `tg_webapp_auth_failed ... block_reason=invalid_hash block_detail=Invalid hash`;
-- `tg_webapp_bootstrap_trace` then records `webapp_context_present=True` and `block_reason=auth_http_failure`.
-
-Это означает:
-- для реального bot entry bootstrap уже стартует;
-- проблема уже не только в false entrypoints;
-- cookie не ставится, потому что server-side WebApp validation не принимает Telegram `initData`.
-
-Подробные инструкции: `doc/task.md` -> Блок P35
+Подробные инструкции: `doc/task.md` -> Блок P37
 
 ## Resolved In This Pass
 
@@ -367,11 +359,20 @@ Resolved:
 
 **Подробные инструкции:** `doc/task.md` → Блок P31
 
+### P32 — Финализация: signature как основной путь hash validation `[ ]`
+
+- [ ] P32.1: Упростить validate — signature в основном пути, без signature как fallback
+- [ ] P32.2: Тесты обоих путей
+
+**Подробные инструкции:** `doc/task.md` → Блок P32
+
 ## Gate
 
-Open findings: none — P31 закрыл последний blocker. **Нужен деплой и проверка Mini App из бота.**
+**Mini App auth работает в production** (подтверждено 2026-03-31):
+- `match_with_signature=True` → `tg_webapp_auth_success` → каталог открылся
+- `telegram_user_id=368288031` корректно привязан
 
-Текущий gate: **yellow** (код готов, ждёт production-проверки).
+P32 — cleanup (не blocker). Текущий gate: **green**.
 
 Текущий gate: **red**.
 

@@ -12,6 +12,32 @@ ENTRY_QUERY_PARAM = "entry"
 ENTRY_ID_FIELD = "entry_id"
 ENTRY_SURFACE_FIELD = "entry_surface"
 
+_STAGE_ALIASES = {
+    "login_page": "login",
+    "tg_webapp_auth_entry": "auth_entry",
+    "tg_webapp_auth_failed": "auth_fail",
+    "tg_webapp_auth_success": "auth_ok",
+    "tg_webapp_bootstrap_trace": "bootstrap",
+    "app_home_entry": "home",
+    "miniapp_root": "miniapp_root",
+    "verify_page": "verify",
+    "catalog_render": "catalog",
+    "strategy_render": "strategy",
+    "checkout_render": "checkout_render",
+    "checkout_submit": "checkout_submit",
+    "checkout_submit_blocked": "checkout_blocked",
+    "app_catalog_render": "app_catalog",
+    "app_strategy_render": "app_strategy",
+    "app_checkout_render": "checkout_render",
+    "app_checkout_blocked": "checkout_blocked",
+    "app_checkout_submit": "checkout_submit",
+    "app_checkout_invalid": "checkout_invalid",
+    "app_help_legacy_entry": "help_legacy",
+    "subscriber_redirect_blocked": "sub_redirect_blocked",
+    "subscriber_snapshot_blocked": "sub_snapshot_blocked",
+    "subscriber_identity_blocked": "sub_identity_blocked",
+}
+
 
 def get_or_create_journey_id(request: Request) -> str:
     return request.cookies.get(JOURNEY_COOKIE_NAME) or token_hex(8)
@@ -50,6 +76,25 @@ def get_entry_marker(request: Request) -> str | None:
     return request.query_params.get(ENTRY_QUERY_PARAM) or None
 
 
+def compact_stage_name(stage: str) -> str:
+    return _STAGE_ALIASES.get(stage, stage)
+
+
+def checkout_validation_reason(message: str | None) -> str:
+    normalized = (message or "").strip().lower()
+    if not normalized:
+        return "checkout_validation_error"
+    if "checkout недоступен" in normalized or "не опубликован" in normalized or "published" in normalized:
+        return "checkout_documents_unpublished"
+    if ("обязатель" in normalized and "документ" in normalized) or "required documents" in normalized:
+        return "missing_accepted_document_ids"
+    if "telegram id" in normalized and "не найден" in normalized:
+        return "missing_telegram_user_id"
+    if "telegram context" in normalized:
+        return "missing_telegram_context"
+    return "checkout_validation_error"
+
+
 def log_request_trace(
     logger,
     request: Request,
@@ -86,39 +131,16 @@ def log_request_trace(
         telegram_cookie_present = bool(request.cookies.get(telegram_cookie_name))
     if auth_cookie_present is None:
         auth_cookie_present = bool(request.cookies.get(settings.auth.session_cookie_name))
+    compact_stage = compact_stage_name(stage)
     logger.info(
-        "%s trace journey_id=%s surface=%s classified_surface=%s path=%s query=%s entry_marker=%s entry_id=%s entry_surface=%s first_html_surface=%s requested_next=%s webapp_context_present=%s legacy_entry=%s referer=%s origin=%s user_agent=%s sec_fetch_site=%s sec_fetch_mode=%s telegram_cookie_present=%s auth_cookie_present=%s resolved_user_id=%s resolved_telegram_user_id=%s rendered_href=%s checkout_surface=%s telegram_intended=%s block_reason=%s block_detail=%s init_data_length=%s init_data_has_hash=%s init_data_has_auth_date=%s init_data_has_user=%s init_data_has_signature=%s auth_date_age_seconds=%s",
-        stage,
+        "%s trace journey_id=%s path=%s surface=%s entry_marker=%s entry_surface=%s resolved_user_id=%s resolved_telegram_user_id=%s block_reason=%s block_detail=%s",
+        compact_stage,
         journey_id,
-        surface or "-",
-        classify_surface(request),
         request.url.path,
-        request.url.query or "-",
         entry_marker or "-",
-        entry_id or "-",
         entry_surface or "-",
-        first_html_surface or "-",
-        requested_next or "-",
-        webapp_context_present if webapp_context_present is not None else "-",
-        legacy_entry if legacy_entry is not None else "-",
-        request.headers.get("referer") or "-",
-        request.headers.get("origin") or "-",
-        request.headers.get("user-agent") or "-",
-        request.headers.get("sec-fetch-site") or "-",
-        request.headers.get("sec-fetch-mode") or "-",
-        telegram_cookie_present,
-        auth_cookie_present,
         auth_user_id or "-",
         telegram_user_id if telegram_user_id is not None else "-",
-        rendered_href or "-",
-        checkout_surface or "-",
-        telegram_intended if telegram_intended is not None else "-",
         block_reason or "-",
         block_detail or "-",
-        init_data_length if init_data_length is not None else "-",
-        init_data_has_hash if init_data_has_hash is not None else "-",
-        init_data_has_auth_date if init_data_has_auth_date is not None else "-",
-        init_data_has_user if init_data_has_user is not None else "-",
-        init_data_has_signature if init_data_has_signature is not None else "-",
-        auth_date_age_seconds if auth_date_age_seconds is not None else "-",
     )

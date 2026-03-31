@@ -7957,3 +7957,296 @@ def test_validate_init_data_hash_computed_with_signature():
 3. Если НИ ОДИН не совпадает → `invalid_hash`
 4. Forensic лог на уровне INFO — виден в production api.log
 5. `pytest -q` → 0 failures
+
+
+---
+
+## P32 — Финализация: signature включать в hash (не fallback, а основной путь)
+
+> **Контекст:** Production подтвердил:
+> ```
+> match_without_signature=False
+> match_with_signature=True
+> ```
+> Telegram (Bot API 7.x+, iOS 18.7) включает `signature` в data_check_string при вычислении hash. Текущий try-both fallback работает, но нужно:
+> 1. Сделать "с signature" основным путём (не fallback)
+> 2. Убрать лишний warning log (это теперь нормальное поведение)
+> 3. Оставить "без signature" как fallback для старых клиентов
+
+### P32.1 — Упростить validate_telegram_webapp_init_data
+
+**Файл:** `src/pitchcopytrade/auth/telegram_webapp.py`
+
+Заменить логику hash validation. Основной путь — С signature, fallback — без:
+
+```python
+    # Основной путь: hash вычислен С signature (Telegram Bot API 7.x+)
+    if had_signature and signature_value is not None:
+        items_with_sig = {**items, "signature": signature_value}
+        data_check_string = "\n".join(
+            f"{key}={value}" for key, value in sorted(items_with_sig.items())
+        )
+    else:
+        data_check_string = "\n".join(
+            f"{key}={value}" for key, value in sorted(items.items())
+        )
+
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    expected_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    if hmac.compare_digest(expected_hash, received_hash):
+        if had_signature and signature_value is not None:
+            items["signature"] = signature_value
+    else:
+        # Fallback: попробовать без signature (старые клиенты)
+        if had_signature and signature_value is not None:
+            fallback_data_check = "\n".join(
+                f"{key}={value}" for key, value in sorted(items.items())
+            )
+            fallback_hash = hmac.new(secret_key, fallback_data_check.encode("utf-8"), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(fallback_hash, received_hash):
+                raise TelegramWebAppAuthError("invalid_hash", "Invalid hash")
+            logger.info("initData validated WITHOUT signature (legacy client)")
+        else:
+            raise TelegramWebAppAuthError("invalid_hash", "Invalid hash")
+
+    logger.info(
+        "initData validation keys=%s had_signature=%s bot_token_fingerprint=%s",
+        sorted(items.keys()),
+        had_signature,
+        hashlib.sha256(bot_token.encode("utf-8")).hexdigest()[:12],
+    )
+```
+
+**Ключевое:** убрать двойное вычисление обоих вариантов. Упрощённая логика: signature есть → включить, нет → не включить. Fallback только для старых клиентов.
+
+### P32.2 — Тесты
+
+1. Тест: hash с signature → проходит (основной путь)
+2. Тест: hash без signature → проходит (fallback/legacy)
+3. Тест: неверный hash → `invalid_hash`
+
+- [ ] `python3 -m compileall src tests` — без ошибок
+
+---
+
+### Acceptance P32
+
+1. Production: Mini App auth проходит без WARNING в логах
+2. Оба варианта (с/без signature) принимаются
+3. `pytest -q` → 0 failures
+
+---
+
+## P36 — Mini App checkout can still return `422` after successful Telegram auth, leaving a partially created user `[x]`
+
+> **Контекст (2026-03-31):**
+>
+> По первому пользователю flow полный:
+> - есть `tg_webapp_auth_success`
+> - есть `users`
+> - есть 4 записи в `user_consents`
+> - есть `subscriptions`
+>
+> По второму пользователю flow обрывается:
+> - есть `tg_webapp_auth_success`
+> - пользователь появляется в `users`
+> - но нет записей в `user_consents`
+> - нет записи в `subscriptions`
+> - клиент получает JSON error / `422 Unprocessable Entity`
+>
+> Ключевой признак:
+> - есть access log `POST /app/checkout/sl?entry=bot_start HTTP/1.1" 422 Unprocessable Entity`
+> - но нет бизнес-логов изнутри `app_checkout_submit`, таких как:
+>   - `Mini App checkout route path=...`
+>   - `app_checkout_submit trace ...`
+>   - `Mini App checkout binding: ...`
+
+### Root cause hypothesis
+
+Это выглядит не как падение внутри checkout service, а как request validation failure **до входа в handler**.
+
+Наиболее вероятный кандидат:
+- [app.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L251)
+  - `accepted_document_ids: list[str] = Form(...)`
+
+Если форма отправлена без `accepted_document_ids`, FastAPI возвращает `422` еще до выполнения тела `app_checkout_submit()`.
+
+Именно поэтому:
+- user уже создан на шаге `tg_webapp_auth_success`;
+- но checkout-логика не стартует;
+- consents/subscription/payment rows не создаются.
+
+### Что должен сделать worker
+
+#### P36.1 — Доказать точную причину `422` `[x]`
+
+- [x] **P36.1.1** Зафиксировать exact request validation error body для `POST /app/checkout/{product_ref}`
+- [x] **P36.1.2** Доказать, какое поле отсутствует или не проходит schema validation
+- [x] **P36.1.3** Проверить, соответствует ли HTML form contract сигнатуре `app_checkout_submit`
+
+#### P36.2 — Свести UI form contract и handler contract `[x]`
+
+- [x] **P36.2.1** Проверить, что Mini App checkout form всегда отправляет:
+  - `accepted_document_ids`
+  - `entry_id`
+  - `entry_surface`
+  - `timezone_name`
+  - остальные обязательные поля
+- [x] **P36.2.2** Проверить сценарии:
+  - documents accepted
+  - documents not accepted
+  - retry submit after validation error
+- [x] **P36.2.3** Если `accepted_document_ids` обязателен, UI должен либо всегда отправлять его, либо явно блокировать submit с понятной ошибкой до HTTP request
+
+#### P36.3 — Controlled failure instead of silent partial state `[x]`
+
+- [x] **P36.3.1** Если checkout request invalid, логировать machine-readable причину в `storage/api.log`
+- [x] **P36.3.2** Не оставлять оператора с ситуацией “user created but checkout silently failed”
+- [x] **P36.3.3** Worker должен определить, нужен ли отдельный log event вроде `app_checkout_request_invalid`
+
+#### P36.4 — Regression tests `[x]`
+
+- [x] **P36.4.1** Test: successful auth + valid checkout form -> creates user, consents, subscription
+- [x] **P36.4.2** Test: successful auth + missing `accepted_document_ids` -> controlled `422` with explicit diagnostic
+- [x] **P36.4.3** Test: HTML form contract matches handler signature
+
+### Acceptance P36
+
+1. После `tg_webapp_auth_success` checkout form больше не дает “необъяснимый 422”
+2. Если request invalid, причина ясно видна в `storage/api.log`
+3. User не воспринимается как “успешно подписавшийся”, если checkout не дошел до consents/subscription stage
+
+### Worker Prompt — Mini App Checkout 422 After Successful Auth
+
+```text
+Ты расследуешь defect, где Mini App auth проходит успешно, user создается в `users`, но checkout POST возвращает `422`, и записи в `user_consents`/`subscriptions` не появляются.
+
+Что уже известно:
+- `tg_webapp_auth_success` есть;
+- access log показывает `POST /app/checkout/... 422`;
+- но бизнес-логи `app_checkout_submit` отсутствуют;
+- значит request likely падает на FastAPI validation layer до входа в handler.
+
+Что нужно сделать:
+1. доказать exact validation error body;
+2. свести HTML form contract и handler signature;
+3. сделать invalid checkout request диагностируемым через `storage/api.log`;
+4. покрыть tests на valid и invalid checkout submit.
+
+Что нельзя делать:
+- чинить это SQL-ом;
+- считать, что раз user создан, то checkout был успешным;
+- оставлять `422` без понятного machine-readable объяснения в логах.
+
+Финальный отчет:
+- exact root cause
+- changed files
+- tests run + results
+- residual risks
+```
+
+---
+
+## P37 — Log compaction: keep one operational source of truth in `storage/api.log` and make traces shorter `[x]`
+
+> **Контекст (2026-03-31):**
+>
+> Оператор хочет использовать только `storage/api.log` как основной runtime log sink.
+>
+> Сейчас лог полезный, но:
+> - слишком многословный для ручного grep;
+> - одни и те же поля повторяются в каждом trace line;
+> - часть событий дублируется между access log и trace log;
+> - не все operationally important failures имеют короткие event names / compact reason fields.
+
+### Цель
+
+Сделать `storage/api.log` единственным удобным источником для production RCA:
+
+- компактные event lines;
+- стабилизированные ключевые поля;
+- минимум дублирования;
+- короткие reason/error codes;
+- enough detail for grep without giant payloads.
+
+### Что должен сделать worker
+
+#### P37.1 — Зафиксировать canonical logging contract `[x]`
+
+- [x] **P37.1.1** Принять `storage/api.log` как основной operator-facing log sink
+- [x] **P37.1.2** Определить небольшой обязательный набор полей для trace line:
+  - `stage`
+  - `journey_id`
+  - `path`
+  - `surface`
+  - `entry_marker`
+  - `resolved_user_id`
+  - `resolved_telegram_user_id`
+  - `block_reason`
+  - `block_detail` (только если нужно)
+- [x] **P37.1.3** Убрать или сократить второстепенные поля, если они не нужны в 95% RCA
+
+#### P37.2 — Сократить шум `[x]`
+
+- [x] **P37.2.1** Сократить повтор длинных `user_agent`, `origin`, `sec_fetch_*`, если они не критичны для большинства событий
+- [x] **P37.2.2** Оставить expanded fields только для узкого набора forensic events
+- [x] **P37.2.3** Не дублировать одно и то же в access log и trace log без причины
+
+#### P37.3 — Разделить события по важности `[x]`
+
+- [x] **P37.3.1** Отдельно выделить compact events для:
+  - auth success/failure
+  - checkout render
+  - checkout submit
+  - request invalid
+  - delivery success/failure
+  - verify redirect
+- [x] **P37.3.2** Для forensic/debug events оставить расширенный режим, но не делать его default for every request
+
+#### P37.4 — Согласовать названия событий `[x]`
+
+- [x] **P37.4.1** Стабилизировать короткие stage names
+- [x] **P37.4.2** Использовать короткие reason codes вместо длинных human phrases там, где это возможно
+- [x] **P37.4.3** Обеспечить grep-friendly формат для operator workflow
+
+#### P37.5 — Documentation / grep guide `[x]`
+
+- [x] **P37.5.1** Обновить docs так, чтобы operator пользовался только `storage/api.log`
+- [x] **P37.5.2** Дать короткий grep cheat-sheet:
+  - по `journey_id`
+  - по `telegram_user_id`
+  - по `user_id`
+  - по `product_ref`
+  - по `block_reason`
+
+### Acceptance P37
+
+1. `storage/api.log` достаточно для основных production RCA without jumping between multiple log streams
+2. Средняя trace line компактнее и легче читается вручную
+3. Критичные причины отказа видны по коротким code/value полям
+
+### Worker Prompt — Make `storage/api.log` The Compact Operational Log
+
+```text
+Ты не переписываешь весь logging stack. Твоя задача — сделать `storage/api.log` главным и удобным operator-facing логом.
+
+Что нужно:
+1. сократить шум;
+2. оставить только действительно нужные поля по умолчанию;
+3. стабилизировать stage/reason naming;
+4. сохранить forensic depth только там, где она реально нужна;
+5. обновить docs под модель “используем только storage/api.log”.
+
+Что нельзя делать:
+- убирать важные reason codes;
+- ломать existing RCA flows;
+- оставлять гигантские trace lines на каждый request без различия по важности.
+
+Финальный отчет:
+- proposed log schema
+- changed files
+- examples before/after
+- grep guide
+- residual risks
+```

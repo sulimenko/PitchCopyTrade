@@ -17,6 +17,7 @@ from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.api.request_trace import (
     attach_journey_cookie,
+    checkout_validation_reason,
     get_entry_marker,
     get_or_create_journey_id,
     log_request_trace,
@@ -354,7 +355,7 @@ async def checkout_submit(
     email: str = Form(""),
     timezone_name: str = Form("Europe/Moscow"),
     lead_source_name: str = Form(""),
-    accepted_document_ids: list[str] = Form(...),
+    accepted_document_ids: list[str] | None = Form(default=None),
     promo_code_value: str = Form(""),
     entry_id: str = Form(""),
     entry_surface: str = Form(""),
@@ -395,17 +396,14 @@ async def checkout_submit(
         logger,
         request,
         stage="checkout_submit",
-            journey_id=journey_id,
-            surface="public",
-            auth_user_id=auth_user_id,
-            telegram_user_id=auth_user_telegram_id,
-            rendered_href=_with_entry_marker(f"/checkout/{product_ref}", entry_marker),
-            checkout_surface="public",
-            telegram_intended=telegram_intended,
-            entry_marker=entry_marker,
-            entry_id=resolved_entry_id,
-            entry_surface=resolved_entry_surface,
-        )
+        journey_id=journey_id,
+        surface="public",
+        auth_user_id=auth_user_id,
+        telegram_user_id=auth_user_telegram_id,
+        entry_marker=entry_marker,
+        entry_id=resolved_entry_id,
+        entry_surface=resolved_entry_surface,
+    )
     if telegram_intended and telegram_user_id is None:
         logger.warning(
             "Public checkout blocked for Telegram-intended flow without telegram context: path=%s referer=%s lead_source=%s product_ref=%s",
@@ -442,7 +440,7 @@ async def checkout_submit(
                 full_name=full_name.strip(),
                 email=email.strip().lower() or None,
                 timezone_name=timezone_name.strip() or "Europe/Moscow",
-                accepted_document_ids=accepted_document_ids,
+                accepted_document_ids=accepted_document_ids or [],
                 lead_source_name=detected_lead_source,
                 promo_code_value=promo_code_value.strip().upper() or None,
                 ip_address=request.client.host if request.client else None,
@@ -450,6 +448,28 @@ async def checkout_submit(
             ),
         )
     except ValueError as exc:
+        validation_reason = checkout_validation_reason(str(exc))
+        logger.warning(
+            "Public checkout invalid path=%s product_ref=%s reason=%s detail=%s",
+            request.url.path,
+            product_ref,
+            validation_reason,
+            exc,
+        )
+        log_request_trace(
+            logger,
+            request,
+            stage="checkout_invalid",
+            journey_id=journey_id,
+            surface="public",
+            auth_user_id=auth_user_id,
+            telegram_user_id=auth_user_telegram_id,
+            entry_marker=entry_marker,
+            entry_id=resolved_entry_id,
+            entry_surface=resolved_entry_surface,
+            block_reason=validation_reason,
+            block_detail=str(exc),
+        )
         response = templates.TemplateResponse(
             request,
             "public/checkout.html",
@@ -468,7 +488,7 @@ async def checkout_submit(
                     "timezone_name": timezone_name,
                     "lead_source_name": detected_lead_source,
                     "promo_code_value": promo_code_value,
-                    "accepted_document_ids": accepted_document_ids,
+                    "accepted_document_ids": accepted_document_ids or [],
                     "entry_id": resolved_entry_id,
                     "entry_surface": resolved_entry_surface,
                 },
@@ -496,7 +516,7 @@ async def checkout_submit(
                     "timezone_name": timezone_name,
                     "lead_source_name": detected_lead_source,
                     "promo_code_value": promo_code_value,
-                    "accepted_document_ids": accepted_document_ids,
+                    "accepted_document_ids": accepted_document_ids or [],
                     "entry_id": resolved_entry_id,
                     "entry_surface": resolved_entry_surface,
                 },

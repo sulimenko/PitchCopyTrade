@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, Streamin
 from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
 from pitchcopytrade.api.request_trace import (
     attach_journey_cookie,
+    checkout_validation_reason,
     get_entry_marker,
     get_or_create_journey_id,
     log_request_trace,
@@ -248,7 +249,7 @@ async def app_checkout_submit(
     full_name: str = Form(""),
     email: str = Form(""),
     timezone_name: str = Form("Europe/Moscow"),
-    accepted_document_ids: list[str] = Form(...),
+    accepted_document_ids: list[str] | None = Form(default=None),
     promo_code_value: str = Form(""),
     entry_id: str = Form(""),
     entry_surface: str = Form(""),
@@ -327,14 +328,9 @@ async def app_checkout_submit(
         surface="miniapp",
         auth_user_id=user.id,
         telegram_user_id=user.telegram_user_id,
-        rendered_href=_with_entry_marker(f"/app/checkout/{product_ref}", get_entry_marker(request) or resolved_entry_surface),
-        checkout_surface="miniapp",
-        telegram_intended=True,
         entry_marker=get_entry_marker(request) or resolved_entry_surface,
         entry_id=resolved_entry_id,
         entry_surface=resolved_entry_surface,
-        first_html_surface="app/catalog",
-        requested_next=f"/app/checkout/{product_ref}",
     )
     try:
         result = await create_telegram_stub_checkout(
@@ -350,10 +346,32 @@ async def app_checkout_submit(
                 timezone_name=timezone_name.strip() or user.timezone or "Europe/Moscow",
                 lead_source_name="telegram_miniapp",
             ),
-            accepted_document_ids=accepted_document_ids,
+            accepted_document_ids=accepted_document_ids or [],
             promo_code_value=promo_code_value.strip().upper() or None,
         )
     except ValueError as exc:
+        validation_reason = checkout_validation_reason(str(exc))
+        logger.warning(
+            "Mini App checkout invalid path=%s product_ref=%s reason=%s detail=%s",
+            request.url.path,
+            product_ref,
+            validation_reason,
+            exc,
+        )
+        log_request_trace(
+            logger,
+            request,
+            stage="app_checkout_invalid",
+            journey_id=journey_id,
+            surface="miniapp",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            entry_marker=get_entry_marker(request) or resolved_entry_surface,
+            entry_id=resolved_entry_id,
+            entry_surface=resolved_entry_surface,
+            block_reason=validation_reason,
+            block_detail=str(exc),
+        )
         response = templates.TemplateResponse(
             request,
             "public/checkout.html",
@@ -370,10 +388,10 @@ async def app_checkout_submit(
                     "timezone_name": timezone_name,
                     "lead_source_name": "telegram_miniapp",
                     "promo_code_value": promo_code_value,
-                    "accepted_document_ids": accepted_document_ids,
+                    "accepted_document_ids": accepted_document_ids or [],
                     "entry_id": resolved_entry_id,
-                "entry_surface": resolved_entry_surface,
-            },
+                    "entry_surface": resolved_entry_surface,
+                },
                 **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -397,10 +415,10 @@ async def app_checkout_submit(
                     "timezone_name": timezone_name,
                     "lead_source_name": "telegram_miniapp",
                     "promo_code_value": promo_code_value,
-                    "accepted_document_ids": accepted_document_ids,
+                    "accepted_document_ids": accepted_document_ids or [],
                     "entry_id": resolved_entry_id,
-                "entry_surface": resolved_entry_surface,
-            },
+                    "entry_surface": resolved_entry_surface,
+                },
                 **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
             },
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
