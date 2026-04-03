@@ -2,10 +2,10 @@
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  {% if product.strategy %}
+  <!-- {% if product.strategy %}
   <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ product.strategy.slug }}{% else %}/app/strategies/{{ product.strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ product.strategy.slug }}{% endif %}">К стратегии</a>
-  {% endif %}
-  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Каталог</a>
+  {% endif %} -->
+  <!-- <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Каталог</a> -->
 </div>
 {% endblock %}
 

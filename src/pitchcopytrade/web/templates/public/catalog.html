@@ -20,7 +20,7 @@
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2.2rem,4.8vw,4rem);line-height:0.94;letter-spacing:-0.06em;">Витрина стратегий</h1>
-      <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">Выберите сценарий, сравните риск и тариф, и переходите к checkout.</p>
+      <!-- <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">Выберите сценарий, сравните риск и тариф, и переходите к checkout.</p> -->
     </div>
     <div class="pill">{{ strategies|length }} стратегий</div>
   </div>
@@ -59,7 +59,7 @@
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
       <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}" style="display:block;text-align:center;padding:14px 24px;font-size:1rem;border-radius:12px;margin-top:20px;">Открыть стратегию</a>
       {% if strategy.subscription_products %}
-      <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].slug }}{% else %}/app/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Открыть подписку</a>
+      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].slug }}{% else %}/app/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Открыть подписку</a>
       {% endif %}
     </div>
   </article>
