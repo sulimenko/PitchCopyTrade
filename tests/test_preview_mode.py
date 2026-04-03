@@ -41,10 +41,10 @@ def test_preview_strategy_detail_has_structured_narrative(monkeypatch) -> None:
         response = client.get("/preview/app/strategies/straddle-pro")
 
         assert response.status_code == 200
-        assert "Короткий тезис" in response.text
-        assert "Механика" in response.text
-        assert "Тарифы и CTA" in response.text
-        assert "FAQ и документы" in response.text
+        assert "Короткое описание" in response.text
+        assert "Описание" in response.text
+        assert "Тарифы" in response.text
+        assert "К стратегии" in response.text
 
 
 def test_preview_staff_dashboards_render(monkeypatch) -> None:

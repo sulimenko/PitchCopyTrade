@@ -1,5 +1,5 @@
 # PitchCopyTrade — Current Review Gate
-> Обновлено: 2026-03-31
+> Обновлено: 2026-04-03
 > Этот файл хранит только актуальные findings и merge gate после перехода проекта на `messages` и unified author composer.
 
 ## Общий вывод
@@ -9,7 +9,7 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- локальный regression gate сейчас зеленый: `./.venv/bin/python -m pytest -q` -> `294 passed`
+- local gate green: `./.venv/bin/python -m pytest -q` -> `297 passed`
 
 P27, P28, P29, P30, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
 P35 закрыл предыдущий auth blocker: production logs больше показывают `tg_webapp_auth_success`, а не `invalid_hash`.
@@ -17,7 +17,9 @@ P36 и P37 закрыты в коде и документации.
 P38 закрыт в коде и документации.
 P39 закрыл основной staff/admin onboarding blocker.
 P40 закрыт в коде и документации.
-Новый открытый review follow-up: P41.
+Новый review follow-up P41 закрыт в этом pass-е.
+P42 в основном закрыт, но оставил два residual follow-up-а P44 и P45.
+Новый dev/runbook follow-up P43 закрыт в этом pass-е.
 P32 cleanup remains open, но это не blocker.
 
 ## Подтвержденные факты
@@ -30,6 +32,42 @@ P32 cleanup remains open, но это не blocker.
 - минимальный public checkout dataset в PostgreSQL теперь seed-ится автоматически
 
 ## Findings
+
+### [P1] Disclaimer-only checkout still silently auto-submits hidden legal documents as accepted `[ ]`
+
+Почему это важно:
+- в текущем UI пользователю показывается только `Дисклеймер`;
+- при этом остальные документы рендерятся hidden checked inputs и уходят в `accepted_document_ids` как будто пользователь их уже принял;
+- backend service contract по-прежнему требует полный комплект документов, поэтому сейчас consent semantics расходятся с user-facing surface.
+
+Что видно:
+- [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L95) auto-submit-ит скрытые документы;
+- [public.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/public.py#L573) и Mini App path требуют equality между required docs и `accepted_document_ids`;
+- это делает текущий `disclaimer-only` режим визуально упрощенным, но не юридически/продуктово честным.
+
+Что нужно:
+- либо временно сузить backend consent contract до реально видимого `Дисклеймера`,
+- либо вернуть явное подтверждение остальных документов,
+- но не считать hidden pre-checked inputs допустимым окончательным решением.
+
+Подробные инструкции: `doc/task.md` -> Блок P44
+
+### [P2] Checkout/product-flow screens lost the visible local `К стратегии` action `[ ]`
+
+Почему это важно:
+- product contract для P42 требовал держать `К стратегии` вне permanent menu, но оставлять ее как локальный CTA на checkout/product-flow surfaces;
+- сейчас checkout template просто закомментировал этот переход, и у пользователя остается только возврат в каталог.
+
+Что видно:
+- [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L5) содержит CTA назад к стратегии только в комментарии;
+- [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L112) оставляет только `Вернуться в каталог`;
+- это не совпадает с [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md#L101), где checkout должен сохранять локальный page action назад к strategy detail.
+
+Что нужно:
+- вернуть видимый локальный CTA `К стратегии` на public / Mini App / preview checkout surfaces, когда у продукта есть связанная стратегия;
+- при этом не раздувать permanent menu и не возвращать `К стратегии` как постоянный primary-tab.
+
+Подробные инструкции: `doc/task.md` -> Блок P45
 
 ### [P1] Mini App checkout can still return `422` after successful Telegram auth, leaving a partially created user `[x]`
 
@@ -84,20 +122,41 @@ Resolved:
 
 Подробные инструкции: `doc/task.md` -> Блок P40
 
-### [P1] Existing auth context can still hijack `/login?invite_token=...` and trap staff onboarding in `/login` loop
+### [P1] Existing auth context can still hijack `/login?invite_token=...` and trap staff onboarding in `/login` loop [x]
 
-Open:
-- `GET /login` сейчас short-circuit-ит по existing staff session cookie раньше, чем учитывает `invite_token`;
-- если existing session принадлежит `active` user без staff roles, `_resolve_role_redirect()` возвращает `/login`, и route уходит в self-redirect loop;
-- если вместо staff session присутствует только Telegram fallback cookie, valid invite path может быть silently перехвачен и увести пользователя обратно в subscriber surface `/app/catalog`;
-- production symptom уже подтвержден `storage/api.log`: repeated `login trace` with the same `journey_id`, populated `resolved_user_id` / `resolved_telegram_user_id`, but without callback/bind progression.
-
-Это означает:
-- canonical invite link после P39 все еще не truly canonical для already-known subscriber в том же browser context;
-- existing auth cookies могут перехватить invite flow раньше, чем user дойдет до Telegram widget callback;
-- recreated admin invite для существующего subscriber остается нестабильным без manual cookie cleanup.
+Resolved in this pass:
+- invite-token precedence is enforced on `/login`;
+- non-staff sessions no longer self-redirect to `/login`;
+- Telegram fallback cookies no longer steal invite flows;
+- explicit redirect targets and reason codes are logged;
+- regression tests cover invite priority, non-staff sessions, and existing Telegram cookie behavior.
 
 Подробные инструкции: `doc/task.md` -> Блок P41
+
+### [P1] Manual Mini App/public view edits broke nav contract and left the new design only partially normalized [x]
+
+Resolved in this pass:
+- Mini App nav now uses a contextual `К стратегии` slot only on strategy detail;
+- preview detail renders without `product`;
+- strategy-detail tests follow the accepted simplified narrative;
+- brand mark was normalized to `D / DESK`;
+- catalog CTA overrides moved into shared classes;
+- checkout UI shows only the visible `Дисклеймер`.
+
+Residual follow-up:
+- hidden consent semantics moved into `P44`;
+- missing local `К стратегии` CTA on checkout/product-flow screens moved into `P45`.
+
+Подробные инструкции: `doc/task.md` -> Блок P42
+
+### [P2] Local `.env` origin can still drift away from a plain raw-uvicorn launch [x]
+
+Resolved in this pass:
+- plain local launch uses `http://127.0.0.1:8000` consistently in config defaults, `.env.example`, and `doc/README.md`;
+- runbook text now calls out the raw `uvicorn` contract explicitly;
+- config/runtime tests were updated to match the 127.0.0.1 origin.
+
+Подробные инструкции: `doc/task.md` -> Блок P43
 
 ## Resolved In This Pass
 

@@ -1,5 +1,5 @@
 # PitchCopyTrade — Blueprint
-> Обновлено: 2026-03-26
+> Обновлено: 2026-04-03
 > Статус: canonical current contract for MVP clean-up
 
 ## 1. Политика документа
@@ -81,6 +81,57 @@ Canonical rule:
 - повторные bot-команды не должны быть обязательным способом навигации;
 - если нужен возврат, используется browser/webview history внутри приложения, а не новое сообщение в чате.
 
+### 4.3 Mini App menu contract
+
+Постоянное верхнее меню Mini App должно быть небольшим и предсказуемым.
+
+Primary tabs:
+- `Каталог`
+- `Подписки`
+- `История`
+
+Правила:
+- эти три пункта присутствуют всегда на subscriber-facing Mini App surfaces;
+- один из них всегда является активным;
+- `Статус`, `Помощь`, `Оплаты`, `Напоминания` не должны жить в primary menu;
+- они могут оставаться secondary screens или локальными page actions.
+- бизнесово неготовые пункты не удаляются из кода насовсем;
+- до отдельного product go-ahead они должны быть спрятаны в шаблонах через комментарии или equivalent dormant markup, чтобы worker не терял будущие точки возврата.
+
+Контекстный пункт:
+- `К стратегии` не является постоянным primary-tab;
+- он показывается только в strategy-detail контексте;
+- на checkout и других transaction/detail screens переход к стратегии должен быть локальным page action, а не постоянным пунктом меню.
+- если checkout открыт из продукта, локальный CTA назад к `К стратегии` должен оставаться видимым и вести на связанный strategy detail route.
+
+Маршрутизация активного состояния:
+- `/app/catalog` -> активен `Каталог`
+- `/app/strategies/{slug}` -> активен `К стратегии`, при этом `Каталог`, `Подписки`, `История` остаются видимыми
+- `/app/checkout/{product_ref}` -> активен ближайший product-flow контекст без появления отдельного active-tab; возврат к стратегии остается локальным CTA
+- `/app/subscriptions` и `/app/subscriptions/{id}` -> активны `Подписки`
+- `/app/timeline` и `/app/messages/{id}` -> активна `История`
+- `/app/payments*` -> не добавляют новый primary-tab; относятся к lifecycle `Подписки`
+
+Preview contract:
+- preview routes обязаны рендериться без дополнительных сущностей вроде `product`, если их не требует сам экран;
+- navigation partial не должен падать, если текущий screen context не содержит `product`.
+
+### 4.4 Temporary legal-doc visibility contract
+
+До отдельного business sign-off user-facing legal/checkout contract intentionally сокращен.
+
+Текущий временный режим:
+- в клиентском checkout и связанных public/Mini App surfaces показывается только `Дисклеймер`;
+- остальные документы (`offer`, `privacy`, `payment consent` и т.п.) пока не удаляются из проекта как сущности;
+- они должны быть временно спрятаны из пользовательского UI, предпочтительно через комментарии / dormant markup, а не через destructive removal.
+
+Это означает:
+- legal data model и backend support можно сохранять;
+- user-facing copy, buttons и checkbox-список не должны обещать документы, которые бизнес пока не готов открыть;
+- скрытые документы нельзя silently pre-check-ить или auto-submit-ить как уже принятые;
+- набор реально принимаемых consent-ов должен совпадать с набором документов, которые пользователь реально видит и подтверждает;
+- возврат полного document pack позже должен идти отдельным documented pass, а не случайным partial unhide.
+
 ## 5. Canonical contract для витрины и страницы стратегии
 
 ### 5.1 Главная страница Mini App
@@ -105,48 +156,44 @@ Canonical rule:
 
 ### 5.2 Страница стратегии
 
-Текущая `strategy_detail` недостаточна как продающий и объясняющий экран. Целевой контракт:
+Текущий дизайн strategy detail упрощен. Для текущего цикла canonical contract такой:
 
 1. Hero block:
 - название стратегии;
 - автор;
-- короткое value proposition в 1-2 строках;
 - риск;
-- горизонт;
 - минимальный капитал;
 - основной CTA на подписку;
-- secondary CTA на помощь/документы только ниже главного действия.
+- secondary CTA только на `Тарифы`.
 
-2. Thesis block:
-- в чем идея стратегии;
-- на каком типе движений рынка она зарабатывает;
-- что является сигналом к действию;
-- какой сценарий для нее неблагоприятен.
+2. Market snapshot block:
+- опциональный quote-strip;
+- это supporting context, а не главный продающий экран.
 
-3. Mechanics block:
-- как работает стратегия на человеческом языке;
-- какие инструменты использует;
-- какой expected holding period;
-- как выглядит типовая сделка или сетап.
+3. Short description block:
+- короткое объяснение идеи стратегии;
+- текущий UI label = `Короткое описание`.
 
-4. Risk block:
-- что считается риском;
-- что ограничивает убыток;
-- что может пойти не так;
-- для кого стратегия не подходит.
+4. Description / mechanics block:
+- раскрытие механики простым языком;
+- текущий UI label = `Описание`.
 
-5. Commercial block:
-- тарифы;
-- trial/промо, если есть;
-- что входит в подписку;
-- как поступают рекомендации;
-- какие документы нужно принять.
+5. Tariffs block:
+- список тарифов и CTA на checkout;
+- это обязательный коммерческий блок текущего дизайна.
 
-6. FAQ / operational block:
-- как часто приходят идеи;
-- как открыть оплату;
-- что делать, если оплата зависла;
-- где смотреть статус подписки.
+6. Legal visibility:
+- на пользовательском экране сейчас visible only `Дисклеймер`;
+- остальные legal documents не считаются обязательными для текущего дизайна, пока не будет отдельного business-ready решения.
+
+Для текущего pass-а не являются обязательными на самой strategy detail:
+- отдельный `FAQ` section;
+- отдельный `market scope` section;
+- отдельный `risk` section;
+- отдельные audience-блоки `кому подходит / кому не подходит`.
+- отдельный user-facing pack из нескольких legal documents.
+
+Если эти блоки возвращаются позже, это должен быть отдельный documented design change, а не случайный partial rollback шаблона.
 
 ### 5.3 Материалы-референсы
 
@@ -167,18 +214,36 @@ Canonical rule:
 
 ### 5.4 Контентный контракт для strategy detail
 
-Для следующего implementation pass стратегия должна иметь не только `short_description` и `full_description`, но и структурируемый контентный набор. Минимальный целевой набор полей:
-- `hero_summary`;
-- `market_scope`;
-- `holding_period_note`;
-- `entry_logic`;
-- `risk_rule`;
-- `instrument_examples`;
-- `who_is_it_for`;
-- `who_is_it_not_for`;
-- `faq_items`.
+Для текущего дизайна минимальный содержательный набор такой:
+- `hero_summary` или fallback `short_description`
+- `holding_period_note`
+- `risk_rule`
+- `thesis`
+- `mechanics`
 
-Если отдельные поля пока не заведены в модели, MVP допускает first step через server-side sections в `full_description`, но итоговая цель — структурированный контент, а не один большой текстовый blob.
+Поддерживаемые, но не обязательные в текущем рендере поля:
+- `market_scope`
+- `entry_logic`
+- `instrument_examples`
+- `who_is_it_for`
+- `who_is_it_not_for`
+- `faq_items`
+
+Правило текущего цикла:
+- tests и product contract должны проверять только те narrative blocks, которые реально считаются canonical для текущего дизайна;
+- если UI intentionally упрощен, тесты обязаны быть пересобраны под этот contract, а не держать старые названия секций.
+
+## 8. Visual identity contract
+
+Текущий ручной pass ввел новый visual mark `D / DESK`.
+
+Для следующего implementation pass нужно соблюдать правило:
+- если `D / DESK` принимается как новый UI brand mark, он должен быть нормализован во всех top-level shells;
+- нельзя оставлять mixed branding вида `D / DESK` в `base.html`, но `PC / PitchCopyTrade` в `staff_base.html`, `login.html` и preview surfaces.
+
+При этом:
+- visual brand slots можно менять независимо от внутренних технических имен;
+- юридические/system identifiers не должны переименовываться стихийно вместе с декоративным brand mark.
 
 ## 6. Straddle как reference-стратегия
 

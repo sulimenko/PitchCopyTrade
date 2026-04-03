@@ -22,26 +22,14 @@
 -->
   </div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
-    <!-- {% if preview_mode %} -->
     <a class="action {% if miniapp_active != 'catalog' %}ghost{% endif %}" href="{{ miniapp_root }}/catalog">Каталог</a>
-    {% if product.strategy %}
-    <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ product.strategy.slug }}{% else %}/app/strategies/{{ product.strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ product.strategy.slug }}{% endif %}">К стратегии</a>
+    {% if miniapp_strategy_href %}
+    <a class="action {% if miniapp_active != 'strategy' %}ghost{% endif %}" href="{{ miniapp_strategy_href }}">К стратегии</a>
     {% endif %}
-    <!-- <a class="action {% if miniapp_active != 'status' %}ghost{% endif %}" href="{{ miniapp_root }}/status">Статус</a> -->
-    <!-- <a class="action {% if miniapp_active != 'help' %}ghost{% endif %}" href="{{ miniapp_root }}/help">Помощь</a> -->
-    <!-- {% else %} -->
-    <!-- <a class="action {% if miniapp_active != 'catalog' %}ghost{% endif %}" href="{{ miniapp_root }}/catalog">Каталог</a> -->
-    <!-- <a class="action {% if miniapp_active != 'status' %}ghost{% endif %}" href="{{ miniapp_root }}/status">Статус</a> -->
-    <!-- <a class="action {% if miniapp_active != 'help' %}ghost{% endif %}" href="{{ miniapp_root }}/help">Помощь</a> -->
-    <!-- {% endif %} -->
-  <!-- </div> -->
-  <!-- {% if not preview_mode %} -->
-  <!-- <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;"> -->
     <a class="action {% if miniapp_active != 'subscriptions' %}ghost{% endif %}" href="{{ miniapp_root }}/subscriptions">Подписки</a>
     <!-- <a class="action {% if miniapp_active != 'payments' %}ghost{% endif %}" href="{{ miniapp_root }}/payments">Оплаты</a> -->
     <!-- <a class="action {% if miniapp_active != 'feed' %}ghost{% endif %}" href="{{ miniapp_root }}/feed">Лента</a> -->
     <!-- <a class="action {% if miniapp_active != 'reminders' %}ghost{% endif %}" href="{{ miniapp_root }}/reminders">Напоминания</a> -->
     <a class="action {% if miniapp_active != 'timeline' %}ghost{% endif %}" href="{{ miniapp_root }}/timeline">История</a>
   </div>
-  <!-- {% endif %} -->
 </section>

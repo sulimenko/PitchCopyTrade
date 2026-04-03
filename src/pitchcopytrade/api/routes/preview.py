@@ -105,7 +105,8 @@ async def preview_app_strategy_detail(slug: str, request: Request) -> Response:
             "billing_period_label": billing_period_label,
             "miniapp_user": preview["preview_user"],
             "miniapp_snapshot": preview["preview_snapshot"],
-            "miniapp_active": "catalog",
+            "miniapp_active": "strategy",
+            "miniapp_strategy_href": f"/preview/app/strategies/{strategy.slug}",
         },
     )
 

@@ -275,6 +275,34 @@ def test_login_page_redirects_authenticated_admin_to_dashboard() -> None:
         assert response.headers["location"] == "/admin/dashboard"
 
 
+def test_login_page_keeps_invite_context_over_existing_staff_session() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/login?invite_token=test-token", follow_redirects=False)
+
+        assert response.status_code == 200
+        assert "Приглашение сотрудника активно" in response.text
+        assert "Открыть приглашение" in response.text
+
+
+def test_login_page_keeps_invite_context_over_existing_telegram_cookie() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set(get_telegram_fallback_cookie_name(), build_telegram_fallback_cookie_value(user))
+        response = client.get("/login?invite_token=test-token", follow_redirects=False)
+
+        assert response.status_code == 200
+        assert "Приглашение сотрудника активно" in response.text
+        assert "Открыть приглашение" in response.text
+
+
 def test_login_submit_rejects_invalid_credentials() -> None:
     repository = FakeAuthRepository()
     user = _make_user()
@@ -347,6 +375,25 @@ def test_app_redirects_admin_to_dashboard() -> None:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/admin/dashboard"
+
+
+def test_login_page_does_not_loop_for_authenticated_non_staff_user() -> None:
+    repository = FakeAuthRepository()
+    user = User(
+        id="subscriber-session",
+        username="subscriber",
+        email="subscriber@example.com",
+        password_hash=hash_password("test-pass"),
+        status=UserStatus.ACTIVE,
+    )
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/login", follow_redirects=False)
+
+        assert response.status_code == 200
+        assert "Логин или email" in response.text
 
 
 def test_telegram_invite_token_binds_author_account() -> None:

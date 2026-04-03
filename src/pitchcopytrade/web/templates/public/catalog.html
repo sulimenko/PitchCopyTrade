@@ -56,8 +56,8 @@
       {% endif %}
       <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">{{ strategy.subscription_products|length }} тариф{% if strategy.subscription_products|length != 1 %}ов{% endif %}</div>
     </div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;">
-      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}" style="display:block;text-align:center;padding:14px 24px;font-size:1rem;border-radius:12px;margin-top:20px;">Открыть стратегию</a>
+    <div class="catalog-card-actions">
+      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Открыть стратегию</a>
       {% if strategy.subscription_products %}
       <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].slug }}{% else %}/app/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Открыть подписку</a>
       {% endif %}
@@ -70,5 +70,21 @@
   </article>
   {% endfor %}
 </section>
+
+<style>
+  .catalog-card-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+  }
+  .catalog-card-actions .action {
+    display: block;
+    text-align: center;
+    padding: 14px 24px;
+    font-size: 1rem;
+    border-radius: 12px;
+  }
+</style>
 
 {% endblock %}

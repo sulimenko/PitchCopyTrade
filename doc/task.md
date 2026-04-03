@@ -1,5 +1,5 @@
 # PitchCopyTrade — Active Tasks
-> Обновлено: 2026-03-31
+> Обновлено: 2026-04-03
 > Это единый backlog-файл проекта. Все активные задачи ведутся только здесь.
 
 ## Статусы
@@ -8632,7 +8632,7 @@ P40 закрыт:
 
 ---
 
-## P41 — Existing auth context can hijack `/login?invite_token=...` and trap recreated staff invite in `/login` loop
+## P41 — Existing auth context can hijack `/login?invite_token=...` and trap recreated staff invite in `/login` loop [x]
 
 > **Контекст (2026-03-31 production logs):**
 >
@@ -8688,35 +8688,35 @@ P40 закрыт:
 
 #### P41.1 — Invite token must have priority over existing auth context `[ ]`
 
-- [ ] **P41.1.1** Если `invite_token` присутствует в `/login`, route не должен silently short-circuit-ить в:
+- [x] **P41.1.1** Если `invite_token` присутствует в `/login`, route не должен silently short-circuit-ить в:
   - `/login`
   - `/app/catalog`
   - любой другой surface, пока invite flow не обработан по canonical rule
-- [ ] **P41.1.2** Existing session/tg cookie можно использовать только как input для merge/bind decision, но не как повод bypass-нуть invite flow
+- [x] **P41.1.2** Existing session/tg cookie можно использовать только как input для merge/bind decision, но не как повод bypass-нуть invite flow
 
 #### P41.2 — Убрать `/login -> /login` self-loop `[ ]`
 
-- [ ] **P41.2.1** Запретить redirect на `/login` для already-authenticated non-staff user
-- [ ] **P41.2.2** Если resolved user не имеет staff roles, route должен:
+- [x] **P41.2.1** Запретить redirect на `/login` для already-authenticated non-staff user
+- [x] **P41.2.2** Если resolved user не имеет staff roles, route должен:
   - либо показать invite-aware login screen,
   - либо явно очистить/игнорировать неподходящий staff session,
   - но не уходить в self-redirect
 
 #### P41.3 — Existing subscriber invite onboarding must stay deterministic `[ ]`
 
-- [ ] **P41.3.1** Subscriber with Telegram-bound identity должен иметь возможность открыть `invite_token` link, не очищая вручную cookies
-- [ ] **P41.3.2** Если same human already authenticated as subscriber, route должен сохранить invite context и довести до staff bind/role elevation
-- [ ] **P41.3.3** Если existing auth context конфликтует с invite target, user должен получить loud controlled screen, а не endless redirect
+- [x] **P41.3.1** Subscriber with Telegram-bound identity должен иметь возможность открыть `invite_token` link, не очищая вручную cookies
+- [x] **P41.3.2** Если same human already authenticated as subscriber, route должен сохранить invite context и довести до staff bind/role elevation
+- [x] **P41.3.3** Если existing auth context конфликтует с invite target, user должен получить loud controlled screen, а не endless redirect
 
 #### P41.4 — `storage/api.log` must show invite bypass / loop reason `[ ]`
 
-- [ ] **P41.4.1** Добавить compact reason codes:
+- [x] **P41.4.1** Добавить compact reason codes:
   - `invite_bypassed_by_staff_session`
   - `invite_bypassed_by_tg_cookie`
   - `non_staff_session_on_login`
   - `self_redirect_blocked`
-- [ ] **P41.4.2** При redirect decision логировать explicit `redirect_target`
-- [ ] **P41.4.3** Развести cases:
+- [x] **P41.4.2** При redirect decision логировать explicit `redirect_target`
+- [x] **P41.4.3** Развести cases:
   - invite honored
   - invite bypassed
   - invite blocked
@@ -8724,10 +8724,10 @@ P40 закрыт:
 
 #### P41.5 — Regression coverage `[ ]`
 
-- [ ] **P41.5.1** Test: `/login?invite_token=...` with existing non-staff session does not loop to `/login`
-- [ ] **P41.5.2** Test: `/login?invite_token=...` with existing Telegram fallback cookie does not silently redirect to `/app/catalog`
-- [ ] **P41.5.3** Test: existing subscriber can complete staff invite without manual cookie clearing
-- [ ] **P41.5.4** Test: already-staff user opening valid invite is redirected deterministically to staff home, not re-onboarded
+- [x] **P41.5.1** Test: `/login?invite_token=...` with existing non-staff session does not loop to `/login`
+- [x] **P41.5.2** Test: `/login?invite_token=...` with existing Telegram fallback cookie does not silently redirect to `/app/catalog`
+- [x] **P41.5.3** Test: existing subscriber can complete staff invite without manual cookie clearing
+- [x] **P41.5.4** Test: already-staff user opening valid invite is redirected deterministically to staff home, not re-onboarded
 
 ### Acceptance P41
 
@@ -8768,6 +8768,364 @@ P40 закрыт:
 Финальный отчет:
 - exact root cause
 - chosen login/invite precedence rule
+- changed files
+- tests run + results
+- residual risks
+```
+
+---
+
+## P42 — Manual view edits must be normalized into one Mini App nav contract, one strategy-detail contract, and one visual identity [x]
+
+> **Контекст (2026-04-03):**
+>
+> В проект были внесены ручные правки шаблонов:
+> - [base.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/base.html)
+> - [public/catalog.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/catalog.html)
+> - также фактически затронут contract вокруг [app/_miniapp_nav.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/app/_miniapp_nav.html) и [public/strategy_detail.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/strategy_detail.html)
+>
+> Текущее состояние:
+> - новый дизайн strategy detail intentional;
+> - brand mark локально сменился на `D / DESK`;
+> - Mini App menu должно быть логично перестроено;
+> - current local gate уже красный: `4 failed, 290 passed`.
+
+### Что уже видно
+
+1. [app/_miniapp_nav.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/app/_miniapp_nav.html#L27)
+   - partial жестко опирается на `product.strategy`
+   - preview routes и часть detail surfaces не всегда передают `product`
+   - это уже ломает preview render path
+
+2. [public/strategy_detail.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/strategy_detail.html)
+   - старые narrative blocks частично закомментированы
+   - это допустимо только если product contract и tests официально переводятся на новый дизайн
+
+3. [base.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/base.html#L149)
+   - visual mark уже сменился на `D / DESK`
+   - остальные top-level shells все еще рендерят `PC / PitchCopyTrade`
+
+4. [public/catalog.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/catalog.html#L60)
+   - card CTA buttons переписывают shared `.action` inline-стилями
+   - layout начинает drift-ить относительно общего UI contract
+
+### Целевой контракт P42
+
+Нужно зафиксировать один coherent design pass:
+- одно Mini App menu;
+- один documented strategy-detail contract;
+- один visual brand contract;
+- один button/layout contract без ad-hoc inline overrides.
+
+### Что должен сделать worker
+
+#### P42.1 — Перестроить Mini App menu contract `[ ]`
+
+- [x] **P42.1.1** Сделать primary Mini App menu постоянным и коротким:
+  - `Каталог`
+  - `Подписки`
+  - `История`
+- [x] **P42.1.2** `К стратегии` убрать из permanent primary nav
+- [x] **P42.1.3** `К стратегии` показывать только в strategy-detail context
+- [x] **P42.1.4** На checkout/product-flow surfaces переход к стратегии делать как локальный page action, а не как always-on menu item
+- [x] **P42.1.5** `Статус`, `Помощь`, `Оплаты`, `Напоминания` не должны возвращаться в primary nav
+- [x] **P42.1.6** Business-not-ready пункты menu не удалять насовсем; временно прятать их через комментарии / dormant markup
+
+#### P42.2 — Зафиксировать route map для меню `[ ]`
+
+- [x] **P42.2.1** `/app/catalog` -> active `Каталог`
+- [x] **P42.2.2** `/app/strategies/{slug}` -> active contextual `К стратегии`
+- [x] **P42.2.3** `/app/subscriptions` и `/app/subscriptions/{id}` -> active `Подписки`
+- [x] **P42.2.4** `/app/timeline` и `/app/messages/{id}` -> active `История`
+- [x] **P42.2.5** `/app/payments*` логически отнести к lifecycle `Подписки`, без отдельного primary-tab
+- [x] **P42.2.6** Preview routes должны использовать ту же nav-логику, но не требовать `product` там, где его нет
+- [x] **P42.2.7** `/app/status`, `/app/help`, `/app/reminders`, `/app/feed`, `/app/payments` оставить как secondary screens, но не как visible primary menu items до business-ready phase
+
+#### P42.3 — Обновить product contract для нового strategy-detail дизайна `[ ]`
+
+- [x] **P42.3.1** Зафиксировать текущий intended design в [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
+- [x] **P42.3.2** Считать canonical blocks текущего дизайна:
+  - hero
+  - optional market snapshot
+  - `Короткое описание`
+  - `Описание`
+  - `Тарифы`
+- [x] **P42.3.3** Старые обязательные expectations:
+  - `Короткий тезис`
+  - `Тарифы и CTA`
+  - `FAQ и документы`
+  - отдельные `market scope / risk / audience` sections
+  больше не считать required, если команда окончательно принимает новый дизайн
+- [x] **P42.3.4** Обновить regression tests под новый contract, а не держать старый narrative задним числом
+
+#### P42.4 — Temporary legal-doc visibility must be reduced to disclaimer-only `[ ]`
+
+- [x] **P42.4.1** На текущем клиентском этапе показывать пользователю только `Дисклеймер`
+- [x] **P42.4.2** Остальные документы (`offer`, `privacy`, `payment consent` и т.п.) не удалять из кода/модели, а временно прятать в UI через комментарии / dormant markup
+- [x] **P42.4.3** Не оставлять в пользовательском checkout copy или чекбоксах упоминания скрытых документов
+- [x] **P42.4.4** Согласовать tests и product contract с временным `disclaimer-only` режимом
+- [x] **P42.4.5** Worker должен явно проверить, что backend validation и user-facing documents list не расходятся после этого временного сужения
+
+#### P42.5 — Нормализовать visual brand `D / DESK` `[ ]`
+
+- [x] **P42.5.1** Если `D / DESK` принят, привести к нему все top-level visual brand slots:
+  - `base.html`
+  - `staff_base.html`
+  - `auth/login.html`
+  - preview shells
+- [x] **P42.5.2** Не оставлять mixed branding `D / DESK` vs `PC / PitchCopyTrade` в соседних shells
+- [x] **P42.5.3** Не переименовывать стихийно технические/legal identifiers только потому, что сменился visual mark
+
+#### P42.6 — Убрать ad-hoc inline overrides shared `.action` contract `[ ]`
+
+- [x] **P42.6.1** Не переопределять `.action` inline-стилями без необходимости
+- [x] **P42.6.2** Для catalog card CTA создать нормальные modifier/layout classes
+- [x] **P42.6.3** Держать spacing на контейнере и modifier-классах, а не на каждой кнопке inline
+
+#### P42.7 — Regression coverage `[ ]`
+
+- [x] **P42.7.1** Test: preview Mini App catalog/detail render without `product`-dependent nav crash
+- [x] **P42.7.2** Test: strategy detail checks new intended section labels/content
+- [x] **P42.7.3** Test: nav active state matches route map
+- [x] **P42.7.4** Test: no preview route leaks raw `/app/*` href where `/preview/app/*` is expected
+- [x] **P42.7.5** Test: only `Дисклеймер` remains visible in current checkout/legal UI contract
+
+### Acceptance P42
+
+1. Mini App menu has one documented route map and no longer depends on accidental template context like `product`
+2. `К стратегии` is contextual, not a permanent primary tab
+3. Business-not-ready menu items are hidden, not deleted
+4. Checkout/legal UI exposes only `Дисклеймер` in the current temporary business phase
+5. Strategy detail tests match the accepted new design instead of the old one
+6. Top-level shells use one visual brand contract
+7. Shared `.action` contract is not overridden inline for card CTAs
+
+### Worker Prompt — Normalize Manual View Edits Into One Design Contract
+
+```text
+Ты не просто чинишь сломанные шаблоны, а доводишь ручной design pass до coherent product contract.
+
+Что уже произошло:
+- Mini App/public templates были вручную изменены;
+- новый strategy-detail дизайн intentional;
+- brand mark локально сменился на `D / DESK`;
+- current local gate уже красный из-за template/nav mismatches.
+
+Что нужно:
+1. зафиксировать один Mini App menu contract;
+2. сделать `Каталог / Подписки / История` постоянным primary menu;
+3. сделать `К стратегии` только contextual item для detail surface;
+4. неготовые business tabs не удалять, а временно прятать комментариями;
+5. временно оставить в user-facing legal/checkout contract только `Дисклеймер`, остальные документы спрятать, не удаляя модель/код;
+6. обновить product contract и tests под новый strategy-detail дизайн;
+7. выровнять visual brand across shells;
+8. убрать inline overrides shared `.action` contract.
+
+Что нельзя делать:
+- чинить preview только через подстановку fake `product`, если nav contract сам остается хрупким;
+- держать старые strategy-detail tests, если новый дизайн уже принят;
+- оставлять mixed brand slots `D / DESK` и `PC / PitchCopyTrade` одновременно;
+- удалять неготовые menu/docs элементы насовсем вместо временного hide-by-comment contract;
+- продолжать размножать inline button styling поверх `.action`.
+
+Финальный отчет:
+- chosen nav map
+- chosen strategy-detail contract
+- changed files
+- tests run + results
+- residual risks
+```
+
+---
+
+## P43 — Local `.env` origin must explicitly match the raw-uvicorn dev launch contract [x]
+
+> **Контекст (2026-04-03 review):**
+>
+> Invite, login, OAuth callback and admin URLs derive from `BASE_URL` / `ADMIN_BASE_URL`.
+> Если локальный `.env` или ad-hoc overrides указывают на origin, который не совпадает с фактическим raw `uvicorn` launch, local QA получает ложные redirect/login/invite симптомы.
+
+### Что должен сделать worker
+
+#### P43.1 — Зафиксировать один local origin contract `[ ]`
+
+- [x] **P43.1.1** Для plain local launch без proxy/hosts использовать `http://127.0.0.1:8000`
+- [x] **P43.1.2** Если команда хочет использовать `http://pct.test`, это должно быть documented как отдельный proxy/hosts scenario, а не молчаливый default
+- [x] **P43.1.3** `BASE_URL`, `ADMIN_BASE_URL`, runbook и sample env не должны противоречить друг другу
+
+#### P43.2 — Обновить runbook/docs `[ ]`
+
+- [x] **P43.2.1** Явно прописать это правило в [doc/README.md](/Users/alexey/site/PitchCopyTrade/doc/README.md)
+- [x] **P43.2.2** При необходимости добавить короткое замечание в deploy/local env notes
+
+### Acceptance P43
+
+1. Raw local `uvicorn` launch и env-driven absolute URLs используют один и тот же reachable origin
+2. Local QA не получает ложный redirect/login failure только из-за drift в `BASE_URL`
+
+---
+
+## P44 — Disclaimer-only checkout must not silently auto-accept hidden legal documents [ ]
+
+> **Контекст (2026-04-03 review):**
+>
+> `P42` intentionally сократил user-facing legal UI до одного `Дисклеймера`.
+> Но текущая реализация в [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L95) оставляет остальные документы скрытыми `checked` inputs, чтобы backend по-прежнему получил полный `accepted_document_ids`.
+>
+> Это держит form green, но ломает consent semantics: пользователь реально видит и подтверждает один документ, а система записывает acceptance для нескольких.
+
+### Что уже видно
+
+1. [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L95)
+   - non-disclaimer documents auto-submit-ятся как hidden checked inputs
+
+2. [public.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/public.py#L573)
+   - checkout service contract по-прежнему требует equality между `required_document_ids` и `accepted_document_ids`
+
+3. в результате текущий `disclaimer-only` режим:
+   - визуально скрывает документы
+   - но фактически оформляет acceptance на полный комплект
+
+### Почему это важно
+
+- это уже не чисто UI-вопрос, а расхождение между visible consent surface и persisted consent records;
+- текущий temporary business contract `show disclaimer only` нельзя считать закрытым, если hidden docs продолжают silently auto-accept-иться;
+- later audit/operator review не сможет честно утверждать, что user согласился только с тем, что реально видел.
+
+### Что должен сделать worker
+
+#### P44.1 — Visible consent surface must match persisted consent set `[ ]`
+
+- [ ] **P44.1.1** Убрать hidden pre-checked `accepted_document_ids` для скрытых документов
+- [ ] **P44.1.2** Запретить silent auto-accept hidden legal docs как итоговый runtime contract
+- [ ] **P44.1.3** Выбрать один явный temporary contract:
+  - либо backend временно считает required только `Дисклеймер`,
+  - либо UI снова явно показывает и требует весь legal pack
+
+#### P44.2 — Public и Mini App checkout должны жить по одному consent contract `[ ]`
+
+- [ ] **P44.2.1** Не допускать, чтобы public/Mini App визуально показывали один набор документов, а backend сохранял другой
+- [ ] **P44.2.2** Обновить client-side validation copy так, чтобы она говорила только про реально видимые документы
+- [ ] **P44.2.3** Проверить оба path-а:
+  - `/checkout/{product_ref}`
+  - `/app/checkout/{product_ref}`
+
+#### P44.3 — Regression coverage `[ ]`
+
+- [ ] **P44.3.1** Test: hidden documents are not auto-submitted as accepted
+- [ ] **P44.3.2** Test: persisted `accepted_document_ids` exactly match the documents visible to the user in current temporary mode
+- [ ] **P44.3.3** Test: error message / invalid state mention only the visible temporary legal contract
+
+### Acceptance P44
+
+1. User consent records no longer include hidden legal documents that were never visibly confirmed
+2. The temporary `disclaimer-only` UX and the backend acceptance contract are the same contract
+3. Public and Mini App checkout use the same visible/persisted document set
+
+### Worker Prompt — Align Disclaimer-Only UI With Real Consent Persistence
+
+```text
+Ты разбираешь residual defect после P42.
+
+Симптом:
+- checkout UI показывает пользователю только `Дисклеймер`;
+- остальные документы скрыты;
+- но form все равно отправляет hidden checked `accepted_document_ids` для полного legal pack;
+- backend принимает полный комплект, как будто user явно согласился со всеми документами.
+
+Что нужно:
+1. убрать silent auto-accept hidden legal docs;
+2. свести visible consent surface и persisted consent set к одному contract;
+3. одинаково поправить public и Mini App checkout;
+4. обновить regression tests.
+
+Что нельзя делать:
+- оставлять hidden pre-checked legal inputs как “временное нормальное решение”;
+- считать задачу закрытой, если user по-прежнему подписывает невидимые документы;
+- чинить только один path из двух (`public` или `miniapp`).
+
+Финальный отчет:
+- chosen temporary consent contract
+- changed files
+- tests run + results
+- residual risks
+```
+
+---
+
+## P45 — Checkout/product-flow screens must keep a visible local `К стратегии` action [ ]
+
+> **Контекст (2026-04-03 review):**
+>
+> `P42` правильно сократил permanent Mini App menu до `Каталог / Подписки / История` и сделал `К стратегии` контекстным пунктом только на detail route.
+> Но на checkout/product-flow screens worker просто закомментировал strategy CTA в [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L5), и visible user path теперь ведет только назад в каталог.
+
+### Что уже видно
+
+1. [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md#L101)
+   - contract требует: на checkout/product-flow surfaces переход к стратегии остается локальным page action
+
+2. [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L5)
+   - `К стратегии` сохранен только в комментарии
+
+3. [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L112)
+   - visible user action сейчас только `Вернуться в каталог`
+
+### Почему это важно
+
+- checkout/product-flow теряет естественный возврат к исходной strategy detail page;
+- это ухудшает navigation continuity после сокращения top-level menu;
+- current implementation не соответствует уже зафиксированному route map contract.
+
+### Что должен сделать worker
+
+#### P45.1 — Restore local strategy CTA on checkout/product-flow screens `[ ]`
+
+- [ ] **P45.1.1** Вернуть visible `К стратегии` page action на checkout surfaces, когда у продукта есть связанная стратегия
+- [ ] **P45.1.2** Не возвращать `К стратегии` в permanent primary nav
+- [ ] **P45.1.3** Сохранить текущий short primary menu: `Каталог`, `Подписки`, `История`
+
+#### P45.2 — Keep route map consistent across surfaces `[ ]`
+
+- [ ] **P45.2.1** Public checkout, Mini App checkout и preview checkout должны использовать один и тот же возвратный strategy CTA contract
+- [ ] **P45.2.2** CTA должен вести на связанный strategy detail href с корректным entry-marker / preview path
+- [ ] **P45.2.3** Если `product.strategy` отсутствует, CTA может не рендериться, но screen не должен падать и не должен показывать broken href
+
+#### P45.3 — Regression coverage `[ ]`
+
+- [ ] **P45.3.1** Test: checkout screen with `product.strategy` shows visible `К стратегии` CTA
+- [ ] **P45.3.2** Test: Mini App / preview checkout CTA points to the right strategy detail route
+- [ ] **P45.3.3** Test: checkout without linked strategy renders safely without CTA crash
+
+### Acceptance P45
+
+1. Checkout/product-flow screens keep a visible local route back to the linked strategy
+2. `К стратегии` remains contextual and does not return as a permanent top-level tab
+3. Public, Mini App and preview screens share the same strategy-return contract
+
+### Worker Prompt — Restore Local Strategy Return CTA Without Re-Expanding the Menu
+
+```text
+Ты исправляешь residual navigation defect после P42.
+
+Симптом:
+- permanent Mini App menu уже правильно сокращен до `Каталог / Подписки / История`;
+- `К стратегии` больше не живет как постоянный tab;
+- но checkout/product-flow screens потеряли visible локальный возврат к strategy detail и оставили только путь в каталог.
+
+Что нужно:
+1. вернуть локальный CTA `К стратегии` на checkout/product-flow surfaces;
+2. не раздувать обратно permanent menu;
+3. одинаково провести contract через public, Mini App и preview paths;
+4. покрыть route/href tests.
+
+Что нельзя делать:
+- возвращать `К стратегии` как always-on tab;
+- чинить только public path;
+- оставлять CTA только в HTML comments.
+
+Финальный отчет:
+- chosen route map behavior
 - changed files
 - tests run + results
 - residual risks

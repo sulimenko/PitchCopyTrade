@@ -180,8 +180,8 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", alias=EnvName.APP_HOST)
     app_port: int = Field(default=8000, alias=EnvName.APP_PORT)
     app_secret_key: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.APP_SECRET_KEY)
-    base_url: str = Field(default="http://localhost:8000", alias=EnvName.BASE_URL)
-    admin_base_url: str = Field(default="http://localhost:8000/admin", alias=EnvName.ADMIN_BASE_URL)
+    base_url: str = Field(default="http://127.0.0.1:8000", alias=EnvName.BASE_URL)
+    admin_base_url: str = Field(default="http://127.0.0.1:8000/admin", alias=EnvName.ADMIN_BASE_URL)
     app_data_mode: str = Field(default="db", alias=EnvName.APP_DATA_MODE)
 
     telegram_bot_token: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.TELEGRAM_BOT_TOKEN)

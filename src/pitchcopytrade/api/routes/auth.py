@@ -192,6 +192,7 @@ async def telegram_widget_callback(
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, repository: AuthRepository = Depends(get_auth_repository)) -> Response:
     journey_id = get_or_create_journey_id(request)
+    invite_token = str(request.query_params.get("invite_token", "") or "")
     auth_user_id = None
     telegram_user_id = None
     token = request.cookies.get(get_settings().auth.session_cookie_name)
@@ -208,24 +209,62 @@ async def login_page(request: Request, repository: AuthRepository = Depends(get_
         surface="bootstrap",
         auth_user_id=auth_user_id,
         telegram_user_id=telegram_user_id,
+        entry_surface="staff_invite" if invite_token else None,
     )
     user = await get_user_from_session_token(repository, token) if token else None
-    if user is not None and user.status == UserStatus.ACTIVE:
+    if user is not None and user.status == UserStatus.ACTIVE and not invite_token:
         redirect_url, _staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
-        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-        return attach_journey_cookie(response, journey_id)
+        if redirect_url != "/login":
+            log_request_trace(
+                logger,
+                request,
+                stage="login_page",
+                journey_id=journey_id,
+                surface="bootstrap",
+                auth_user_id=user.id,
+                telegram_user_id=user.telegram_user_id,
+                entry_surface=None,
+                redirect_target=redirect_url,
+                block_reason="authenticated_session",
+            )
+            response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+            return attach_journey_cookie(response, journey_id)
     tg_token = request.cookies.get(get_telegram_fallback_cookie_name())
-    tg_user = await get_user_from_telegram_fallback_cookie(repository, tg_token) if tg_token else None
+    tg_user = await get_user_from_telegram_fallback_cookie(repository, tg_token) if tg_token and not invite_token else None
     if tg_user is not None:
+        log_request_trace(
+            logger,
+            request,
+            stage="login_page",
+            journey_id=journey_id,
+            surface="bootstrap",
+            auth_user_id=tg_user.id,
+            telegram_user_id=tg_user.telegram_user_id,
+            entry_surface=None,
+            redirect_target="/app/catalog",
+            block_reason="telegram_fallback_cookie",
+        )
         response = RedirectResponse(url="/app/catalog", status_code=status.HTTP_303_SEE_OTHER)
         return attach_journey_cookie(response, journey_id)
+    if invite_token and (token or tg_token):
+        log_request_trace(
+            logger,
+            request,
+            stage="login_page",
+            journey_id=journey_id,
+            surface="bootstrap",
+            auth_user_id=auth_user_id,
+            telegram_user_id=telegram_user_id,
+            entry_surface="staff_invite",
+            block_reason="invite_token_priority",
+        )
 
     response = templates.TemplateResponse(
         request,
         "auth/login.html",
         _build_login_template_context(
             title="Вход в PitchCopyTrade",
-            invite_token=str(request.query_params.get("invite_token", "") or ""),
+            invite_token=invite_token,
         ),
     )
     return attach_journey_cookie(response, journey_id)
@@ -828,6 +867,8 @@ def _resolve_role_redirect(user, requested_mode: str | None = None) -> tuple[str
         return "/author/dashboard", staff_mode
     if RoleSlug.MODERATOR.value in role_labels:
         return "/moderation/queue", staff_mode
+    if getattr(user, "telegram_user_id", None) is not None:
+        return "/app/catalog", staff_mode
     return "/login", staff_mode
 
 

@@ -168,7 +168,8 @@ async def app_strategy_detail(
             "strategy": strategy,
             "billing_period_label": billing_period_label,
             "entry_marker": entry_marker,
-            **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
+            "miniapp_strategy_href": _with_entry_marker(f"/app/strategies/{strategy.slug}", entry_marker),
+            **_build_miniapp_context("strategy", user=user, snapshot=snapshot),
         },
     )
     return attach_journey_cookie(response, journey_id)

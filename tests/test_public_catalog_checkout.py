@@ -244,11 +244,9 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Lead User" in response.text
         assert "/app/catalog" in response.text
-        assert "/app/status" in response.text
-        assert "/app/help" in response.text
         assert "/app/subscriptions" in response.text
-        assert "/app/payments" in response.text
-        assert "/tg-webapp/auth" in response.text
+        assert "/app/timeline" in response.text
+        assert "/app/status" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
         assert f"/app/strategies/{strategy.slug}?entry=bot_start" in response.text
         assert f"/app/checkout/{strategy.subscription_products[0].slug}?entry=bot_start" in response.text
@@ -275,9 +273,9 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert product.title in response.text
         assert f"/checkout/{product.slug}?entry=public_strategy" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
-        assert "Короткий тезис" in response.text
-        assert "Тарифы и CTA" in response.text
-        assert "FAQ и документы" in response.text
+        assert "Короткое описание" in response.text
+        assert "Описание" in response.text
+        assert "Тарифы" in response.text
 
 
 def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
@@ -303,7 +301,8 @@ def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
         assert response.status_code == 200
         assert f"/app/checkout/{product.slug}?entry=bot_start" in response.text
         assert f'href="/checkout/{product.slug}"' not in response.text
-        assert "Короткий тезис" in response.text
+        assert "Короткое описание" in response.text
+        assert "К стратегии" in response.text
         assert "Выбрать подписку" in response.text
 
 
@@ -538,8 +537,9 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
         assert response.status_code == 200
         assert "оформление подписки" in response.text
         assert "Momentum RU" in response.text
-        assert "Согласие на оплату" in response.text
-        assert "/legal/doc-payment_consent" in response.text
+        assert "Предупреждение о рисках" in response.text
+        assert "/legal/doc-disclaimer" in response.text
+        assert "Согласие на оплату" not in response.text
         assert 'name="timezone_name"' in response.text
         assert 'name="lead_source_name"' in response.text
         assert 'name="accepted_document_ids"' in response.text

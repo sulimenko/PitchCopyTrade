@@ -16,18 +16,20 @@
 
 ## Текущий Snapshot
 
-Проверенный runtime snapshot на `2026-03-31` такой:
+Проверенный runtime snapshot на `2026-04-03` такой:
 
 - Mini App auth и checkout в `db`-mode проходят;
 - новые подписчики создаются и получают подписки/consents;
 - страницы подписок в Mini App рендерятся без `500`;
 - publish path и subscriber delivery работают;
 - staff/admin Telegram invite onboarding в основном контуре восстановлен;
+- local `BASE_URL` / `ADMIN_BASE_URL` и raw `uvicorn` contract синхронизированы на `http://127.0.0.1:8000`;
 - operator-facing runtime log source = `storage/api.log`.
 
-Текущий открытый follow-up после большого onboarding pass-а:
+Текущие открытые follow-up после последнего design/runtime pass-а:
 
-- metadata merge для existing subscriber -> staff/admin еще не до конца нормализован, см. `P40` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md) и gate в [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).
+- checkout UI показывает только `Дисклеймер`, но hidden legal docs нельзя silently auto-submit-ить как уже принятые, см. `P44` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md);
+- после сокращения Mini App menu checkout/product-flow surface должен сохранить локальный CTA `К стратегии`, см. `P45` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md).
 
 ## Правила работы
 
@@ -62,6 +64,7 @@ Storage modes:
 - `file`-mode можно использовать для быстрой верстки, preview и compatibility smoke, но не как основной критерий готовности product-flow
 - `db`-mode сейчас не означает полный business seed: после clean reset автоматически поднимаются только schema, `instruments` и bootstrap `admin`; полный dataset пока требует отдельного importer/seed pass
 - для operator RCA используйте прежде всего `storage/api.log`
+- если запускаете raw `uvicorn` локально без proxy/hosts-entry, `BASE_URL` и `ADMIN_BASE_URL` должны совпадать с реальным reachable origin `http://127.0.0.1:8000`
 
 ## Подготовка окружения
 

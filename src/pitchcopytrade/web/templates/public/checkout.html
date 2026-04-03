@@ -76,8 +76,9 @@
       </div>
     </div>
     <div style="display:grid;gap:12px;">
-      <strong>Обязательные документы</strong>
+      <strong>Обязательный документ</strong>
       {% for document in documents %}
+      {% if document.document_type.value == "disclaimer" %}
       <label style="display:flex;gap:12px;align-items:flex-start;">
         <input
           type="checkbox"
@@ -90,6 +91,17 @@
           <span class="muted" style="display:block;margin-top:6px;">{{ label_legal_document_type(document.document_type) }} / {{ document.version }}</span>
         </span>
       </label>
+      {% else %}
+      <input
+        type="checkbox"
+        name="accepted_document_ids"
+        value="{{ document.id }}"
+        checked
+        hidden
+        aria-hidden="true"
+        tabindex="-1"
+      />
+      {% endif %}
       {% endfor %}
     </div>
     <div id="checkout-client-error" hidden style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
