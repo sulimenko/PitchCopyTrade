@@ -92,6 +92,12 @@ class FakePublicRepository:
     async def commit(self) -> None:
         return None
 
+    async def flush(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
     async def refresh(self, entity: object) -> None:
         return None
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import SubscriptionProduct
@@ -84,6 +86,8 @@ class FakeMergeRepository:
         self.added = []
 
     async def get_user_by_telegram_id(self, telegram_user_id: int):
+        if self.existing_user is not None and self.existing_user.telegram_user_id == telegram_user_id:
+            return self.existing_user
         return None
 
     async def find_user_by_email(self, email: str):
@@ -93,6 +97,41 @@ class FakeMergeRepository:
 
     def add(self, entity):
         self.added.append(entity)
+
+
+class ConcurrentUpsertRepository:
+    def __init__(self, existing_user: User) -> None:
+        self.existing_user = existing_user
+        self.added = []
+        self.rollback_called = False
+        self.flush_called = False
+        self.lookup_calls = 0
+
+    async def get_user_by_telegram_id(self, telegram_user_id: int):
+        self.lookup_calls += 1
+        if self.lookup_calls == 1:
+            return None
+        if self.existing_user.telegram_user_id == telegram_user_id:
+            return self.existing_user
+        return None
+
+    async def find_user_by_email(self, email: str):
+        return None
+
+    def add(self, entity):
+        self.added.append(entity)
+
+    async def flush(self):
+        self.flush_called = True
+        if self.added:
+            raise IntegrityError(
+                "INSERT INTO users ...",
+                {"telegram_user_id": getattr(self.added[-1], "telegram_user_id", None)},
+                Exception('duplicate key value violates unique constraint "uq_users_telegram_user_id"'),
+            )
+
+    async def rollback(self):
+        self.rollback_called = True
 
 
 def _make_documents() -> list[LegalDocument]:
@@ -315,6 +354,80 @@ async def test_upsert_telegram_subscriber_links_existing_user_by_email(caplog) -
     assert user.telegram_user_id == 12345
     assert user.username == "leaduser"
     assert "Linked telegram_user_id=12345 to existing user user-1 (email=lead@example.com)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_retries_on_concurrent_insert(caplog) -> None:
+    existing_user = User(
+        id="user-1",
+        email=None,
+        telegram_user_id=12345,
+        username=None,
+        full_name="Existing User",
+        timezone="Europe/Moscow",
+    )
+    repository = ConcurrentUpsertRepository(existing_user)
+
+    with caplog.at_level("WARNING"):
+        user = await upsert_telegram_subscriber(
+            repository,
+            TelegramSubscriberProfile(
+                telegram_user_id=12345,
+                username="leaduser",
+                first_name="Lead",
+                last_name="User",
+                full_name="Lead User",
+                email=None,
+                timezone_name="Europe/Moscow",
+                lead_source_name="telegram_bot",
+            ),
+        )
+
+    assert repository.flush_called is True
+    assert repository.rollback_called is True
+    assert user is existing_user
+    assert user.username == "leaduser"
+    assert user.full_name == "Lead User"
+    assert user.timezone == "Europe/Moscow"
+    assert "Race condition: telegram_user_id=12345 was inserted concurrently, retrying lookup" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_returns_existing_user_without_email() -> None:
+    existing_user = User(
+        id="user-1",
+        email=None,
+        telegram_user_id=98765,
+        username="existing",
+        full_name="Existing User",
+        timezone="Europe/Moscow",
+    )
+    repository = FakeMergeRepository()
+    repository.existing_user = existing_user
+
+    user = await upsert_telegram_subscriber(
+        repository,
+        TelegramSubscriberProfile(
+            telegram_user_id=98765,
+            username="leaduser",
+            first_name="Lead",
+            last_name="User",
+            full_name="Lead User",
+            email=None,
+            timezone_name="Europe/Moscow",
+            lead_source_name="telegram_bot",
+        ),
+    )
+
+    assert user is existing_user
+    assert user.username == "leaduser"
+    assert user.full_name == "Lead User"
+
+
+def test_upsert_telegram_subscriber_has_no_unreachable_insert_tail() -> None:
+    source = inspect.getsource(upsert_telegram_subscriber)
+
+    assert 'if user is None:\n        user.username = profile.username' not in source
 
 
 @pytest.mark.asyncio

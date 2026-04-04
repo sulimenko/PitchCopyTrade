@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import logging
 from secrets import token_hex
 
+from sqlalchemy.exc import IntegrityError
+
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import LeadSource, Strategy, SubscriptionProduct
@@ -162,30 +164,48 @@ async def upsert_telegram_subscriber(repository: PublicRepository, profile: Tele
                 normalized_email,
             )
             return user
+        if user is not None:
+            user.username = profile.username
+            user.full_name = display_name
+            user.email = normalized_email
+            user.timezone = profile.timezone_name
+            if user.consents is None:
+                user.consents = []
+            return user
 
     if user is None:
-        user = User(
-            telegram_user_id=profile.telegram_user_id,
-            username=profile.username,
-            full_name=display_name,
-            email=normalized_email,
-            status=UserStatus.ACTIVE,
-            timezone=profile.timezone_name,
-        )
-        user.consents = []
-        user.payments = []
-        user.subscriptions = []
-        repository.add(user)
-        return user
-
-    user.username = profile.username
-    user.full_name = display_name
-    if normalized_email is not None:
-        user.email = normalized_email
-    user.timezone = profile.timezone_name
-    if user.consents is None:
-        user.consents = []
-    return user
+        try:
+            user = User(
+                telegram_user_id=profile.telegram_user_id,
+                username=profile.username,
+                full_name=display_name,
+                email=normalized_email,
+                status=UserStatus.ACTIVE,
+                timezone=profile.timezone_name,
+            )
+            user.consents = []
+            user.payments = []
+            user.subscriptions = []
+            repository.add(user)
+            await repository.flush()
+            return user
+        except IntegrityError:
+            await repository.rollback()
+            logger.warning(
+                "Race condition: telegram_user_id=%s was inserted concurrently, retrying lookup",
+                profile.telegram_user_id,
+            )
+            user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
+            if user is None:
+                raise
+            user.username = profile.username
+            user.full_name = display_name
+            if normalized_email is not None:
+                user.email = normalized_email
+            user.timezone = profile.timezone_name
+            if user.consents is None:
+                user.consents = []
+            return user
 
 
 async def create_stub_checkout(

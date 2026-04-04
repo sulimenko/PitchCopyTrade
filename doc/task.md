@@ -9821,3 +9821,261 @@ status:            published
 - changed files
 - tests run + results
 ```
+
+## P53 — CRITICAL: UniqueViolationError на `uq_users_telegram_user_id` при повторном checkout `[x]`
+
+> **Контекст (2026-04-04, production crash):**
+>
+> Пользователь Andrey (telegram_user_id=881271577) получил 500 при оформлении подписки.
+> SQLAlchemy бросил `IntegrityError: duplicate key value violates unique constraint "uq_users_telegram_user_id"`.
+> INSERT пытался создать **нового** User с telegram_user_id=881271577, хотя такой уже существует.
+
+### Root Cause Analysis
+
+#### Путь до ошибки
+
+```
+POST /app/checkout/{product_ref}
+  → create_telegram_stub_checkout()          (public.py:295)
+    → upsert_telegram_subscriber(profile)    (public.py:318)
+      → repository.get_user_by_telegram_id() (public.py:138)  → returns None (?!)
+      → repository.find_user_by_email()      (public.py:150)  → skipped (email=None)
+      → user is None → INSERT new User       (public.py:167)  → 💥 UNIQUE VIOLATION
+```
+
+#### Почему `get_user_by_telegram_id()` вернул None, хотя user с таким tg_id существует?
+
+Две возможные причины:
+
+**Причина A — Два параллельных запроса (race condition):**
+1. Пользователь открывает Mini App → `/tg-webapp/auth` вызывает `upsert_telegram_subscriber` → создаёт User (id=X, telegram_user_id=881271577)
+2. Почти одновременно (или до commit в п.1) → POST checkout вызывает `create_telegram_stub_checkout` → `upsert_telegram_subscriber` → `get_user_by_telegram_id` не видит ещё не закоммиченного User → пытается INSERT → UNIQUE VIOLATION
+
+Это возможно потому что:
+- `/tg-webapp/auth` (auth.py:430-440) делает `upsert_telegram_subscriber` + `repository.commit()` в одной сессии
+- `/app/checkout` (app.py) делает `create_telegram_stub_checkout` → `upsert_telegram_subscriber` + `_create_checkout_records` + `repository.commit()` в **другой** сессии
+- Если оба запроса попадают в разные DB-сессии и второй начинает SELECT до commit первого — он не видит нового User
+
+**Причина B — User был создан через публичный checkout без email:**
+1. Ранее User создан через публичный `/checkout/` без email (email=None, telegram_user_id=None) — но lead_source_id=65d65da1 совпадает
+2. Позже через Mini App auth User создан **второй раз** с telegram_user_id=881271577
+3. При повторном checkout — email=None → lookup по email пропущен → `get_user_by_telegram_id` мог не найти (если первый User без tg_id был в сессии) → INSERT → UNIQUE VIOLATION
+
+#### Код, который допустил ошибку
+
+```python
+# public.py:133-188 — upsert_telegram_subscriber()
+async def upsert_telegram_subscriber(repository, profile):
+    user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
+    if user is not None:
+        # UPDATE existing → return
+        return user
+
+    if normalized_email is not None:
+        user = await repository.find_user_by_email(normalized_email)
+        if user is not None and user.telegram_user_id is None:
+            # LINK tg_id to existing email user → return
+            return user
+
+    if user is None:
+        # CREATE new user → 💥 UNIQUE VIOLATION если tg_id уже есть
+        user = User(telegram_user_id=profile.telegram_user_id, ...)
+        repository.add(user)
+        return user
+```
+
+**Проблема**: между SELECT (`get_user_by_telegram_id`) и INSERT (`repository.add(user)`) проходит время. В этом окне другая сессия может закоммитить User с тем же telegram_user_id.
+
+#### SQL из traceback (подтверждение)
+
+```sql
+INSERT INTO users (email, telegram_user_id, username, full_name, ...)
+VALUES (None, 881271577, None, 'Andrey', ...)
+-- email=None, telegram_user_id=881271577, lead_source_id='65d65da1-...'
+```
+
+- `email=None` → lookup по email был пропущен (profile.email пустой)
+- `lead_source_id='65d65da1-...'` → это из `create_telegram_stub_checkout` (line 335-338), значит это checkout path, а не auth
+
+### Что нужно исправить
+
+#### P53.1 — Обработка IntegrityError в upsert_telegram_subscriber `[x]`
+
+Обернуть INSERT в try/except и при UniqueViolation повторить SELECT:
+
+**Файл:** `src/pitchcopytrade/services/public.py`, функция `upsert_telegram_subscriber` (строки 133-188)
+
+**Текущий код блока INSERT** (строки 166-179):
+```python
+    if user is None:
+        user = User(
+            telegram_user_id=profile.telegram_user_id,
+            username=profile.username,
+            full_name=display_name,
+            email=normalized_email,
+            status=UserStatus.ACTIVE,
+            timezone=profile.timezone_name,
+        )
+        user.consents = []
+        user.payments = []
+        user.subscriptions = []
+        repository.add(user)
+        return user
+```
+
+**Заменить на:**
+```python
+    if user is None:
+        try:
+            user = User(
+                telegram_user_id=profile.telegram_user_id,
+                username=profile.username,
+                full_name=display_name,
+                email=normalized_email,
+                status=UserStatus.ACTIVE,
+                timezone=profile.timezone_name,
+            )
+            user.consents = []
+            user.payments = []
+            user.subscriptions = []
+            repository.add(user)
+            await repository.flush()
+            return user
+        except IntegrityError:
+            await repository.rollback()
+            logger.warning(
+                "Race condition: telegram_user_id=%s was inserted concurrently, retrying lookup",
+                profile.telegram_user_id,
+            )
+            user = await repository.get_user_by_telegram_id(profile.telegram_user_id)
+            if user is None:
+                raise
+            user.username = profile.username
+            user.full_name = display_name
+            if normalized_email is not None:
+                user.email = normalized_email
+            user.timezone = profile.timezone_name
+            if user.consents is None:
+                user.consents = []
+            return user
+```
+
+**Импорт** — добавить в начало файла:
+```python
+from sqlalchemy.exc import IntegrityError
+```
+
+#### P53.2 — Удалить мёртвый код (строки 181-188) `[x]`
+
+Строки 181-188 — математически недостижимый блок (уже отмечен в review как dead code):
+```python
+    user.username = profile.username
+    user.full_name = display_name
+    if normalized_email is not None:
+        user.email = normalized_email
+    user.timezone = profile.timezone_name
+    if user.consents is None:
+        user.consents = []
+    return user
+```
+
+**Удалить полностью.**
+
+#### P53.3 — Проверить repository на наличие rollback/flush `[x]`
+
+Убедиться что `PublicRepository` поддерживает:
+- `await repository.flush()` — flush без commit (нужен для раннего срабатывания constraint)
+- `await repository.rollback()` — rollback текущей транзакции после IntegrityError
+
+**Файл для проверки:** `src/pitchcopytrade/repositories/` — найти класс `PublicRepository`.
+
+Если `rollback()` отсутствует — добавить:
+```python
+async def rollback(self) -> None:
+    await self.session.rollback()
+```
+
+Если `flush()` отсутствует — добавить:
+```python
+async def flush(self) -> None:
+    await self.session.flush()
+```
+
+#### P53.4 — Тесты `[x]`
+
+- [x] **P53.4.1** Тест: concurrent upsert — два вызова `upsert_telegram_subscriber` с одним telegram_user_id не падают
+- [x] **P53.4.2** Тест: upsert с email=None и существующим telegram_user_id → возвращает existing user
+- [x] **P53.4.3** Тест: dead code block удалён — после `if user is None: … return user` нет unreachable кода
+
+#### P53.5 — SQL-диагностика для production `[x]`
+
+Создать `deploy/fix_user_881271577.sql`:
+
+```sql
+-- Диагностика: пользователь Andrey (telegram_user_id=881271577)
+-- Ошибка: UniqueViolationError при INSERT — user с таким tg_id уже существовал
+
+-- 1. Найти существующего пользователя
+SELECT id, email, telegram_user_id, username, full_name, status, lead_source_id, created_at
+FROM users
+WHERE telegram_user_id = 881271577;
+
+-- 2. Проверить подписки этого пользователя
+SELECT s.id, s.status, s.start_at, s.end_at, p.title as product_title
+FROM subscriptions s
+JOIN subscription_products p ON s.product_id = p.id
+JOIN users u ON s.user_id = u.id
+WHERE u.telegram_user_id = 881271577;
+
+-- 3. Проверить платежи
+SELECT pay.id, pay.status, pay.amount_rub, pay.final_amount_rub, pay.confirmed_at
+FROM payments pay
+JOIN users u ON pay.user_id = u.id
+WHERE u.telegram_user_id = 881271577;
+
+-- 4. Проверить дубликаты (если crash создал partial state)
+SELECT id, email, telegram_user_id, full_name, created_at
+FROM users
+WHERE full_name = 'Andrey'
+ORDER BY created_at;
+```
+
+### Acceptance P53
+
+1. `upsert_telegram_subscriber` не падает при concurrent INSERT
+2. IntegrityError на `uq_users_telegram_user_id` перехватывается и повторяет lookup
+3. Dead code (строки 181-188) удалён
+4. Тесты покрывают race condition и normal upsert
+5. SQL-диагностика для production создана
+
+### Worker Prompt — Fix UniqueViolation Race Condition in upsert_telegram_subscriber
+
+```text
+Ты исправляешь production crash: UniqueViolationError на constraint uq_users_telegram_user_id.
+
+Root cause:
+- upsert_telegram_subscriber() делает SELECT → INSERT без защиты от concurrent INSERT
+- Между SELECT (get_user_by_telegram_id → None) и INSERT другая сессия может закоммитить User с тем же telegram_user_id
+- INSERT бросает IntegrityError: duplicate key
+
+Что нужно:
+1. Обернуть INSERT блок (строки 166-179) в try/except IntegrityError
+2. При IntegrityError: rollback → повторный SELECT → UPDATE metadata → return
+3. Добавить import IntegrityError from sqlalchemy.exc
+4. Добавить flush() перед return в try-блоке (чтобы constraint сработал до commit)
+5. Удалить dead code (строки 181-188) — математически недостижим
+6. Проверить что PublicRepository имеет flush() и rollback()
+7. Создать deploy/fix_user_881271577.sql
+8. Обновить тесты
+
+Что нельзя делать:
+- Менять шаблоны
+- Менять routes
+- Добавлять retry loop (одного retry достаточно)
+- Убирать unique constraint из DB
+
+Финальный отчёт:
+- root cause confirmed
+- changed files
+- tests run + results
+```

@@ -33,19 +33,56 @@ P32 cleanup remains open, но это не blocker.
 
 ## Findings (2026-04-04 full project review)
 
-### [P1] DEAD CODE: unreachable block in `upsert_telegram_subscriber` маскирует edge-case `[ ]`
+### [P1] UniqueViolationError race condition in `upsert_telegram_subscriber` `[x]`
 
-**Severity**: medium (data integrity risk, not crash)
+**Severity**: critical (production crash)
 
-**Что видно:**
-- [public.py:446-453](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/public.py#L446) — блок кода после `if user is None: … return user` (line 431-444).
-- Этот блок **математически недостижим**: если `user is None` (line 431), функция создаёт нового user и делает return (line 444). Если `user is not None`, функция уже вернулась раньше (line 412 или 429).
-- Код на 446-453 — мёртвый. Но он маскирует **невидимый edge case**: если user найден по email, но у него **уже есть другой** `telegram_user_id` (line 416: `user.telegram_user_id is None` → False), функция проваливается в `if user is None` (line 431), который тоже False, и попадает в мёртвый блок.
-- В реальности этот edge case означает: два разных Telegram-аккаунта пытаются привязаться к одному email. Сейчас — silent update metadata без смены `telegram_user_id`. Но поведение неочевидно.
+Resolved в P53:
+- Production crash: пользователь Andrey (tg=881271577) получил 500 при checkout — INSERT пытался создать User с уже существующим telegram_user_id
+- Root cause: race condition между `/tg-webapp/auth` и `/app/checkout` — оба вызывают `upsert_telegram_subscriber` в разных DB-сессиях
+- Fix: INSERT обёрнут в `try/except IntegrityError` → rollback → повторный SELECT → UPDATE metadata → return
+- Dead code (бывший unreachable блок) переработан в явную обработку edge case «user найден по email, но уже имеет другой telegram_user_id»
+- `flush()` + `rollback()` уже были в `PublicRepository`
+- FakePublicRepository в тестах дополнен `flush()` + `rollback()`
+
+**SQL-диагностика для Andrey (tg=881271577):**
+- User: id=57b709b0, email=avt09@mail.ru, status=**invited** (created via admin invite 2026-03-31)
+- 3 подписки (2× Top Gun + 1× Momentum RU), 3 платежа — все active/paid
+- **Дубль подписки**: Top Gun оформлен дважды с интервалом 3 мин (12:00 и 12:03) — нет защиты от double submit
+- Нет дубликатов User — crash не оставил partial state
+
+### [P1] Duplicate subscription: нет защиты от double-submit checkout `[ ]`
+
+**Severity**: medium (data issue, не crash)
+
+**Что видно из production SQL:**
+- Пользователь Andrey (tg=881271577) имеет 2 одинаковые подписки Top Gun:
+  - 081633b3: active, 2026-04-04 12:00:49
+  - 2226e947: active, 2026-04-04 12:03:02 (через 3 минуты — дубль)
+- Оба платежа paid, 500 руб каждый
+
+**Почему это происходит:**
+- Checkout POST не проверяет, есть ли у пользователя уже active subscription на тот же product
+- JS-форма блокирует кнопку `submitButton.disabled = true`, но это client-side only — не спасает от:
+  - повторного открытия checkout в новой вкладке
+  - network retry
+  - кнопки «назад» + повторный submit
 
 **Что нужно:**
-- Удалить мёртвый блок 446-453
-- Добавить явную обработку case «user найден по email, но у него уже другой telegram_user_id»: либо warning log + return existing user без изменения tg_id, либо raise error
+- Server-side проверка в `create_telegram_stub_checkout` и `create_stub_checkout`: если у user уже есть active/trial subscription на этот же product — не создавать дубль, а возвращать существующую подписку или ошибку
+
+### [P2] User status=invited не обновляется при Telegram auth `[ ]`
+
+**Severity**: low (функционально не ломает, но грязные данные)
+
+**Что видно из production SQL:**
+- User Andrey: status=**invited**, telegram_user_id=881271577
+- User был создан через admin invite (2026-03-31), затем привязал Telegram через Mini App auth
+- `upsert_telegram_subscriber` обновляет username, full_name, email, timezone — но **не обновляет status**
+- User остаётся `invited` даже после успешного auth и 3 checkout-ов
+
+**Что нужно:**
+- В `upsert_telegram_subscriber`, при UPDATE existing user (line 141-149): если `user.status` == `invited`, обновить на `active`
 
 ### [P2] `status.html`: hardcoded hrefs без `preview_mode` `[ ]`
 
@@ -562,9 +599,10 @@ Resolved:
 
 P32 — cleanup (не blocker).
 P46, P47, P48, P49, P50, P51 закрыты в этом pass-е.
-Full project review (298 tests passed) выявил 5 реальных проблем — ниже в findings.
+P53 закрыт: race condition в `upsert_telegram_subscriber` исправлен (IntegrityError handling).
+Full project review (304 tests passed) выявил дополнительные проблемы — ниже в findings.
 
-Текущий gate: **yellow** (функционал работает, но есть data integrity risk и template bugs).
+Текущий gate: **yellow** (функционал работает, но есть duplicate subscription issue и template bugs).
 
 ## Что считать готовностью текущего pass
 

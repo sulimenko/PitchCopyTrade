@@ -175,6 +175,9 @@ class SqlAlchemyPublicRepository(PublicRepository):
     async def flush(self) -> None:
         await self.session.flush()
 
+    async def rollback(self) -> None:
+        await self.session.rollback()
+
     async def commit(self) -> None:
         await self.session.commit()
 
@@ -283,6 +286,9 @@ class FilePublicRepository(PublicRepository):
         self.graph.add(entity)
 
     async def flush(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
         return None
 
     async def commit(self) -> None:
