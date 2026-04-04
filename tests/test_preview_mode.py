@@ -35,7 +35,8 @@ def test_preview_miniapp_catalog_is_self_contained(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Preview Subscriber" in response.text
         assert "Straddle Pro" in response.text
-        assert "/preview/app/status" in response.text
+        assert "/preview/app/subscriptions" in response.text
+        assert "/preview/app/timeline" in response.text
         assert 'href="/app/status"' not in response.text
         assert help_response.status_code == 200
         assert "Как пользоваться сервисом" in help_response.text
@@ -50,8 +51,8 @@ def test_preview_strategy_detail_has_structured_narrative(monkeypatch) -> None:
         response = client.get("/preview/app/strategies/straddle-pro")
 
         assert response.status_code == 200
-        assert "Короткое описание" in response.text
         assert "Описание" in response.text
+        assert "Детально" in response.text
         assert "Тарифы" in response.text
         assert "К стратегии" in response.text
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import logging
-import re
 from secrets import token_hex
 
 from pitchcopytrade.core.config import get_settings
@@ -24,7 +23,6 @@ from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.services.compliance import bind_consents_to_payment, record_user_consent
 from pitchcopytrade.services.promo import apply_promo_to_amount, sync_promo_redemption_counter, validate_promo_code_for_checkout
-from pitchcopytrade.services.subscriber import billing_period_label
 
 
 logger = logging.getLogger(__name__)
@@ -62,27 +60,11 @@ class TelegramSubscriberProfile:
 
 
 @dataclass(slots=True, frozen=True)
-class StrategyStorySection:
-    title: str
-    body: str
-
-
-@dataclass(slots=True, frozen=True)
 class StrategyStory:
-    hero_summary: str
-    market_scope: str
-    holding_period_note: str
-    entry_logic: str
-    risk_rule: str
-    instrument_examples: list[str]
-    who_is_it_for: list[str]
-    who_is_it_not_for: list[str]
-    faq_items: list[StrategyStorySection]
     thesis: str
     mechanics: str
-    tariffs: list[str]
+    risk_rule: str
     commercial_cta_label: str
-    commercial_cta_detail: str
 
 
 @dataclass(slots=True)
@@ -105,262 +87,15 @@ async def get_public_strategy_by_slug(repository: PublicRepository, slug: str) -
 
 
 def build_strategy_story(strategy: Strategy) -> StrategyStory:
-    sections = _parse_full_description_sections(strategy.full_description or "")
-    hero_summary = _first_non_empty(
-        sections.get("hero"),
-        sections.get("summary"),
-        sections.get("thesis"),
-        strategy.short_description,
-    )
-    thesis = _first_non_empty(
-        sections.get("thesis"),
-        sections.get("market"),
-        strategy.full_description,
-        strategy.short_description,
-    )
-    market_scope = _first_non_empty(
-        sections.get("market_scope"),
-        sections.get("market"),
-        _build_market_scope(strategy),
-    )
-    holding_period_note = _first_non_empty(
-        sections.get("holding_period_note"),
-        sections.get("horizon"),
-        _build_holding_period_note(strategy),
-    )
-    entry_logic = _first_non_empty(
-        sections.get("entry_logic"),
-        sections.get("mechanics"),
-        _build_entry_logic(strategy),
-    )
-    risk_rule = _first_non_empty(
-        sections.get("risk_rule"),
-        sections.get("risk"),
-        _build_risk_rule(strategy),
-    )
-    instrument_examples = _collect_bullets(
-        sections.get("instrument_examples")
-        or sections.get("instruments")
-        or sections.get("examples")
-        or _build_instrument_examples(strategy)
-    )
-    who_is_it_for = _collect_bullets(
-        sections.get("who_is_it_for")
-        or sections.get("for")
-        or _build_audience_points(strategy, positive=True)
-    )
-    who_is_it_not_for = _collect_bullets(
-        sections.get("who_is_it_not_for")
-        or sections.get("not_for")
-        or _build_audience_points(strategy, positive=False)
-    )
-    faq_items = _build_faq_items(strategy, sections)
-    tariffs = _build_tariff_lines(strategy)
-    mechanics = _first_non_empty(
-        sections.get("mechanics"),
-        _build_mechanics(strategy, entry_logic=entry_logic, market_scope=market_scope),
-    )
+    risk = _risk_level_label(strategy.risk_level).lower()
+    risk_rule = f"Риск: {risk}."
+    if strategy.min_capital_rub:
+        risk_rule = f"{risk_rule} Минимальный капитал: {strategy.min_capital_rub} руб."
     return StrategyStory(
-        hero_summary=hero_summary,
-        market_scope=market_scope,
-        holding_period_note=holding_period_note,
-        entry_logic=entry_logic,
+        thesis=strategy.short_description or "",
+        mechanics=strategy.full_description or strategy.short_description or "",
         risk_rule=risk_rule,
-        instrument_examples=instrument_examples,
-        who_is_it_for=who_is_it_for,
-        who_is_it_not_for=who_is_it_not_for,
-        faq_items=faq_items,
-        thesis=thesis,
-        mechanics=mechanics,
-        tariffs=tariffs,
         commercial_cta_label="Подписаться",
-        commercial_cta_detail="Откройте тариф и завершите оформление внутри того же Mini App.",
-    )
-
-
-def _parse_full_description_sections(text: str) -> dict[str, str]:
-    if not text.strip():
-        return {}
-    sections: dict[str, list[str]] = {}
-    current_key = "body"
-    for line in text.splitlines():
-        heading = _normalize_heading(line)
-        if heading is not None:
-            current_key = heading
-            sections.setdefault(current_key, [])
-            continue
-        sections.setdefault(current_key, []).append(line)
-    normalized: dict[str, str] = {}
-    for key, lines in sections.items():
-        body = "\n".join(lines).strip()
-        if body:
-            normalized[key] = body
-    if "body" in normalized and len(normalized) == 1:
-        normalized["thesis"] = normalized["body"]
-    return normalized
-
-
-def _normalize_heading(line: str) -> str | None:
-    stripped = line.strip()
-    if not stripped.startswith("#"):
-        return None
-    stripped = stripped.lstrip("#").strip()
-    if not stripped:
-        return None
-    key = re.sub(r"[^a-z0-9а-я]+", "_", stripped.lower()).strip("_")
-    aliases = {
-        "hero": "hero",
-        "summary": "hero",
-        "thesis": "thesis",
-        "идея": "thesis",
-        "market": "market",
-        "market_scope": "market_scope",
-        "scope": "market_scope",
-        "holding_period": "horizon",
-        "holding_period_note": "horizon",
-        "horizon": "horizon",
-        "entry_logic": "entry_logic",
-        "mechanics": "mechanics",
-        "mechanic": "mechanics",
-        "risk": "risk",
-        "risk_rule": "risk_rule",
-        "instrument_examples": "instrument_examples",
-        "instruments": "instrument_examples",
-        "examples": "instrument_examples",
-        "who_is_it_for": "who_is_it_for",
-        "for": "who_is_it_for",
-        "who_is_it_not_for": "who_is_it_not_for",
-        "not_for": "who_is_it_not_for",
-        "faq": "faq",
-        "faq_items": "faq",
-        "documents": "faq",
-        "tariffs": "tariffs",
-        "pricing": "tariffs",
-    }
-    return aliases.get(key)
-
-
-def _first_non_empty(*values: str | None) -> str:
-    for value in values:
-        if value is not None:
-            text = value.strip()
-            if text:
-                return text
-    return ""
-
-
-def _collect_bullets(value: str) -> list[str]:
-    lines = [line.strip(" •-\t") for line in value.splitlines() if line.strip()]
-    bullets = [line for line in lines if line]
-    if bullets:
-        return bullets
-    return [value.strip()] if value.strip() else []
-
-
-def _build_market_scope(strategy: Strategy) -> str:
-    risk = _risk_level_label(strategy.risk_level)
-    return f"Сценарий сфокусирован на российском рынке и подаётся как читаемый сценарий для уровня риска {risk.lower()}."
-
-
-def _build_holding_period_note(strategy: Strategy) -> str:
-    if strategy.subscription_products:
-        labels = sorted({billing_period_label(product.billing_period) for product in strategy.subscription_products})
-        if len(labels) == 1:
-            return f"Горизонт поддержки привязан к тарифу: {labels[0].lower()}."
-        return f"Горизонт поддержки варьируется по тарифам: {', '.join(label.lower() for label in labels)}."
-    return "Горизонт уточняется в выбранном тарифе."
-
-
-def _build_entry_logic(strategy: Strategy) -> str:
-    return (
-        strategy.short_description
-        or f"Сценарий входа описан через логику {strategy.title} и раскрывается в полном описании."
-    )
-
-
-def _build_risk_rule(strategy: Strategy) -> str:
-    risk = _risk_level_label(strategy.risk_level)
-    min_capital = f"Минимальный капитал: {strategy.min_capital_rub} руб." if strategy.min_capital_rub else "Минимальный капитал в карточке пока не задан."
-    # return f"Риск: {risk.lower()}. {min_capital} Коммерческая CTA завязана на тот же маршрут оплаты."
-    return f"Риск: {risk.lower()}. {min_capital}."
-
-
-def _build_instrument_examples(strategy: Strategy) -> str:
-    return (
-        "Конкретные инструменты раскрываются в рекомендациях и в детальном сценарии автора."
-        if strategy.full_description
-        else "Инструментальный набор раскрывается в рекомендациях и может дополняться по мере публикации новых сценариев."
-    )
-
-
-def _build_audience_points(strategy: Strategy, *, positive: bool) -> str:
-    risk = _risk_level_label(strategy.risk_level).lower()
-    if positive:
-        return "\n".join(
-            [
-                f"Подходит тем, кому нужен структурный сценарий с риском уровня {risk}.",
-                "Подходит тем, кто читает стратегию перед действием, а не покупает «тикер ради тикера».",
-                "Подходит тем, кто готов открыть тариф и пройти checkout внутри Mini App.",
-            ]
-        )
-    return "\n".join(
-        [
-            "Не подходит тем, кто ищет мгновенный результат без чтения сценария.",
-            "Не подходит тем, кто не готов принимать риски рыночного сценария.",
-            "Не подходит тем, кто хочет закрыть решение без просмотра деталей и тарифа.",
-        ]
-    )
-
-
-def _build_faq_items(strategy: Strategy, sections: dict[str, str]) -> list[StrategyStorySection]:
-    items = []
-    if faq_text := sections.get("faq"):
-        for part in re.split(r"\n{2,}", faq_text):
-            part = part.strip()
-            if not part:
-                continue
-            if ":" in part:
-                question, answer = part.split(":", 1)
-                items.append(StrategyStorySection(title=question.strip(), body=answer.strip()))
-            else:
-                items.append(StrategyStorySection(title="FAQ", body=part))
-    if items:
-        return items
-    risk = _risk_level_label(strategy.risk_level).lower()
-    return [
-        StrategyStorySection(
-            title="Сколько времени нужен сценарий?",
-            body=_build_holding_period_note(strategy),
-        ),
-        StrategyStorySection(
-            title="Где смотреть риск?",
-            body=f"В карточке сразу виден риск уровня {risk} и минимальный капитал.",
-        ),
-        StrategyStorySection(
-            title="Что происходит после выбора тарифа?",
-            body="Пользователь открывает checkout, принимает документы и остаётся внутри того же Mini App.",
-        ),
-    ]
-
-
-def _build_tariff_lines(strategy: Strategy) -> list[str]:
-    tariffs: list[str] = []
-    for product in strategy.subscription_products:
-        period = billing_period_label(product.billing_period)
-        parts = [product.title, f"{product.price_rub} руб", period]
-        if product.trial_days:
-            parts.append(f"{product.trial_days} дней trial")
-        tariffs.append(" · ".join(parts))
-    if tariffs:
-        return tariffs
-    return ["Тарифы появятся после публикации активных subscription products."]
-
-
-def _build_mechanics(strategy: Strategy, *, entry_logic: str, market_scope: str) -> str:
-    return (
-        f"{entry_logic}\n\n{market_scope}\n\n"
-        f"В полноценной карточке эта секция раскрывает механику сценария без длинной стены текста, "
-        f"а детали сделки и коммерческая логика остаются связанными с выбранным тарифом."
     )
 
 

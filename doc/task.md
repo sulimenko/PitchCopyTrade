@@ -9590,3 +9590,234 @@ Sidebar `<aside>` окажется под формой — это нормаль
 3. Pill с ценой убрана из hero checkout
 4. Billing period pill использует `billing_period_label()`
 5. Trial pill остаётся если есть
+
+## P52 — Переделать `build_strategy_story` под реальные данные DB `[ ]`
+
+> **Контекст (2026-04-04):**
+>
+> `build_strategy_story()` — функция, которая строит из Strategy-объекта виртуальный `StrategyStory` с 14 полями.
+> Проблема: функция была написана для гипотетического markdown-формата `full_description` с секциями `# Thesis`, `# Mechanics` и т.д.
+> В реальности в DB данные простые:
+>
+> ```
+> title:             Top Gun
+> short_description: Стратегия инвестирования на акциях Сбербанка
+> full_description:  Стратегия инвестирования на акциях Сбербанка ао Сбербанка пр
+> risk_level:        low
+> min_capital_rub:   100000
+> ```
+>
+> `full_description` — обычный текст без markdown-заголовков. Функция `_parse_full_description_sections()` не находит секций и fallback-ит в сгенерированные шаблонные фразы ("Сценарий сфокусирован на российском рынке…", "Подходит тем, кому нужен структурный сценарий…").
+> Из 14 полей StrategyStory **реально используются** в шаблонах только 4:
+> - `risk_rule` — catalog.html
+> - `thesis` — strategy_detail.html
+> - `mechanics` — strategy_detail.html
+> - `commercial_cta_label` — strategy_detail.html
+> Остальные 10 полей — мёртвый код (не рендерятся нигде).
+
+### Текущий data flow (проблема)
+
+```
+Strategy из DB
+  ↓
+build_strategy_story(strategy) → StrategyStory(14 полей)
+  ↓
+strategy.story = StrategyStory(…)  # присваивается в route
+  ↓
+Шаблон: {{ strategy.story.thesis if strategy.story else strategy.short_description }}
+```
+
+Проблемы:
+1. **thesis** получает `full_description` через fallback (line 115-120) — а в шаблоне fallback без story = `short_description`. Получается: со story → full_description, без story → short_description. Некорректно: thesis должен быть short_description.
+2. **mechanics** получает сгенерированный текст через `_build_mechanics()` (line 359-364) — "В полноценной карточке эта секция раскрывает механику…". Бесполезный boilerplate вместо реального `full_description`.
+3. **risk_rule** генерирует "Риск: низкий. Минимальный капитал: 100000 руб." — это ОК, но это по сути `label_risk_level(strategy.risk_level)` + `strategy.min_capital_rub`, зачем отдельная story для этого?
+4. **10 мёртвых полей** (hero_summary, market_scope, holding_period_note, entry_logic, instrument_examples, who_is_it_for, who_is_it_not_for, faq_items, tariffs, commercial_cta_detail) — вычисляются, но никуда не рендерятся.
+5. **~300 строк** helper-функций обслуживают мёртвые поля.
+
+### Целевой data flow (решение)
+
+Шаблоны уже имеют fallback-и — `{{ strategy.story.X if strategy.story else strategy.Y }}`. Если убрать story совсем, fallback-и уже корректны. Но story может понадобиться когда `full_description` содержит markdown-секции.
+
+**Решение**: упростить `StrategyStory` до реально используемых полей и построить их из DB-полей напрямую.
+
+### Файл
+
+`src/pitchcopytrade/services/public.py`
+
+### Что нужно изменить
+
+#### P52.1 — Сократить StrategyStory до используемых полей `[ ]`
+
+**Текущий StrategyStory** (строки 70-85):
+```python
+@dataclass(slots=True, frozen=True)
+class StrategyStory:
+    hero_summary: str
+    market_scope: str
+    holding_period_note: str
+    entry_logic: str
+    risk_rule: str
+    instrument_examples: list[str]
+    who_is_it_for: list[str]
+    who_is_it_not_for: list[str]
+    faq_items: list[StrategyStorySection]
+    thesis: str
+    mechanics: str
+    tariffs: list[str]
+    commercial_cta_label: str
+    commercial_cta_detail: str
+```
+
+**Заменить на:**
+```python
+@dataclass(slots=True, frozen=True)
+class StrategyStory:
+    thesis: str          # → short_description
+    mechanics: str       # → full_description
+    risk_rule: str       # → "Риск: {risk_level}. Минимальный капитал: {min_capital_rub} руб."
+    commercial_cta_label: str  # → "Подписаться"
+```
+
+#### P52.2 — Переписать build_strategy_story `[ ]`
+
+**Текущая функция** (строки 107-178) — 70+ строк с fallback-цепочками.
+
+**Заменить на:**
+```python
+def build_strategy_story(strategy: Strategy) -> StrategyStory:
+    """Build a StrategyStory directly from DB fields.
+
+    Mapping:
+      thesis          ← strategy.short_description
+      mechanics       ← strategy.full_description (falls back to short_description)
+      risk_rule       ← composed from risk_level + min_capital_rub
+      commercial_cta_label ← hardcoded "Подписаться"
+    """
+    risk = _risk_level_label(strategy.risk_level)
+    min_capital = (
+        f"Минимальный капитал: {strategy.min_capital_rub} руб."
+        if strategy.min_capital_rub
+        else ""
+    )
+    risk_rule = f"Риск: {risk.lower()}."
+    if min_capital:
+        risk_rule = f"{risk_rule} {min_capital}"
+
+    return StrategyStory(
+        thesis=strategy.short_description or "",
+        mechanics=strategy.full_description or strategy.short_description or "",
+        risk_rule=risk_rule,
+        commercial_cta_label="Подписаться",
+    )
+```
+
+#### P52.3 — Удалить неиспользуемый код `[ ]`
+
+Удалить **полностью** следующие функции и класс (они больше не нужны):
+
+| Строки | Что |
+|--------|-----|
+| 64-67 | `class StrategyStorySection` |
+| 181-200 | `_parse_full_description_sections()` |
+| 203-240 | `_normalize_heading()` |
+| 243-249 | `_first_non_empty()` |
+| 252-257 | `_collect_bullets()` |
+| 260-262 | `_build_market_scope()` |
+| 265-271 | `_build_holding_period_note()` |
+| 274-278 | `_build_entry_logic()` |
+| 288-293 | `_build_instrument_examples()` |
+| 296-312 | `_build_audience_points()` |
+| 315-343 | `_build_faq_items()` |
+| 346-356 | `_build_tariff_lines()` |
+| 359-364 | `_build_mechanics()` |
+
+**Оставить:**
+| Строки | Что |
+|--------|-----|
+| 281-285 | `_build_risk_rule()` — **удалить**, логика перенесена внутрь `build_strategy_story` |
+| 367-375 | `_risk_level_label()` — **оставить**, используется в шаблонах через `label_risk_level` |
+
+#### P52.4 — Проверить шаблоны: fallback-и уже корректны `[ ]`
+
+Шаблоны уже написаны с паттерном `{{ strategy.story.X if strategy.story else strategy.Y }}`:
+
+| Шаблон | Строка | Текущий | Корректность |
+|--------|--------|---------|--------------|
+| catalog.html | 53 | `strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level)` | ✅ OK — story.risk_rule теперь = "Риск: низкий. Мин. капитал: 100000 руб." |
+| strategy_detail.html | 58 | `strategy.story.thesis if strategy.story else strategy.short_description` | ✅ OK — story.thesis теперь = short_description |
+| strategy_detail.html | 66 | `strategy.story.mechanics if strategy.story else (strategy.full_description or strategy.short_description)` | ✅ OK — story.mechanics теперь = full_description |
+| strategy_detail.html | 36 | `strategy.story.commercial_cta_label if strategy.story else "Подписаться"` | ✅ OK — story.commercial_cta_label = "Подписаться" |
+
+Шаблоны менять **не нужно**.
+
+#### P52.5 — Обновить тесты `[ ]`
+
+- [ ] **P52.5.1** Найти все тесты, которые ссылаются на `StrategyStory`, `StrategyStorySection`, `build_strategy_story` или удалённые helper-функции — обновить или удалить
+- [ ] **P52.5.2** Добавить тест: `build_strategy_story` с реальными DB-полями (Top Gun) → `thesis == short_description`, `mechanics == full_description`, `risk_rule` содержит "низкий" и "100000"
+- [ ] **P52.5.3** Добавить тест: strategy без `full_description` → `mechanics == short_description`
+- [ ] **P52.5.4** Добавить тест: strategy без `min_capital_rub` → `risk_rule` не содержит "Минимальный капитал"
+- [ ] **P52.5.5** Проверить `test_preview_mode.py::test_preview_strategy_detail_has_structured_narrative` — возможно ссылается на старые story поля
+
+### DB данные для справки (стратегия Top Gun)
+
+```
+id:                bb066d02-a85f-4a13-a399-e69eb0a57fda
+slug:              gun
+title:             Top Gun
+short_description: Стратегия инвестирования на акциях Сбербанка
+full_description:  Стратегия инвестирования на акциях Сбербанка ао Сбербанка пр
+risk_level:        low
+min_capital_rub:   100000
+is_public:         true
+status:            published
+```
+
+### Acceptance P52
+
+1. `StrategyStory` имеет только 4 поля: `thesis`, `mechanics`, `risk_rule`, `commercial_cta_label`
+2. `build_strategy_story` — ≤20 строк, берёт данные напрямую из DB-полей
+3. `thesis` = `strategy.short_description`
+4. `mechanics` = `strategy.full_description` (fallback → short_description)
+5. `risk_rule` = "Риск: {risk_level}. Минимальный капитал: {min_capital_rub} руб."
+6. ~300 строк мёртвых helper-функций удалены
+7. `StrategyStorySection` удалён
+8. Все шаблоны работают без изменений (fallback-и уже корректны)
+9. Тесты обновлены и проходят
+
+### Worker Prompt — Simplify build_strategy_story to DB Fields
+
+```text
+Ты упрощаешь build_strategy_story — убираешь markdown-парсер и генерацию шаблонных фраз.
+
+Контекст:
+- В DB full_description — обычный текст без markdown-заголовков
+- Из 14 полей StrategyStory в шаблонах используются только 4: thesis, mechanics, risk_rule, commercial_cta_label
+- Остальные 10 полей нигде не рендерятся
+- ~300 строк helper-функций обслуживают мёртвые поля
+
+Что нужно:
+1. Сократить StrategyStory до 4 полей
+2. Переписать build_strategy_story (≤20 строк):
+   - thesis = strategy.short_description
+   - mechanics = strategy.full_description or strategy.short_description
+   - risk_rule = "Риск: {label}. Минимальный капитал: {N} руб." (если есть)
+   - commercial_cta_label = "Подписаться"
+3. Удалить: StrategyStorySection, _parse_full_description_sections, _normalize_heading,
+   _first_non_empty, _collect_bullets, _build_market_scope, _build_holding_period_note,
+   _build_entry_logic, _build_risk_rule, _build_instrument_examples, _build_audience_points,
+   _build_faq_items, _build_tariff_lines, _build_mechanics
+4. Оставить: _risk_level_label (используется отдельно)
+5. Обновить тесты
+6. НЕ менять шаблоны — fallback-и уже корректны
+
+Что нельзя делать:
+- Менять шаблоны (catalog.html, strategy_detail.html)
+- Менять routes (public.py, app.py, preview.py) — strategy.story присваивается там, но интерфейс тот же
+- Удалять _risk_level_label
+- Добавлять новые поля в StrategyStory
+
+Финальный отчёт:
+- lines removed / lines added
+- changed files
+- tests run + results
+```

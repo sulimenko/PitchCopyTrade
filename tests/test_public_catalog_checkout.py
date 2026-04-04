@@ -22,6 +22,7 @@ from pitchcopytrade.db.models.enums import (
     SubscriptionStatus,
 )
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
+from pitchcopytrade.services.public import build_strategy_story
 
 
 class FakePublicRepository:
@@ -120,6 +121,37 @@ def _make_strategy_and_product() -> tuple[Strategy, SubscriptionProduct]:
     product.strategy = strategy
     strategy.subscription_products = [product]
     return strategy, product
+
+
+def _make_story_strategy(
+    *,
+    short_description: str = "Стратегия инвестирования на акциях Сбербанка",
+    full_description: str | None = "Стратегия инвестирования на акциях Сбербанка ао Сбербанка пр",
+    min_capital_rub: int | None = 100000,
+) -> Strategy:
+    author_user = User(id="author-user-story", full_name="Story Author")
+    author = AuthorProfile(
+        id="author-story",
+        user_id="author-user-story",
+        display_name="Story Author",
+        slug="story-author",
+        is_active=True,
+    )
+    author.user = author_user
+    strategy = Strategy(
+        id="strategy-story",
+        author_id="author-story",
+        slug="top-gun",
+        title="Top Gun",
+        short_description=short_description,
+        full_description=full_description,
+        risk_level=RiskLevel.LOW,
+        status=StrategyStatus.PUBLISHED,
+        min_capital_rub=min_capital_rub,
+        is_public=True,
+    )
+    strategy.author = author
+    return strategy
 
 
 def _make_documents() -> list[LegalDocument]:
@@ -224,6 +256,34 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         assert "grid-template-columns:1fr" in response.text
 
 
+def test_build_strategy_story_uses_db_fields_directly() -> None:
+    strategy = _make_story_strategy()
+
+    story = build_strategy_story(strategy)
+
+    assert story.thesis == strategy.short_description
+    assert story.mechanics == strategy.full_description
+    assert "низкий" in story.risk_rule
+    assert "100000" in story.risk_rule
+    assert story.commercial_cta_label == "Подписаться"
+
+
+def test_build_strategy_story_falls_back_to_short_description_without_full_description() -> None:
+    strategy = _make_story_strategy(full_description=None)
+
+    story = build_strategy_story(strategy)
+
+    assert story.mechanics == strategy.short_description
+
+
+def test_build_strategy_story_omits_min_capital_when_missing() -> None:
+    strategy = _make_story_strategy(min_capital_rub=None)
+
+    story = build_strategy_story(strategy)
+
+    assert "Минимальный капитал" not in story.risk_rule
+
+
 def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
     strategy, _product = _make_strategy_and_product()
     user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
@@ -253,7 +313,6 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
         assert "/app/catalog" in response.text
         assert "/app/subscriptions" in response.text
         assert "/app/timeline" in response.text
-        assert "/app/status" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
         assert f"/app/strategies/{strategy.slug}?entry=bot_start" in response.text
         assert f"/app/checkout/{strategy.subscription_products[0].slug}?entry=bot_start" in response.text
@@ -280,7 +339,8 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert product.title in response.text
         assert f"/checkout/{product.slug}?entry=public_strategy" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
-        assert "Короткое описание" in response.text
+        assert "Описание" in response.text
+        assert "Детально" in response.text
         assert "Описание" in response.text
         assert "Тарифы" in response.text
         assert response.text.count("Подписаться") >= 2
@@ -330,7 +390,8 @@ def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
         assert response.status_code == 200
         assert f"/app/checkout/{product.slug}?entry=bot_start" in response.text
         assert f'href="/checkout/{product.slug}"' not in response.text
-        assert "Короткое описание" in response.text
+        assert "Описание" in response.text
+        assert "Детально" in response.text
         assert "К стратегии" in response.text
         assert "Подписаться" in response.text
 

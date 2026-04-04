@@ -208,7 +208,7 @@ def _build_preview_strategy(author: SimpleNamespace) -> SimpleNamespace:
         slug="straddle-pro",
         title="Straddle Pro",
         short_description="Структурная стратегия на понятный рыночный сценарий.",
-        full_description="Preview narrative: идея, механизм, риск и коммерческий CTA собраны в одном экране.",
+        full_description="Preview: идея, механизм, риск и коммерческий предложение собраны в одном экране.",
         author=author,
         risk_level=RiskLevel.MEDIUM,
         min_capital_rub=150000,
