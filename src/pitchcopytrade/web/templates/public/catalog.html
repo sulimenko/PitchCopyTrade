@@ -32,12 +32,14 @@
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
       <div>
         <div class="eyebrow">{{ strategy.author.display_name }}</div>
-        <h2 style="margin:10px 0 0;font-size:1.7rem;">{{ strategy.title }}</h2>
+        <div style="display: flex;justify-content: space-between; align-items: center;">
+          <h2 style="margin:10px 0 0;font-size:1.7rem;">{{ strategy.title }}</h2>
+          <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
+        </div>
         <div style="margin-top:16px;background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
           {{ strategy.short_description }}
         </div>
       </div>
-      <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
     </div>
     {% if strategy.quotes %}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
@@ -50,9 +52,11 @@
       <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
         {{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}
       </div>
+      <!--
       {% if strategy.min_capital_rub %}
       <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">от {{ strategy.min_capital_rub }} руб</div>
       {% endif %}
+      -->
     </div>
     <div class="catalog-card-actions">
       {% if strategy.subscription_products %}
