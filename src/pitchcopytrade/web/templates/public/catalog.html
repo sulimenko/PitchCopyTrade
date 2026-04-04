@@ -33,10 +33,12 @@
       <div>
         <div class="eyebrow">{{ strategy.author.display_name }}</div>
         <h2 style="margin:10px 0 0;font-size:1.7rem;">{{ strategy.title }}</h2>
+        <div style="margin-top:16px;background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
+          {{ strategy.short_description }}
+        </div>
       </div>
       <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
     </div>
-    <p class="muted" style="margin:16px 0 0;line-height:1.65;">{{ strategy.story.hero_summary if strategy.story else strategy.short_description }}</p>
     {% if strategy.quotes %}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
       {% for quote in strategy.quotes[:3] %}
@@ -44,23 +46,19 @@
       {% endfor %}
     </div>
     {% endif %}
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px;">
-      <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;text-transform:uppercase;">
-        {{ strategy.story.holding_period_note if strategy.story else "Горизонт уточняется" }}
-      </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-top:16px;">
       <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
         {{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}
       </div>
       {% if strategy.min_capital_rub %}
       <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">от {{ strategy.min_capital_rub }} руб</div>
       {% endif %}
-      <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">{{ strategy.subscription_products|length }} тариф{% if strategy.subscription_products|length != 1 %}ов{% endif %}</div>
     </div>
     <div class="catalog-card-actions">
-      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Открыть стратегию</a>
       {% if strategy.subscription_products %}
-      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].slug }}{% else %}/app/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Открыть подписку</a>
+      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].slug }}{% else %}/app/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подписаться</a>
       {% endif %}
+      <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подробнее</a>
     </div>
   </article>
   {% else %}

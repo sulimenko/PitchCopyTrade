@@ -31,7 +31,57 @@ P32 cleanup remains open, но это не blocker.
 - clean db schema и startup path существуют
 - минимальный public checkout dataset в PostgreSQL теперь seed-ится автоматически
 
-## Findings
+## Findings (2026-04-04 full project review)
+
+### [P1] DEAD CODE: unreachable block in `upsert_telegram_subscriber` маскирует edge-case `[ ]`
+
+**Severity**: medium (data integrity risk, not crash)
+
+**Что видно:**
+- [public.py:446-453](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/public.py#L446) — блок кода после `if user is None: … return user` (line 431-444).
+- Этот блок **математически недостижим**: если `user is None` (line 431), функция создаёт нового user и делает return (line 444). Если `user is not None`, функция уже вернулась раньше (line 412 или 429).
+- Код на 446-453 — мёртвый. Но он маскирует **невидимый edge case**: если user найден по email, но у него **уже есть другой** `telegram_user_id` (line 416: `user.telegram_user_id is None` → False), функция проваливается в `if user is None` (line 431), который тоже False, и попадает в мёртвый блок.
+- В реальности этот edge case означает: два разных Telegram-аккаунта пытаются привязаться к одному email. Сейчас — silent update metadata без смены `telegram_user_id`. Но поведение неочевидно.
+
+**Что нужно:**
+- Удалить мёртвый блок 446-453
+- Добавить явную обработку case «user найден по email, но у него уже другой telegram_user_id»: либо warning log + return existing user без изменения tg_id, либо raise error
+
+### [P2] `status.html`: hardcoded hrefs без `preview_mode` `[ ]`
+
+**Severity**: low (ломается только в preview mode, не в production)
+
+**Что видно:**
+- [status.html:81](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/app/status.html#L81): `href="/app/subscriptions/{{ subscription.id }}"` — нет `{% if preview_mode %}/preview…{% endif %}`
+- [status.html:103](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/app/status.html#L103): `href="/app/payments/{{ payment.id }}"` — аналогично
+- В preview mode эти ссылки ведут на `/app/…` вместо `/preview/app/…`, что может вернуть 403 или redirect
+
+**Что нужно:**
+- Обернуть оба href в `{% if preview_mode %}/preview/app/…{% else %}/app/…{% endif %}` — как это сделано во всех остальных шаблонах
+
+### [P2] App checkout POST error responses не передают `entry_marker` `[ ]`
+
+**Severity**: low (ссылки в error-форме теряют `?entry=…` suffix)
+
+**Что видно:**
+- [app.py:376-400](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L376): ValueError catch рендерит `checkout.html` без `entry_marker` в context
+- [app.py:401-427](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L401): Exception catch — аналогично
+- Переменная `entry_marker` вычисляется в начале route, но не передаётся в error context
+- Шаблон `checkout.html` использует `{% if entry_marker %}?entry={{ entry_marker }}{% endif %}` — без entry_marker ссылки «Вернуться в каталог» теряют tracking
+
+**Что нужно:**
+- Добавить `"entry_marker": get_entry_marker(request) or resolved_entry_surface` в оба error-context dict
+
+### [P3] `checkout_success.html` рендерит None для пустых полей `[ ]`
+
+**Severity**: low (UX, не crash)
+
+**Что видно:**
+- [checkout_success.html:62-64](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout_success.html#L62): рендерит `{{ result.user.full_name }}`, `{{ result.user.email }}`, `{{ result.user.timezone }}`
+- Если пользователь не ввёл имя/email, на экране буквально «None»
+
+**Что нужно:**
+- Заменить на `{{ result.user.full_name or "—" }}`, `{{ result.user.email or "—" }}`, `{{ result.user.timezone or "—" }}`
 
 ### [P1] Disclaimer-only checkout still silently auto-submits hidden legal documents as accepted `[ ]`
 
@@ -478,15 +528,43 @@ Resolved:
 
 **Подробные инструкции:** `doc/task.md` → Блок P32
 
+### P46 — Каталог: 1-колоночный mobile-first layout, short_description в accent-блоке `[x]`
+
+Resolved:
+- `short_description` теперь рендерится в accent-блоке (синий фон, белый текст) сразу после `strategy.title`
+- accent-сетка переведена на `grid-template-columns:1fr` — одна колонка всегда
+- блок «N тариф(ов)» удалён, закомментированный `holding_period_note` удалён
+- фраза CTA убрана из `_build_risk_rule` в `public.py`
+- тесты подтверждают: `short_description` присутствует, «тариф» отсутствует, layout 1fr
+- **Замечание**: мелкая проблема с отступом `<div>` на line 33 (2 пробела вместо 6) — не ломает рендер, но нарушает indentation consistency
+
+**Подробные инструкции:** `doc/task.md` → Блок P46
+
+### P47 — Strategy detail: 1-колоночный layout, разделение short/full description, скрытие пустого описания тарифа `[x]`
+
+Resolved:
+- обе секции (thesis + mechanics) переведены на `grid-template-columns:1fr`
+- thesis fallback теперь `strategy.short_description` (не `full_description`)
+- mechanics fallback остался `strategy.full_description or strategy.short_description` (корректно)
+- описание тарифа обёрнуто в `{% if product.description %}` — заглушка убрана
+- закомментированные секции (market_scope, risk, audience, faq) полностью удалены (чистый HTML)
+- media query `@media (max-width: 900px)` удалён (не нужен при 1fr)
+- закомментированные `price_rub` / `trial_days` pills не ломают layout
+- тест `test_strategy_detail_hides_empty_product_description` покрывает новый contract
+
+**Подробные инструкции:** `doc/task.md` → Блок P47
+
 ## Gate
 
 **Mini App auth работает в production** (подтверждено 2026-03-31):
 - `match_with_signature=True` → `tg_webapp_auth_success` → каталог открылся
 - `telegram_user_id=368288031` корректно привязан
 
-P32 — cleanup (не blocker). Текущий gate: **green**.
+P32 — cleanup (не blocker).
+P46, P47, P48, P49, P50, P51 закрыты в этом pass-е.
+Full project review (298 tests passed) выявил 5 реальных проблем — ниже в findings.
 
-Текущий gate: **red**.
+Текущий gate: **yellow** (функционал работает, но есть data integrity risk и template bugs).
 
 ## Что считать готовностью текущего pass
 

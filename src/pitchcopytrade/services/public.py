@@ -173,7 +173,7 @@ def build_strategy_story(strategy: Strategy) -> StrategyStory:
         thesis=thesis,
         mechanics=mechanics,
         tariffs=tariffs,
-        commercial_cta_label="Выбрать подписку",
+        commercial_cta_label="Подписаться",
         commercial_cta_detail="Откройте тариф и завершите оформление внутри того же Mini App.",
     )
 
@@ -281,7 +281,8 @@ def _build_entry_logic(strategy: Strategy) -> str:
 def _build_risk_rule(strategy: Strategy) -> str:
     risk = _risk_level_label(strategy.risk_level)
     min_capital = f"Минимальный капитал: {strategy.min_capital_rub} руб." if strategy.min_capital_rub else "Минимальный капитал в карточке пока не задан."
-    return f"Риск: {risk.lower()}. {min_capital} Коммерческая CTA завязана на тот же маршрут оплаты."
+    # return f"Риск: {risk.lower()}. {min_capital} Коммерческая CTA завязана на тот же маршрут оплаты."
+    return f"Риск: {risk.lower()}. {min_capital}."
 
 
 def _build_instrument_examples(strategy: Strategy) -> str:

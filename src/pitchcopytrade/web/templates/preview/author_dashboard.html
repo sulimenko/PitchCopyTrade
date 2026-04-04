@@ -28,7 +28,7 @@
   <article class="surface" style="padding:20px;"><div class="eyebrow">live</div><div style="font-size:2rem;margin-top:8px;">{{ stats.live_messages }}</div></article>
 </section>
 
-<section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px;">
+<section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
     <div class="eyebrow">strategies</div>
     <div style="display:grid;gap:12px;margin-top:16px;">
@@ -73,10 +73,4 @@
   </div>
 </section>
 
-<style>
-  @media (max-width: 840px) {
-    section[style*="repeat(3"] { grid-template-columns: 1fr !important; }
-    section[style*="repeat(2"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

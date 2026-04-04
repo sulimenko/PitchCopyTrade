@@ -33,7 +33,7 @@
   </div>
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:22px;">
     {% if first_product %}
-    <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">{{ strategy.story.commercial_cta_label if strategy.story else "Выбрать подписку" }}</a>
+    <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">{{ strategy.story.commercial_cta_label if strategy.story else "Подписаться" }}</a>
     {% endif %}
     <a class="action" href="#tariffs">Тарифы</a>
     <!-- <a class="action ghost" href="#faq">FAQ</a> -->
@@ -51,85 +51,27 @@
   {% endif %}
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(320px,0.7fr);gap:18px;margin-top:18px;">
+<section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
     <div class="eyebrow">thesis</div>
     <h2 style="margin:10px 0 14px;font-size:1.55rem;">Короткое описание</h2>
-    <p class="muted" style="line-height:1.75;">{{ strategy.story.thesis if strategy.story else (strategy.full_description or strategy.short_description) }}</p>
+    <p class="muted" style="line-height:1.75;">{{ strategy.story.thesis if strategy.story else strategy.short_description }}</p>
   </article>
-<!--
-  <article class="surface" style="padding:24px;">
-    <div class="eyebrow">market scope</div>
-    <h2 style="margin:10px 0 14px;font-size:1.55rem;">Контекст рынка</h2>
-    <p class="muted" style="line-height:1.75;">{{ strategy.story.market_scope if strategy.story else "Сценарий раскрывается через рыночный контекст и выбранный тариф." }}</p>
-  </article>
--->
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px;">
+<section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
     <div class="eyebrow">mechanics</div>
     <h2 style="margin:10px 0 14px;font-size:1.55rem;">Описание</h2>
     <div class="muted" style="line-height:1.8;white-space:pre-wrap;">{{ strategy.story.mechanics if strategy.story else (strategy.full_description or strategy.short_description) }}</div>
   </article>
-<!--
-  <article class="surface" style="padding:24px;">
-    <div class="eyebrow">risk</div>
-    <h2 style="margin:10px 0 14px;font-size:1.55rem;">Риск и ограничения</h2>
-    <div class="muted" style="line-height:1.8;">{{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}</div>
-    <div style="display:grid;gap:10px;margin-top:16px;">
-      {% if strategy.story and strategy.story.instrument_examples %}
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Инструменты</strong>
-        <ul class="muted" style="margin:10px 0 0;padding-left:18px;line-height:1.65;">
-          {% for item in strategy.story.instrument_examples %}
-          <li>{{ item }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Горизонт</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.65;">{{ strategy.story.holding_period_note if strategy.story else "Горизонт уточняется в тарифе." }}</div>
-      </div>
-    </div>
-  </article>
--->
 </section>
 
-<!--
-<section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px;">
-  <article class="surface" style="padding:24px;">
-    <div class="eyebrow">кому подходит</div>
-    <h2 style="margin:10px 0 14px;font-size:1.55rem;">Аудитория</h2>
-    <ul class="muted" style="margin:0;padding-left:18px;line-height:1.8;">
-      {% if strategy.story and strategy.story.who_is_it_for %}
-      {% for item in strategy.story.who_is_it_for %}
-      <li>{{ item }}</li>
-      {% endfor %}
-      {% else %}
-      <li>Тем, кто хочет видеть сценарий, риск и тариф на одной странице.</li>
-      <li>Тем, кто предпочитает структурный, а не «слайдовый» оффер.</li>
-      {% endif %}
-    </ul>
-  </article>
-
-  <article class="surface" style="padding:24px;">
-    <div class="eyebrow">кому не подходит</div>
-    <h2 style="margin:10px 0 14px;font-size:1.55rem;">Ограничения</h2>
-    <ul class="muted" style="margin:0;padding-left:18px;line-height:1.8;">
-      {% if strategy.story and strategy.story.who_is_it_not_for %}
-      {% for item in strategy.story.who_is_it_not_for %}
-      <li>{{ item }}</li>
-      {% endfor %}
-      {% else %}
-      <li>Тем, кто ищет мгновенный результат без чтения условий.</li>
-      <li>Тем, кто не готов принимать риск рыночного сценария.</li>
-      {% endif %}
-    </ul>
-  </article>
-</section>
--->
+{% if first_product %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;">
+  <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подписаться</a>
+</div>
+{% endif %}
 
 <section id="tariffs" class="surface" style="padding:24px;margin-top:18px;">
   <div class="eyebrow">tariffs</div>
@@ -140,14 +82,18 @@
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
         <div>
           <strong style="font-size:1.1rem;">{{ product.title }}</strong>
-          <div class="muted" style="margin-top:8px;line-height:1.65;">{{ product.description or "Описание тарифа пока не заполнено" }}</div>
+          {% if product.description %}
+          <div class="muted" style="margin-top:8px;line-height:1.65;">{{ product.description }}</div>
+          {% endif %}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <span class="pill">{{ billing_period_label(product.billing_period) }}</span>
+          <!-- 
           <span class="pill">{{ product.price_rub }} руб</span>
           {% if product.trial_days %}
           <span class="pill">{{ product.trial_days }} дней trial</span>
           {% endif %}
+          -->
         </div>
       </div>
     </a>
@@ -156,41 +102,4 @@
     {% endfor %}
   </div>
 </section>
-
-<!--
-<section id="faq" class="surface" style="padding:24px;margin-top:18px;">
-  <div class="eyebrow">faq / documents</div>
-  <h2 style="margin:10px 0 14px;font-size:1.55rem;">FAQ и документы</h2>
-  <div style="display:grid;gap:12px;">
-    {% if strategy.story and strategy.story.faq_items %}
-    {% for item in strategy.story.faq_items %}
-    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
-      <strong>{{ item.title }}</strong>
-      <div class="muted" style="margin-top:8px;line-height:1.7;">{{ item.body }}</div>
-    </article>
-    {% endfor %}
-    {% else %}
-    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
-      <strong>Что будет на checkout</strong>
-      <div class="muted" style="margin-top:8px;line-height:1.7;">
-        Перед оплатой откроются обязательные документы: disclaimer, offer, privacy policy и payment consent.
-      </div>
-    </article>
-    {% endif %}
-    <article style="padding:16px;border:1px solid rgba(20,56,166,0.12);border-radius:20px;background:rgba(255,255,255,0.55);">
-      <strong>Как читать эту карточку</strong>
-      <div class="muted" style="margin-top:8px;line-height:1.7;">
-        Hero, thesis, mechanics, risk и tariffs собраны отдельно, чтобы страницу можно было читать без знания внутренней структуры проекта.
-      </div>
-    </article>
-  </div>
-</section>
--->
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="minmax(0,1.3fr)"] { grid-template-columns: 1fr !important; }
-    section[style*="repeat(2,minmax(0,1fr))"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

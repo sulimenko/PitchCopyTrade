@@ -9124,9 +9124,469 @@ P40 закрыт:
 - чинить только public path;
 - оставлять CTA только в HTML comments.
 
-Финальный отчет:
+Финальный отчёт:
 - chosen route map behavior
 - changed files
 - tests run + results
 - residual risks
 ```
+
+## P46 — Каталог: 1-колоночный mobile-first layout, short_description в accent-блоке, убрать блок тарифов `[x]`
+
+> **Контекст (2026-04-04 review):**
+>
+> Текущий `catalog.html` рендерит карточки стратегий с 2-колоночной accent-сеткой (risk + min_capital + «N тарифов»),
+> а `short_description` выводится обычным `<p class="muted">`.
+> Пользователь хочет:
+> 1. Строго 1-колоночный дизайн на всех мобильных экранах.
+> 2. `short_description` выводить сразу после `strategy.title` в accent-обёртке (`background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;`).
+> 3. Убрать блок «N тариф(ов)» из accent-плашек — оставить только risk и min_capital.
+> 4. Убрать фразу «CTA завязана на тот же маршрут оплаты» из `_build_risk_rule` (уже сделано пользователем вручную в `public.py`).
+> 5. Котировки (quotes pills) не убирать.
+
+### Что уже видно
+
+1. [catalog.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/catalog.html)
+   - accent-сетка `grid-template-columns:repeat(2,…)` — на маленьких экранах плашки сжимаются
+   - `short_description` выводится в `<p class="muted">` — не в accent-стиле
+   - блок `{{ strategy.subscription_products|length }} тариф…` — нужно убрать
+
+2. [public.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/public.py#L284)
+   - `_build_risk_rule` уже исправлен пользователем: фраза CTA убрана
+
+### Что должен сделать worker
+
+#### P46.1 — Short description в accent-блоке `[x]`
+
+- [x] **P46.1.1** Заменить `<p class="muted">{{ strategy.story.hero_summary … }}</p>` на `<div>` с accent-стилем: `background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;`
+- [x] **P46.1.2** Содержимое: `{{ strategy.short_description }}` (всегда short_description, не hero_summary)
+- [x] **P46.1.3** Блок размещается сразу после `<h2>{{ strategy.title }}</h2>`, до quotes
+
+#### P46.2 — Убрать блок «N тариф» `[x]`
+
+- [x] **P46.2.1** Удалить из accent-сетки div с `{{ strategy.subscription_products|length }} тариф…`
+- [x] **P46.2.2** Оставить только risk-блок и min_capital-блок
+
+#### P46.3 — 1-колоночный layout accent-блоков `[x]`
+
+- [x] **P46.3.1** Заменить `grid-template-columns:repeat(2,minmax(0,1fr))` на `grid-template-columns:1fr` в accent-сетке — 1 колонка всегда
+- [x] **P46.3.2** Вся карточка article остаётся 1-колоночной (grid-template-columns:1fr в секции каталога — уже есть)
+
+#### P46.4 — Убрать закомментированный holding_period блок `[x]`
+
+- [x] **P46.4.1** Удалить закомментированный HTML-блок `holding_period_note` (уже закомментирован пользователем)
+
+### Acceptance P46
+
+1. Каталог рендерится 1-колоночно на всех экранах
+2. `short_description` в accent-стиле сразу после заголовка
+3. Нет блока «N тариф»
+4. Risk + min_capital — единственные accent-плашки, одна под другой
+5. Котировки на месте
+
+### Worker Prompt — Catalog 1-Column Mobile-First Layout
+
+```text
+Ты правишь layout карточек в каталоге стратегий.
+
+Файл: src/pitchcopytrade/web/templates/public/catalog.html
+
+Текущая структура карточки (article):
+1. eyebrow (author) + title + pill (risk)
+2. <p class="muted"> short_description
+3. quotes pills
+4. accent 2-column grid: risk / min_capital / «N тариф»
+5. actions
+
+Целевая структура:
+1. eyebrow (author) + title + pill (risk)
+2. accent-div с short_description (стиль: background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;)
+   - содержимое: {{ strategy.short_description }}
+3. quotes pills (без изменений)
+4. accent 1-column grid (grid-template-columns:1fr):
+   - risk-блок
+   - min_capital-блок (если есть)
+   - БЕЗ блока тарифов
+5. actions (без изменений)
+
+Также:
+- удалить закомментированный блок holding_period_note
+- НЕ трогать public.py — там уже всё ок
+
+Что нельзя делать:
+- менять actions или их href-логику
+- менять quotes
+- добавлять media queries — layout должен быть 1fr всегда
+
+Финальный отчёт:
+- changed files
+- visual structure before / after
+- tests run + results
+```
+
+## P47 — Strategy detail: 1-колоночный layout, разделить short/full description, скрыть пустое описание тарифа `[x]`
+
+> **Контекст (2026-04-04 review):**
+>
+> Текущий `strategy_detail.html` имеет несколько проблем:
+> 1. Секции «Короткое описание» и «Описание» используют 2-колоночную сетку — на мобильных сжимается.
+> 2. В блоке «Короткое описание» (thesis) рендерится `strategy.story.thesis` или `full_description` — содержание принадлежит полному описанию.
+> 3. В блоке «Описание» (mechanics) — тоже `full_description` — на практике может быть пустое.
+> 4. Блок `product.description or "Описание тарифа пока не заполнено"` в тарифах показывает заглушку — нужно скрывать div полностью.
+> 5. Пользователь убрал 2 кнопки в strategy_detail (цена и trial) — закомментированы, разметка корректна.
+
+### Что уже видно
+
+1. [strategy_detail.html:54](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/strategy_detail.html#L54)
+   - `grid-template-columns:minmax(0,1.3fr) minmax(320px,0.7fr)` — 2 колонки для thesis
+
+2. [strategy_detail.html:69](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/strategy_detail.html#L69)
+   - `grid-template-columns:repeat(2,minmax(0,1fr))` — mechanics в 2 колонки
+
+3. [strategy_detail.html:58](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/strategy_detail.html#L58)
+   - thesis fallback идёт к full_description — а должен быть short_description
+
+4. [strategy_detail.html:143](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/strategy_detail.html#L143)
+   - заглушка «Описание тарифа пока не заполнено» видна когда description пусто
+
+### Что должен сделать worker
+
+#### P47.1 — 1-колоночный layout `[x]`
+
+- [x] **P47.1.1** Секция thesis (line 54): `grid-template-columns:minmax(0,1.3fr) minmax(320px,0.7fr)` → `grid-template-columns:1fr`
+- [x] **P47.1.2** Секция mechanics (line 69): `grid-template-columns:repeat(2,minmax(0,1fr))` → `grid-template-columns:1fr`
+- [x] **P47.1.3** Удалить media query `@media (max-width: 900px)` в конце файла — больше не нужен
+
+#### P47.2 — Разделить short/full description `[x]`
+
+- [x] **P47.2.1** Thesis-блок: fallback без story = `strategy.short_description`
+  - Было: `{{ strategy.story.thesis if strategy.story else (strategy.full_description or strategy.short_description) }}`
+  - Стало: `{{ strategy.story.thesis if strategy.story else strategy.short_description }}`
+- [x] **P47.2.2** Mechanics-блок: fallback без story = `strategy.full_description or strategy.short_description` (уже так)
+
+#### P47.3 — Скрыть пустое описание тарифа `[x]`
+
+- [x] **P47.3.1** Заменить:
+  ```html
+  <div class="muted" style="margin-top:8px;line-height:1.65;">{{ product.description or "Описание тарифа пока не заполнено" }}</div>
+  ```
+  на:
+  ```html
+  {% if product.description %}
+  <div class="muted" style="margin-top:8px;line-height:1.65;">{{ product.description }}</div>
+  {% endif %}
+  ```
+
+#### P47.4 — Проверить разметку после комментирования цены/trial `[x]`
+
+- [x] **P47.4.1** Закомментированные `price_rub` и `trial_days` pills не ломают верстку — только проверить
+
+### Acceptance P47
+
+1. Strategy detail рендерится 1-колоночно на всех экранах
+2. «Короткое описание» показывает short_description (не full_description)
+3. «Описание» показывает full_description
+4. Тарифный блок без описания не показывает заглушку
+5. Закомментированные pills не ломают layout
+
+### Worker Prompt — Strategy Detail 1-Column Layout & Content Fix
+
+```text
+Ты правишь layout и контент strategy detail page.
+
+Файл: src/pitchcopytrade/web/templates/public/strategy_detail.html
+
+Изменения:
+
+1. LAYOUT — 1 колонка:
+   - line 54: `grid-template-columns:minmax(0,1.3fr) minmax(320px,0.7fr)` → `grid-template-columns:1fr`
+   - line 69: `grid-template-columns:repeat(2,minmax(0,1fr))` → `grid-template-columns:1fr`
+   - удалить @media (max-width: 900px) block в конце файла
+
+2. CONTENT — разделить short/full description:
+   - thesis (line 58): fallback = strategy.short_description (не full_description)
+     `{{ strategy.story.thesis if strategy.story else strategy.short_description }}`
+   - mechanics (line 73): оставить как есть (full_description or short_description — корректно)
+
+3. ТАРИФЫ — скрыть пустое описание:
+   - line 143: вместо `{{ product.description or "Описание тарифа пока не заполнено" }}`
+     обернуть в `{% if product.description %}…{% endif %}`
+   - скрывать весь div, не показывать заглушку
+
+4. НЕ ТРОГАТЬ:
+   - закомментированные price_rub / trial_days pills
+   - кнопки в header (CTA + Тарифы)
+   - quotes / market snapshot
+   - закомментированные секции (market_scope, risk, audience, faq)
+
+Финальный отчёт:
+- changed files
+- visual structure before / after
+- tests run + results
+```
+
+## P48 — Checkout: 1-колоночный layout на всех экранах `[x]`
+
+> **Контекст (2026-04-04):**
+>
+> Все публичные страницы (каталог, strategy detail, help, status, preview dashboards) уже переведены на `grid-template-columns:1fr`.
+> Checkout остаётся единственной страницей с 2-колоночным layout: форма (`1.1fr`) + sidebar «Что произойдёт дальше» (`0.9fr`).
+> На мобильных media query `@media (max-width: 900px)` ломает это в 1fr, но до 900px экрана форма и sidebar сжаты.
+> Внутри формы inputs тоже в 2 колонках (`repeat(2,minmax(0,1fr))`).
+
+### Файл
+
+`src/pitchcopytrade/web/templates/public/checkout.html`
+
+### Что нужно изменить
+
+#### P48.1 — Основная секция form + sidebar → 1 колонка `[x]`
+
+**Строка 40** (текущая):
+```html
+<section style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,0.9fr);gap:18px;margin-top:18px;">
+```
+
+**Заменить на:**
+```html
+<section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
+```
+
+Sidebar `<aside>` окажется под формой — это нормально.
+
+#### P48.2 — Inputs имя+email → 1 колонка `[x]`
+
+**Строка 56** (текущая):
+```html
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+```
+
+**Заменить на:**
+```html
+<div style="display:grid;grid-template-columns:1fr;gap:14px;">
+```
+
+Каждый input (Имя, Email) будет на отдельной строке на всю ширину.
+
+#### P48.3 — Промокод + инфо-блок → 1 колонка `[x]`
+
+**Строка 66** (текущая):
+```html
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+```
+
+**Заменить на:**
+```html
+<div style="display:grid;grid-template-columns:1fr;gap:14px;">
+```
+
+#### P48.4 — Удалить media query `[x]`
+
+**Строки 141-144** (текущие):
+```html
+<style>
+  @media (max-width: 900px) {
+    section[style*="1.1fr"] { grid-template-columns: 1fr !important; }
+    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+```
+
+**Удалить полностью** — больше не нужен при `1fr`.
+
+### Acceptance P48
+
+1. Форма и sidebar в 1 колонку на всех экранах
+2. Inputs (имя, email, промокод) в 1 колонку
+3. Media query `@media (max-width: 900px)` удалён
+4. Кнопки submit и «Вернуться в каталог» не затронуты
+5. JS-логика checkout не затронута
+
+## P49 — Каталог: визуальное разделение CTA-кнопок (подписка vs подробнее) `[x]`
+
+> **Контекст (2026-04-04):**
+>
+> Обе кнопки карточки каталога (`Открыть стратегию` / `Открыть подписку`) сейчас одинаковые `.action` с gradient.
+> Для конверсии основная CTA (подписка) должна быть визуально доминирующей, а вторичная (подробнее) — приглушённой.
+
+### Файл
+
+`src/pitchcopytrade/web/templates/public/catalog.html`
+
+### Что нужно изменить
+
+#### P49.1 — Поменять порядок кнопок и стили `[x]`
+
+Текущий блок (строки 57-62):
+```html
+<div class="catalog-card-actions">
+  <a class="action" href="…strategies…">Открыть стратегию</a>
+  {% if strategy.subscription_products %}
+  <a class="action" href="…checkout…">Открыть подписку</a>
+  {% endif %}
+</div>
+```
+
+**Заменить на:**
+```html
+<div class="catalog-card-actions">
+  {% if strategy.subscription_products %}
+  <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].slug }}{% else %}/app/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подписаться</a>
+  {% endif %}
+  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подробнее</a>
+</div>
+```
+
+Изменения:
+- «Подписаться» (primary, gradient) — **первая** кнопка
+- «Подробнее» (ghost, border only) — **вторая** кнопка
+- href-логика обеих кнопок **не изменена** — только порядок и class
+- Класс `.ghost` уже определён в `base.html:120-124`
+
+### Acceptance P49
+
+1. Кнопка «Подписаться» — primary (gradient), стоит первой
+2. Кнопка «Подробнее» — ghost (border only), стоит второй
+3. href-логика обеих кнопок не изменена (miniapp/preview/public paths)
+4. Если у стратегии нет продуктов — только «Подробнее»
+
+## P50 — Strategy detail: дублирующая CTA «Подписаться» перед тарифами `[x]`
+
+> **Контекст (2026-04-04):**
+>
+> Кнопка CTA и «Тарифы» сейчас только в hero-секции (верх страницы).
+> После длинных секций «Короткое описание» и «Описание» пользователь уже не видит CTA.
+> Нужно дублировать CTA перед секцией тарифов.
+
+### Файл
+
+`src/pitchcopytrade/web/templates/public/strategy_detail.html`
+
+### Что нужно изменить
+
+#### P50.1 — Добавить CTA-блок между секцией «Описание» и секцией «Тарифы» `[x]`
+
+Текущая структура (после P47):
+```
+</section>   ← закрытие секции mechanics (line 68)
+                ← пустая строка
+<section id="tariffs" …>  ← тарифы (line 70)
+```
+
+**Вставить между ними (после `</section>` mechanics, перед `<section id="tariffs"`):**
+```html
+{% if first_product %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;">
+  <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подписаться</a>
+</div>
+{% endif %}
+```
+
+Переменная `first_product` уже определена на строке 14:
+```html
+{% set first_product = strategy.subscription_products[0] if strategy.subscription_products else none %}
+```
+
+#### P50.2 — Обновить текст CTA в hero `[x]`
+
+**Строка 36** (текущая):
+```html
+<a class="action" href="…">{{ strategy.story.commercial_cta_label if strategy.story else "Выбрать подписку" }}</a>
+```
+
+**Заменить fallback-текст:**
+```html
+<a class="action" href="…">{{ strategy.story.commercial_cta_label if strategy.story else "Подписаться" }}</a>
+```
+
+### Acceptance P50
+
+1. CTA «Подписаться» дублируется между секцией «Описание» и секцией «Тарифы»
+2. CTA видна только если есть `first_product`
+3. href-логика идентична hero CTA (miniapp/preview/public paths)
+4. Hero CTA fallback-текст = «Подписаться»
+
+## P51 — Checkout sidebar: заменить техническое описание на user-facing summary `[x]`
+
+> **Контекст (2026-04-04):**
+>
+> Sidebar «Что произойдёт дальше» описывает внутреннюю механику: «Создадим payment», «Создадим subscription», «Сохраним consents».
+> Пользователю это не нужно. Нужно заменить на понятное описание того, что он получит.
+> Цену пока не показываем — всё бесплатно.
+
+### Файл
+
+`src/pitchcopytrade/web/templates/public/checkout.html`
+
+### Что нужно изменить
+
+#### P51.1 — Заменить содержимое sidebar `[x]`
+
+**Строки 116-137** (текущий sidebar):
+```html
+<aside class="surface" style="padding:24px;">
+  <div class="eyebrow">что произойдет дальше</div>
+  <h2 style="margin:10px 0 14px;font-size:1.5rem;">Что произойдет дальше</h2>
+  <div style="display:grid;gap:12px;">
+    <div class="surface" style="…"><strong>1. Создадим payment</strong>…</div>
+    <div class="surface" style="…"><strong>2. Создадим subscription</strong>…</div>
+    <div class="surface" style="…"><strong>3. Сохраним consents</strong>…</div>
+    <div class="surface" style="…"><strong>4. Mini App остается…</strong>…</div>
+  </div>
+</aside>
+```
+
+**Заменить на:**
+```html
+<aside class="surface" style="padding:24px;">
+  <div class="eyebrow">что вы получите</div>
+  <h2 style="margin:10px 0 14px;font-size:1.5rem;">После оформления</h2>
+  <div style="display:grid;gap:12px;">
+    <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <strong>Рекомендации в Telegram</strong>
+      <div class="muted" style="margin-top:8px;line-height:1.55;">Сигналы и аналитика по стратегии приходят прямо в бот, сразу после оформления.</div>
+    </div>
+    <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <strong>Доступ через Mini App</strong>
+      <div class="muted" style="margin-top:8px;line-height:1.55;">Каталог, статус подписки и история — всё внутри Telegram, без отдельного пароля.</div>
+    </div>
+    <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <strong>Отмена в любой момент</strong>
+      <div class="muted" style="margin-top:8px;line-height:1.55;">Подписку можно остановить в разделе «Подписки» внутри Mini App.</div>
+    </div>
+  </div>
+</aside>
+```
+
+#### P51.2 — Убрать pill с ценой из hero checkout `[x]`
+
+**Строки 30-36** (текущие pills в hero):
+```html
+<div style="display:flex;gap:10px;flex-wrap:wrap;">
+  <span class="pill">Месяц</span>
+  <span class="pill">{{ product.price_rub }} руб</span>
+  {% if product.trial_days %}
+  <span class="pill">{{ product.trial_days }} дней бесплатно</span>
+  {% endif %}
+</div>
+```
+
+**Заменить на:**
+```html
+<div style="display:flex;gap:10px;flex-wrap:wrap;">
+  <span class="pill">{{ billing_period_label(product.billing_period) }}</span>
+  {% if product.trial_days %}
+  <span class="pill">{{ product.trial_days }} дней бесплатно</span>
+  {% endif %}
+</div>
+```
+
+Убрана pill `{{ product.price_rub }} руб`. Хардкод «Месяц» заменён на `billing_period_label()` для consistency.
+
+### Acceptance P51
+
+1. Sidebar описывает что получит пользователь, а не внутреннюю механику
+2. 3 карточки: «Рекомендации в Telegram», «Доступ через Mini App», «Отмена в любой момент»
+3. Pill с ценой убрана из hero checkout
+4. Billing period pill использует `billing_period_label()`
+5. Trial pill остаётся если есть

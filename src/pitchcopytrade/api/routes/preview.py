@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Form, Request, status
@@ -188,8 +189,7 @@ async def preview_app_status(request: Request) -> Response:
     preview = build_preview_miniapp_context()
     snapshot = preview["preview_snapshot"]
     action_cards = build_action_cards(snapshot)
-    for card in action_cards:
-        card.href = _rewrite_preview_href(card.href)
+    action_cards = [replace(card, href=_rewrite_preview_href(card.href)) for card in action_cards]
     return templates.TemplateResponse(
         request,
         "app/status.html",

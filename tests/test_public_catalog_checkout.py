@@ -212,9 +212,16 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Витрина стратегий" in response.text
         assert "Momentum RU" in response.text
+        assert strategy.short_description in response.text
+        assert "Подписаться" in response.text
+        assert "Подробнее" in response.text
+        assert response.text.index("Подписаться") < response.text.index("Подробнее")
         assert "/catalog/strategies/momentum-ru?entry=public_catalog" in response.text
         assert "/checkout/momentum-ru-month?entry=public_catalog" in response.text
         assert "NVTK · 123.45 · +1.20%" in response.text
+        assert "1 тариф" not in response.text
+        assert "тарифов" not in response.text
+        assert "grid-template-columns:1fr" in response.text
 
 
 def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
@@ -276,6 +283,28 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert "Короткое описание" in response.text
         assert "Описание" in response.text
         assert "Тарифы" in response.text
+        assert response.text.count("Подписаться") >= 2
+        assert "grid-template-columns:1fr" in response.text
+
+
+def test_strategy_detail_hides_empty_product_description(monkeypatch) -> None:
+    strategy, product = _make_strategy_and_product()
+    product.description = None
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_strategy_by_slug",
+        lambda _repository, _slug: _async_return(strategy),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return([]),
+    )
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.get("/catalog/strategies/momentum-ru")
+
+        assert response.status_code == 200
+        assert "Описание тарифа пока не заполнено" not in response.text
+        assert product.title in response.text
 
 
 def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
@@ -303,7 +332,7 @@ def test_app_strategy_detail_uses_miniapp_checkout_link(monkeypatch) -> None:
         assert f'href="/checkout/{product.slug}"' not in response.text
         assert "Короткое описание" in response.text
         assert "К стратегии" in response.text
-        assert "Выбрать подписку" in response.text
+        assert "Подписаться" in response.text
 
 
 def test_public_checkout_tracing_chain_logs_entry_markers(monkeypatch, capsys) -> None:
@@ -545,6 +574,12 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
         assert 'name="accepted_document_ids"' in response.text
         assert 'name="entry_id" value="' in response.text
         assert 'name="entry_surface" value="public"' in response.text
+        assert "499 руб" not in response.text
+        assert "grid-template-columns:1fr" in response.text
+        assert "Заполнится автоматически" in response.text
+        assert "без отдельного входа" in response.text
+        assert "После оформления" in response.text
+        assert "Рекомендации в Telegram" in response.text
 
 
 def test_app_checkout_prefills_telegram_user(monkeypatch) -> None:
