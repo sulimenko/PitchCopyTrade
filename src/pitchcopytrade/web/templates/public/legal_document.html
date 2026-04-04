@@ -1,17 +1,71 @@
 {% extends "base.html" %}
 
 {% block topbar_actions %}
+<!--
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   <a class="action ghost" href="{% if miniapp_mode %}/app/catalog{% else %}/catalog{% endif %}">Каталог</a>
   <a class="action ghost" href="javascript:history.back()">Назад</a>
 </div>
+-->
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:30px;">
+<style>
+  .legal-document-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 0 0 16px;
+  }
+
+  .legal-document-toolbar .action {
+    min-width: 112px;
+    padding: 12px 18px;
+  }
+
+  .legal-document-card {
+    padding: 30px;
+  }
+
+  .legal-document-body {
+    margin-top: 22px;
+    padding: 24px;
+    border-radius: 24px;
+    background: var(--surface-strong);
+    white-space: pre-wrap;
+    line-height: 1.7;
+    border: 1px solid rgba(16, 39, 115, 0.08);
+  }
+
+  @media (max-width: 760px) {
+    .legal-document-toolbar {
+      justify-content: stretch;
+    }
+
+    .legal-document-toolbar .action {
+      flex: 1 1 140px;
+    }
+
+    .legal-document-card {
+      padding: 22px;
+    }
+
+    .legal-document-body {
+      padding: 18px;
+    }
+  }
+</style>
+
+<div class="legal-document-toolbar">
+  <a class="action ghost" href="{% if miniapp_mode %}/app/catalog{% else %}/catalog{% endif %}">Каталог</a>
+  <a class="action ghost" href="javascript:history.back()">Назад</a>
+</div>
+<section class="surface legal-document-card">
   <div class="eyebrow">юридический документ</div>
   <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.95;letter-spacing:-0.05em;">{{ document.title }}</h1>
   <p class="muted" style="margin:14px 0 0;">{{ label_legal_document_type(document.document_type) }} / {{ document.version }}</p>
-  <div style="margin-top:22px;padding:24px;border-radius:24px;background:var(--surface-strong);white-space:pre-wrap;line-height:1.7;">{{ content_md }}</div>
+  <div class="legal-document-body">{{ content_md }}</div>
 </section>
 {% endblock %}
