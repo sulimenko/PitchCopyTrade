@@ -20,19 +20,27 @@
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4.2vw,3.6rem);line-height:0.95;letter-spacing:-0.06em;">{{ product.title }}</h1>
       <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
+        Сервис предоставляется бесплатно
+      </p>
+
+      <!-- 
+      <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
         {% if miniapp_mode %}
         Подписка оформляется по вашему Telegram-профилю, без отдельного входа.
         {% else %}
         Подписка оформляется без отдельного входа. Если страница открыта из Telegram Mini App, профиль свяжется автоматически.
         {% endif %}
-      </p>
+      </p> 
+      -->
     </div>
+    <!-- 
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <span class="pill">Месяц</span>
       {% if product.trial_days %}
       <span class="pill">{{ product.trial_days }} дней бесплатно</span>
       {% endif %}
-    </div>
+    </div> 
+    -->
   </div>
 </section>
 
@@ -54,14 +62,15 @@
     <input type="hidden" name="entry_surface" value="{{ form_values.entry_surface or '' }}" />
     <div style="display:grid;grid-template-columns:1fr;gap:14px;">
       <label style="display:grid;gap:8px;">
-        <strong>Имя, если хотите оставить</strong>
+        <strong>Ваше имя</strong>
         <input type="text" name="full_name" value="{{ form_values.full_name }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
       <label style="display:grid;gap:8px;">
-        <strong>Email, если хотите оставить</strong>
+        <strong>Ваш email</strong>
         <input type="email" name="email" value="{{ form_values.email }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
     </div>
+    <!-- 
     <div style="display:grid;grid-template-columns:1fr;gap:14px;">
       <label style="display:grid;gap:8px;">
         <strong>Промокод, если есть</strong>
@@ -74,8 +83,9 @@
         </div>
       </div>
     </div>
+    -->
     <div style="display:grid;gap:12px;">
-      <strong>Обязательный документ</strong>
+      <strong>Документ</strong>
       {% for document in documents %}
       {% if document.document_type.value == "disclaimer" %}
       <label style="display:flex;gap:12px;align-items:flex-start;">
@@ -107,7 +117,7 @@
       Подтвердите все обязательные документы перед отправкой формы.
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button id="checkout-submit-button" class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Создать заявку на оплату</button>
+      <button id="checkout-submit-button" class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Подписаться</button>
       <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}">Вернуться в каталог</a>
     </div>
   </form>
@@ -124,10 +134,12 @@
         <strong>Доступ через Mini App</strong>
         <div class="muted" style="margin-top:8px;line-height:1.55;">Каталог, статус подписки и история - всё внутри Telegram, без отдельного пароля.</div>
       </div>
+      <!--
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
         <strong>Отмена в любой момент</strong>
         <div class="muted" style="margin-top:8px;line-height:1.55;">Подписку можно остановить в разделе «Подписки» внутри Mini App.</div>
       </div>
+      -->
     </div>
   </aside>
 </section>
