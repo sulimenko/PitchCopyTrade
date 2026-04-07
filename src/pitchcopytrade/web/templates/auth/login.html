@@ -23,9 +23,9 @@
     <section class="auth-login-section auth-login-section--telegram">
       <div class="muted auth-login-copy">
         {% if is_staff_invite %}
-        Вход по приглашению сотрудника. Один шаг через Telegram.
+        Вход по приглашению. Один шаг через Telegram.
         {% else %}
-        Основной вход для сотрудников на сервере: через Telegram.
+        Основной вход для сотрудников: через Telegram.
         {% endif %}
       </div>
       <div id="telegram-widget-slot" class="auth-login-widget-slot">
@@ -37,15 +37,17 @@
         </script>
       </div>
       <div id="invite-fallback-alert" class="auth-login-alert auth-login-alert--fallback" {% if not is_staff_invite %}hidden{% endif %}>
-        <strong>Если кнопка не появилась, используйте fallback ниже.</strong>
+        <strong>Если кнопка не появилась, используйте Резервный вход ниже.</strong>
         <div class="muted">Откройте приглашение, скопируйте ссылку или запросите новое приглашение без технических шагов.</div>
       </div>
       <div class="muted auth-login-hint">
         {% if is_staff_invite %}
         Если кнопка не работает, используйте fallback actions ниже.
+        <!--
         {% else %}
         Для работы входа через Telegram у бота в <strong>@BotFather</strong> должен быть установлен домен
         <strong>{{ telegram_login_domain }}</strong> через команду <code>/setdomain</code>.
+        -->
         {% endif %}
       </div>
     </section>
@@ -53,7 +55,7 @@
     {% if is_staff_invite %}
     <section class="auth-login-section auth-login-section--fallback">
       <div class="auth-login-fallback-head">
-        <strong>Fallback path</strong>
+        <strong>Резервный вход</strong>
         <div class="muted">Приглашение не должно зависеть только от виджета авторизации.</div>
       </div>
       <div class="auth-login-actions">
@@ -67,7 +69,7 @@
     {% if google_oauth_enabled or yandex_oauth_enabled %}
     <section class="auth-login-section auth-login-section--oauth">
       <div class="muted auth-login-copy">
-        Вход для сотрудников через корпоративный аккаунт.
+        Вход для сотрудников через аккаунт почты.
       </div>
       <div class="auth-login-oauth-buttons">
         {% if google_oauth_enabled %}
@@ -84,6 +86,7 @@
     </section>
     {% endif %}
 
+    <!--
     {% if not is_staff_invite %}
     <div class="auth-login-divider">
       <div class="auth-login-divider-line"></div>
@@ -119,13 +122,14 @@
     <button class="action auth-login-submit" type="submit">Войти</button>
     </form>
     {% endif %}
+    -->
   </div>
   <div class="muted auth-login-footer">
-    Этот экран предназначен только для сотрудников: admin, author, moderator.
+    Этот экран предназначен только для сотрудников.
   </div>
   <div class="muted auth-login-footer auth-login-footer--secondary">
     Клиентам входить через Telegram-бота <strong>@{{ telegram_bot_username }}</strong> и Mini App.
-    Если вы открыли сайт как подписчик, используйте <a href="{{ subscriber_verify_url }}">подтверждение через Telegram</a>.
+    <!-- Если вы открыли сайт как подписчик, используйте <a href="{{ subscriber_verify_url }}">подтверждение через Telegram</a>. -->
   </div>
   {% if dev_bootstrap_enabled %}
   <div class="muted auth-login-footer auth-login-footer--secondary">
