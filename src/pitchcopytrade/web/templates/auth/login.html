@@ -38,17 +38,17 @@
       </div>
       <div id="invite-fallback-alert" class="auth-login-alert auth-login-alert--fallback" {% if not is_staff_invite %}hidden{% endif %}>
         <strong>Если кнопка не появилась, используйте Резервный вход ниже.</strong>
-        <div class="muted">Откройте приглашение, скопируйте ссылку или запросите новое приглашение без технических шагов.</div>
+        <div class="muted">Откройте приглашение, скопируйте ссылку или запросите новое приглашение.</div>
       </div>
       <div class="muted auth-login-hint">
         {% if is_staff_invite %}
-        Если кнопка не работает, используйте fallback actions ниже.
+        Если кнопка не работает, используйте Резервный вход ниже.
+        {% endif %}
         <!--
         {% else %}
         Для работы входа через Telegram у бота в <strong>@BotFather</strong> должен быть установлен домен
         <strong>{{ telegram_login_domain }}</strong> через команду <code>/setdomain</code>.
         -->
-        {% endif %}
       </div>
     </section>
 
