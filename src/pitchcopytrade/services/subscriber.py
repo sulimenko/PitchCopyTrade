@@ -194,13 +194,13 @@ def payment_history(payment: Payment) -> list[PaymentHistoryEntry]:
 
 
 def subscription_renewal_history(snapshot: SubscriberStatusSnapshot, subscription: Subscription) -> list[Subscription]:
-    product_id = subscription.product_id
+    product_id = subscription.product.id
     if product_id is None:
         return []
     return [
         item
         for item in snapshot.subscriptions
-        if item.product_id == product_id and item.id != subscription.id
+        if item.product.id == product_id and item.id != subscription.id
     ]
 
 
