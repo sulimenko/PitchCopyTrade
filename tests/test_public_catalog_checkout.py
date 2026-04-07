@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
 from pitchcopytrade.api.main import create_app
-from pitchcopytrade.auth.session import build_telegram_fallback_cookie_value
+from pitchcopytrade.auth.session import build_session_cookie_value, build_telegram_fallback_cookie_value
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription
@@ -22,11 +22,31 @@ from pitchcopytrade.db.models.enums import (
     SubscriptionStatus,
 )
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
-from pitchcopytrade.services.public import build_strategy_story
+from pitchcopytrade.services.public import AlreadySubscribedError, build_strategy_story
 
 
 class FakePublicRepository:
-    pass
+    def __init__(self, *, active_product_ids: set[str] | None = None) -> None:
+        self.active_product_ids = active_product_ids or set()
+
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str) -> Subscription | None:
+        if product_id not in self.active_product_ids:
+            return None
+        return Subscription(
+            id="subscription-active",
+            user_id=user_id,
+            product_id=product_id,
+            payment_id=None,
+            status=SubscriptionStatus.ACTIVE,
+            autorenew_enabled=True,
+            is_trial=False,
+            manual_discount_rub=0,
+            start_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            end_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        )
+
+    async def list_active_product_ids_for_user(self, user_id: str) -> set[str]:
+        return set(self.active_product_ids)
 
 
 class FakeAuthRepository:
@@ -256,6 +276,30 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         assert "grid-template-columns:1fr" in response.text
 
 
+def test_catalog_renders_disabled_cta_for_active_subscription(monkeypatch) -> None:
+    strategy, product = _make_strategy_and_product()
+    user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_public_strategies",
+        lambda _repository: _async_return([strategy]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return([]),
+    )
+
+    with _build_client(
+        FakePublicRepository(active_product_ids={product.id}),
+        auth_repository=FakeAuthRepository(user),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/catalog")
+
+        assert response.status_code == 200
+        assert "Вы уже подписаны" in response.text
+        assert f"/checkout/{product.slug}?entry=public_catalog" not in response.text
+
+
 def test_build_strategy_story_uses_db_fields_directly() -> None:
     strategy = _make_story_strategy()
 
@@ -320,6 +364,35 @@ def test_app_catalog_shows_miniapp_navigation(monkeypatch) -> None:
         assert "pct_journey_id=" in response.headers["set-cookie"]
 
 
+def test_app_catalog_renders_disabled_cta_for_active_subscription(monkeypatch) -> None:
+    strategy, product = _make_strategy_and_product()
+    user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_public_strategies",
+        lambda _repository: _async_return([strategy]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.build_strategy_quote_strip",
+        lambda _strategy: _async_return([]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+
+    with _build_client(
+        FakePublicRepository(active_product_ids={product.id}),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.get("/app/catalog")
+
+        assert response.status_code == 200
+        assert "Вы уже подписаны" in response.text
+        assert f"/app/checkout/{product.slug}?entry=bot_start" not in response.text
+
+
 def test_strategy_detail_renders_products(monkeypatch) -> None:
     strategy, product = _make_strategy_and_product()
     monkeypatch.setattr(
@@ -345,6 +418,32 @@ def test_strategy_detail_renders_products(monkeypatch) -> None:
         assert "Тарифы" in response.text
         assert response.text.count("Подписаться") >= 2
         assert "grid-template-columns:1fr" in response.text
+
+
+def test_strategy_detail_marks_active_subscription_and_notice(monkeypatch) -> None:
+    strategy, product = _make_strategy_and_product()
+    user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_strategy_by_slug",
+        lambda _repository, _slug: _async_return(strategy),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return([]),
+    )
+
+    with _build_client(
+        FakePublicRepository(active_product_ids={product.id}),
+        auth_repository=FakeAuthRepository(user),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/catalog/strategies/momentum-ru?notice=already_subscribed")
+
+        assert response.status_code == 200
+        assert "Вы уже подписаны на эту стратегию." in response.text
+        assert "У вас уже есть активная подписка на эту стратегию." in response.text
+        assert "Активна" in response.text
+        assert f"/checkout/{product.slug}?entry=public_strategy" not in response.text
 
 
 def test_strategy_detail_hides_empty_product_description(monkeypatch) -> None:
@@ -871,6 +970,57 @@ def test_checkout_submit_redirects_telegram_intended_flow_without_context(monkey
     assert "pct_journey_id=" in response.headers["set-cookie"]
 
 
+def test_checkout_submit_redirects_when_user_already_subscribed(monkeypatch) -> None:
+    strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_strategy_by_slug",
+        lambda _repository, _slug: _async_return(strategy),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return([]),
+    )
+
+    async def fail_checkout(_repository, product, request):
+        raise AlreadySubscribedError(product_slug=product.slug)
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.public.create_stub_checkout", fail_checkout)
+
+    with _build_client(
+        FakePublicRepository(active_product_ids={product.id}),
+        auth_repository=FakeAuthRepository(user),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.post(
+            "/checkout/momentum-ru-month?entry=public_catalog",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "lead_source_name": "ads",
+                "accepted_document_ids": [item.id for item in documents],
+            },
+            follow_redirects=True,
+        )
+
+        assert response.history[0].status_code == 303
+        assert response.history[0].headers["location"] == "/catalog/strategies/momentum-ru?entry=public_catalog&notice=already_subscribed"
+        assert response.status_code == 200
+        assert "Вы уже подписаны на эту стратегию." in response.text
+        assert "У вас уже есть активная подписка на эту стратегию." in response.text
+
+
 def test_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
     _strategy, product = _make_strategy_and_product()
     product.price_rub = 0
@@ -993,6 +1143,68 @@ def test_app_checkout_submit_creates_telegram_linked_flow(monkeypatch) -> None:
         assert response.status_code == 201
         assert "MANUAL-MINIAPP-ABCD1234" in response.text
         assert "/app/payments" in response.text
+
+
+def test_app_checkout_submit_redirects_when_user_already_subscribed(monkeypatch) -> None:
+    strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    user = User(
+        id="user-1",
+        telegram_user_id=12345,
+        username="leaduser",
+        full_name="Lead User",
+        email="lead@example.com",
+        timezone="Europe/Moscow",
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_public_strategy_by_slug",
+        lambda _repository, _slug: _async_return(strategy),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.build_strategy_quote_strip",
+        lambda _strategy: _async_return([]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.app.get_subscriber_status_snapshot",
+        lambda _repository, telegram_user_id: _async_return(_make_snapshot(user)),
+    )
+
+    async def fail_checkout(_repository, **kwargs):
+        raise AlreadySubscribedError(product_slug=product.slug)
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.app.create_telegram_stub_checkout", fail_checkout)
+
+    with _build_client(
+        FakePublicRepository(active_product_ids={product.id}),
+        auth_repository=FakeAuthRepository(user),
+        access_repository=FakeAccessRepository(),
+    ) as client:
+        client.cookies.set("pitchcopytrade_session_tg", build_telegram_fallback_cookie_value(user))
+        response = client.post(
+            "/app/checkout/momentum-ru-month?entry=miniapp_catalog",
+            data={
+                "full_name": "Lead User",
+                "email": "lead@example.com",
+                "timezone_name": "Europe/Moscow",
+                "accepted_document_ids": [item.id for item in documents],
+                "promo_code_value": "",
+            },
+            follow_redirects=True,
+        )
+
+        assert response.history[0].status_code == 303
+        assert response.history[0].headers["location"] == "/app/strategies/momentum-ru?entry=miniapp_catalog&notice=already_subscribed"
+        assert response.status_code == 200
+        assert "Вы уже подписаны на эту стратегию." in response.text
+        assert "У вас уже есть активная подписка на эту стратегию." in response.text
 
 
 def test_app_checkout_submit_rejects_missing_telegram_id(monkeypatch) -> None:

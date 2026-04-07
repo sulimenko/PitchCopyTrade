@@ -9,10 +9,15 @@ from sqlalchemy.orm import selectinload
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import LeadSource, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
-from pitchcopytrade.db.models.enums import LegalDocumentType, StrategyStatus
+from pitchcopytrade.db.models.enums import LegalDocumentType, StrategyStatus, SubscriptionStatus
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+
+ACTIVE_SUBSCRIPTION_STATUSES = (
+    SubscriptionStatus.ACTIVE,
+    SubscriptionStatus.TRIAL,
+)
 
 
 class SqlAlchemyPublicRepository(PublicRepository):
@@ -169,6 +174,27 @@ class SqlAlchemyPublicRepository(PublicRepository):
             return None
         return next((item for item in user.subscriptions if item.id == subscription_id), None)
 
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str) -> Subscription | None:
+        query = (
+            select(Subscription)
+            .where(
+                Subscription.user_id == user_id,
+                Subscription.product_id == product_id,
+                Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def list_active_product_ids_for_user(self, user_id: str) -> set[str]:
+        query = select(Subscription.product_id).where(
+            Subscription.user_id == user_id,
+            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
+        )
+        result = await self.session.execute(query)
+        return set(result.scalars().all())
+
     def add(self, entity: object) -> None:
         self.session.add(entity)
 
@@ -281,6 +307,23 @@ class FilePublicRepository(PublicRepository):
         if user is None:
             return None
         return next((item for item in user.subscriptions if item.id == subscription_id), None)
+
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str) -> Subscription | None:
+        return next(
+            (
+                item
+                for item in self.graph.subscriptions.values()
+                if item.user_id == user_id and item.product_id == product_id and item.status in ACTIVE_SUBSCRIPTION_STATUSES
+            ),
+            None,
+        )
+
+    async def list_active_product_ids_for_user(self, user_id: str) -> set[str]:
+        return {
+            item.product_id
+            for item in self.graph.subscriptions.values()
+            if item.user_id == user_id and item.status in ACTIVE_SUBSCRIPTION_STATUSES
+        }
 
     def add(self, entity: object) -> None:
         self.graph.add(entity)

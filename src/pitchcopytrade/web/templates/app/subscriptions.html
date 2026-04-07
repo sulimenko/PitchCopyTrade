@@ -27,6 +27,7 @@
             Статус: {{ subscription_status_label(subscription.status) }}{% if subscription.is_trial %} · пробный период{% endif %}
             <br />Период: {{ billing_period_label(subscription.product.billing_period if subscription.product else None) }}
           </div>
+          <!-- 
           {% if subscription.manual_discount_rub or subscription.applied_promo_code %}
           <div class="muted" style="margin-top:8px;line-height:1.6;">
             {% if subscription.applied_promo_code %}Промокод: {{ subscription.applied_promo_code.code }}{% endif %}
@@ -46,9 +47,10 @@
             </form>
             {% endif %}
           </div>
+          -->
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <span class="pill">{{ subscription.end_at or "не указано" }}</span>
+          <span class="pill">{{ subscription.end_at.strftime('%d.%m.%Y %H:%M:%S') if subscription.end_at else "не указано" }}</span>
           <a class="action ghost" href="{{ miniapp_root }}/subscriptions/{{ subscription.id }}">Детали</a>
         </div>
       </div>

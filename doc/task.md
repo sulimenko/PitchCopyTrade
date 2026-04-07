@@ -10079,3 +10079,118 @@ Root cause:
 - changed files
 - tests run + results
 ```
+
+## P54 — Запретить дубли активных подписок + неактивная кнопка в каталоге/детали
+
+**Проблема (production):** пользователь Andrey (telegram_user_id=881271577) нажимает «Подписаться» несколько раз и каждый раз создаётся новая подписка на ту же стратегию (Top Gun). В БД 2 активные подписки на один и тот же subscription_product. Сервер не проверяет наличие существующей активной подписки, UI не показывает что юзер уже подписан.
+
+**Цель:**
+1. Серверный guard: нельзя создать вторую active/trial подписку на тот же `(user_id, subscription_product_id)`.
+2. UI: в `catalog.html` и `strategy_detail.html` если у пользователя уже есть активная подписка на стратегию — рендерить **неактивную** кнопку «Вы уже подписаны» вместо ссылки «Подписаться» + краткое уведомление.
+
+### P54.1 — Repository: метод поиска активной подписки
+- В `src/pitchcopytrade/db/repositories/public.py` (или там где `PublicRepository`) добавить:
+  ```python
+  async def get_active_subscription_for_product(
+      self, user_id: UUID, subscription_product_id: UUID
+  ) -> Subscription | None:
+      stmt = select(Subscription).where(
+          Subscription.user_id == user_id,
+          Subscription.subscription_product_id == subscription_product_id,
+          Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trial]),
+      ).limit(1)
+      return (await self._session.execute(stmt)).scalar_one_or_none()
+
+  async def list_active_product_ids_for_user(self, user_id: UUID) -> set[UUID]:
+      stmt = select(Subscription.subscription_product_id).where(
+          Subscription.user_id == user_id,
+          Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trial]),
+      )
+      rows = await self._session.execute(stmt)
+      return {row[0] for row in rows.all()}
+  ```
+
+### P54.2 — Server-side guard в services/public.py
+- В `create_stub_checkout` и `create_telegram_stub_checkout` (`src/pitchcopytrade/services/public.py`) **до** создания новых записей:
+  ```python
+  existing = await repository.get_active_subscription_for_product(user.id, product.id)
+  if existing is not None:
+      raise AlreadySubscribedError(product_slug=product.slug)
+  ```
+- Завести `class AlreadySubscribedError(Exception)` (в `services/public.py` или `services/errors.py`).
+- В routes (`web/routes/public.py`, `web/routes/app.py`) поймать ошибку:
+  - redirect на страницу стратегии с flash «Вы уже подписаны на эту стратегию»;
+  - HTTP 409 для JSON.
+
+### P54.3 — Передать активные подписки в шаблоны
+- В роутах, отдающих `catalog.html` и `strategy_detail.html` (public + app + preview):
+  ```python
+  user_active_product_ids: set[UUID] = set()
+  if current_user is not None:
+      user_active_product_ids = await repository.list_active_product_ids_for_user(current_user.id)
+  ```
+- Передать в context. Anon → пустой set.
+
+### P54.4 — catalog.html
+```jinja
+{% set sp = strategy.subscription_products[0] if strategy.subscription_products else none %}
+{% if sp and sp.id in user_active_product_ids %}
+  <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
+{% elif sp %}
+  <a class="action" href="...checkout/{{ sp.slug }}...">Подписаться</a>
+{% endif %}
+```
+- `.action.disabled`: `pointer-events:none;opacity:0.55;cursor:not-allowed;`. Добавить класс в CSS если отсутствует.
+
+### P54.5 — strategy_detail.html
+- Применить ту же логику в **двух** местах: hero CTA (~строка 38) и duplicate CTA перед tariffs (~строка 74).
+- Под disabled-кнопкой:
+  ```html
+  <div class="muted" style="margin-top:8px;">У вас уже есть активная подписка на эту стратегию.</div>
+  ```
+- В `#tariffs`: для тарифа, у которого `product.id in user_active_product_ids`, показать pill «Активна» и заменить `<a>` на `<div>` (не кликабельно).
+
+### P54.6 — Тесты
+- `tests/test_public_service.py`: повторный `create_telegram_stub_checkout` → `AlreadySubscribedError`, второй Subscription не создан.
+- `tests/test_public_routes.py`: GET `/catalog` авторизованным юзером с active subscription → в HTML «Вы уже подписаны», нет ссылки на checkout.
+- Обновить `FakePublicRepository` (`tests/test_auth_ui.py` и пр.): добавить `get_active_subscription_for_product`, `list_active_product_ids_for_user`.
+
+### P54.7 — Production cleanup SQL
+Создать `deploy/fix_duplicate_subscriptions.sql`:
+```sql
+-- Найти дубли
+SELECT user_id, subscription_product_id, COUNT(*) AS dup_count,
+       array_agg(id ORDER BY created_at) AS subscription_ids
+FROM subscriptions
+WHERE status IN ('active','trial')
+GROUP BY user_id, subscription_product_id
+HAVING COUNT(*) > 1;
+
+-- Оставить самую раннюю, остальные cancelled
+WITH ranked AS (
+  SELECT id,
+         row_number() OVER (
+           PARTITION BY user_id, subscription_product_id
+           ORDER BY created_at
+         ) AS rn
+  FROM subscriptions
+  WHERE status IN ('active','trial')
+)
+UPDATE subscriptions s
+SET status = 'cancelled', updated_at = now()
+FROM ranked r
+WHERE s.id = r.id AND r.rn > 1;
+```
+
+### Что нельзя
+- Удалять payments/consents — только смена статуса.
+- Менять enum SubscriptionStatus.
+- Делать клиентский JS-guard вместо серверного (UI — cosmetics, серверная проверка обязательна).
+
+### Acceptance criteria
+- [x] Повторный POST `/checkout/{slug}` → 409 / redirect с сообщением, второй Subscription не создаётся.
+- [x] Каталог: для подписанной стратегии вместо «Подписаться» disabled «Вы уже подписаны».
+- [x] Strategy detail: оба CTA disabled + уведомление, тариф помечен «Активна».
+- [x] Anon видят обычные кнопки «Подписаться».
+- [x] Существующие + новые тесты проходят.
+- [x] SQL скрипт для чистки production создан.

@@ -62,6 +62,7 @@ class FakePublicRepository:
     def __init__(self) -> None:
         self.user_by_telegram_id: dict[int, User] = {}
         self.added: list[object] = []
+        self.active_product_ids: set[str] = set()
 
     async def list_public_strategies(self):
         return []
@@ -83,6 +84,12 @@ class FakePublicRepository:
 
     async def get_user_by_telegram_id(self, telegram_user_id: int):
         return self.user_by_telegram_id.get(telegram_user_id)
+
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str):
+        return None
+
+    async def list_active_product_ids_for_user(self, user_id: str):
+        return set(self.active_product_ids)
 
     def add(self, entity: object) -> None:
         self.added.append(entity)

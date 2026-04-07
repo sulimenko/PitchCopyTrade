@@ -35,6 +35,7 @@ def test_preview_miniapp_catalog_is_self_contained(monkeypatch) -> None:
         assert response.status_code == 200
         assert "Preview Subscriber" in response.text
         assert "Straddle Pro" in response.text
+        assert "Вы уже подписаны" in response.text
         assert "/preview/app/subscriptions" in response.text
         assert "/preview/app/timeline" in response.text
         assert 'href="/app/status"' not in response.text
@@ -55,6 +56,8 @@ def test_preview_strategy_detail_has_structured_narrative(monkeypatch) -> None:
         assert "Детально" in response.text
         assert "Тарифы" in response.text
         assert "К стратегии" in response.text
+        assert "Вы уже подписаны" in response.text
+        assert "Активна" in response.text
 
 
 def test_preview_staff_dashboards_render(monkeypatch) -> None:

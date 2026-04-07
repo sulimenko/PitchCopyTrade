@@ -28,6 +28,7 @@
 
 <section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
   {% for strategy in strategies %}
+  {% set first_product = strategy.subscription_products[0] if strategy.subscription_products else none %}
   <article class="surface" style="padding:24px;background:linear-gradient(180deg, rgba(18, 47, 120, 0.06), rgba(18, 47, 120, 0.02));border:1px solid rgba(18, 47, 120, 0.08);">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
       <div style="width: 100%;">
@@ -59,8 +60,10 @@
       -->
     </div>
     <div class="catalog-card-actions">
-      {% if strategy.subscription_products %}
-      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ strategy.subscription_products[0].slug }}{% else %}/app/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% else %}/checkout/{{ strategy.subscription_products[0].slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подписаться</a>
+      {% if first_product and first_product.id in user_active_product_ids %}
+      <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
+      {% elif first_product %}
+      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подписаться</a>
       {% endif %}
       <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подробнее</a>
     </div>

@@ -80,6 +80,12 @@ class CheckoutResult:
     provider_payment_id: str | None = None
 
 
+class AlreadySubscribedError(Exception):
+    def __init__(self, *, product_slug: str) -> None:
+        super().__init__("Вы уже подписаны на эту стратегию")
+        self.product_slug = product_slug
+
+
 async def list_public_strategies(repository: PublicRepository) -> list[Strategy]:
     return await repository.list_public_strategies()
 
@@ -269,6 +275,8 @@ async def create_stub_checkout(
         if user.consents is None:
             user.consents = []
 
+    await _ensure_not_already_subscribed(repository, user=user, product=product)
+
     if final_amount_rub == 0:
         return await _create_free_checkout_records(
             repository,
@@ -344,6 +352,7 @@ async def create_telegram_stub_checkout(
             profile.email,
         )
         raise ValueError("Telegram ID не найден. Пожалуйста, откройте Mini App заново.")
+    await _ensure_not_already_subscribed(repository, user=user, product=product)
     promo_code = await _resolve_checkout_promo_code(
         repository,
         promo_code_value,
@@ -732,3 +741,16 @@ def _billing_delta(period: BillingPeriod) -> timedelta:
 
 def _build_stub_reference(slug: str) -> str:
     return f"MANUAL-{slug.upper()}-{token_hex(4).upper()}"
+
+
+async def _ensure_not_already_subscribed(
+    repository: PublicRepository,
+    *,
+    user: User,
+    product: SubscriptionProduct,
+) -> None:
+    if not user.id:
+        return
+    existing = await repository.get_active_subscription_for_product(user.id, product.id)
+    if existing is not None:
+        raise AlreadySubscribedError(product_slug=product.slug)

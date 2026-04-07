@@ -4,7 +4,7 @@ import logging
 from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.repositories import get_auth_repository, get_public_repository
@@ -27,9 +27,10 @@ from pitchcopytrade.repositories.contracts import AuthRepository, PublicReposito
 from pitchcopytrade.services.legal_documents import read_legal_document_markdown
 from pitchcopytrade.services.payment_sync import process_tbank_callback
 from pitchcopytrade.services.public import (
+    AlreadySubscribedError,
     CheckoutRequest,
-    create_stub_checkout,
     build_strategy_story,
+    create_stub_checkout,
     get_public_product,
     get_public_strategy_by_slug,
     list_active_checkout_documents,
@@ -68,11 +69,37 @@ async def _resolve_request_identity(
     return user.id, user.telegram_user_id
 
 
+async def _resolve_current_user(
+    request: Request,
+    auth_repository: AuthRepository | None,
+):
+    if auth_repository is None:
+        return None
+    session_token = request.cookies.get(get_settings().auth.session_cookie_name)
+    if session_token:
+        user = await get_user_from_session_token(auth_repository, session_token)
+        if user is not None:
+            return user
+    tg_cookie = request.cookies.get(get_telegram_fallback_cookie_name())
+    if not tg_cookie:
+        return None
+    return await get_user_from_telegram_fallback_cookie(auth_repository, tg_cookie)
+
+
 def _with_entry_marker(url: str, entry_marker: str | None) -> str:
     if not entry_marker:
         return url
     separator = "&" if "?" in url else "?"
     return f"{url}{separator}entry={quote(entry_marker, safe='')}"
+
+
+def _append_query_param(url: str, key: str, value: str) -> str:
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{key}={quote(value, safe='')}"
+
+
+def _wants_json_response(request: Request) -> bool:
+    return "application/json" in request.headers.get("accept", "").lower()
 
 
 def _verify_redirect_url(requested_next: str) -> str:
@@ -186,6 +213,12 @@ async def catalog_page(
     journey_id = get_or_create_journey_id(request)
     auth_user_id, telegram_user_id = await _resolve_request_identity(request, auth_repository)
     entry_marker = get_entry_marker(request) or "public_catalog"
+    current_user = await _resolve_current_user(request, auth_repository)
+    user_active_product_ids = (
+        await repository.list_active_product_ids_for_user(current_user.id)
+        if current_user is not None and current_user.id
+        else set()
+    )
     strategies = await list_public_strategies(repository)
     for strategy in strategies:
         strategy.detail_href = _with_entry_marker(f"/catalog/strategies/{strategy.slug}", "public_catalog")
@@ -202,6 +235,7 @@ async def catalog_page(
             "telegram_bot_username": get_settings().telegram.bot_username,
             "miniapp_mode": False,
             "entry_marker": entry_marker,
+            "user_active_product_ids": user_active_product_ids,
         },
     )
     log_request_trace(
@@ -229,6 +263,12 @@ async def strategy_detail_page(
     journey_id = get_or_create_journey_id(request)
     auth_user_id, telegram_user_id = await _resolve_request_identity(request, auth_repository)
     entry_marker = get_entry_marker(request) or "public_strategy"
+    current_user = await _resolve_current_user(request, auth_repository)
+    user_active_product_ids = (
+        await repository.list_active_product_ids_for_user(current_user.id)
+        if current_user is not None and current_user.id
+        else set()
+    )
     strategy = await get_public_strategy_by_slug(repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
@@ -246,6 +286,8 @@ async def strategy_detail_page(
             "miniapp_mode": False,
             "billing_period_label": billing_period_label,
             "entry_marker": entry_marker,
+            "user_active_product_ids": user_active_product_ids,
+            "already_subscribed_notice": request.query_params.get("notice") == "already_subscribed",
         },
     )
     log_request_trace(
@@ -447,6 +489,18 @@ async def checkout_submit(
                 telegram_user_id=telegram_user_id,
             ),
         )
+    except AlreadySubscribedError as exc:
+        if _wants_json_response(request):
+            return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_409_CONFLICT)
+        redirect_url = "/catalog"
+        strategy = getattr(product, "strategy", None)
+        strategy_slug = getattr(strategy, "slug", None)
+        if strategy_slug:
+            redirect_url = f"/catalog/strategies/{strategy_slug}"
+        redirect_url = _with_entry_marker(redirect_url, entry_marker)
+        redirect_url = _append_query_param(redirect_url, "notice", "already_subscribed")
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+        return attach_journey_cookie(response, journey_id)
     except ValueError as exc:
         validation_reason = checkout_validation_reason(str(exc))
         logger.warning(

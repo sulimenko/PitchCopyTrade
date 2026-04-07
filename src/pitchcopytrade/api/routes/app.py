@@ -4,7 +4,7 @@ import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from pitchcopytrade.api.deps.repositories import get_access_repository, get_auth_repository, get_public_repository
 from pitchcopytrade.api.request_trace import (
@@ -24,6 +24,7 @@ from pitchcopytrade.services.acl import (
     user_has_active_access,
 )
 from pitchcopytrade.services.public import (
+    AlreadySubscribedError,
     TelegramSubscriberProfile,
     build_strategy_story,
     create_telegram_stub_checkout,
@@ -68,6 +69,15 @@ def _with_entry_marker(url: str, entry_marker: str | None) -> str:
     return f"{url}{separator}entry={entry_marker}"
 
 
+def _append_query_param(url: str, key: str, value: str) -> str:
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{key}={quote(value, safe='')}"
+
+
+def _wants_json_response(request: Request) -> bool:
+    return "application/json" in request.headers.get("accept", "").lower()
+
+
 def _verify_redirect_url(requested_next: str) -> str:
     return f"/verify/telegram?next=/app/catalog&requested_next={quote(requested_next, safe='/')}"
 
@@ -85,6 +95,7 @@ async def app_catalog(
 
     journey_id = get_or_create_journey_id(request)
     entry_marker = get_entry_marker(request) or "bot_start"
+    user_active_product_ids = await public_repository.list_active_product_ids_for_user(user.id)
     strategies = await list_public_strategies(public_repository)
     for strategy in strategies:
         strategy.detail_href = _with_entry_marker(f"/app/strategies/{strategy.slug}", "miniapp_catalog")
@@ -116,6 +127,7 @@ async def app_catalog(
             "strategies": strategies,
             "telegram_bot_username": get_settings().telegram.bot_username,
             "entry_marker": entry_marker,
+            "user_active_product_ids": user_active_product_ids,
             **_build_miniapp_context("catalog", user=user, snapshot=snapshot),
         },
     )
@@ -136,6 +148,7 @@ async def app_strategy_detail(
 
     journey_id = get_or_create_journey_id(request)
     entry_marker = get_entry_marker(request) or "bot_start"
+    user_active_product_ids = await public_repository.list_active_product_ids_for_user(user.id)
     strategy = await get_public_strategy_by_slug(public_repository, slug)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
@@ -168,6 +181,8 @@ async def app_strategy_detail(
             "strategy": strategy,
             "billing_period_label": billing_period_label,
             "entry_marker": entry_marker,
+            "user_active_product_ids": user_active_product_ids,
+            "already_subscribed_notice": request.query_params.get("notice") == "already_subscribed",
             "miniapp_strategy_href": _with_entry_marker(f"/app/strategies/{strategy.slug}", entry_marker),
             **_build_miniapp_context("strategy", user=user, snapshot=snapshot),
         },
@@ -350,6 +365,18 @@ async def app_checkout_submit(
             accepted_document_ids=accepted_document_ids or [],
             promo_code_value=promo_code_value.strip().upper() or None,
         )
+    except AlreadySubscribedError as exc:
+        if _wants_json_response(request):
+            return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_409_CONFLICT)
+        redirect_url = "/app/catalog"
+        strategy = getattr(product, "strategy", None)
+        strategy_slug = getattr(strategy, "slug", None)
+        if strategy_slug:
+            redirect_url = f"/app/strategies/{strategy_slug}"
+        redirect_url = _with_entry_marker(redirect_url, get_entry_marker(request) or resolved_entry_surface)
+        redirect_url = _append_query_param(redirect_url, "notice", "already_subscribed")
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+        return attach_journey_cookie(response, journey_id)
     except ValueError as exc:
         validation_reason = checkout_validation_reason(str(exc))
         logger.warning(

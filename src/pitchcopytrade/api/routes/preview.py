@@ -70,6 +70,11 @@ async def preview_app_catalog(request: Request) -> Response:
     strategy.story = build_strategy_story(strategy)
     strategy.quotes = await build_strategy_quote_strip(strategy)
     snapshot = preview["preview_snapshot"]
+    user_active_product_ids = {
+        item.product.id
+        for item in snapshot.active_subscriptions
+        if getattr(item, "product", None) is not None and getattr(item.product, "id", None) is not None
+    }
     return templates.TemplateResponse(
         request,
         "public/catalog.html",
@@ -81,6 +86,7 @@ async def preview_app_catalog(request: Request) -> Response:
             "preview_mode": True,
             "miniapp_user": preview["preview_user"],
             "miniapp_snapshot": snapshot,
+            "user_active_product_ids": user_active_product_ids,
         },
     )
 
@@ -95,6 +101,12 @@ async def preview_app_strategy_detail(slug: str, request: Request) -> Response:
         return _preview_disabled()
     strategy.story = build_strategy_story(strategy)
     strategy.quotes = await build_strategy_quote_strip(strategy)
+    snapshot = preview["preview_snapshot"]
+    user_active_product_ids = {
+        item.product.id
+        for item in snapshot.active_subscriptions
+        if getattr(item, "product", None) is not None and getattr(item.product, "id", None) is not None
+    }
     return templates.TemplateResponse(
         request,
         "public/strategy_detail.html",
@@ -105,9 +117,11 @@ async def preview_app_strategy_detail(slug: str, request: Request) -> Response:
             "preview_mode": True,
             "billing_period_label": billing_period_label,
             "miniapp_user": preview["preview_user"],
-            "miniapp_snapshot": preview["preview_snapshot"],
+            "miniapp_snapshot": snapshot,
             "miniapp_active": "strategy",
             "miniapp_strategy_href": f"/preview/app/strategies/{strategy.slug}",
+            "user_active_product_ids": user_active_product_ids,
+            "already_subscribed_notice": False,
         },
     )
 

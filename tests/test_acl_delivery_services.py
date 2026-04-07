@@ -9,11 +9,12 @@ from sqlalchemy.exc import IntegrityError
 
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import SubscriptionProduct
-from pitchcopytrade.db.models.commerce import LegalDocument
+from pitchcopytrade.db.models.commerce import LegalDocument, Subscription
 from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, PaymentProvider, PaymentStatus, ProductType, RiskLevel, StrategyStatus, SubscriptionStatus
 from pitchcopytrade.db.models.enums import UserStatus
 from pitchcopytrade.services.public import (
+    AlreadySubscribedError,
     CheckoutRequest,
     TelegramSubscriberProfile,
     create_stub_checkout,
@@ -32,6 +33,7 @@ class FakeSession:
         self.user = None
         self.added = []
         self.refreshed = []
+        self.active_subscription = None
 
     async def list_active_checkout_documents(self):
         return self.documents
@@ -45,6 +47,25 @@ class FakeSession:
         if self.user is not None and self.user.telegram_user_id == telegram_user_id:
             return self.user
         return None
+
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str):
+        if (
+            self.active_subscription is not None
+            and self.active_subscription.user_id == user_id
+            and self.active_subscription.product_id == product_id
+            and self.active_subscription.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
+        ):
+            return self.active_subscription
+        return None
+
+    async def list_active_product_ids_for_user(self, user_id: str):
+        if (
+            self.active_subscription is not None
+            and self.active_subscription.user_id == user_id
+            and self.active_subscription.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
+        ):
+            return {self.active_subscription.product_id}
+        return set()
 
     def add(self, entity):
         self.added.append(entity)
@@ -312,6 +333,50 @@ async def test_create_telegram_stub_checkout_fails_loudly_if_user_loses_telegram
             accepted_document_ids=[document.id for document in _make_documents()],
             now=datetime(2026, 3, 11, tzinfo=timezone.utc),
         )
+
+
+@pytest.mark.asyncio
+async def test_create_telegram_stub_checkout_rejects_duplicate_active_subscription() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+    session.user = User(
+        id="user-1",
+        telegram_user_id=12345,
+        username="leaduser",
+        full_name="Lead User",
+        timezone="Europe/Moscow",
+    )
+    session.active_subscription = Subscription(
+        id="subscription-existing",
+        user_id="user-1",
+        product_id=product.id,
+        payment_id=None,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=False,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(AlreadySubscribedError, match="Вы уже подписаны"):
+        await create_telegram_stub_checkout(
+            session,
+            product=product,
+            profile=TelegramSubscriberProfile(
+                telegram_user_id=12345,
+                username="leaduser",
+                first_name="Lead",
+                last_name="User",
+                timezone_name="Europe/Moscow",
+                lead_source_name="telegram_bot",
+            ),
+            accepted_document_ids=[document.id for document in _make_documents()],
+            now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        )
+
+    assert not any(item.__class__.__name__ == "Subscription" for item in session.added)
+    assert not any(item.__class__.__name__ == "Payment" for item in session.added)
 
 
 async def _user_without_telegram() -> User:
