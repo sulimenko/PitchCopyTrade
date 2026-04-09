@@ -29,12 +29,7 @@ from pitchcopytrade.services.promo import apply_promo_to_amount, sync_promo_rede
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_CHECKOUT_DOCUMENT_TYPES = (
-    LegalDocumentType.DISCLAIMER,
-    LegalDocumentType.OFFER,
-    LegalDocumentType.PRIVACY_POLICY,
-    LegalDocumentType.PAYMENT_CONSENT,
-)
+REQUIRED_CHECKOUT_DOCUMENT_TYPES = (LegalDocumentType.DISCLAIMER,)
 
 
 @dataclass(slots=True)
@@ -223,13 +218,12 @@ async def create_stub_checkout(
 ) -> CheckoutResult:
     timestamp = now or datetime.now(timezone.utc)
     required_documents = await list_active_checkout_documents(repository)
-    if len(required_documents) != len(REQUIRED_CHECKOUT_DOCUMENT_TYPES):
-        raise ValueError("Checkout недоступен: не опубликован полный комплект обязательных документов")
+    required_documents = _visible_checkout_documents(required_documents)
     required_document_ids = {document.id for document in required_documents}
     accepted_document_ids = set(request.accepted_document_ids)
 
-    if required_document_ids != accepted_document_ids:
-        raise ValueError("Нужно принять все обязательные документы перед оплатой")
+    if not required_document_ids.issubset(accepted_document_ids):
+        raise ValueError("Нужно принять дисклеймер перед оплатой")
     promo_code = await _resolve_checkout_promo_code(
         repository,
         request.promo_code_value,
@@ -331,11 +325,10 @@ async def create_telegram_stub_checkout(
 ) -> CheckoutResult:
     timestamp = now or datetime.now(timezone.utc)
     required_documents = await list_active_checkout_documents(repository)
-    if len(required_documents) != len(REQUIRED_CHECKOUT_DOCUMENT_TYPES):
-        raise ValueError("Checkout недоступен: не опубликован полный комплект обязательных документов")
+    required_documents = _visible_checkout_documents(required_documents)
     required_document_ids = {document.id for document in required_documents}
-    if required_document_ids != set(accepted_document_ids):
-        raise ValueError("Нужно принять все обязательные документы перед оплатой")
+    if not required_document_ids.issubset(set(accepted_document_ids)):
+        raise ValueError("Нужно принять дисклеймер перед оплатой")
 
     logger.info(
         "Mini App checkout binding: telegram_user_id=%s email=%s product=%s",
@@ -426,6 +419,13 @@ async def create_telegram_stub_checkout(
         result.subscription.id,
     )
     return result
+
+
+def _visible_checkout_documents(documents: list[LegalDocument]) -> list[LegalDocument]:
+    visible = [document for document in documents if document.document_type is LegalDocumentType.DISCLAIMER]
+    if not visible:
+        raise ValueError("Checkout недоступен: не опубликован дисклеймер")
+    return visible
 
 
 async def _create_checkout_records(

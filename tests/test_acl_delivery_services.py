@@ -219,8 +219,10 @@ async def test_create_stub_checkout_auto_confirms_stub_manual_entities() -> None
     assert result.payment.confirmed_at is not None
     assert result.subscription.status == SubscriptionStatus.ACTIVE
     assert result.subscription.is_trial is True
+    assert len(result.required_documents) == 1
+    assert result.required_documents[0].document_type is LegalDocumentType.DISCLAIMER
     assert product in session.refreshed
-    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 4
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 1
     assert result.payment.consents == []
 
 
@@ -244,6 +246,8 @@ async def test_create_stub_checkout_links_telegram_user_id_when_provided() -> No
     )
 
     assert result.user.telegram_user_id == 12345
+    assert len(result.required_documents) == 1
+    assert result.required_documents[0].document_type is LegalDocumentType.DISCLAIMER
     assert product in session.refreshed
 
 
@@ -303,9 +307,31 @@ async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() ->
     assert result.payment is not None
     assert result.payment.status == PaymentStatus.PAID
     assert result.subscription.status == SubscriptionStatus.ACTIVE
+    assert len(result.required_documents) == 1
+    assert result.required_documents[0].document_type is LegalDocumentType.DISCLAIMER
     assert product in session.refreshed
-    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 4
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 1
     assert result.payment.consents == []
+
+
+@pytest.mark.asyncio
+async def test_create_stub_checkout_rejects_missing_disclaimer() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+
+    with pytest.raises(ValueError, match="дисклеймер"):
+        await create_stub_checkout(
+            session,
+            product=product,
+            request=CheckoutRequest(
+                full_name="Lead User",
+                email="lead@example.com",
+                timezone_name="Europe/Moscow",
+                accepted_document_ids=[],
+                lead_source_name="ads",
+            ),
+            now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        )
 
 
 @pytest.mark.asyncio
@@ -599,7 +625,7 @@ async def test_create_stub_checkout_skips_payment_for_free_product() -> None:
     assert result.payment is None
     assert result.subscription.status == SubscriptionStatus.ACTIVE
     assert product in session.refreshed
-    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 4
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 1
 
 
 @pytest.mark.asyncio

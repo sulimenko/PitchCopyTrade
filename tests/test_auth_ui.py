@@ -186,7 +186,7 @@ def test_login_page_renders() -> None:
         assert "PitchCopyTrade" in response.text
         assert "Логин или email" in response.text
         assert "Клиентам входить через Telegram-бота" in response.text
-        assert "/setdomain" in response.text
+        assert "Основной вход для сотрудников: через Telegram." in response.text
         assert "/auth/telegram/callback" in response.text
 
 

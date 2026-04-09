@@ -17,6 +17,7 @@ from pitchcopytrade.api.request_trace import (
 from pitchcopytrade.auth.session import get_telegram_fallback_cookie_name, get_user_from_telegram_fallback_cookie
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
+from pitchcopytrade.db.models.enums import LegalDocumentType
 from pitchcopytrade.repositories.contracts import AccessRepository, AuthRepository, PublicRepository
 from pitchcopytrade.services.acl import (
     get_user_visible_recommendation,
@@ -210,7 +211,7 @@ async def app_checkout_page(
     product_title = product.title
     entry_marker = get_entry_marker(request) or "bot_start"
     documents = await list_active_checkout_documents(public_repository)
-    checkout_ready = len(documents) == 4
+    checkout_ready = any(document.document_type is LegalDocumentType.DISCLAIMER for document in documents)
     log_request_trace(
         logger,
         request,
@@ -326,7 +327,7 @@ async def app_checkout_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     product_title = product.title
     documents = await list_active_checkout_documents(public_repository)
-    checkout_ready = len(documents) == 4
+    checkout_ready = any(document.document_type is LegalDocumentType.DISCLAIMER for document in documents)
     checkout_email = email.strip().lower() or user.email
     logger.info(
         "Mini App checkout route path=%s auth_user_id=%s auth_telegram_user_id=%s checkout_email=%s product_ref=%s",

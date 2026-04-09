@@ -749,6 +749,115 @@ def test_strategy_create_submit_redirects_to_editor(monkeypatch) -> None:
         assert created["data"].status == StrategyStatus.DRAFT
 
 
+def test_strategy_create_submit_rerenders_form_for_empty_slug(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_authors",
+        lambda _session: _async_return([author]),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/strategies",
+            data={
+                "author_id": "author-1",
+                "slug": "",
+                "title": "Growth RU",
+                "short_description": "Тестовая стратегия роста",
+                "full_description": "Полное описание",
+                "risk_level": "high",
+                "status": "draft",
+                "min_capital_rub": "250000",
+                "is_public": "1",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "Укажите код стратегии" in response.text
+        assert "Код стратегии (латиницей)" in response.text
+
+
+def test_strategy_create_submit_renders_multiple_field_errors(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_authors",
+        lambda _session: _async_return([author]),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/strategies",
+            data={
+                "author_id": "",
+                "slug": "",
+                "title": "",
+                "short_description": "",
+                "full_description": "",
+                "risk_level": "",
+                "status": "",
+                "min_capital_rub": "abc",
+                "is_public": "1",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "Требования к заполнению" in response.text
+        assert "has-error" in response.text
+        assert "Выберите автора стратегии" in response.text
+        assert "Укажите код стратегии" in response.text
+        assert "Название стратегии обязательно" in response.text
+        assert "Короткое описание обязательно" in response.text
+        assert "Минимальный капитал должен быть целым числом" in response.text
+
+
+def test_strategy_create_submit_shows_duplicate_slug_error(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_authors",
+        lambda _session: _async_return([author]),
+    )
+
+    async def fake_create_strategy(_session, _data):
+        raise ValueError("Код стратегии «growth-ru» уже используется. Выберите другой.")
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.create_strategy", fake_create_strategy)
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/strategies",
+            data={
+                "author_id": "author-1",
+                "slug": "growth-ru",
+                "title": "Growth RU",
+                "short_description": "Тестовая стратегия роста",
+                "full_description": "Полное описание",
+                "risk_level": "high",
+                "status": "draft",
+                "min_capital_rub": "250000",
+                "is_public": "1",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "уже используется" in response.text
+        assert "Growth RU" in response.text
+
+
 def test_strategy_edit_page_renders_existing_strategy(monkeypatch) -> None:
     session = FakeAsyncSession()
     admin = _make_admin_user()
@@ -954,6 +1063,71 @@ def test_promo_code_create_redirects_to_editor(monkeypatch) -> None:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/admin/promos/promo-new/edit"
+
+
+def test_promo_code_create_shows_single_summary_error_for_missing_discount(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_promo_codes",
+        lambda _session: _async_return([]),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/promos",
+            data={
+                "code": "WELCOME10",
+                "description": "launch promo",
+                "discount_percent": "",
+                "discount_amount_rub": "",
+                "max_redemptions": "100",
+                "expires_at": "",
+                "is_active": "1",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "Укажите скидку в процентах ИЛИ фиксированную сумму в рублях" in response.text
+        assert "Нужно указать discount percent" not in response.text
+        assert "Используйте либо discount percent" not in response.text
+
+
+def test_promo_code_create_shows_duplicate_code_error(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.list_admin_promo_codes",
+        lambda _session: _async_return([_make_promo_code("promo-1", "WELCOME10")]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.admin.create_admin_promo_code",
+        lambda _session, _data: _async_raise(ValueError("Промокод «WELCOME10» уже существует. Выберите другой код.")),
+    )
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/promos",
+            data={
+                "code": "WELCOME10",
+                "description": "launch promo",
+                "discount_percent": "10",
+                "discount_amount_rub": "",
+                "max_redemptions": "100",
+                "expires_at": "",
+                "is_active": "1",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 422
+        assert "уже существует" in response.text
+        assert "Код промокода" in response.text
 
 
 def test_lead_analytics_page_renders(monkeypatch) -> None:

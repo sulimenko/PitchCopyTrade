@@ -1,4 +1,5 @@
 {% extends "staff_base.html" %}
+{% set field_errors = field_errors or {} %}
 
 {% block parent_href %}/admin/strategies{% endblock %}
 {% block breadcrumbs %}Админ / Карточка стратегии{% endblock %}
@@ -27,6 +28,21 @@
   </div>
 </section>
 
+<section class="staff-card admin-strategy-requirements">
+  <div class="admin-strategy-section-head">
+    <div>
+      <h2>Требования к заполнению</h2>
+      <p class="muted">Форма валидируется за один проход. Ошибки показываются рядом с полями, чтобы не терять контекст.</p>
+    </div>
+  </div>
+  <ul class="admin-strategy-requirements-list">
+    <li>Код стратегии должен быть на латинице, в нижнем регистре, с дефисами между словами.</li>
+    <li>Название и короткое описание обязательны.</li>
+    <li>Автор, риск и статус должны быть выбраны из справочника.</li>
+    <li>Если задан минимальный капитал, он должен быть целым числом.</li>
+  </ul>
+</section>
+
 <section class="admin-strategy-layout">
   <form class="staff-card admin-strategy-form" method="post" action="{% if strategy %}/admin/strategies/{{ strategy.id }}{% else %}/admin/strategies{% endif %}">
     {% if error %}
@@ -42,47 +58,75 @@
       </div>
 
       <div class="admin-strategy-grid admin-strategy-grid--two">
-        <label class="admin-strategy-field">
+        <label class="admin-strategy-field {% if field_errors.get('author_id') %}has-error{% endif %}">
           <span>Автор</span>
-          <select name="author_id">
+          <select name="author_id" required>
             {% for author in authors %}
             <option value="{{ author.id }}" {% if form_values.author_id == author.id %}selected{% endif %}>{{ author.display_name }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("author_id") %}
+          <span class="admin-strategy-field-error">{{ field_errors.get("author_id") }}</span>
+          {% endif %}
         </label>
-        <label class="admin-strategy-field">
-          <span>Слаг</span>
-          <input type="text" name="slug" value="{{ form_values.slug }}" />
+        <label class="admin-strategy-field {% if field_errors.get('slug') %}has-error{% endif %}">
+          <span>Код стратегии (латиницей)</span>
+          <input
+            type="text"
+            name="slug"
+            value="{{ form_values.slug or '' }}"
+            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+            maxlength="64"
+            required
+            placeholder="top-gun"
+            title="Только строчные латинские буквы, цифры и дефисы"
+          />
+          <small class="muted">Используется в URL. Только латиница, цифры и дефисы. Например: top-gun, pair-arbitrage-etf</small>
+          {% if field_errors.get("slug") %}
+          <span class="admin-strategy-field-error">{{ field_errors.get("slug") }}</span>
+          {% endif %}
         </label>
       </div>
 
       <div class="admin-strategy-grid admin-strategy-grid--two">
-        <label class="admin-strategy-field">
+        <label class="admin-strategy-field {% if field_errors.get('title') %}has-error{% endif %}">
           <span>Название</span>
-          <input type="text" name="title" value="{{ form_values.title }}" />
+          <input type="text" name="title" value="{{ form_values.title or '' }}" required />
+          {% if field_errors.get("title") %}
+          <span class="admin-strategy-field-error">{{ field_errors.get("title") }}</span>
+          {% endif %}
         </label>
-        <label class="admin-strategy-field">
+        <label class="admin-strategy-field {% if field_errors.get('min_capital_rub') %}has-error{% endif %}">
           <span>Минимальный капитал, руб</span>
-          <input type="number" name="min_capital_rub" min="0" value="{{ form_values.min_capital_rub }}" />
+          <input type="number" name="min_capital_rub" min="0" value="{{ form_values.min_capital_rub or '' }}" />
+          {% if field_errors.get("min_capital_rub") %}
+          <span class="admin-strategy-field-error">{{ field_errors.get("min_capital_rub") }}</span>
+          {% endif %}
         </label>
       </div>
 
       <div class="admin-strategy-grid admin-strategy-grid--two">
-        <label class="admin-strategy-field">
+        <label class="admin-strategy-field {% if field_errors.get('risk_level') %}has-error{% endif %}">
           <span>Риск</span>
-          <select name="risk_level">
+          <select name="risk_level" required>
             {% for item in risk_levels %}
             <option value="{{ item.value }}" {% if form_values.risk_level == item.value %}selected{% endif %}>{{ label_risk_level(item) }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("risk_level") %}
+          <span class="admin-strategy-field-error">{{ field_errors.get("risk_level") }}</span>
+          {% endif %}
         </label>
-        <label class="admin-strategy-field">
+        <label class="admin-strategy-field {% if field_errors.get('status') %}has-error{% endif %}">
           <span>Статус</span>
-          <select name="status">
+          <select name="status" required>
             {% for item in strategy_statuses %}
             <option value="{{ item.value }}" {% if form_values.status == item.value %}selected{% endif %}>{{ label_strategy_status(item) }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("status") %}
+          <span class="admin-strategy-field-error">{{ field_errors.get("status") }}</span>
+          {% endif %}
         </label>
       </div>
 
@@ -100,14 +144,17 @@
         </div>
       </div>
 
-      <label class="admin-strategy-field">
+      <label class="admin-strategy-field {% if field_errors.get('short_description') %}has-error{% endif %}">
         <span>Короткое описание</span>
-        <textarea name="short_description" rows="3">{{ form_values.short_description }}</textarea>
+        <textarea name="short_description" rows="3" required>{{ form_values.short_description or '' }}</textarea>
+        {% if field_errors.get("short_description") %}
+        <span class="admin-strategy-field-error">{{ field_errors.get("short_description") }}</span>
+        {% endif %}
       </label>
 
       <label class="admin-strategy-field">
         <span>Полное описание</span>
-        <textarea name="full_description" rows="7">{{ form_values.full_description }}</textarea>
+        <textarea name="full_description" rows="7">{{ form_values.full_description or '' }}</textarea>
         <small class="muted">Можно использовать секции вроде `# Hero`, `# Thesis`, `# Mechanics`, `# Risk`, `# Tariffs`, `# FAQ`, чтобы public detail собирался как структурированный narrative.</small>
       </label>
     </section>
@@ -175,6 +222,21 @@
     gap: 10px;
   }
 
+  .admin-strategy-requirements {
+    padding: 14px 16px;
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-strategy-requirements-list {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 6px;
+    color: var(--staff-muted);
+    line-height: 1.5;
+  }
+
   .admin-strategy-form {
     padding: 14px;
     display: grid;
@@ -232,6 +294,19 @@
   .admin-strategy-field textarea {
     min-height: 88px;
     resize: vertical;
+  }
+
+  .admin-strategy-field.has-error input,
+  .admin-strategy-field.has-error select,
+  .admin-strategy-field.has-error textarea {
+    border-color: rgba(182, 59, 59, 0.55);
+    box-shadow: 0 0 0 1px rgba(182, 59, 59, 0.08);
+  }
+
+  .admin-strategy-field-error {
+    color: var(--staff-danger);
+    font-size: 0.82rem;
+    line-height: 1.4;
   }
 
   .admin-strategy-inline-check {

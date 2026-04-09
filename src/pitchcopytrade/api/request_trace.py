@@ -96,7 +96,12 @@ def checkout_validation_reason(message: str | None) -> str:
         return "checkout_validation_error"
     if "checkout недоступен" in normalized or "не опубликован" in normalized or "published" in normalized:
         return "checkout_documents_unpublished"
-    if ("обязатель" in normalized and "документ" in normalized) or "required documents" in normalized:
+    if (
+        ("обязатель" in normalized and "документ" in normalized)
+        or "required documents" in normalized
+        or "дисклеймер" in normalized
+        or "disclaimer" in normalized
+    ):
         return "missing_accepted_document_ids"
     if "telegram id" in normalized and "не найден" in normalized:
         return "missing_telegram_user_id"

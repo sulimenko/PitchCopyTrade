@@ -15,6 +15,7 @@ from pitchcopytrade.auth.session import (
 )
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.session import get_optional_db_session
+from pitchcopytrade.db.models.enums import LegalDocumentType
 from pitchcopytrade.api.request_trace import (
     attach_journey_cookie,
     checkout_validation_reason,
@@ -319,7 +320,7 @@ async def checkout_page(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
     documents = await list_active_checkout_documents(repository)
-    checkout_ready = len(documents) == 4
+    checkout_ready = any(document.document_type is LegalDocumentType.DISCLAIMER for document in documents)
     detected_lead_source = _detect_lead_source_name(request)
     telegram_intended = _is_telegram_intended_checkout(request, detected_lead_source)
     entry_marker = get_entry_marker(request) or "public_catalog"
@@ -410,7 +411,7 @@ async def checkout_submit(
     product_title = product.title
 
     documents = await list_active_checkout_documents(repository)
-    checkout_ready = len(documents) == 4
+    checkout_ready = any(document.document_type is LegalDocumentType.DISCLAIMER for document in documents)
     detected_lead_source = lead_source_name.strip() or _detect_lead_source_name(request)
     resolved_entry_id = entry_id.strip() or journey_id
     resolved_entry_surface = entry_surface.strip() or "public"

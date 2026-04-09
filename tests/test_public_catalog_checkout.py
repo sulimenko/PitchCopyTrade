@@ -276,6 +276,56 @@ def test_catalog_renders_strategies(monkeypatch) -> None:
         assert "grid-template-columns:1fr" in response.text
 
 
+def test_catalog_renders_soon_state_for_strategy_without_products(monkeypatch) -> None:
+    strategy = _make_story_strategy()
+    strategy.subscription_products = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_public_strategies",
+        lambda _repository: _async_return([strategy]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return([]),
+    )
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.get("/catalog")
+
+        assert response.status_code == 200
+        assert "Скоро в продаже" in response.text
+        assert "Подписаться" not in response.text
+        assert "Скоро" in response.text
+
+
+def test_catalog_renders_quotes_without_empty_dashes(monkeypatch) -> None:
+    strategy = _make_story_strategy()
+    strategy.subscription_products = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_public_strategies",
+        lambda _repository: _async_return([strategy]),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.build_strategy_quote_strip",
+        lambda _strategy: _async_return(
+            [
+                SimpleNamespace(ticker="ETF", last_price=None, last_price_text="—", change_text="—"),
+                SimpleNamespace(ticker="QLD", last_price=None, last_price_text="—", change_text="—"),
+            ]
+        ),
+    )
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.get("/catalog")
+
+        assert response.status_code == 200
+        assert "catalog-card-title-row" in response.text
+        assert "catalog-card-title" in response.text
+        assert "ETF" in response.text
+        assert "QLD" in response.text
+        assert "· —" not in response.text
+        assert "catalog-card-actions" in response.text
+
+
 def test_catalog_renders_disabled_cta_for_active_subscription(monkeypatch) -> None:
     strategy, product = _make_strategy_and_product()
     user = User(id="user-1", telegram_user_id=12345, username="leaduser", full_name="Lead User", timezone="Europe/Moscow")
@@ -676,7 +726,7 @@ def test_app_checkout_submit_logs_controlled_invalid_request(monkeypatch, capsys
     )
 
     async def fail_checkout(*_args, **_kwargs):
-        raise ValueError("Нужно принять все обязательные документы перед оплатой")
+        raise ValueError("Нужно принять дисклеймер перед оплатой")
 
     monkeypatch.setattr("pitchcopytrade.api.routes.app.create_telegram_stub_checkout", fail_checkout)
 
@@ -705,7 +755,7 @@ def test_app_checkout_submit_logs_controlled_invalid_request(monkeypatch, capsys
 
     captured = capsys.readouterr()
     assert response.status_code == 422
-    assert "Нужно принять все обязательные документы перед оплатой" in response.text
+    assert "Нужно принять дисклеймер перед оплатой" in response.text
 
 
 def test_checkout_page_renders_documents(monkeypatch) -> None:
@@ -729,9 +779,9 @@ def test_checkout_page_renders_documents(monkeypatch) -> None:
         assert "Предупреждение о рисках" in response.text
         assert "/legal/doc-disclaimer" in response.text
         assert "Согласие на оплату" not in response.text
+        assert response.text.count('type="checkbox"') == 1
         assert 'name="timezone_name"' in response.text
         assert 'name="lead_source_name"' in response.text
-        assert 'name="accepted_document_ids"' in response.text
         assert 'name="entry_id" value="' in response.text
         assert 'name="entry_surface" value="public"' in response.text
         assert "499 руб" not in response.text
@@ -778,9 +828,9 @@ def test_app_checkout_prefills_telegram_user(monkeypatch) -> None:
         assert "Lead User" in response.text
         assert "lead@example.com" in response.text
         assert "/app/catalog" in response.text
+        assert response.text.count('type="checkbox"') == 1
         assert 'name="timezone_name"' in response.text
         assert 'name="lead_source_name"' in response.text
-        assert 'name="accepted_document_ids"' in response.text
         assert 'name="entry_id" value="' in response.text
         assert 'name="entry_surface" value="miniapp"' in response.text
 

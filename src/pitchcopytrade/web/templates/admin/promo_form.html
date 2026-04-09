@@ -1,4 +1,5 @@
 {% extends "staff_base.html" %}
+{% set field_errors = field_errors or {} %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -38,18 +39,28 @@
         </div>
       </div>
       <div class="staff-form-grid is-two">
-        <label class="staff-field">
-          <span>Код</span>
-          <input type="text" name="code" value="{{ form_values.code or '' }}" placeholder="WELCOME10" style="text-transform:uppercase;" />
+        <label class="staff-field {% if field_errors.get('code') %}has-error{% endif %}">
+          <span>Код промокода</span>
+          <input type="text" name="code" value="{{ form_values.code or '' }}" pattern="[A-Z0-9_-]+" maxlength="64" placeholder="WELCOME10" style="text-transform:uppercase;" required />
+          <small class="muted">Только заглавные латинские буквы, цифры, подчёркивания и дефисы.</small>
+          {% if field_errors.get("code") %}
+          <span class="staff-field-error">{{ field_errors.get("code") }}</span>
+          {% endif %}
         </label>
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('max_redemptions') %}has-error{% endif %}">
           <span>Лимит использований</span>
           <input type="number" name="max_redemptions" min="1" value="{{ form_values.max_redemptions or '' }}" />
+          {% if field_errors.get("max_redemptions") %}
+          <span class="staff-field-error">{{ field_errors.get("max_redemptions") }}</span>
+          {% endif %}
         </label>
       </div>
-      <label class="staff-field">
+      <label class="staff-field {% if field_errors.get('description') %}has-error{% endif %}">
         <span>Описание</span>
         <textarea name="description" rows="3">{{ form_values.description or '' }}</textarea>
+        {% if field_errors.get("description") %}
+        <span class="staff-field-error">{{ field_errors.get("description") }}</span>
+        {% endif %}
       </label>
     </section>
 
@@ -61,17 +72,26 @@
         </div>
       </div>
       <div class="staff-form-grid is-three">
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('discount_percent') %}has-error{% endif %}">
           <span>Скидка, %</span>
           <input type="number" name="discount_percent" min="1" max="100" value="{{ form_values.discount_percent or '' }}" />
+          {% if field_errors.get("discount_percent") %}
+          <span class="staff-field-error">{{ field_errors.get("discount_percent") }}</span>
+          {% endif %}
         </label>
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('discount_amount_rub') %}has-error{% endif %}">
           <span>Скидка, руб</span>
           <input type="number" name="discount_amount_rub" min="0" value="{{ form_values.discount_amount_rub or '' }}" />
+          {% if field_errors.get("discount_amount_rub") %}
+          <span class="staff-field-error">{{ field_errors.get("discount_amount_rub") }}</span>
+          {% endif %}
         </label>
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('expires_at') %}has-error{% endif %}">
           <span>Истекает</span>
           <input type="datetime-local" name="expires_at" value="{{ form_values.expires_at or '' }}" />
+          {% if field_errors.get("expires_at") %}
+          <span class="staff-field-error">{{ field_errors.get("expires_at") }}</span>
+          {% endif %}
         </label>
       </div>
       <label class="staff-form-check">
@@ -125,4 +145,19 @@
     {% endif %}
   </aside>
 </section>
+
+<style>
+  .staff-field.has-error input,
+  .staff-field.has-error select,
+  .staff-field.has-error textarea {
+    border-color: rgba(182, 59, 59, 0.55);
+    box-shadow: 0 0 0 1px rgba(182, 59, 59, 0.08);
+  }
+
+  .staff-field-error {
+    color: var(--staff-danger);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+</style>
 {% endblock %}

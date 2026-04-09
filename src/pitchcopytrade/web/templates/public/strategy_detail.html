@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "public/_url_helpers.html" import checkout_url, catalog_url, strategy_url %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}">Каталог</a>
+  <a class="action ghost" href="{{ catalog_url(miniapp_mode, preview_mode, entry_marker) }}">Каталог</a>
 </div>
 {% endblock %}
 
@@ -38,7 +39,7 @@
     {% if already_subscribed_to_first_product %}
     <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
     {% elif first_product %}
-    <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">{{ strategy.story.commercial_cta_label if strategy.story else "Подписаться" }}</a>
+    <a class="action" href="{{ checkout_url(first_product.slug, miniapp_mode, preview_mode, entry_marker) }}">{{ strategy.story.commercial_cta_label if strategy.story else "Подписаться" }}</a>
     {% endif %}
     <a class="action" href="#tariffs">Тарифы</a>
     <!-- <a class="action ghost" href="#faq">FAQ</a> -->
@@ -85,7 +86,7 @@
   {% if already_subscribed_to_first_product %}
   <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
   {% else %}
-  <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подписаться</a>
+  <a class="action" href="{{ checkout_url(first_product.slug, miniapp_mode, preview_mode, entry_marker) }}">Подписаться</a>
   {% endif %}
 </div>
 {% if already_subscribed_to_first_product %}
@@ -102,7 +103,7 @@
     {% if product_is_active %}
     <div class="surface" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
     {% else %}
-    <a class="surface" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ product.slug }}{% else %}/app/checkout/{{ product.slug }}{% endif %}{% else %}/checkout/{{ product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
+    <a class="surface" href="{{ checkout_url(product.slug, miniapp_mode, preview_mode, entry_marker) }}" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
     {% endif %}
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
         <div>

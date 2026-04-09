@@ -1,4 +1,5 @@
 {% extends "staff_base.html" %}
+{% set field_errors = field_errors or {} %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -44,36 +45,60 @@
         </div>
       </div>
       <div class="staff-form-grid is-two">
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('product_type') %}has-error{% endif %}">
           <span>Тип продукта</span>
-          <select name="product_type">
+          <select name="product_type" required>
             {% for item in product_types %}
             <option value="{{ item.value }}" {% if form_values.product_type == item.value %}selected{% endif %}>{{ label_product_type(item) }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("product_type") %}
+          <span class="staff-field-error">{{ field_errors.get("product_type") }}</span>
+          {% endif %}
         </label>
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('billing_period') %}has-error{% endif %}">
           <span>Период биллинга</span>
-          <select name="billing_period">
+          <select name="billing_period" required>
             {% for item in billing_periods %}
             <option value="{{ item.value }}" {% if form_values.billing_period == item.value %}selected{% endif %}>{{ label_billing_period(item) }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("billing_period") %}
+          <span class="staff-field-error">{{ field_errors.get("billing_period") }}</span>
+          {% endif %}
         </label>
       </div>
       <div class="staff-form-grid is-two">
-        <label class="staff-field">
-          <span>Слаг</span>
-          <input type="text" name="slug" value="{{ form_values.slug }}" />
+        <label class="staff-field {% if field_errors.get('slug') %}has-error{% endif %}">
+          <span>Код продукта (латиницей)</span>
+          <input
+            type="text"
+            name="slug"
+            value="{{ form_values.slug or '' }}"
+            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+            maxlength="64"
+            required
+            placeholder="momentum-ru-month"
+            title="Только строчные латинские буквы, цифры и дефисы"
+          />
+          {% if field_errors.get("slug") %}
+          <span class="staff-field-error">{{ field_errors.get("slug") }}</span>
+          {% endif %}
         </label>
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('title') %}has-error{% endif %}">
           <span>Название</span>
-          <input type="text" name="title" value="{{ form_values.title }}" />
+          <input type="text" name="title" value="{{ form_values.title or '' }}" required />
+          {% if field_errors.get("title") %}
+          <span class="staff-field-error">{{ field_errors.get("title") }}</span>
+          {% endif %}
         </label>
       </div>
-      <label class="staff-field">
+      <label class="staff-field {% if field_errors.get('description') %}has-error{% endif %}">
         <span>Описание</span>
-        <textarea name="description" rows="5">{{ form_values.description }}</textarea>
+        <textarea name="description" rows="5">{{ form_values.description or '' }}</textarea>
+        {% if field_errors.get("description") %}
+        <span class="staff-field-error">{{ field_errors.get("description") }}</span>
+        {% endif %}
       </label>
     </section>
 
@@ -85,7 +110,7 @@
         </div>
       </div>
       <div class="staff-form-grid is-three">
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('strategy_id') %}has-error{% endif %}">
           <span>Стратегия</span>
           <select name="strategy_id">
             <option value="">не выбрана</option>
@@ -93,8 +118,11 @@
             <option value="{{ item.id }}" {% if form_values.strategy_id == item.id %}selected{% endif %}>{{ item.title }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("strategy_id") %}
+          <span class="staff-field-error">{{ field_errors.get("strategy_id") }}</span>
+          {% endif %}
         </label>
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('author_id') %}has-error{% endif %}">
           <span>Автор</span>
           <select name="author_id">
             <option value="">не выбран</option>
@@ -102,8 +130,11 @@
             <option value="{{ item.id }}" {% if form_values.author_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("author_id") %}
+          <span class="staff-field-error">{{ field_errors.get("author_id") }}</span>
+          {% endif %}
         </label>
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('bundle_id') %}has-error{% endif %}">
           <span>Пакет</span>
           <select name="bundle_id">
             <option value="">не выбран</option>
@@ -111,6 +142,9 @@
             <option value="{{ item.id }}" {% if form_values.bundle_id == item.id %}selected{% endif %}>{{ item.title }}</option>
             {% endfor %}
           </select>
+          {% if field_errors.get("bundle_id") %}
+          <span class="staff-field-error">{{ field_errors.get("bundle_id") }}</span>
+          {% endif %}
         </label>
       </div>
     </section>
@@ -123,13 +157,19 @@
         </div>
       </div>
       <div class="staff-form-grid is-two">
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('price_rub') %}has-error{% endif %}">
           <span>Цена, руб</span>
-          <input type="number" name="price_rub" min="0" value="{{ form_values.price_rub }}" />
+          <input type="number" name="price_rub" min="0" value="{{ form_values.price_rub or '' }}" required />
+          {% if field_errors.get("price_rub") %}
+          <span class="staff-field-error">{{ field_errors.get("price_rub") }}</span>
+          {% endif %}
         </label>
-        <label class="staff-field">
+        <label class="staff-field {% if field_errors.get('trial_days') %}has-error{% endif %}">
           <span>Пробный период, дней</span>
-          <input type="number" name="trial_days" min="0" value="{{ form_values.trial_days }}" />
+          <input type="number" name="trial_days" min="0" value="{{ form_values.trial_days or '' }}" />
+          {% if field_errors.get("trial_days") %}
+          <span class="staff-field-error">{{ field_errors.get("trial_days") }}</span>
+          {% endif %}
         </label>
       </div>
       <div class="staff-form-grid is-two">
@@ -179,4 +219,19 @@
     </div>
   </aside>
 </section>
+
+<style>
+  .staff-field.has-error input,
+  .staff-field.has-error select,
+  .staff-field.has-error textarea {
+    border-color: rgba(182, 59, 59, 0.55);
+    box-shadow: 0 0 0 1px rgba(182, 59, 59, 0.08);
+  }
+
+  .staff-field-error {
+    color: var(--staff-danger);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+</style>
 {% endblock %}

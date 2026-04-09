@@ -1,5 +1,5 @@
 # PitchCopyTrade — Active Tasks
-> Обновлено: 2026-04-03
+> Обновлено: 2026-04-09
 > Это единый backlog-файл проекта. Все активные задачи ведутся только здесь.
 
 ## Статусы
@@ -8686,7 +8686,7 @@ P40 закрыт:
 
 ### Что должен сделать worker
 
-#### P41.1 — Invite token must have priority over existing auth context `[ ]`
+#### P41.1 — Invite token must have priority over existing auth context `[x]`
 
 - [x] **P41.1.1** Если `invite_token` присутствует в `/login`, route не должен silently short-circuit-ить в:
   - `/login`
@@ -8694,7 +8694,7 @@ P40 закрыт:
   - любой другой surface, пока invite flow не обработан по canonical rule
 - [x] **P41.1.2** Existing session/tg cookie можно использовать только как input для merge/bind decision, но не как повод bypass-нуть invite flow
 
-#### P41.2 — Убрать `/login -> /login` self-loop `[ ]`
+#### P41.2 — Убрать `/login -> /login` self-loop `[x]`
 
 - [x] **P41.2.1** Запретить redirect на `/login` для already-authenticated non-staff user
 - [x] **P41.2.2** Если resolved user не имеет staff roles, route должен:
@@ -8702,13 +8702,13 @@ P40 закрыт:
   - либо явно очистить/игнорировать неподходящий staff session,
   - но не уходить в self-redirect
 
-#### P41.3 — Existing subscriber invite onboarding must stay deterministic `[ ]`
+#### P41.3 — Existing subscriber invite onboarding must stay deterministic `[x]`
 
 - [x] **P41.3.1** Subscriber with Telegram-bound identity должен иметь возможность открыть `invite_token` link, не очищая вручную cookies
 - [x] **P41.3.2** Если same human already authenticated as subscriber, route должен сохранить invite context и довести до staff bind/role elevation
 - [x] **P41.3.3** Если existing auth context конфликтует с invite target, user должен получить loud controlled screen, а не endless redirect
 
-#### P41.4 — `storage/api.log` must show invite bypass / loop reason `[ ]`
+#### P41.4 — `storage/api.log` must show invite bypass / loop reason `[x]`
 
 - [x] **P41.4.1** Добавить compact reason codes:
   - `invite_bypassed_by_staff_session`
@@ -8722,7 +8722,7 @@ P40 закрыт:
   - invite blocked
   - existing staff session reused
 
-#### P41.5 — Regression coverage `[ ]`
+#### P41.5 — Regression coverage `[x]`
 
 - [x] **P41.5.1** Test: `/login?invite_token=...` with existing non-staff session does not loop to `/login`
 - [x] **P41.5.2** Test: `/login?invite_token=...` with existing Telegram fallback cookie does not silently redirect to `/app/catalog`
@@ -8819,7 +8819,7 @@ P40 закрыт:
 
 ### Что должен сделать worker
 
-#### P42.1 — Перестроить Mini App menu contract `[ ]`
+#### P42.1 — Перестроить Mini App menu contract `[x]`
 
 - [x] **P42.1.1** Сделать primary Mini App menu постоянным и коротким:
   - `Каталог`
@@ -8831,7 +8831,7 @@ P40 закрыт:
 - [x] **P42.1.5** `Статус`, `Помощь`, `Оплаты`, `Напоминания` не должны возвращаться в primary nav
 - [x] **P42.1.6** Business-not-ready пункты menu не удалять насовсем; временно прятать их через комментарии / dormant markup
 
-#### P42.2 — Зафиксировать route map для меню `[ ]`
+#### P42.2 — Зафиксировать route map для меню `[x]`
 
 - [x] **P42.2.1** `/app/catalog` -> active `Каталог`
 - [x] **P42.2.2** `/app/strategies/{slug}` -> active contextual `К стратегии`
@@ -8841,7 +8841,7 @@ P40 закрыт:
 - [x] **P42.2.6** Preview routes должны использовать ту же nav-логику, но не требовать `product` там, где его нет
 - [x] **P42.2.7** `/app/status`, `/app/help`, `/app/reminders`, `/app/feed`, `/app/payments` оставить как secondary screens, но не как visible primary menu items до business-ready phase
 
-#### P42.3 — Обновить product contract для нового strategy-detail дизайна `[ ]`
+#### P42.3 — Обновить product contract для нового strategy-detail дизайна `[x]`
 
 - [x] **P42.3.1** Зафиксировать текущий intended design в [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
 - [x] **P42.3.2** Считать canonical blocks текущего дизайна:
@@ -8858,7 +8858,7 @@ P40 закрыт:
   больше не считать required, если команда окончательно принимает новый дизайн
 - [x] **P42.3.4** Обновить regression tests под новый contract, а не держать старый narrative задним числом
 
-#### P42.4 — Temporary legal-doc visibility must be reduced to disclaimer-only `[ ]`
+#### P42.4 — Temporary legal-doc visibility must be reduced to disclaimer-only `[x]`
 
 - [x] **P42.4.1** На текущем клиентском этапе показывать пользователю только `Дисклеймер`
 - [x] **P42.4.2** Остальные документы (`offer`, `privacy`, `payment consent` и т.п.) не удалять из кода/модели, а временно прятать в UI через комментарии / dormant markup
@@ -8866,7 +8866,7 @@ P40 закрыт:
 - [x] **P42.4.4** Согласовать tests и product contract с временным `disclaimer-only` режимом
 - [x] **P42.4.5** Worker должен явно проверить, что backend validation и user-facing documents list не расходятся после этого временного сужения
 
-#### P42.5 — Нормализовать visual brand `D / DESK` `[ ]`
+#### P42.5 — Нормализовать visual brand `D / DESK` `[x]`
 
 - [x] **P42.5.1** Если `D / DESK` принят, привести к нему все top-level visual brand slots:
   - `base.html`
@@ -8876,13 +8876,13 @@ P40 закрыт:
 - [x] **P42.5.2** Не оставлять mixed branding `D / DESK` vs `PC / PitchCopyTrade` в соседних shells
 - [x] **P42.5.3** Не переименовывать стихийно технические/legal identifiers только потому, что сменился visual mark
 
-#### P42.6 — Убрать ad-hoc inline overrides shared `.action` contract `[ ]`
+#### P42.6 — Убрать ad-hoc inline overrides shared `.action` contract `[x]`
 
 - [x] **P42.6.1** Не переопределять `.action` inline-стилями без необходимости
 - [x] **P42.6.2** Для catalog card CTA создать нормальные modifier/layout classes
 - [x] **P42.6.3** Держать spacing на контейнере и modifier-классах, а не на каждой кнопке inline
 
-#### P42.7 — Regression coverage `[ ]`
+#### P42.7 — Regression coverage `[x]`
 
 - [x] **P42.7.1** Test: preview Mini App catalog/detail render without `product`-dependent nav crash
 - [x] **P42.7.2** Test: strategy detail checks new intended section labels/content
@@ -8947,13 +8947,13 @@ P40 закрыт:
 
 ### Что должен сделать worker
 
-#### P43.1 — Зафиксировать один local origin contract `[ ]`
+#### P43.1 — Зафиксировать один local origin contract `[x]`
 
 - [x] **P43.1.1** Для plain local launch без proxy/hosts использовать `http://127.0.0.1:8000`
 - [x] **P43.1.2** Если команда хочет использовать `http://pct.test`, это должно быть documented как отдельный proxy/hosts scenario, а не молчаливый default
 - [x] **P43.1.3** `BASE_URL`, `ADMIN_BASE_URL`, runbook и sample env не должны противоречить друг другу
 
-#### P43.2 — Обновить runbook/docs `[ ]`
+#### P43.2 — Обновить runbook/docs `[x]`
 
 - [x] **P43.2.1** Явно прописать это правило в [doc/README.md](/Users/alexey/site/PitchCopyTrade/doc/README.md)
 - [x] **P43.2.2** При необходимости добавить короткое замечание в deploy/local env notes
@@ -8965,7 +8965,7 @@ P40 закрыт:
 
 ---
 
-## P44 — Disclaimer-only checkout must not silently auto-accept hidden legal documents [ ]
+## P44 — Disclaimer-only checkout must not silently auto-accept hidden legal documents [x]
 
 > **Контекст (2026-04-03 review):**
 >
@@ -8994,27 +8994,27 @@ P40 закрыт:
 
 ### Что должен сделать worker
 
-#### P44.1 — Visible consent surface must match persisted consent set `[ ]`
+#### P44.1 — Visible consent surface must match persisted consent set `[x]`
 
-- [ ] **P44.1.1** Убрать hidden pre-checked `accepted_document_ids` для скрытых документов
-- [ ] **P44.1.2** Запретить silent auto-accept hidden legal docs как итоговый runtime contract
-- [ ] **P44.1.3** Выбрать один явный temporary contract:
+- [x] **P44.1.1** Убрать hidden pre-checked `accepted_document_ids` для скрытых документов
+- [x] **P44.1.2** Запретить silent auto-accept hidden legal docs как итоговый runtime contract
+- [x] **P44.1.3** Выбрать один явный temporary contract:
   - либо backend временно считает required только `Дисклеймер`,
   - либо UI снова явно показывает и требует весь legal pack
 
-#### P44.2 — Public и Mini App checkout должны жить по одному consent contract `[ ]`
+#### P44.2 — Public и Mini App checkout должны жить по одному consent contract `[x]`
 
-- [ ] **P44.2.1** Не допускать, чтобы public/Mini App визуально показывали один набор документов, а backend сохранял другой
-- [ ] **P44.2.2** Обновить client-side validation copy так, чтобы она говорила только про реально видимые документы
-- [ ] **P44.2.3** Проверить оба path-а:
+- [x] **P44.2.1** Не допускать, чтобы public/Mini App визуально показывали один набор документов, а backend сохранял другой
+- [x] **P44.2.2** Обновить client-side validation copy так, чтобы она говорила только про реально видимые документы
+- [x] **P44.2.3** Проверить оба path-а:
   - `/checkout/{product_ref}`
   - `/app/checkout/{product_ref}`
 
-#### P44.3 — Regression coverage `[ ]`
+#### P44.3 — Regression coverage `[x]`
 
-- [ ] **P44.3.1** Test: hidden documents are not auto-submitted as accepted
-- [ ] **P44.3.2** Test: persisted `accepted_document_ids` exactly match the documents visible to the user in current temporary mode
-- [ ] **P44.3.3** Test: error message / invalid state mention only the visible temporary legal contract
+- [x] **P44.3.1** Test: hidden documents are not auto-submitted as accepted
+- [x] **P44.3.2** Test: persisted `accepted_document_ids` exactly match the documents visible to the user in current temporary mode
+- [x] **P44.3.3** Test: error message / invalid state mention only the visible temporary legal contract
 
 ### Acceptance P44
 
@@ -9053,7 +9053,7 @@ P40 закрыт:
 
 ---
 
-## P45 — Checkout/product-flow screens must keep a visible local `К стратегии` action [ ]
+## P45 — Checkout/product-flow screens must keep a visible local `К стратегии` action [x]
 
 > **Контекст (2026-04-03 review):**
 >
@@ -9079,23 +9079,23 @@ P40 закрыт:
 
 ### Что должен сделать worker
 
-#### P45.1 — Restore local strategy CTA on checkout/product-flow screens `[ ]`
+#### P45.1 — Restore local strategy CTA on checkout/product-flow screens `[x]`
 
-- [ ] **P45.1.1** Вернуть visible `К стратегии` page action на checkout surfaces, когда у продукта есть связанная стратегия
-- [ ] **P45.1.2** Не возвращать `К стратегии` в permanent primary nav
-- [ ] **P45.1.3** Сохранить текущий short primary menu: `Каталог`, `Подписки`, `История`
+- [x] **P45.1.1** Вернуть visible `К стратегии` page action на checkout surfaces, когда у продукта есть связанная стратегия
+- [x] **P45.1.2** Не возвращать `К стратегии` в permanent primary nav
+- [x] **P45.1.3** Сохранить текущий short primary menu: `Каталог`, `Подписки`, `История`
 
-#### P45.2 — Keep route map consistent across surfaces `[ ]`
+#### P45.2 — Keep route map consistent across surfaces `[x]`
 
-- [ ] **P45.2.1** Public checkout, Mini App checkout и preview checkout должны использовать один и тот же возвратный strategy CTA contract
-- [ ] **P45.2.2** CTA должен вести на связанный strategy detail href с корректным entry-marker / preview path
-- [ ] **P45.2.3** Если `product.strategy` отсутствует, CTA может не рендериться, но screen не должен падать и не должен показывать broken href
+- [x] **P45.2.1** Public checkout, Mini App checkout и preview checkout должны использовать один и тот же возвратный strategy CTA contract
+- [x] **P45.2.2** CTA должен вести на связанный strategy detail href с корректным entry-marker / preview path
+- [x] **P45.2.3** Если `product.strategy` отсутствует, CTA может не рендериться, но screen не должен падать и не должен показывать broken href
 
-#### P45.3 — Regression coverage `[ ]`
+#### P45.3 — Regression coverage `[x]`
 
-- [ ] **P45.3.1** Test: checkout screen with `product.strategy` shows visible `К стратегии` CTA
-- [ ] **P45.3.2** Test: Mini App / preview checkout CTA points to the right strategy detail route
-- [ ] **P45.3.3** Test: checkout without linked strategy renders safely without CTA crash
+- [x] **P45.3.1** Test: checkout screen with `product.strategy` shows visible `К стратегии` CTA
+- [x] **P45.3.2** Test: Mini App / preview checkout CTA points to the right strategy detail route
+- [x] **P45.3.3** Test: checkout without linked strategy renders safely without CTA crash
 
 ### Acceptance P45
 
@@ -9591,7 +9591,7 @@ Sidebar `<aside>` окажется под формой — это нормаль
 4. Billing period pill использует `billing_period_label()`
 5. Trial pill остаётся если есть
 
-## P52 — Переделать `build_strategy_story` под реальные данные DB `[ ]`
+## P52 — Переделать `build_strategy_story` под реальные данные DB `[x]`
 
 > **Контекст (2026-04-04):**
 >
@@ -9646,7 +9646,7 @@ strategy.story = StrategyStory(…)  # присваивается в route
 
 ### Что нужно изменить
 
-#### P52.1 — Сократить StrategyStory до используемых полей `[ ]`
+#### P52.1 — Сократить StrategyStory до используемых полей `[x]`
 
 **Текущий StrategyStory** (строки 70-85):
 ```python
@@ -9678,7 +9678,7 @@ class StrategyStory:
     commercial_cta_label: str  # → "Подписаться"
 ```
 
-#### P52.2 — Переписать build_strategy_story `[ ]`
+#### P52.2 — Переписать build_strategy_story `[x]`
 
 **Текущая функция** (строки 107-178) — 70+ строк с fallback-цепочками.
 
@@ -9711,7 +9711,7 @@ def build_strategy_story(strategy: Strategy) -> StrategyStory:
     )
 ```
 
-#### P52.3 — Удалить неиспользуемый код `[ ]`
+#### P52.3 — Удалить неиспользуемый код `[x]`
 
 Удалить **полностью** следующие функции и класс (они больше не нужны):
 
@@ -9737,7 +9737,7 @@ def build_strategy_story(strategy: Strategy) -> StrategyStory:
 | 281-285 | `_build_risk_rule()` — **удалить**, логика перенесена внутрь `build_strategy_story` |
 | 367-375 | `_risk_level_label()` — **оставить**, используется в шаблонах через `label_risk_level` |
 
-#### P52.4 — Проверить шаблоны: fallback-и уже корректны `[ ]`
+#### P52.4 — Проверить шаблоны: fallback-и уже корректны `[x]`
 
 Шаблоны уже написаны с паттерном `{{ strategy.story.X if strategy.story else strategy.Y }}`:
 
@@ -9750,13 +9750,13 @@ def build_strategy_story(strategy: Strategy) -> StrategyStory:
 
 Шаблоны менять **не нужно**.
 
-#### P52.5 — Обновить тесты `[ ]`
+#### P52.5 — Обновить тесты `[x]`
 
-- [ ] **P52.5.1** Найти все тесты, которые ссылаются на `StrategyStory`, `StrategyStorySection`, `build_strategy_story` или удалённые helper-функции — обновить или удалить
-- [ ] **P52.5.2** Добавить тест: `build_strategy_story` с реальными DB-полями (Top Gun) → `thesis == short_description`, `mechanics == full_description`, `risk_rule` содержит "низкий" и "100000"
-- [ ] **P52.5.3** Добавить тест: strategy без `full_description` → `mechanics == short_description`
-- [ ] **P52.5.4** Добавить тест: strategy без `min_capital_rub` → `risk_rule` не содержит "Минимальный капитал"
-- [ ] **P52.5.5** Проверить `test_preview_mode.py::test_preview_strategy_detail_has_structured_narrative` — возможно ссылается на старые story поля
+- [x] **P52.5.1** Найти все тесты, которые ссылаются на `StrategyStory`, `StrategyStorySection`, `build_strategy_story` или удалённые helper-функции — обновить или удалить
+- [x] **P52.5.2** Добавить тест: `build_strategy_story` с реальными DB-полями (Top Gun) → `thesis == short_description`, `mechanics == full_description`, `risk_rule` содержит "низкий" и "100000"
+- [x] **P52.5.3** Добавить тест: strategy без `full_description` → `mechanics == short_description`
+- [x] **P52.5.4** Добавить тест: strategy без `min_capital_rub` → `risk_rule` не содержит "Минимальный капитал"
+- [x] **P52.5.5** Проверить `test_preview_mode.py::test_preview_strategy_detail_has_structured_narrative` — возможно ссылается на старые story поля
 
 ### DB данные для справки (стратегия Top Gun)
 
@@ -10194,3 +10194,744 @@ WHERE s.id = r.id AND r.rn > 1;
 - [x] Anon видят обычные кнопки «Подписаться».
 - [x] Существующие + новые тесты проходят.
 - [x] SQL скрипт для чистки production создан.
+
+## P55 — Форма создания стратегии: UX, локализация и валидация
+
+**Проблемы (production):**
+1. Поле `slug` в форме называется «Слаг» — непонятно не-техническим пользователям, нет хелпа, нет client-side паттерна.
+2. Если не заполнить обязательные `Form(...)` поля (author_id/risk_level/status), FastAPI возвращает свой дефолтный **JSON 422** (`{"detail": [{"loc": ...}]}`) — модалка/страница вылетает в сырой JSON вместо того чтобы показать ошибку на форме.
+3. Уникальность `slug` в БД (`uq_strategies_slug`) не проверяется в сервисе — `create_strategy` делает `session.add + commit` без try/except. При дубликате — `IntegrityError` → **HTTP 500** и JSON traceback.
+4. Нет визуального фидбэка по каждому полю отдельно (все ошибки в одном баннере сверху).
+
+**Файлы:**
+- `src/pitchcopytrade/api/routes/admin.py` — `strategy_create_submit` (215), `strategy_edit_submit`, `_build_strategy_form_data` (1267), `_render_strategy_form`
+- `src/pitchcopytrade/services/admin.py` — `create_strategy` (390), `update_strategy` (460+)
+- `src/pitchcopytrade/web/templates/admin/strategy_form.html` — поле slug (54), error баннер (32)
+- `src/pitchcopytrade/repositories/admin.py` (или contracts) — добавить `get_strategy_by_slug`
+- `src/pitchcopytrade/db/models/catalog.py` — Strategy.slug + UniqueConstraint (74)
+
+### P55.1 — Переименовать `slug` → понятное название
+- Метка поля в `strategy_form.html` (строка 54): `<span>Слаг</span>` → `<span>Код стратегии (латиницей)</span>`
+- Добавить `<small class="muted">Используется в URL. Только латиница, цифры и дефисы. Например: top-gun, pair-arbitrage-etf</small>`
+- **Имя атрибута `name="slug"` НЕ менять** — иначе сломается backend и URL. Меняется только отображаемый label.
+- Обновить `strategy_form.html` тайтл ошибки в `_build_strategy_form_data` в admin.py:1283: `"Slug обязателен"` → `"Укажите код стратегии (латиница, например: top-gun)"`.
+- Аналогично обновить лейбл в любых других админских формах где встречается «слаг» (product_form.html, promo_form.html — проверить grep `Слаг`).
+
+### P55.2 — Client-side валидация
+В `strategy_form.html` на `<input name="slug">`:
+```html
+<input
+  type="text"
+  name="slug"
+  value="{{ form_values.slug }}"
+  pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+  maxlength="64"
+  required
+  placeholder="top-gun"
+  title="Только строчные латинские буквы, цифры и дефисы"
+/>
+```
+Добавить `required` на все обязательные текстовые поля (`title`, `short_description`), `required` на `<select name="author_id">`, `name="risk_level">`, `name="status">` — чтобы браузер не позволял отправить пустую форму и показывал нативные tooltip-ы до запроса на сервер.
+
+### P55.3 — Убрать FastAPI-дефолтный 422 JSON
+Сейчас:
+```python
+author_id: str = Form(...),
+slug: str = Form(...),
+```
+При пустом значении FastAPI сам бросает `RequestValidationError` → JSON.
+
+**Исправление:** сделать все поля опциональными со значением по умолчанию и валидировать вручную в `_build_strategy_form_data`:
+```python
+author_id: str = Form(""),
+slug: str = Form(""),
+title: str = Form(""),
+short_description: str = Form(""),
+full_description: str = Form(""),
+risk_level: str = Form(""),
+status_value: str = Form("", alias="status"),
+min_capital_rub: str = Form(""),
+is_public: str | None = Form(default=None),
+```
+В `_build_strategy_form_data` добавить проверки для `risk_level` и `status_value` (ловить `ValueError` от `RiskLevel(...)` и `StrategyStatus(...)` → перевыкидывать с русским текстом).
+
+Альтернатива: добавить глобальный exception handler для `RequestValidationError` на admin-маршрутах, который рендерит форму. Более инвазивно — приоритет ниже.
+
+### P55.4 — Pre-check уникальности slug + IntegrityError fallback
+В `repositories/admin.py` добавить:
+```python
+async def get_strategy_by_slug(self, slug: str) -> Strategy | None: ...
+```
+В `services/admin.py::create_strategy`:
+```python
+existing = await repository.get_strategy_by_slug(data.slug)
+if existing is not None:
+    raise ValueError(f"Код стратегии «{data.slug}» уже используется. Выберите другой.")
+try:
+    session.add(strategy)
+    await session.commit()
+except IntegrityError as exc:
+    await session.rollback()
+    raise ValueError(
+        f"Код стратегии «{data.slug}» уже используется. Выберите другой."
+    ) from exc
+```
+Аналогично в `update_strategy` — если меняется slug, проверить что другой стратегии с этим slug нет (`existing.id != strategy.id`).
+
+### P55.5 — Field-level ошибки в форме (nice-to-have)
+Расширить сигнатуру `_render_strategy_form`: вместо одного `error: str` принимать `field_errors: dict[str, str] | None = None`. В шаблоне:
+```jinja
+<label class="admin-strategy-field{% if field_errors.slug %} has-error{% endif %}">
+  <span>Код стратегии (латиницей)</span>
+  <input type="text" name="slug" value="{{ form_values.slug }}" ... />
+  {% if field_errors.slug %}<small class="admin-strategy-field-error">{{ field_errors.slug }}</small>{% endif %}
+</label>
+```
+CSS: `.has-error input { border-color: var(--red-600); }`, `.admin-strategy-field-error { color: var(--red-600); font-size: 0.85rem; }`. В `_build_strategy_form_data` собирать словарь ошибок вместо первого raise.
+
+### P55.6 — Тесты
+- `tests/test_admin_strategy_form.py` (новый или расширить):
+  - POST `/admin/strategies/` с пустым slug → 422 (не JSON!), форма рендерится, баннер «Укажите код стратегии», все введённые данные сохранены в `value="..."`.
+  - POST с существующим slug → 422, баннер «уже используется», без 500.
+  - POST с `slug="Invalid Slug!"` → 422, сообщение про формат.
+  - POST с валидными данными → 303 редирект на `/admin/strategies/{id}/edit`.
+  - Race condition: замокать `create_strategy` чтобы `session.commit` бросал `IntegrityError` — проверить что обрабатывается как ValueError, не как 500.
+
+### P55.7 — Распространить на другие формы
+Проверить и применить аналогичные фиксы:
+- `product_form.html` — slug продукта (тот же паттерн, pre-check уникальности, метка «Код продукта (латиницей)»).
+- `promo_form.html` — поле `code` (не slug, но похожая история: uniqueness + field-level error).
+- Форма редактирования стратегии (`strategy_edit_submit`) — те же `Form("")` + try/except IntegrityError.
+
+### Acceptance criteria
+- [x] Метка поля в форме — «Код стратегии (латиницей)» с подсказкой.
+- [x] Отправка пустой формы не вызывает JSON-422 FastAPI — рендерится форма с ошибкой.
+- [x] Отправка с существующим slug → понятное сообщение, не 500.
+- [x] Client-side `pattern` блокирует пробелы и кириллицу до сабмита.
+- [x] Форма не «теряет» введённые данные при ошибке.
+- [x] Тесты на каждый сценарий зелёные.
+
+---
+
+## P56 — Carousel catalog card: фасад (narrow viewport, empty quotes, empty products)
+
+**Проблемы (screenshot «Парный арбитраж ETF»):**
+1. В узком miniapp-вьюпорте (~380px) заголовок «Парный арбитраж ETF» переносится, а пилюля риска «высокий» прижата вправо через `justify-content: space-between` без `flex-wrap` — визуальный разрыв, пилюля «съезжает», выглядит криво.
+2. Когда котировки не подтянулись (market closed / ticker не найден) — рендерятся пилюли `ETF · —`, `QLD · —`, `QID · —` без какого-либо объяснения. Три подряд тире выглядят как баг.
+3. Для стратегии без `subscription_products` показывается только кнопка «Подробнее» без «Подписаться» — юзер не понимает что стратегия «скоро» или закрыта. Нет визуального статуса.
+4. Inline-стили везде (строки 32-69) — сложно поддерживать, нет единого класса для карточки.
+
+**Файлы:**
+- `src/pitchcopytrade/web/templates/public/catalog.html` (строки 28-93)
+- `src/pitchcopytrade/services/instruments.py` — `build_strategy_quote_strip` (175), `last_price_text` (31)
+
+### P56.1 — Исправить title + risk pill layout
+Заменить (строки 36-39):
+```html
+<div style="display: flex;justify-content: space-between; align-items: center;">
+  <h2 style="margin:10px 0 0;font-size:1.7rem;">{{ strategy.title }}</h2>
+  <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
+</div>
+```
+На:
+```html
+<div class="catalog-card-title-row">
+  <h2 class="catalog-card-title">{{ strategy.title }}</h2>
+  <span class="pill pill--risk pill--risk-{{ strategy.risk_level.value }}">
+    {{ label_risk_level(strategy.risk_level) }}
+  </span>
+</div>
+```
+Стили (в `<style>` в catalog.html или вынести в CSS):
+```css
+.catalog-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.catalog-card-title {
+  flex: 1 1 60%;
+  min-width: 0;
+  margin: 0;
+  font-size: clamp(1.25rem, 4.2vw, 1.7rem);
+  line-height: 1.2;
+  word-break: break-word;
+}
+.pill--risk { flex-shrink: 0; align-self: flex-start; }
+.pill--risk-low { background: rgba(22, 160, 74, 0.15); color: #168a3e; }
+.pill--risk-medium { background: rgba(245, 158, 11, 0.15); color: #b45309; }
+.pill--risk-high { background: rgba(220, 38, 38, 0.15); color: #b91c1c; }
+```
+- `clamp(1.25rem, 4.2vw, 1.7rem)` — адаптивный шрифт заголовка.
+- `flex-wrap: wrap` + `flex: 1 1 60%` — при экстремально узком вьюпорте пилюля переносится под заголовок, но обычно остаётся справа.
+
+### P56.2 — Скрыть quotes strip если все цены пустые
+В `catalog.html` (строка 45):
+```jinja
+{% set valid_quotes = strategy.quotes | selectattr('last_price') | list if strategy.quotes else [] %}
+{% if valid_quotes %}
+<div class="catalog-card-quotes">
+  {% for quote in valid_quotes[:3] %}
+  <span class="pill">{{ quote.ticker }} · {{ quote.last_price_text }}{% if quote.change_text != "—" %} · {{ quote.change_text }}{% endif %}</span>
+  {% endfor %}
+</div>
+{% endif %}
+```
+Если ни одной валидной котировки — блок не рендерится вообще (лучше, чем три «—»).
+
+Альтернатива (если хотим сохранить бренд-строку тикеров без цен): показывать тикеры без разделителя и цены:
+```jinja
+{% if strategy.quotes %}
+<div class="catalog-card-quotes">
+  {% for quote in strategy.quotes[:3] %}
+  <span class="pill pill--ticker">{{ quote.ticker }}{% if quote.last_price %} · {{ quote.last_price_text }}{% endif %}</span>
+  {% endfor %}
+</div>
+{% endif %}
+```
+**Рекомендую второй вариант** — тикеры показываем всегда (они и есть контент стратегии), цены подставляем только когда есть. Класс `.pill--ticker` — более узкий padding чтобы 3 тикера помещались в одну строку на узком экране.
+
+### P56.3 — Плейсхолдер для стратегии без продуктов
+В блоке `.catalog-card-actions` (строка 62):
+```jinja
+{% if first_product and first_product.id in user_active_product_ids %}
+  <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
+{% elif first_product %}
+  <a class="action" href="...">Подписаться</a>
+{% else %}
+  <span class="action disabled" aria-disabled="true">Скоро в продаже</span>
+{% endif %}
+<a class="action ghost" href="...">Подробнее</a>
+```
+И пилюля-статус рядом с risk:
+```jinja
+{% if not first_product %}
+<span class="pill pill--soon">Скоро</span>
+{% endif %}
+```
+Так пользователь сразу понимает почему нет подписки.
+
+### P56.4 — Вынести карточку в отдельный partial
+Создать `src/pitchcopytrade/web/templates/public/_catalog_card.html` и через `{% include "public/_catalog_card.html" with context %}` использовать в `catalog.html`. Это:
+- уменьшит `catalog.html` со 96 строк до ~35;
+- позволит переиспользовать карточку в preview/related секциях;
+- упростит review дизайн-правок.
+
+### P56.5 — Risk rule блок: не рисовать если короткий
+Строка 53:
+```html
+<div style="...padding:16px;">
+  {{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}
+</div>
+```
+Если `risk_rule` это просто «Риск: высокий риск.» — дублирует пилюлю. Убрать блок вообще (оставить только в strategy_detail), либо показывать только если есть `min_capital_rub`:
+```jinja
+{% if strategy.min_capital_rub %}
+<div class="catalog-card-accent">
+  Минимальный капитал: {{ "{:,}".format(strategy.min_capital_rub).replace(",", " ") }} руб.
+</div>
+{% endif %}
+```
+(Формат `100 000` вместо `100000` через Python string format.)
+
+### P56.6 — Адаптивный padding карточки
+Сейчас `padding:24px` — много для мобилы. Заменить на `padding: clamp(16px, 4vw, 24px)`.
+
+### P56.7 — Тесты
+- `tests/test_public_catalog_checkout.py`: рендер каталога со стратегией без `subscription_products` → в HTML есть «Скоро в продаже», нет «Подписаться».
+- Рендер со стратегией, у которой все `quotes[*].last_price is None` → блок котировок отсутствует (либо рендерится без «—»).
+- Snapshot-тест на длинный title («Парный арбитраж ETF reverse strategy v2») — в HTML есть класс `catalog-card-title` и пилюля риска не прижата через `space-between` без wrap.
+- Визуальная проверка через preview: `/preview/app/catalog` на ширине 380px, 414px, 768px.
+
+### Что нельзя
+- Менять имя поля `slug` в БД или в `name=` атрибуте — только label.
+- Убирать `is_public` флаг — каталог по-прежнему фильтрует по нему.
+- Жёстко прятать стратегии без продуктов из каталога (юзер может хотеть читать детали).
+
+### Acceptance criteria
+- [x] На ширине 380px заголовок и пилюля риска не «сломаны», `flex-wrap` работает.
+- [x] Пустые цены (`—`) не рендерятся, тикеры показываются без плейсхолдера-тире.
+- [x] Стратегии без продуктов показывают «Скоро в продаже» вместо голой «Подробнее».
+- [x] Карточка вынесена в `_catalog_card.html`.
+- [x] Тесты на 3 сценария зелёные.
+
+## P57 — Доработки по review P55/P56 [x]
+
+Пост-review находки после имплементации P55/P56. Мелкие, но важные для консистентности.
+
+### P57.1 — PromoCode uniqueness pre-check (пропущено в P55.7)
+**Файлы:** `src/pitchcopytrade/services/promo_admin.py`, `src/pitchcopytrade/api/routes/admin.py` (promo create/update маршруты), `src/pitchcopytrade/web/templates/admin/promo_form.html`.
+
+- Добавить `async def get_promo_code_by_code(session, code: str) -> PromoCode | None` в `services/promo_admin.py` (или рядом с `get_strategy_by_slug` в `services/admin.py`).
+- В `create_promo_code`:
+  ```python
+  existing = await get_promo_code_by_code(session, data.code)
+  if existing is not None:
+      raise ValueError(f"Промокод «{data.code}» уже существует. Выберите другой код.")
+  try:
+      session.add(promo)
+      await session.commit()
+  except IntegrityError as exc:
+      await session.rollback()
+      raise ValueError(f"Промокод «{data.code}» уже существует.") from exc
+  ```
+- В `update_promo_code` аналогично с `existing.id != promo.id`.
+- `promo_form.html`: добавить `pattern="[A-Z0-9_-]+"`, `maxlength="32"`, `title="Заглавные латинские буквы, цифры, подчёркивания и дефисы"`, `<small class="muted">Отображается пользователю при вводе. Только заглавные латинские буквы, цифры, `_`, `-`.</small>`.
+- Тесты: create с дубликатом code → ValueError не 500; update со своим же code → OK; create с невалидным паттерном → ошибка на форме.
+
+### P57.2 — Порядок guard-ов в `update_strategy`
+**Файл:** `src/pitchcopytrade/services/admin.py` (`update_strategy`, ~строка 480).
+
+Сейчас сначала проверяется уникальность slug, потом `status is not DRAFT`. Для published стратегии юзер увидит «Код уже используется» вместо корректного «Редактировать можно только draft».
+
+**Fix:**
+```python
+async def update_strategy(session, strategy, data):
+    if strategy.status is not StrategyStatus.DRAFT:
+        raise ValueError("Редактировать можно только draft-стратегии.")
+    existing = await get_strategy_by_slug(session, data.slug)
+    if existing is not None and existing.id != strategy.id:
+        raise ValueError(f"Код стратегии «{data.slug}» уже используется. Выберите другой.")
+    ...
+```
+Поменять местами два блока. Добавить тест: update published-стратегии → ValueError про DRAFT, не про uniqueness.
+
+### P57.3 — Переименовать `_is_valid_strategy_slug` → `_is_valid_slug`
+**Файл:** `src/pitchcopytrade/api/routes/admin.py` (~строка 1316).
+
+Функция используется и для стратегий, и для продуктов. Имя вводит в заблуждение. Rename + обновить все вызовы (grep по проекту). Чистый refactor, без изменения поведения.
+
+### P57.4 — Собирать все field-level ошибки за один проход (follow-up к P55.5)
+**Файл:** `src/pitchcopytrade/api/routes/admin.py` (`_build_strategy_form_data`, `_build_product_form_data`).
+
+Сейчас при первой ошибке `raise ValueError` — юзер видит только одну проблему за раз. Если он забыл и slug, и risk_level, сначала увидит про slug, исправит, отправит — увидит про risk_level.
+
+**Fix:** собирать dict ошибок, рейзить `FormValidationError(field_errors: dict)` в конце:
+```python
+class FormValidationError(Exception):
+    def __init__(self, field_errors: dict[str, str]) -> None:
+        super().__init__("Форма содержит ошибки")
+        self.field_errors = field_errors
+```
+Роут ловит её, передаёт `field_errors` в `_render_strategy_form`. Шаблон рендерит рядом с каждым полем:
+```jinja
+{% if field_errors and field_errors.get("slug") %}
+<small class="admin-strategy-field-error">{{ field_errors.slug }}</small>
+{% endif %}
+```
+CSS: `.has-error input, .has-error select, .has-error textarea { border-color: var(--red-600); }`.
+
+Применить к strategy_form, product_form, promo_form. Тесты: отправка формы с 3 пустыми полями → `field_errors` содержит 3 ключа, все 3 сообщения отрисованы.
+
+### P57.5 — Jinja-макросы для ссылок каталога
+**Файл:** `src/pitchcopytrade/web/templates/public/_catalog_card.html`.
+
+Дублирующаяся логика `{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/...{% else %}/app/checkout/...{% endif %}{% else %}/checkout/...{% endif %}` встречается 2 раза в partial (для checkout и strategies). Вынести в `public/_url_helpers.html`:
+```jinja
+{% macro checkout_url(product_slug, miniapp_mode, preview_mode, entry_marker) -%}
+  {%- if miniapp_mode -%}
+    {%- if preview_mode -%}/preview/app/checkout/{{ product_slug }}
+    {%- else -%}/app/checkout/{{ product_slug }}{%- endif -%}
+  {%- else -%}/checkout/{{ product_slug }}{%- endif -%}
+  {%- if entry_marker -%}?entry={{ entry_marker }}{%- endif -%}
+{%- endmacro %}
+
+{% macro strategy_url(slug, miniapp_mode, preview_mode, entry_marker) -%}
+  ... аналогично ...
+{%- endmacro %}
+```
+Использование:
+```jinja
+{% from "public/_url_helpers.html" import checkout_url, strategy_url %}
+<a href="{{ checkout_url(first_product.slug, miniapp_mode, preview_mode, entry_marker) }}">Подписаться</a>
+```
+Применить в `_catalog_card.html`, `strategy_detail.html` (там тоже дублирование в 4 местах).
+
+### P57.6 — Fallback-стили для новых уровней риска
+**Файл:** `src/pitchcopytrade/web/templates/public/catalog.html` (стили).
+
+Добавить default для `.pill--risk` (без суффикса), чтобы при добавлении нового `RiskLevel.extreme` карточка не рендерила полностью прозрачную пилюлю:
+```css
+.pill--risk {
+  background: rgba(148, 163, 184, 0.18);
+  color: #334155;
+}
+/* overrides ниже */
+.pill--risk-low { ... }
+.pill--risk-medium { ... }
+.pill--risk-high { ... }
+```
+
+### P57.7 — Порядок validation errors в `_build_strategy_form_data` (если не делать P57.4)
+Минимальный fix, если P57.4 откладывается: переставить проверки в логический порядок — сначала все «обязательное поле пустое», потом «значение невалидное». Текущий порядок author → slug → title → short_description → risk → status уже норм, но добавить `full_description` не блокирует (ok).
+
+### Acceptance criteria (P57)
+- [x] PromoCode не падает с 500 при дубликате кода, показывает русское сообщение.
+- [x] `update_strategy` у published стратегии сначала ругается про DRAFT, потом про uniqueness.
+- [x] `_is_valid_slug` — нейтральное имя, все вызовы обновлены.
+- [x] Jinja-макросы `checkout_url` / `strategy_url` вынесены, дублирование удалено.
+- [x] `.pill--risk` имеет fallback-стиль.
+- [x] (опционально) field-level ошибки собираются за один проход.
+- [x] Все существующие 97 тестов + новые проходят.
+
+## P58 — Review follow-up: агрегация ошибок, порядок guard-ов, структура кода, PromoCode uniqueness [x]
+
+Консолидированная задача по review-находкам P55 (R1, R3, R4, R5). Покрывает и дублирует некоторые пункты P57 (P57.1, P57.2) — при реализации выполнять **в рамках P58**, затем отметить соответствующие пункты P57 как done.
+
+### P58.1 — [R1 / средний] Агрегировать все ошибки формы в единый список
+
+**Проблема:** `_build_strategy_form_data` и `_build_product_form_data` (`src/pitchcopytrade/api/routes/admin.py`) рейзят `ValueError` на первой же проблеме. Пользователь, заполнивший форму с 3 ошибками, увидит только одну, исправит, отправит, увидит следующую — UX плохой.
+
+**Решение:**
+1. Создать класс в `src/pitchcopytrade/api/routes/admin.py` (или вынести в `src/pitchcopytrade/services/form_errors.py`):
+   ```python
+   class FormValidationError(Exception):
+       def __init__(self, field_errors: dict[str, str], *, summary: str = "Форма содержит ошибки") -> None:
+           super().__init__(summary)
+           self.field_errors = field_errors
+           self.summary = summary
+   ```
+2. Переписать `_build_strategy_form_data`:
+   ```python
+   def _build_strategy_form_data(...) -> StrategyFormData:
+       errors: dict[str, str] = {}
+       if not author_id.strip():
+           errors["author_id"] = "Выберите автора стратегии"
+       normalized_slug = slug.strip().lower()
+       if not normalized_slug:
+           errors["slug"] = "Укажите код стратегии (латиница, например: top-gun)"
+       elif not _is_valid_slug(normalized_slug):
+           errors["slug"] = "Только строчные латинские буквы, цифры и дефисы"
+       if not title.strip():
+           errors["title"] = "Название стратегии обязательно"
+       if not short_description.strip():
+           errors["short_description"] = "Короткое описание обязательно"
+       try:
+           parsed_risk = RiskLevel(risk_level)
+       except ValueError:
+           errors["risk_level"] = "Выберите уровень риска"
+           parsed_risk = None
+       try:
+           parsed_status = StrategyStatus(status_value)
+       except ValueError:
+           errors["status"] = "Выберите статус стратегии"
+           parsed_status = None
+       capital_value = min_capital_rub.strip()
+       try:
+           parsed_capital = int(capital_value) if capital_value else None
+       except ValueError:
+           errors["min_capital_rub"] = "Капитал должен быть числом"
+           parsed_capital = None
+       if errors:
+           raise FormValidationError(errors)
+       return StrategyFormData(..., risk_level=parsed_risk, status=parsed_status, min_capital_rub=parsed_capital, ...)
+   ```
+3. Аналогично переписать `_build_product_form_data` и (в рамках P58.4) `_build_promo_form_data` если есть.
+4. В роутах (`strategy_create_submit`, `strategy_edit_submit`, аналогичные для product/promo) ловить **и** `FormValidationError`, **и** `ValueError` (оставить как fallback для ошибок сервиса вроде «уже используется»):
+   ```python
+   except FormValidationError as exc:
+       return await _render_strategy_form(
+           ...,
+           error=exc.summary,
+           field_errors=exc.field_errors,
+           form_values={...},
+           status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+       )
+   except ValueError as exc:
+       return await _render_strategy_form(
+           ...,
+           error=str(exc),
+           field_errors=None,
+           ...
+       )
+   ```
+5. Расширить `_render_strategy_form` — принимать `field_errors: dict[str, str] | None = None`, прокидывать в context.
+6. Обновить шаблоны `strategy_form.html`, `product_form.html`, `promo_form.html`:
+   ```jinja
+   {% if error %}<div class="admin-strategy-error">{{ error }}</div>{% endif %}
+
+   <label class="admin-strategy-field{% if field_errors and field_errors.get('slug') %} has-error{% endif %}">
+     <span>Код стратегии (латиницей)</span>
+     <input ... />
+     {% if field_errors and field_errors.get('slug') %}
+     <small class="admin-strategy-field-error">{{ field_errors.slug }}</small>
+     {% endif %}
+     <small class="muted">Используется в URL. Только латиница...</small>
+   </label>
+   ```
+7. CSS (в admin static или inline):
+   ```css
+   .admin-strategy-field.has-error input,
+   .admin-strategy-field.has-error select,
+   .admin-strategy-field.has-error textarea {
+     border-color: #dc2626;
+     background: rgba(220, 38, 38, 0.04);
+   }
+   .admin-strategy-field-error {
+     display: block;
+     margin-top: 6px;
+     color: #b91c1c;
+     font-size: 0.85rem;
+   }
+   ```
+8. **Сводный блок требований** над формой (по запросу юзера «отобразить список требований») — добавить отдельный баннер, который показывается всегда, не только при ошибке:
+   ```jinja
+   <aside class="admin-strategy-requirements">
+     <strong>Требования к заполнению:</strong>
+     <ul>
+       <li>Автор — обязателен.</li>
+       <li>Код стратегии — только латиница, цифры, дефисы. Уникален в системе. Пример: <code>top-gun</code>.</li>
+       <li>Название — обязательно.</li>
+       <li>Короткое описание — 1–2 предложения, отображается в каталоге.</li>
+       <li>Уровень риска и статус — выбрать из списка.</li>
+       <li>Минимальный капитал — число в рублях, опционально.</li>
+     </ul>
+   </aside>
+   ```
+   Стиль: compact муted блок над первой секцией формы.
+
+**Тесты:**
+- POST `/admin/strategies/` с пустыми `slug`, `title`, `risk_level` → статус 422, в HTML присутствуют все три `admin-strategy-field-error` текста одновременно.
+- POST с валидными данными → редирект, никаких `field_errors`.
+- POST с `slug="Invalid Slug!"` → `field_errors["slug"]` содержит текст про паттерн.
+
+### P58.2 — [R3 / низкий] Порядок guard-ов в `update_strategy`
+
+**Файл:** `src/pitchcopytrade/services/admin.py`, `update_strategy` (~строка 479).
+
+Сейчас для published-стратегии при попытке изменить slug пользователь увидит «Код уже используется» вместо правильного «Редактировать можно только draft-стратегии».
+
+**Fix:** поменять местами два блока так, чтобы status-guard шёл первым:
+```python
+async def update_strategy(session, strategy, data):
+    if strategy.status is not StrategyStatus.DRAFT:
+        raise ValueError("Редактировать можно только draft-стратегии.")
+    existing = await get_strategy_by_slug(session, data.slug)
+    if existing is not None and existing.id != strategy.id:
+        raise ValueError(f"Код стратегии «{data.slug}» уже используется. Выберите другой.")
+    ...
+```
+
+**Тест:** создать стратегию в статусе PUBLISHED, вызвать `update_strategy` с любым slug → ValueError текст `"Редактировать можно только draft-стратегии."`, не про uniqueness.
+
+**Примечание:** дублирует P57.2 — при реализации отметить P57.2 как done.
+
+### P58.3 — [R4 / низкий] Вынести slug-хелперы выше или в отдельный модуль
+
+**Файл:** `src/pitchcopytrade/services/admin.py`.
+
+`get_strategy_by_slug` и `get_product_by_slug` находятся **в конце файла** (~строка 1835+), но вызываются из `create_strategy` (строка 391), `update_strategy` и т. д. В Python это работает (резолв в рантайме), но читабельность страдает — при чтении `create_strategy` неясно откуда функция.
+
+**Варианты (выбрать один):**
+
+**A) Минимальный:** переместить `get_strategy_by_slug` и `get_product_by_slug` вверх файла, сразу после импортов и констант (до `create_strategy`). Чисто механическая операция.
+
+**B) Рекомендуемый:** вынести в новый модуль `src/pitchcopytrade/services/admin_lookups.py`:
+```python
+"""Pure lookup helpers for admin services. No mutations."""
+from __future__ import annotations
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
+from pitchcopytrade.db.models.commerce import PromoCode
+
+async def get_strategy_by_slug(session: AsyncSession | None, slug: str) -> Strategy | None:
+    ...
+
+async def get_product_by_slug(session: AsyncSession | None, slug: str) -> SubscriptionProduct | None:
+    ...
+
+async def get_promo_code_by_code(session: AsyncSession | None, code: str) -> PromoCode | None:
+    ...
+```
+В `services/admin.py` импортировать из нового модуля. Это заодно подготовит место для функции из P58.4.
+
+**Выбор:** вариант B (рекомендуется). Создаёт чистую границу «lookups без побочных эффектов» отдельно от мутационных сервисов.
+
+**Что нельзя:** менять сигнатуры существующих функций — это refactor без изменения поведения.
+
+### P58.4 — [R5 / средний] PromoCode uniqueness pre-check + IntegrityError fallback
+
+**Файлы:**
+- `src/pitchcopytrade/services/promo_admin.py` (create_promo_code / update_promo_code — искать grep-ом точное имя)
+- `src/pitchcopytrade/services/admin_lookups.py` (создаётся в P58.3) — добавить `get_promo_code_by_code`
+- `src/pitchcopytrade/api/routes/admin.py` — маршруты create/update promo
+- `src/pitchcopytrade/web/templates/admin/promo_form.html`
+
+**Проблема:** `PromoCode.code` имеет unique-constraint в БД, но сервис не делает pre-check. Повторное создание → `IntegrityError` → HTTP 500 с traceback.
+
+**Решение:**
+1. Добавить `get_promo_code_by_code(session, code)` в `services/admin_lookups.py`:
+   ```python
+   async def get_promo_code_by_code(session, code: str) -> PromoCode | None:
+       if session is None:
+           graph, _store = _file_admin_graph()
+           return next((p for p in graph.promo_codes.values() if p.code == code), None)
+       result = await session.execute(select(PromoCode).where(PromoCode.code == code))
+       return result.scalar_one_or_none()
+   ```
+2. В `create_promo_code` (`services/promo_admin.py`):
+   ```python
+   from sqlalchemy.exc import IntegrityError
+   from pitchcopytrade.services.admin_lookups import get_promo_code_by_code
+
+   async def create_promo_code(session, data):
+       normalized_code = data.code.strip().upper()
+       existing = await get_promo_code_by_code(session, normalized_code)
+       if existing is not None:
+           raise ValueError(f"Промокод «{normalized_code}» уже существует. Выберите другой код.")
+       promo = PromoCode(code=normalized_code, ...)
+       try:
+           session.add(promo)
+           await session.commit()
+           await session.refresh(promo)
+           return promo
+       except IntegrityError as exc:
+           await session.rollback()
+           raise ValueError(f"Промокод «{normalized_code}» уже существует. Выберите другой код.") from exc
+   ```
+3. В `update_promo_code` — аналогично с `existing.id != promo.id` для исключения самого себя.
+4. `promo_form.html`:
+   - Метка `<span>Код</span>` → `<span>Код промокода</span>` (уже done в P55.7).
+   - Атрибуты input:
+     ```html
+     <input
+       type="text"
+       name="code"
+       value="{{ form_values.code or '' }}"
+       pattern="[A-Z0-9_-]+"
+       maxlength="32"
+       required
+       placeholder="WELCOME10"
+       style="text-transform:uppercase;"
+       title="Заглавные латинские буквы, цифры, подчёркивания и дефисы"
+     />
+     <small class="muted">Только заглавные латинские буквы, цифры, <code>_</code>, <code>-</code>. Уникален в системе. Пример: <code>WELCOME10</code>.</small>
+     ```
+   - Если P58.1 уже сделан — добавить `{% if field_errors and field_errors.code %}...{% endif %}` блок рядом с input.
+5. Унифицировать нормализацию: `.strip().upper()` — либо в `_build_promo_form_data`, либо в сервисе. Выбрать одно место, не дублировать.
+
+**Тесты:**
+- `tests/test_admin_ui.py` или новый `tests/test_promo_code_admin.py`:
+  - create с дубликатом code → 422 статус, баннер «уже существует», форма перерендерена с сохранёнными values, второй PromoCode не создан.
+  - create с невалидным паттерном `"welcome-lower"` → 422, ошибка про формат (client-side pattern + server-side fallback).
+  - update со своим же code → OK (не падает).
+  - update с чужим code → 422 с ошибкой.
+  - Race: замокать commit чтобы бросал IntegrityError → обрабатывается как ValueError, не 500.
+
+**Примечание:** дублирует P57.1 — при реализации отметить P57.1 как done.
+
+### Что нельзя (для всего P58)
+- Менять DB-схему или unique constraints.
+- Менять имя поля `slug` / `code` в БД или в `name=` атрибутах HTML.
+- Ломать существующие 97 тестов — все должны оставаться зелёными + новые сверху.
+- Делать breaking changes в сигнатурах публичных функций сервиса (кроме добавления опциональных параметров).
+
+### Acceptance criteria (P58)
+- [x] `FormValidationError` введён, все поля валидируются за один проход, field-level ошибки рендерятся рядом с полями.
+- [x] Над формой стратегии виден блок «Требования к заполнению» со списком требований.
+- [x] POST пустой формы → 422 с 3+ ошибками одновременно в HTML, не по одной.
+- [x] `update_strategy` на published → ValueError про DRAFT, не про uniqueness.
+- [x] `get_*_by_slug` / `get_promo_code_by_code` вынесены в `services/admin_lookups.py`, импортируются в admin.py и promo_admin.py.
+- [x] PromoCode create/update с дубликатом code → 422 с русским текстом, не 500.
+- [x] `promo_form.html` имеет pattern, maxlength, required, подсказку.
+- [x] Все тесты (существующие 97 + новые) зелёные.
+- [x] P57.1 и P57.2 отмечены как done после выполнения P58.
+
+## P59 — Post-review P58 полировка + pre-existing login test fix
+
+Мелкие находки после review P58. Все low/medium priority.
+
+### P59.1 — [medium] Дубль сообщения в promo discount percent/amount [x]
+**Файл:** `src/pitchcopytrade/api/routes/admin.py`, `_build_promo_form_data` (~строка 1625-1640).
+
+Сейчас «нужно указать percent ИЛИ amount» пишется в оба ключа `errors["discount_percent"]` и `errors["discount_amount_rub"]` → пользователь видит одинаковый текст под двумя полями.
+
+**Fix:** использовать top-level `summary` исключения:
+```python
+form_level_errors: list[str] = []
+if parsed_percent is None and parsed_amount is None:
+    form_level_errors.append("Укажите скидку в процентах ИЛИ фиксированную сумму в рублях")
+if parsed_percent is not None and parsed_amount is not None:
+    form_level_errors.append("Используйте либо процент, либо фиксированную сумму, но не оба одновременно")
+...
+if errors or form_level_errors:
+    summary = " · ".join(form_level_errors) if form_level_errors else "Форма содержит ошибки"
+    raise FormValidationError(errors, summary=summary)
+```
+Шаблон `promo_form.html` уже рендерит `{{ error }}` — summary туда и попадёт.
+
+**Тест:** POST без percent и без amount → `error` баннер содержит «Укажите скидку…», field-level у discount_percent/discount_amount_rub отсутствуют.
+
+### P59.2 — [low] Sentinel `None` вместо `0` в `_build_product_form_data` [x]
+**Файл:** `src/pitchcopytrade/api/routes/admin.py` (~1540-1595).
+
+Сейчас при невалидном price/trial присваивается `0`, дальше идёт проверка `if parsed_price < 0`. Работает, но хрупко.
+
+**Fix:**
+```python
+parsed_price: int | None = None
+try:
+    parsed_price = int(price_rub.strip())
+except ValueError:
+    errors["price_rub"] = "Цена должна быть целым числом"
+if parsed_price is not None and parsed_price < 0:
+    errors["price_rub"] = "Цена не может быть отрицательной"
+```
+Аналогично `parsed_trial`. Убрать `assert parsed_billing_period is not None` — заменить на явный `if ... is None: raise RuntimeError("unreachable")` или `cast`.
+
+### P59.3 — [low] `admin_lookups.py`: добавить `from __future__ import annotations` [x]
+**Файл:** `src/pitchcopytrade/services/admin_lookups.py` (шапка). Консистентность с остальными модулями. Одна строка.
+
+### P59.4 — [low] Вынести regex в константы модуля [x]
+**Файл:** `src/pitchcopytrade/api/routes/admin.py`.
+
+Сейчас:
+- `_is_valid_slug` использует `re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value)` (~1460).
+- `_build_promo_form_data` inline `re.fullmatch(r"[A-Z0-9_-]+", normalized_code)` (~1612).
+
+**Fix:** после imports:
+```python
+_SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_PROMO_CODE_PATTERN = re.compile(r"[A-Z0-9_-]+")
+```
+Использование: `_SLUG_PATTERN.fullmatch(value) is not None`. Скомпилированный regex + single source of truth.
+
+### P59.5 — [low] Нормализация в `_ensure_promo_code_is_unique` (file-graph) [x]
+**Файл:** `src/pitchcopytrade/services/promo_admin.py` (~строка 142).
+
+Функция используется в file-graph пути и сейчас сравнивает `item.code.upper() == target.code.upper()`. Это работает, но:
+1. Текст ошибки не синхронизирован с SQL-путём («Промокод с таким кодом уже существует» vs «Промокод «CODE» уже существует. Выберите другой код.»).
+2. Если кто-то добавит промокод в файловый граф руками без нормализации, сравнение может пропустить дубль из-за пробелов.
+
+**Fix:**
+```python
+def _ensure_promo_code_is_unique(items, target: PromoCode) -> None:
+    normalized_target = target.code.strip().upper()
+    if any(item.code.strip().upper() == normalized_target for item in items if item.id != target.id):
+        raise ValueError(f"Промокод «{normalized_target}» уже существует. Выберите другой код.")
+```
+(Также исключаем самого `target` из поиска через `item.id != target.id` — для update-кейса.)
+
+### P59.6 — [medium] Pre-existing failure: `test_login_page_renders` [x]
+**Файлы:** `tests/test_auth_ui.py:189`, `src/pitchcopytrade/web/templates/login.html` (или аналог).
+
+Тест проверяет `"/setdomain" in response.text` — эта строка отсутствует в текущем HTML. **Падает до P58** (подтверждено `git stash` + pytest). Видимо хинт про Telegram BotFather `/setdomain` был удалён из login-страницы в прошлом PR без обновления теста.
+
+**Fix:**
+1. `git log -S "/setdomain" -- src/pitchcopytrade/web/templates/` — найти коммит удаления.
+2. Если удаление было намеренным (хинт не нужен) — обновить тест (удалить 2 строки ассертов `/setdomain` и `/auth/telegram/callback` или заменить на актуальные элементы login-страницы).
+3. Если случайным — вернуть блок с хинтом в шаблон.
+
+### Acceptance criteria (P59)
+- [x] Promo form: «percent ИЛИ amount» только в top-level summary, не в field-level.
+- [x] `_build_product_form_data` использует `None` sentinel.
+- [x] `admin_lookups.py` имеет `from __future__ import annotations`.
+- [x] `_SLUG_PATTERN` и `_PROMO_CODE_PATTERN` вынесены в константы.
+- [x] `_ensure_promo_code_is_unique` синхронизирован с SQL-путём по тексту и нормализации.
+- [x] `test_login_page_renders` зелёный.
+- [x] Все 320 тестов pass (сейчас 319 pass / 1 fail).

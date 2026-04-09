@@ -28,48 +28,9 @@
 
 <section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
   {% for strategy in strategies %}
-  {% set first_product = strategy.subscription_products[0] if strategy.subscription_products else none %}
-  <article class="surface" style="padding:24px;background:linear-gradient(180deg, rgba(18, 47, 120, 0.06), rgba(18, 47, 120, 0.02));border:1px solid rgba(18, 47, 120, 0.08);">
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="width: 100%;">
-        <div class="eyebrow">{{ strategy.author.display_name }}</div>
-        <div style="display: flex;justify-content: space-between; align-items: center;">
-          <h2 style="margin:10px 0 0;font-size:1.7rem;">{{ strategy.title }}</h2>
-          <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
-        </div>
-        <div style="margin-top:16px;background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
-          {{ strategy.short_description }}
-        </div>
-      </div>
-    </div>
-    {% if strategy.quotes %}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
-      {% for quote in strategy.quotes[:3] %}
-      <span class="pill">{{ quote.ticker }} · {{ quote.last_price_text }}{% if quote.change_text != "—" %} · {{ quote.change_text }}{% endif %}</span>
-      {% endfor %}
-    </div>
-    {% endif %}
-    <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-top:16px;">
-      <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">
-        {{ strategy.story.risk_rule if strategy.story else label_risk_level(strategy.risk_level) }}
-      </div>
-      <!--
-      {% if strategy.min_capital_rub %}
-      <div style="background:var(--accent-bg,#1a2a5e);color:#fff;border-radius:12px;padding:16px;font-size:0.85rem;line-height:1.5;font-weight:600;">от {{ strategy.min_capital_rub }} руб</div>
-      {% endif %}
-      -->
-    </div>
-    <div class="catalog-card-actions">
-      {% if first_product and first_product.id in user_active_product_ids %}
-      <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
-      {% elif first_product %}
-      <a class="action" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/checkout/{{ first_product.slug }}{% else %}/app/checkout/{{ first_product.slug }}{% endif %}{% else %}/checkout/{{ first_product.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подписаться</a>
-      {% endif %}
-      <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ strategy.slug }}{% else %}/app/strategies/{{ strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ strategy.slug }}{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Подробнее</a>
-    </div>
-  </article>
+  {% include "public/_catalog_card.html" with context %}
   {% else %}
-  <article class="surface" style="padding:24px;">
+  <article class="surface catalog-empty-card">
     <strong>Публичных стратегий пока нет</strong>
     <p class="muted" style="margin:12px 0 0;line-height:1.6;">Админка уже готова. После публикации карточек они появятся здесь автоматически.</p>
   </article>
@@ -77,11 +38,106 @@
 </section>
 
 <style>
+  .catalog-empty-card {
+    padding: clamp(16px, 4vw, 24px);
+  }
+
+  .catalog-card {
+    padding: clamp(16px, 4vw, 24px);
+    background: linear-gradient(180deg, rgba(18, 47, 120, 0.06), rgba(18, 47, 120, 0.02));
+    border: 1px solid rgba(18, 47, 120, 0.08);
+    display: grid;
+    gap: 14px;
+  }
+
+  .catalog-card-header {
+    display: grid;
+    gap: 10px;
+  }
+
+  .catalog-card-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .catalog-card-title {
+    flex: 1 1 60%;
+    min-width: 0;
+    margin: 0;
+    font-size: clamp(1.25rem, 4.2vw, 1.7rem);
+    line-height: 1.2;
+    word-break: break-word;
+  }
+
+  .catalog-card-statuses {
+    display: inline-flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .pill--risk {
+    flex-shrink: 0;
+    align-self: flex-start;
+    background: rgba(148, 163, 184, 0.18);
+    color: #334155;
+  }
+
+  .pill--risk-low {
+    background: rgba(22, 160, 74, 0.15);
+    color: #168a3e;
+  }
+
+  .pill--risk-medium {
+    background: rgba(245, 158, 11, 0.15);
+    color: #b45309;
+  }
+
+  .pill--risk-high {
+    background: rgba(220, 38, 38, 0.15);
+    color: #b91c1c;
+  }
+
+  .pill--soon {
+    background: rgba(255, 255, 255, 0.65);
+    color: #2f3f64;
+  }
+
+  .catalog-card-summary,
+  .catalog-card-accent {
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 0.92rem;
+    line-height: 1.55;
+    font-weight: 600;
+  }
+
+  .catalog-card-summary {
+    background: var(--accent-bg, #1a2a5e);
+    color: #fff;
+  }
+
+  .catalog-card-accent {
+    background: rgba(255, 255, 255, 0.58);
+    color: #24324f;
+  }
+
+  .catalog-card-quotes {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .pill--ticker {
+    padding-inline: 10px;
+  }
+
   .catalog-card-actions {
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
-    margin-top: 20px;
   }
   .catalog-card-actions .action {
     display: block;

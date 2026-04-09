@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import logging
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -98,6 +99,15 @@ from pitchcopytrade.api.routes._grid_serializers import (
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
+_SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_PROMO_CODE_PATTERN = re.compile(r"[A-Z0-9_-]+")
+
+
+class FormValidationError(Exception):
+    def __init__(self, field_errors: dict[str, str], *, summary: str = "Форма содержит ошибки") -> None:
+        super().__init__(summary)
+        self.field_errors = field_errors
+        self.summary = summary
 
 
 @router.get("", include_in_schema=False)
@@ -207,6 +217,7 @@ async def strategy_create_page(
         session=session,
         strategy=None,
         error=None,
+        field_errors=None,
         form_values={},
     )
 
@@ -216,13 +227,13 @@ async def strategy_create_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    author_id: str = Form(...),
-    slug: str = Form(...),
-    title: str = Form(...),
-    short_description: str = Form(...),
+    author_id: str = Form(""),
+    slug: str = Form(""),
+    title: str = Form(""),
+    short_description: str = Form(""),
     full_description: str = Form(""),
-    risk_level: str = Form(...),
-    status_value: str = Form(..., alias="status"),
+    risk_level: str = Form(""),
+    status_value: str = Form("", alias="status"),
     min_capital_rub: str = Form(""),
     is_public: str | None = Form(default=None),
 ) -> Response:
@@ -239,6 +250,27 @@ async def strategy_create_submit(
             is_public=is_public,
         )
         strategy = await create_strategy(session, data)
+    except FormValidationError as exc:
+        return await _render_strategy_form(
+            request=request,
+            user=user,
+            session=session,
+            strategy=None,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "author_id": author_id,
+                "slug": slug,
+                "title": title,
+                "short_description": short_description,
+                "full_description": full_description,
+                "risk_level": risk_level,
+                "status": status_value,
+                "min_capital_rub": min_capital_rub,
+                "is_public": is_public is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_strategy_form(
             request=request,
@@ -246,6 +278,7 @@ async def strategy_create_submit(
             session=session,
             strategy=None,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "author_id": author_id,
                 "slug": slug,
@@ -282,6 +315,7 @@ async def strategy_edit_page(
         session=session,
         strategy=strategy,
         error=None,
+        field_errors=None,
         form_values=_form_values_from_strategy(strategy),
     )
 
@@ -292,13 +326,13 @@ async def strategy_edit_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    author_id: str = Form(...),
-    slug: str = Form(...),
-    title: str = Form(...),
-    short_description: str = Form(...),
+    author_id: str = Form(""),
+    slug: str = Form(""),
+    title: str = Form(""),
+    short_description: str = Form(""),
     full_description: str = Form(""),
-    risk_level: str = Form(...),
-    status_value: str = Form(..., alias="status"),
+    risk_level: str = Form(""),
+    status_value: str = Form("", alias="status"),
     min_capital_rub: str = Form(""),
     is_public: str | None = Form(default=None),
 ) -> Response:
@@ -320,6 +354,27 @@ async def strategy_edit_submit(
             is_public=is_public,
         )
         await update_strategy(session, strategy, data)
+    except FormValidationError as exc:
+        return await _render_strategy_form(
+            request=request,
+            user=user,
+            session=session,
+            strategy=strategy,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "author_id": author_id,
+                "slug": slug,
+                "title": title,
+                "short_description": short_description,
+                "full_description": full_description,
+                "risk_level": risk_level,
+                "status": status_value,
+                "min_capital_rub": min_capital_rub,
+                "is_public": is_public is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_strategy_form(
             request=request,
@@ -327,6 +382,7 @@ async def strategy_edit_submit(
             session=session,
             strategy=strategy,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "author_id": author_id,
                 "slug": slug,
@@ -378,6 +434,7 @@ async def product_create_page(
         session=session,
         product=None,
         error=None,
+        field_errors=None,
         form_values={},
     )
 
@@ -419,6 +476,7 @@ async def promo_code_create_page(
         session=session,
         promo_code=None,
         error=None,
+        field_errors=None,
         form_values={},
     )
 
@@ -428,7 +486,7 @@ async def promo_code_create_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    code: str = Form(...),
+    code: str = Form(""),
     description: str = Form(""),
     discount_percent: str = Form(""),
     discount_amount_rub: str = Form(""),
@@ -447,6 +505,25 @@ async def promo_code_create_submit(
             is_active=is_active,
         )
         promo_code = await create_admin_promo_code(session, data)
+    except FormValidationError as exc:
+        return await _render_promo_form(
+            request=request,
+            user=user,
+            session=session,
+            promo_code=None,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "code": code,
+                "description": description,
+                "discount_percent": discount_percent,
+                "discount_amount_rub": discount_amount_rub,
+                "max_redemptions": max_redemptions,
+                "expires_at": expires_at,
+                "is_active": is_active is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_promo_form(
             request=request,
@@ -454,6 +531,7 @@ async def promo_code_create_submit(
             session=session,
             promo_code=None,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "code": code,
                 "description": description,
@@ -485,6 +563,7 @@ async def promo_code_edit_page(
         session=session,
         promo_code=promo_code,
         error=None,
+        field_errors=None,
         form_values=_form_values_from_promo_code(promo_code),
     )
 
@@ -495,7 +574,7 @@ async def promo_code_edit_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    code: str = Form(...),
+    code: str = Form(""),
     description: str = Form(""),
     discount_percent: str = Form(""),
     discount_amount_rub: str = Form(""),
@@ -519,6 +598,25 @@ async def promo_code_edit_submit(
             is_active=is_active,
         )
         await update_admin_promo_code(session, promo_code, data)
+    except FormValidationError as exc:
+        return await _render_promo_form(
+            request=request,
+            user=user,
+            session=session,
+            promo_code=promo_code,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "code": code,
+                "description": description,
+                "discount_percent": discount_percent,
+                "discount_amount_rub": discount_amount_rub,
+                "max_redemptions": max_redemptions,
+                "expires_at": expires_at,
+                "is_active": is_active is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_promo_form(
             request=request,
@@ -526,6 +624,7 @@ async def promo_code_edit_submit(
             session=session,
             promo_code=promo_code,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "code": code,
                 "description": description,
@@ -545,15 +644,15 @@ async def product_create_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    product_type: str = Form(...),
-    slug: str = Form(...),
-    title: str = Form(...),
+    product_type: str = Form(""),
+    slug: str = Form(""),
+    title: str = Form(""),
     description: str = Form(""),
     strategy_id: str = Form(""),
     author_id: str = Form(""),
     bundle_id: str = Form(""),
-    billing_period: str = Form(...),
-    price_rub: str = Form(...),
+    billing_period: str = Form(""),
+    price_rub: str = Form(""),
     trial_days: str = Form("0"),
     is_active: str | None = Form(default=None),
     autorenew_allowed: str | None = Form(default=None),
@@ -574,6 +673,30 @@ async def product_create_submit(
             autorenew_allowed=autorenew_allowed,
         )
         product = await create_product(session, data)
+    except FormValidationError as exc:
+        return await _render_product_form(
+            request=request,
+            user=user,
+            session=session,
+            product=None,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "product_type": product_type,
+                "slug": slug,
+                "title": title,
+                "description": description,
+                "strategy_id": strategy_id,
+                "author_id": author_id,
+                "bundle_id": bundle_id,
+                "billing_period": billing_period,
+                "price_rub": price_rub,
+                "trial_days": trial_days,
+                "is_active": is_active is not None,
+                "autorenew_allowed": autorenew_allowed is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_product_form(
             request=request,
@@ -581,6 +704,7 @@ async def product_create_submit(
             session=session,
             product=None,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "product_type": product_type,
                 "slug": slug,
@@ -617,6 +741,7 @@ async def product_edit_page(
         session=session,
         product=product,
         error=None,
+        field_errors=None,
         form_values=_form_values_from_product(product),
     )
 
@@ -627,15 +752,15 @@ async def product_edit_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    product_type: str = Form(...),
-    slug: str = Form(...),
-    title: str = Form(...),
+    product_type: str = Form(""),
+    slug: str = Form(""),
+    title: str = Form(""),
     description: str = Form(""),
     strategy_id: str = Form(""),
     author_id: str = Form(""),
     bundle_id: str = Form(""),
-    billing_period: str = Form(...),
-    price_rub: str = Form(...),
+    billing_period: str = Form(""),
+    price_rub: str = Form(""),
     trial_days: str = Form("0"),
     is_active: str | None = Form(default=None),
     autorenew_allowed: str | None = Form(default=None),
@@ -661,6 +786,30 @@ async def product_edit_submit(
             autorenew_allowed=autorenew_allowed,
         )
         await update_product(session, product, data)
+    except FormValidationError as exc:
+        return await _render_product_form(
+            request=request,
+            user=user,
+            session=session,
+            product=product,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "product_type": product_type,
+                "slug": slug,
+                "title": title,
+                "description": description,
+                "strategy_id": strategy_id,
+                "author_id": author_id,
+                "bundle_id": bundle_id,
+                "billing_period": billing_period,
+                "price_rub": price_rub,
+                "trial_days": trial_days,
+                "is_active": is_active is not None,
+                "autorenew_allowed": autorenew_allowed is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_product_form(
             request=request,
@@ -668,6 +817,7 @@ async def product_edit_submit(
             session=session,
             product=product,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "product_type": product_type,
                 "slug": slug,
@@ -1161,6 +1311,7 @@ async def _render_strategy_form(
     session: AsyncSession | None,
     strategy,
     error: str | None,
+    field_errors: dict[str, str] | None,
     form_values: dict[str, object],
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
@@ -1174,6 +1325,7 @@ async def _render_strategy_form(
             "strategy": strategy,
             "authors": authors,
             "error": error,
+            "field_errors": field_errors or {},
             "form_values": form_values,
             "risk_levels": list(RiskLevel),
             "strategy_statuses": list(StrategyStatus),
@@ -1188,6 +1340,7 @@ async def _render_product_form(
     session: AsyncSession | None,
     product,
     error: str | None,
+    field_errors: dict[str, str] | None,
     form_values: dict[str, object],
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
@@ -1205,6 +1358,7 @@ async def _render_product_form(
             "strategies": strategies,
             "bundles": bundles,
             "error": error,
+            "field_errors": field_errors or {},
             "form_values": form_values,
             "product_types": list(ProductType),
             "billing_periods": list(BillingPeriod),
@@ -1245,6 +1399,7 @@ async def _render_promo_form(
     session: AsyncSession | None,
     promo_code,
     error: str | None,
+    field_errors: dict[str, str] | None,
     form_values: dict[str, object],
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
@@ -1258,6 +1413,7 @@ async def _render_promo_form(
             "promo_code": promo_code,
             "promo_codes": promo_codes,
             "error": error,
+            "field_errors": field_errors or {},
             "form_values": form_values,
         },
         status_code=status_code,
@@ -1276,29 +1432,52 @@ def _build_strategy_form_data(
     min_capital_rub: str,
     is_public: str | None,
 ) -> StrategyFormData:
+    errors: dict[str, str] = {}
     if not author_id.strip():
-        raise ValueError("Автор обязателен")
+        errors["author_id"] = "Выберите автора стратегии"
     normalized_slug = slug.strip().lower()
     if not normalized_slug:
-        raise ValueError("Slug обязателен")
+        errors["slug"] = "Укажите код стратегии (латиница, например: top-gun)"
+    elif not _is_valid_slug(normalized_slug):
+        errors["slug"] = "Только строчные латинские буквы, цифры и дефисы"
     if not title.strip():
-        raise ValueError("Название стратегии обязательно")
+        errors["title"] = "Название стратегии обязательно"
     if not short_description.strip():
-        raise ValueError("Короткое описание обязательно")
+        errors["short_description"] = "Короткое описание обязательно"
 
     capital_value = min_capital_rub.strip()
-    parsed_capital = int(capital_value) if capital_value else None
+    try:
+        parsed_capital = int(capital_value) if capital_value else None
+    except ValueError:
+        errors["min_capital_rub"] = "Минимальный капитал должен быть целым числом"
+        parsed_capital = None
+    try:
+        parsed_risk_level = RiskLevel(risk_level)
+    except ValueError:
+        errors["risk_level"] = "Выберите корректный уровень риска"
+        parsed_risk_level = None
+    try:
+        parsed_status = StrategyStatus(status_value)
+    except ValueError:
+        errors["status"] = "Выберите корректный статус стратегии"
+        parsed_status = None
+    if errors:
+        raise FormValidationError(errors)
     return StrategyFormData(
         author_id=author_id.strip(),
         slug=normalized_slug,
         title=title.strip(),
         short_description=short_description.strip(),
         full_description=full_description.strip() or None,
-        risk_level=RiskLevel(risk_level),
-        status=StrategyStatus(status_value),
+        risk_level=parsed_risk_level,
+        status=parsed_status,
         min_capital_rub=parsed_capital,
         is_public=is_public is not None,
     )
+
+
+def _is_valid_slug(value: str) -> bool:
+    return _SLUG_PATTERN.fullmatch(value) is not None
 
 
 def _form_values_from_strategy(strategy) -> dict[str, object]:
@@ -1344,46 +1523,68 @@ def _build_product_form_data(
     is_active: str | None,
     autorenew_allowed: str | None,
 ) -> ProductFormData:
+    errors: dict[str, str] = {}
     normalized_slug = slug.strip().lower()
     if not normalized_slug:
-        raise ValueError("Slug обязателен")
+        errors["slug"] = "Укажите код продукта (латиница, например: momentum-ru-month)"
+    elif not _is_valid_slug(normalized_slug):
+        errors["slug"] = "Только строчные латинские буквы, цифры и дефисы"
     if not title.strip():
-        raise ValueError("Название продукта обязательно")
+        errors["title"] = "Название продукта обязательно"
 
-    parsed_type = ProductType(product_type)
+    try:
+        parsed_type = ProductType(product_type)
+    except ValueError:
+        errors["product_type"] = "Выберите тип продукта"
+        parsed_type = None
+    try:
+        parsed_billing_period = BillingPeriod(billing_period)
+    except ValueError:
+        errors["billing_period"] = "Выберите корректный период биллинга"
+        parsed_billing_period = None
     strategy_value = strategy_id.strip() or None
     author_value = author_id.strip() or None
     bundle_value = bundle_id.strip() or None
 
     if parsed_type is ProductType.STRATEGY:
         if strategy_value is None:
-            raise ValueError("Для strategy-продукта нужно выбрать стратегию")
+            errors["strategy_id"] = "Для strategy-продукта нужно выбрать стратегию"
         author_value = None
         bundle_value = None
     elif parsed_type is ProductType.AUTHOR:
         if author_value is None:
-            raise ValueError("Для author-продукта нужно выбрать автора")
+            errors["author_id"] = "Для author-продукта нужно выбрать автора"
         strategy_value = None
         bundle_value = None
-    else:
+    elif parsed_type is ProductType.BUNDLE:
         if bundle_value is None:
-            raise ValueError("Для bundle-продукта нужно выбрать bundle")
+            errors["bundle_id"] = "Для bundle-продукта нужно выбрать bundle"
         strategy_value = None
         author_value = None
 
+    parsed_price: int | None = None
     try:
         parsed_price = int(price_rub.strip())
-    except ValueError as exc:
-        raise ValueError("Цена должна быть целым числом") from exc
+    except ValueError:
+        errors["price_rub"] = "Цена должна быть целым числом"
+    parsed_trial: int | None = None
     try:
         parsed_trial = int((trial_days or "0").strip())
-    except ValueError as exc:
-        raise ValueError("Trial days должен быть целым числом") from exc
+    except ValueError:
+        errors["trial_days"] = "Trial days должен быть целым числом"
 
-    if parsed_price < 0:
-        raise ValueError("Цена не может быть отрицательной")
-    if parsed_trial < 0:
-        raise ValueError("Trial days не может быть отрицательным")
+    if parsed_price is not None and parsed_price < 0:
+        errors["price_rub"] = "Цена не может быть отрицательной"
+    if parsed_trial is not None and parsed_trial < 0:
+        errors["trial_days"] = "Trial days не может быть отрицательным"
+    if errors:
+        raise FormValidationError(errors)
+    if parsed_billing_period is None:
+        raise RuntimeError("unreachable: billing period must be validated before product form assembly")
+    if parsed_price is None:
+        raise RuntimeError("unreachable: price must be validated before product form assembly")
+    if parsed_trial is None:
+        raise RuntimeError("unreachable: trial days must be validated before product form assembly")
 
     return ProductFormData(
         product_type=parsed_type,
@@ -1393,7 +1594,7 @@ def _build_product_form_data(
         strategy_id=strategy_value,
         author_id=author_value,
         bundle_id=bundle_value,
-        billing_period=BillingPeriod(billing_period),
+        billing_period=parsed_billing_period,
         price_rub=parsed_price,
         trial_days=parsed_trial,
         is_active=is_active is not None,
@@ -1411,32 +1612,55 @@ def _build_promo_form_data(
     expires_at: str,
     is_active: str | None,
 ) -> PromoCodeFormData:
+    errors: dict[str, str] = {}
+    form_level_errors: list[str] = []
     normalized_code = code.strip().upper()
     if not normalized_code:
-        raise ValueError("Код промокода обязателен")
+        errors["code"] = "Код промокода обязателен"
+    elif not _PROMO_CODE_PATTERN.fullmatch(normalized_code):
+        errors["code"] = "Только заглавные латинские буквы, цифры, подчёркивания и дефисы"
 
     percent_value = discount_percent.strip()
     amount_value = discount_amount_rub.strip()
     max_value = max_redemptions.strip()
     expires_value = expires_at.strip()
 
-    parsed_percent = int(percent_value) if percent_value else None
-    parsed_amount = int(amount_value) if amount_value else None
-    parsed_max = int(max_value) if max_value else None
-    parsed_expires_at = datetime.fromisoformat(expires_value) if expires_value else None
+    try:
+        parsed_percent = int(percent_value) if percent_value else None
+    except ValueError:
+        errors["discount_percent"] = "Скидка в процентах должна быть целым числом"
+        parsed_percent = None
+    try:
+        parsed_amount = int(amount_value) if amount_value else None
+    except ValueError:
+        errors["discount_amount_rub"] = "Скидка в рублях должна быть целым числом"
+        parsed_amount = None
+    try:
+        parsed_max = int(max_value) if max_value else None
+    except ValueError:
+        errors["max_redemptions"] = "Лимит использований должен быть целым числом"
+        parsed_max = None
+    try:
+        parsed_expires_at = datetime.fromisoformat(expires_value) if expires_value else None
+    except ValueError:
+        errors["expires_at"] = "Укажите корректную дату и время"
+        parsed_expires_at = None
     if parsed_expires_at is not None and parsed_expires_at.tzinfo is None:
         parsed_expires_at = parsed_expires_at.replace(tzinfo=UTC)
 
     if parsed_percent is None and parsed_amount is None:
-        raise ValueError("Нужно указать discount percent или fixed amount")
+        form_level_errors.append("Укажите скидку в процентах ИЛИ фиксированную сумму в рублях")
     if parsed_percent is not None and parsed_amount is not None:
-        raise ValueError("Используйте либо discount percent, либо fixed amount")
+        form_level_errors.append("Используйте либо процент, либо фиксированную сумму, но не оба одновременно")
     if parsed_percent is not None and not (1 <= parsed_percent <= 100):
-        raise ValueError("Discount percent должен быть в диапазоне 1..100")
+        errors["discount_percent"] = "Discount percent должен быть в диапазоне 1..100"
     if parsed_amount is not None and parsed_amount < 0:
-        raise ValueError("Discount amount не может быть отрицательным")
+        errors["discount_amount_rub"] = "Discount amount не может быть отрицательным"
     if parsed_max is not None and parsed_max <= 0:
-        raise ValueError("Лимит использований должен быть больше нуля")
+        errors["max_redemptions"] = "Лимит использований должен быть больше нуля"
+    if errors or form_level_errors:
+        summary = " · ".join(form_level_errors) if form_level_errors else "Форма содержит ошибки"
+        raise FormValidationError(errors, summary=summary)
 
     return PromoCodeFormData(
         code=normalized_code,

@@ -30,6 +30,7 @@ from pitchcopytrade.auth.session import build_staff_invite_link, build_staff_inv
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.admin_lookups import get_product_by_slug, get_strategy_by_slug
 from pitchcopytrade.services.email_transport import send_smtp_email
 from pitchcopytrade.services.promo import sync_promo_redemption_counter
 from pitchcopytrade.services.staff_merge import apply_staff_surviving_metadata
@@ -388,6 +389,9 @@ async def get_payment_review_stats(session: AsyncSession | None) -> PaymentRevie
 
 
 async def create_strategy(session: AsyncSession | None, data: StrategyFormData) -> Strategy:
+    existing = await get_strategy_by_slug(session, data.slug)
+    if existing is not None:
+        raise ValueError(f"Код стратегии «{data.slug}» уже используется. Выберите другой.")
     if session is None:
         graph, store = _file_admin_graph()
         strategy = Strategy(
@@ -415,13 +419,20 @@ async def create_strategy(session: AsyncSession | None, data: StrategyFormData) 
         min_capital_rub=data.min_capital_rub,
         is_public=data.is_public,
     )
-    session.add(strategy)
-    await session.commit()
-    await session.refresh(strategy)
-    return strategy
+    try:
+        session.add(strategy)
+        await session.commit()
+        await session.refresh(strategy)
+        return strategy
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ValueError(f"Код стратегии «{data.slug}» уже используется. Выберите другой.") from exc
 
 
 async def create_product(session: AsyncSession | None, data: ProductFormData) -> SubscriptionProduct:
+    existing = await get_product_by_slug(session, data.slug)
+    if existing is not None:
+        raise ValueError(f"Код продукта «{data.slug}» уже используется. Выберите другой.")
     if session is None:
         graph, store = _file_admin_graph()
         product = SubscriptionProduct(
@@ -455,15 +466,22 @@ async def create_product(session: AsyncSession | None, data: ProductFormData) ->
         is_active=data.is_active,
         autorenew_allowed=data.autorenew_allowed,
     )
-    session.add(product)
-    await session.commit()
-    await session.refresh(product)
-    return product
+    try:
+        session.add(product)
+        await session.commit()
+        await session.refresh(product)
+        return product
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ValueError(f"Код продукта «{data.slug}» уже используется. Выберите другой.") from exc
 
 
 async def update_strategy(session: AsyncSession | None, strategy: Strategy, data: StrategyFormData) -> Strategy:
     if strategy.status is not StrategyStatus.DRAFT:
         raise ValueError("Редактировать можно только draft-стратегии.")
+    existing = await get_strategy_by_slug(session, data.slug)
+    if existing is not None and existing.id != strategy.id:
+        raise ValueError(f"Код стратегии «{data.slug}» уже используется. Выберите другой.")
     strategy.author_id = data.author_id
     strategy.slug = data.slug
     strategy.title = data.title
@@ -489,14 +507,21 @@ async def update_strategy(session: AsyncSession | None, strategy: Strategy, data
         persisted.is_public = strategy.is_public
         graph.save(store)
         return persisted
-    await session.commit()
-    await session.refresh(strategy)
-    return strategy
+    try:
+        await session.commit()
+        await session.refresh(strategy)
+        return strategy
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ValueError(f"Код стратегии «{data.slug}» уже используется. Выберите другой.") from exc
 
 
 async def update_product(
     session: AsyncSession | None, product: SubscriptionProduct, data: ProductFormData
 ) -> SubscriptionProduct:
+    existing = await get_product_by_slug(session, data.slug)
+    if existing is not None and existing.id != product.id:
+        raise ValueError(f"Код продукта «{data.slug}» уже используется. Выберите другой.")
     product.product_type = data.product_type
     product.slug = data.slug
     product.title = data.title
@@ -528,9 +553,13 @@ async def update_product(
         persisted.autorenew_allowed = product.autorenew_allowed
         graph.save(store)
         return persisted
-    await session.commit()
-    await session.refresh(product)
-    return product
+    try:
+        await session.commit()
+        await session.refresh(product)
+        return product
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ValueError(f"Код продукта «{data.slug}» уже используется. Выберите другой.") from exc
 
 
 async def confirm_payment_and_activate_subscription(
@@ -1807,3 +1836,4 @@ async def save_strategy_onepager(session: AsyncSession | None, strategy_id: str,
     await session.commit()
     await session.refresh(strategy)
     return strategy
+

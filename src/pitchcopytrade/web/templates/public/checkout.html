@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% from "public/_url_helpers.html" import catalog_url, strategy_url %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <!-- {% if product.strategy %}
-  <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/strategies/{{ product.strategy.slug }}{% else %}/app/strategies/{{ product.strategy.slug }}{% endif %}{% else %}/catalog/strategies/{{ product.strategy.slug }}{% endif %}">К стратегии</a>
-  {% endif %} -->
-  <!-- <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}{% if entry_marker %}?entry={{ entry_marker }}{% endif %}">Каталог</a> -->
+  {% if product.strategy %}
+  <a class="action ghost" href="{{ strategy_url(product.strategy.slug, miniapp_mode, preview_mode, entry_marker) }}">К стратегии</a>
+  {% endif %}
+  <a class="action ghost" href="{{ catalog_url(miniapp_mode, preview_mode, entry_marker) }}">Каталог</a>
 </div>
 {% endblock %}
 
@@ -86,8 +87,7 @@
     -->
     <div style="display:grid;gap:12px;">
       <strong>Документ</strong>
-      {% for document in documents %}
-      {% if document.document_type.value == "disclaimer" %}
+      {% for document in documents if document.document_type.value == "disclaimer" %}
       <label style="display:flex;gap:12px;align-items:flex-start;">
         <input
           type="checkbox"
@@ -100,25 +100,15 @@
           <span class="muted" style="display:block;margin-top:6px;">{{ label_legal_document_type(document.document_type) }} / {{ document.version }}</span>
         </span>
       </label>
-      {% else %}
-      <input
-        type="checkbox"
-        name="accepted_document_ids"
-        value="{{ document.id }}"
-        checked
-        hidden
-        aria-hidden="true"
-        tabindex="-1"
-      />
-      {% endif %}
       {% endfor %}
+      <div class="muted" style="line-height:1.6;">Остальные юридические документы опубликованы отдельно и не требуют подтверждения на этом экране.</div>
     </div>
     <div id="checkout-client-error" hidden style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
-      Подтвердите все обязательные документы перед отправкой формы.
+      Подтвердите дисклеймер перед отправкой формы.
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
       <button id="checkout-submit-button" class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Подписаться</button>
-      <a class="action ghost" href="{% if miniapp_mode %}{% if preview_mode %}/preview/app/catalog{% else %}/app/catalog{% endif %}{% else %}/catalog{% endif %}">Вернуться в каталог</a>
+      <a class="action ghost" href="{{ catalog_url(miniapp_mode, preview_mode, entry_marker) }}">Вернуться в каталог</a>
     </div>
   </form>
 

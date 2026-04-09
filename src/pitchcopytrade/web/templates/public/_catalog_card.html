@@ -1,0 +1,46 @@
+{% from "public/_url_helpers.html" import checkout_url, strategy_url %}
+{% set first_product = strategy.subscription_products[0] if strategy.subscription_products else none %}
+{% set quotes = strategy.quotes[:3] if strategy.quotes else [] %}
+<article class="surface catalog-card">
+  <div class="catalog-card-header">
+    <div class="eyebrow">{{ strategy.author.display_name }}</div>
+    <div class="catalog-card-title-row">
+      <h2 class="catalog-card-title">{{ strategy.title }}</h2>
+      <div class="catalog-card-statuses">
+        <span class="pill pill--risk pill--risk-{{ strategy.risk_level.value }}">{{ label_risk_level(strategy.risk_level) }}</span>
+        {% if not first_product %}
+        <span class="pill pill--soon">Скоро</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="catalog-card-summary">
+      {{ strategy.short_description }}
+    </div>
+    {% if strategy.min_capital_rub %}
+    <div class="catalog-card-accent">
+      Минимальный капитал: {{ "{:,}".format(strategy.min_capital_rub).replace(",", " ") }} руб.
+    </div>
+    {% endif %}
+  </div>
+
+  {% if quotes %}
+  <div class="catalog-card-quotes">
+    {% for quote in quotes %}
+    <span class="pill pill--ticker">
+      {{ quote.ticker }}{% if quote.last_price is not none %} · {{ quote.last_price_text }}{% if quote.change_text != "—" %} · {{ quote.change_text }}{% endif %}{% endif %}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="catalog-card-actions">
+    {% if first_product and first_product.id in user_active_product_ids %}
+    <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
+    {% elif first_product %}
+    <a class="action" href="{{ checkout_url(first_product.slug, miniapp_mode, preview_mode, entry_marker) }}">Подписаться</a>
+    {% else %}
+    <span class="action disabled" aria-disabled="true">Скоро в продаже</span>
+    {% endif %}
+    <a class="action ghost" href="{{ strategy_url(strategy.slug, miniapp_mode, preview_mode, entry_marker) }}">Подробнее</a>
+  </div>
+</article>
