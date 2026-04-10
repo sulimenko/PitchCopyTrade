@@ -408,6 +408,7 @@ async def app_checkout_submit(
                 "documents": documents,
                 "checkout_ready": checkout_ready,
                 "payment_provider": get_settings().payments.provider,
+                "entry_marker": get_entry_marker(request) or resolved_entry_surface,
                 "error": str(exc),
                 "form_values": {
                     "full_name": full_name,
@@ -435,6 +436,7 @@ async def app_checkout_submit(
                 "documents": documents,
                 "checkout_ready": checkout_ready,
                 "payment_provider": get_settings().payments.provider,
+                "entry_marker": get_entry_marker(request) or resolved_entry_surface,
                 "error": "Не удалось создать заявку на оплату. Попробуйте еще раз.",
                 "form_values": {
                     "full_name": full_name,

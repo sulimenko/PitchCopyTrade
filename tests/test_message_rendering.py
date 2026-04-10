@@ -121,6 +121,33 @@ def test_render_message_notification_text_escapes_body_and_omits_empty_sections(
     assert text.endswith("<i>Top Gun • PitchCopyTrade</i>")
 
 
+def test_render_message_notification_text_preserves_newlines_without_br() -> None:
+    message = _make_message(
+        title="Риск\nна пробое",
+        text={"body": "Первая строка\nВторая строка", "plain": "Первая строка\r\nВторая строка"},
+        deals=[
+            {
+                "ticker": "SBER",
+                "side": "buy",
+                "price": "250\n252",
+                "take_profit_1": "280",
+                "stop_loss": "240",
+                "quantity": "100",
+                "note": "Проверить\nобъем",
+            }
+        ],
+    )
+
+    text = render_message_notification_text(message)
+
+    assert "<br>" not in text
+    assert "Риск\nна пробое" in text
+    assert "Первая строка\nВторая строка" in text
+    assert "<b>Вход:</b> 250\n252" in text
+    assert "Проверить\nобъем" in text
+    assert "&lt;" not in text
+
+
 def test_render_message_email_text_keeps_flat_format() -> None:
     message = _make_message()
 

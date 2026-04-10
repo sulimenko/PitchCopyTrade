@@ -44,6 +44,8 @@ def test_preview_miniapp_catalog_is_self_contained(monkeypatch) -> None:
         assert "grid-template-columns:1fr" in help_response.text
         assert status_response.status_code == 200
         assert "Статус подписки" in status_response.text
+        assert "/preview/app/subscriptions/" in status_response.text
+        assert "/preview/app/payments/" in status_response.text
         assert "grid-template-columns:1fr" in status_response.text
 
 

@@ -78,7 +78,7 @@
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <span class="pill">{{ subscription.end_at or "не указано" }}</span>
-          <a class="action ghost" href="/app/subscriptions/{{ subscription.id }}">Детали</a>
+          <a class="action ghost" href="{% if preview_mode %}/preview/app/subscriptions/{{ subscription.id }}{% else %}/app/subscriptions/{{ subscription.id }}{% endif %}">Детали</a>
         </div>
       </div>
     </article>
@@ -100,7 +100,7 @@
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <span class="pill">{{ payment.stub_reference or payment.id }}</span>
-          <a class="action ghost" href="/app/payments/{{ payment.id }}">Детали</a>
+          <a class="action ghost" href="{% if preview_mode %}/preview/app/payments/{{ payment.id }}{% else %}/app/payments/{{ payment.id }}{% endif %}">Детали</a>
         </div>
       </div>
     </article>

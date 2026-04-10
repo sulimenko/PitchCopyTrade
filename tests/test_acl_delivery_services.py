@@ -448,6 +448,70 @@ async def test_upsert_telegram_subscriber_links_existing_user_by_email(caplog) -
 
 
 @pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_activates_invited_user_by_telegram_id() -> None:
+    existing_user = User(
+        id="user-1",
+        email=None,
+        telegram_user_id=12345,
+        status=UserStatus.INVITED,
+        username="existing",
+        full_name="Existing User",
+        timezone="Europe/Moscow",
+    )
+    repository = FakeMergeRepository(existing_user)
+
+    user = await upsert_telegram_subscriber(
+        repository,
+        TelegramSubscriberProfile(
+            telegram_user_id=12345,
+            username="leaduser",
+            first_name="Lead",
+            last_name="User",
+            full_name="Lead User",
+            email=None,
+            timezone_name="Europe/Moscow",
+            lead_source_name="telegram_bot",
+        ),
+    )
+
+    assert user is existing_user
+    assert user.status == UserStatus.ACTIVE
+    assert user.username == "leaduser"
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_activates_invited_user_by_email_link() -> None:
+    existing_user = User(
+        id="user-1",
+        email="lead@example.com",
+        telegram_user_id=None,
+        status=UserStatus.INVITED,
+        username="existing",
+        full_name="Existing User",
+        timezone="Europe/Moscow",
+    )
+    repository = FakeMergeRepository(existing_user)
+
+    user = await upsert_telegram_subscriber(
+        repository,
+        TelegramSubscriberProfile(
+            telegram_user_id=12345,
+            username="leaduser",
+            first_name="Lead",
+            last_name="User",
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            lead_source_name="telegram_bot",
+        ),
+    )
+
+    assert user is existing_user
+    assert user.status == UserStatus.ACTIVE
+    assert user.telegram_user_id == 12345
+
+
+@pytest.mark.asyncio
 async def test_upsert_telegram_subscriber_retries_on_concurrent_insert(caplog) -> None:
     existing_user = User(
         id="user-1",

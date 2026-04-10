@@ -755,6 +755,7 @@ def test_app_checkout_submit_logs_controlled_invalid_request(monkeypatch, capsys
     captured = capsys.readouterr()
     assert response.status_code == 422
     assert "Нужно принять дисклеймер перед оплатой" in response.text
+    assert "/app/catalog?entry=miniapp_catalog" in response.text
 
 
 def test_checkout_page_renders_documents(monkeypatch) -> None:
@@ -1375,6 +1376,66 @@ def test_app_checkout_submit_handles_paymentless_free_flow(monkeypatch) -> None:
         assert response.status_code == 201
         assert "Оплата не требуется" in response.text
         assert "/app/subscriptions" in response.text
+
+
+def test_checkout_success_falls_back_for_empty_client_fields(monkeypatch) -> None:
+    _strategy, product = _make_strategy_and_product()
+    documents = _make_documents()
+    user = User(id="user-1", email=None, full_name=None, timezone=None)
+    payment = Payment(
+        id="payment-1",
+        user_id="user-1",
+        product_id="product-1",
+        provider=PaymentProvider.STUB_MANUAL,
+        status=PaymentStatus.PENDING,
+        amount_rub=499,
+        discount_rub=0,
+        final_amount_rub=499,
+        currency="RUB",
+        stub_reference="MANUAL-MOMENTUM-ABCD1234",
+    )
+    subscription = Subscription(
+        id="subscription-1",
+        user_id="user-1",
+        product_id="product-1",
+        payment_id="payment-1",
+        status=SubscriptionStatus.PENDING,
+        autorenew_enabled=True,
+        is_trial=True,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+    result = SimpleNamespace(user=user, payment=payment, subscription=subscription, required_documents=documents)
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.get_public_product",
+        lambda _repository, _product_id: _async_return(product),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.list_active_checkout_documents",
+        lambda _repository: _async_return(documents),
+    )
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.public.create_stub_checkout",
+        lambda _repository, product, request: _async_return(result),
+    )
+
+    with _build_client(FakePublicRepository()) as client:
+        response = client.post(
+            "/checkout/momentum-ru-month",
+            data={
+                "full_name": "",
+                "email": "",
+                "timezone_name": "Europe/Moscow",
+                "lead_source_name": "ads",
+                "accepted_document_ids": [item.id for item in documents],
+            },
+        )
+
+        assert response.status_code == 201
+        assert "—" in response.text
+        assert "None" not in response.text
 
 
 def test_checkout_submit_renders_applied_promo(monkeypatch) -> None:

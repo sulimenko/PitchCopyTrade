@@ -67,9 +67,9 @@
   </article>
   <article class="surface" style="padding:24px;">
     <div class="eyebrow">клиент</div>
-    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.user.full_name }}</strong>
-    <div class="muted" style="margin-top:10px;">{{ result.user.email }}</div>
-    <div class="muted" style="margin-top:6px;">{{ result.user.timezone }}</div>
+    <strong style="display:block;margin-top:10px;font-size:1.25rem;">{{ result.user.full_name or "—" }}</strong>
+    <div class="muted" style="margin-top:10px;">{{ result.user.email or "—" }}</div>
+    <div class="muted" style="margin-top:6px;">{{ result.user.timezone or "—" }}</div>
   </article>
 </section>
 

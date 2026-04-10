@@ -289,4 +289,4 @@ def _message_strategy_name(message: Message) -> str:
 
 
 def _escape_preserving_linebreaks(value: str) -> str:
-    return escape(value).replace("\n", "<br>")
+    return escape(value).replace("\r\n", "\n").replace("\r", "\n")

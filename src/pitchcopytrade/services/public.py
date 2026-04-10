@@ -145,6 +145,8 @@ async def upsert_telegram_subscriber(repository: PublicRepository, profile: Tele
         if normalized_email is not None:
             user.email = normalized_email
         user.timezone = profile.timezone_name
+        if user.status == UserStatus.INVITED:
+            user.status = UserStatus.ACTIVE
         if user.consents is None:
             user.consents = []
         return user
@@ -156,6 +158,8 @@ async def upsert_telegram_subscriber(repository: PublicRepository, profile: Tele
             user.username = profile.username
             user.full_name = display_name
             user.timezone = profile.timezone_name
+            if user.status == UserStatus.INVITED:
+                user.status = UserStatus.ACTIVE
             if user.consents is None:
                 user.consents = []
             logger.info(
@@ -170,6 +174,8 @@ async def upsert_telegram_subscriber(repository: PublicRepository, profile: Tele
             user.full_name = display_name
             user.email = normalized_email
             user.timezone = profile.timezone_name
+            if user.status == UserStatus.INVITED:
+                user.status = UserStatus.ACTIVE
             if user.consents is None:
                 user.consents = []
             return user
@@ -204,6 +210,8 @@ async def upsert_telegram_subscriber(repository: PublicRepository, profile: Tele
             if normalized_email is not None:
                 user.email = normalized_email
             user.timezone = profile.timezone_name
+            if user.status == UserStatus.INVITED:
+                user.status = UserStatus.ACTIVE
             if user.consents is None:
                 user.consents = []
             return user
