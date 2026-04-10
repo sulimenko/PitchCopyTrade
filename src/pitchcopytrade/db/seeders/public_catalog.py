@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import LeadSource, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, PromoCode
-from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, LeadSourceType, ProductType, RiskLevel, StrategyStatus, UserStatus
+from pitchcopytrade.db.models.enums import LegalDocumentType, LeadSourceType, ProductType, RiskLevel, StrategyStatus, UserStatus
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ async def _get_or_create_product(session: AsyncSession, strategy: Strategy) -> S
         title=_PRODUCT_TITLE,
         description="Подписка на одну стратегию.",
         strategy=strategy,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=499,
         trial_days=7,
         is_active=True,

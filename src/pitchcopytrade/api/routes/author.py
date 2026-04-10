@@ -42,7 +42,6 @@ from pitchcopytrade.services.author import (
 )
 from pitchcopytrade.services.notifications import deliver_message_notifications, deliver_message_notifications_file
 from pitchcopytrade.services.instruments import build_instrument_payloads
-from pitchcopytrade.services.message_rendering import build_message_render_contract
 from pitchcopytrade.web.templates import label_message_status, templates
 from pitchcopytrade.api.routes._grid_serializers import (
     serialize_recommendations,
@@ -1180,7 +1179,6 @@ async def _get_composer_context(
         "instrument_items": instrument_items,
         "composer_recommendation": recommendation,
         "compose_form_values": form_values,
-        "message_render_contract": build_message_render_contract(),
         "composer_default_open": composer_default_open,
         "history_messages": history_messages,
         "history_json": _build_history_grid_rows(history_messages),

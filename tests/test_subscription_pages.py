@@ -13,7 +13,7 @@ from pitchcopytrade.auth.session import build_telegram_fallback_cookie_value
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.catalog import SubscriptionProduct
 from pitchcopytrade.db.models.commerce import PromoCode, Subscription
-from pitchcopytrade.db.models.enums import BillingPeriod, ProductType, SubscriptionStatus
+from pitchcopytrade.db.models.enums import ProductType, SubscriptionStatus
 from pitchcopytrade.repositories.access import SqlAlchemyAccessRepository
 
 
@@ -77,7 +77,7 @@ def _make_product() -> SubscriptionProduct:
         strategy_id=None,
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=499,
         trial_days=7,
         is_active=True,

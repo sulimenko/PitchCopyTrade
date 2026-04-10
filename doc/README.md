@@ -12,29 +12,31 @@
 За review gate отвечает [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).  
 За server deploy и clean DB reset отвечает [deploy/README.md](/Users/alexey/site/PitchCopyTrade/deploy/README.md).
 
-Если входите в новый implementation pass как worker, сначала прочитайте стратегический блок `P25` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md).
+Если входите в новый implementation pass как worker, сначала прочитайте текущий review gate в [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md), затем берите ближайшие открытые задачи из [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md).
 
 ## Текущий Snapshot
 
-Проверенный runtime snapshot на `2026-04-03` такой:
+Проверенный runtime snapshot на `2026-04-10` такой:
 
-- Mini App auth и checkout в `db`-mode проходят;
-- новые подписчики создаются и получают подписки/consents;
-- страницы подписок в Mini App рендерятся без `500`;
-- publish path и subscriber delivery работают;
-- staff/admin Telegram invite onboarding в основном контуре восстановлен;
+- local gate green: `./.venv/bin/python -m pytest -q` -> `332 passed`;
+- Mini App auth, checkout, subscriptions, staff/admin invite onboarding и subscriber delivery в основном контуре восстановлены;
+- `recommendations` заменены на `messages`, author composer и preview уже message-centric;
+- duplicate checkout guard закрыт, hidden legal docs больше не auto-submit-ятся как принятые, `К стратегии` восстановлена как локальный CTA;
 - local `BASE_URL` / `ADMIN_BASE_URL` и raw `uvicorn` contract синхронизированы на `http://127.0.0.1:8000`;
 - operator-facing runtime log source = `storage/api.log`.
 
-Текущие открытые follow-up после последнего design/runtime pass-а:
+Текущие открытые follow-up после последнего full review:
 
-- checkout UI показывает только `Дисклеймер`, но hidden legal docs нельзя silently auto-submit-ить как уже принятые, см. `P44` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md);
-- после сокращения Mini App menu checkout/product-flow surface должен сохранить локальный CTA `К стратегии`, см. `P45` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md).
+- `P64`: Telegram HTML renderer должен сохранять переносы строк без `<br>`;
+- `P65`: existing `invited` user должен становиться `active` после успешной Telegram subscriber auth;
+- `P66`: preview-ссылки в `app/status.html` должны оставаться под `/preview/app`;
+- `P67`: app checkout error context должен сохранять `entry_marker`, success page не должен показывать `None`;
+- `P68`: checkout readiness copy должен говорить про `Дисклеймер`, а не про полный legal pack.
 
 ## Правила работы
 
 - перед реализацией читайте [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
-- для нового worker-pass сначала сверяйтесь с архитектурной стратегией `P25` в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
+- для нового worker-pass сначала сверяйтесь с актуальными findings в [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
 - если задача затрагивает UX или data contract, сначала сверяйтесь с [doc/blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
 - после завершения задачи обновляйте статус в [doc/task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
 - не переходите к следующему блоку backlog, пока текущий не зафиксирован в задаче и review

@@ -19,7 +19,6 @@ from pitchcopytrade.db.models.catalog import (
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
 from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
     InviteDeliveryStatus,
     InstrumentType,
     LegalDocumentType,
@@ -35,6 +34,7 @@ from pitchcopytrade.db.models.enums import (
 )
 from pitchcopytrade.db.models.notification_log import NotificationChannelEnum, NotificationLog
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.billing import normalize_duration_days
 
 
 def _utc_now() -> datetime:
@@ -269,7 +269,7 @@ class FileDatasetGraph:
                 strategy_id=item.get("strategy_id"),
                 author_id=item.get("author_id"),
                 bundle_id=item.get("bundle_id"),
-                billing_period=_enum(BillingPeriod, item["billing_period"]),
+                duration_days=normalize_duration_days(item.get("duration_days")) or 30,
                 price_rub=item["price_rub"],
                 trial_days=item.get("trial_days", 0),
                 is_active=item.get("is_active", True),
@@ -808,7 +808,7 @@ class FileDatasetGraph:
             "strategy_id": entity.strategy_id or (entity.strategy.id if getattr(entity, "strategy", None) is not None else None),
             "author_id": entity.author_id or (entity.author.id if getattr(entity, "author", None) is not None else None),
             "bundle_id": entity.bundle_id or (entity.bundle.id if getattr(entity, "bundle", None) is not None else None),
-            "billing_period": entity.billing_period.value,
+            "duration_days": entity.duration_days,
             "price_rub": entity.price_rub,
             "trial_days": entity.trial_days,
             "is_active": entity.is_active,

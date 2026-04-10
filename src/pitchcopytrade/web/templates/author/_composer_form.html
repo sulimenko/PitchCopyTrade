@@ -17,6 +17,7 @@
   <input type="hidden" name="embedded" value="{% if embedded %}1{% else %}0{% endif %}" />
   <input type="hidden" name="next_path" value="{{ next_path }}" />
   <input type="hidden" name="message_type" value="{{ composer.message_type or composer.message_mode or 'mixed' }}" data-message-type-hidden />
+  <input type="hidden" name="title" value="{{ composer.title or '' }}" data-message-title-hidden />
   <input type="hidden" name="structured_instrument_ticker" value="{{ composer.structured_instrument_ticker or '' }}" data-structured-ticker-hidden />
   <input type="hidden" name="structured_instrument_name" value="{{ composer.structured_instrument_name or '' }}" data-structured-name-hidden />
   <input type="hidden" name="structured_amount" value="{{ composer.structured_amount or '' }}" data-structured-amount-hidden />
@@ -255,8 +256,27 @@
   .author-preview-modal { border: 0; padding: 0; width: min(1100px, calc(100% - 24px)); background: transparent; }
   .author-preview-modal::backdrop { background: rgba(11, 20, 49, 0.54); }
   .author-preview-shell { padding: 16px; border-radius: 18px; }
-  .author-preview-body { display: grid; gap: 10px; margin-top: 12px; }
-  .author-preview-block { padding: 12px; border-radius: 12px; background: rgba(12, 20, 46, 0.04); }
+  .author-preview-body { display: grid; gap: 12px; margin-top: 12px; }
+  .author-preview-telegram {
+    padding: 16px;
+    border-radius: 12px;
+    background: rgba(12, 20, 46, 0.04);
+    line-height: 1.6;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+    white-space: normal;
+  }
+  .author-preview-divider {
+    margin: 6px 0;
+    text-align: center;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    user-select: none;
+  }
+  .author-preview-inline-docs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 12px;
+  }
   .author-preview-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
   .instrument-autocomplete-popup { position: fixed; z-index: 100; background: #fff; border: 1px solid rgba(12, 20, 46, 0.12); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10); max-height: 220px; overflow: auto; display: grid; gap: 0; }
   .instrument-autocomplete-popup[hidden] { display: none !important; }
@@ -329,12 +349,21 @@
     const instrumentPopup = document.getElementById("instrument-autocomplete");
     const historyGridEl = document.getElementById("author-history-grid");
     const historyData = {{ _history_json | tojson }};
-    const renderContract = {{ message_render_contract | tojson }};
     let instruments = {{ _instrument_items | tojson }};
     const screenButtons = Array.from(document.querySelectorAll("[data-screen-button]"));
     const structuredSideRadios = Array.from(document.querySelectorAll('[name="structured_side"]'));
     const removeDocumentInputs = Array.from(document.querySelectorAll('input[name="remove_attachment_ids"]'));
     let previewConfirmed = false;
+    const PREVIEW_DIVIDER = "━━━━━━━━━━━━━━━━━━━━";
+    const PREVIEW_KIND_ICONS = {
+      recommendation: "◼",
+      idea: "◻",
+      alert: "▲",
+    };
+    const PREVIEW_SIDE_ICONS = {
+      buy: "🟢",
+      sell: "🔴",
+    };
 
     const instrumentState = window.PCTAuthorInstrumentState || {
       items: instruments.slice(),
@@ -639,71 +668,105 @@
       if (structuredQuantity) structuredQuantity.classList.toggle("is-invalid", invalid && state.quantity == null);
       return !invalid;
     }
-    function buildPreviewHtml() {
-      const sections = [];
-      const textValue = String((messageText && messageText.value) || "").trim();
-      const documents = retainedDocumentNames();
+    function selectedStrategyTitle() {
+      const select = document.querySelector('[data-strategy-select]');
+      if (!select || select.selectedIndex < 0) return "";
+      const option = select.options[select.selectedIndex];
+      return String(option && option.textContent ? option.textContent : "").trim();
+    }
+    function selectedKindValue() {
+      const kindSelect = document.querySelector('select[name="kind"]');
+      return kindSelect ? String(kindSelect.value || "").trim().toLowerCase() : "";
+    }
+    function escapeTelegramText(value) {
+      return escapeHtml(String(value || ""));
+    }
+    function telegramTextWithBreaks(value) {
+      return escapeTelegramText(value).replace(/\n/g, "<br>");
+    }
+    function previewMessageTitle() {
+      const titleInput = document.querySelector('[data-message-title-hidden]');
+      const title = String((titleInput && titleInput.value) || "").trim();
+      if (title) return title;
+      return selectedStrategyTitle() || "Публикация";
+    }
+    function previewStrategyName() {
+      return selectedStrategyTitle() || "—";
+    }
+    function previewFooterName() {
+      const strategy = selectedStrategyTitle();
+      return strategy;
+    }
+    function previewDealSideWithIcon(side) {
+      const normalized = String(side || "").trim().toLowerCase();
+      const label = normalized === "sell" ? "Продать" : normalized === "buy" ? "Купить" : (normalized || "—");
+      const icon = PREVIEW_SIDE_ICONS[normalized] || "";
+      return icon ? `${icon} ${label}` : label;
+    }
+    function previewDocumentNames() {
+      return retainedDocumentNames();
+    }
+    function buildTelegramPreviewHtml() {
+      const parts = [];
+      const kind = selectedKindValue();
+      const kindIcon = PREVIEW_KIND_ICONS[kind] || "◼";
+      const title = previewMessageTitle();
+      const strategyName = previewStrategyName();
+      const body = String((messageText && messageText.value) || "").trim();
       const deal = structuredState();
+      const docs = previewDocumentNames();
       const amountValue = String((hiddenAmount && hiddenAmount.value) || (amountField && amountField.value) || "—").trim() || "—";
-      const blockOrder = Array.isArray(renderContract.block_order) && renderContract.block_order.length ? renderContract.block_order : ["text", "structured", "documents"];
-      const blockTitles = renderContract.block_titles || {};
-      const structuredFields = Array.isArray(renderContract.structured_fields) ? renderContract.structured_fields : [];
 
-      function pushTextBlock() {
-        if (!textValue) return;
-        sections.push(
-          `<section class="author-preview-block"><h4>${escapeHtml(String(blockTitles.text || "Описание"))}</h4><div>${escapeHtml(textValue).replace(/\n/g, "<br>")}</div></section>`
-        );
+      parts.push(`<div>${escapeTelegramText(kindIcon)} <b>${telegramTextWithBreaks(title)}</b> · <i>${telegramTextWithBreaks(strategyName)}</i></div>`);
+
+      if (body) {
+        parts.push(`<div style="height:10px"></div>`);
+        parts.push(`<div>${telegramTextWithBreaks(body)}</div>`);
       }
-      function pushStructuredBlock() {
-        if (!deal.complete) return;
-        const sideLabel = deal.side === "sell" ? "Продать" : "Купить";
-        const values = new Map([
-          ["instrument", deal.instrumentLabel],
-          ["side", sideLabel],
-          ["price", structuredPrice && structuredPrice.value],
-          ["quantity", structuredQuantity && structuredQuantity.value],
-          ["amount", amountValue],
-          ["take_profit", structuredTp && structuredTp.value],
-          ["stop_loss", structuredSl && structuredSl.value],
-          ["note", deal.note],
-        ]);
-        const dealMeta = structuredFields
-          .map(function (entry) {
-            const key = entry[0];
-            const label = entry[1];
-            const value = values.get(key);
-            if (!String(value || "").trim()) return "";
-            return `<div><strong>${escapeHtml(String(label))}:</strong> ${escapeHtml(String(value))}</div>`;
+
+      if (deal.complete) {
+        parts.push(`<div class="author-preview-divider">${PREVIEW_DIVIDER}</div>`);
+        const dealLines = [];
+        dealLines.push(`<div><b>${telegramTextWithBreaks(deal.instrumentLabel || "инструмент")}</b>  ${escapeTelegramText(previewDealSideWithIcon(deal.side))}</div>`);
+        const priceParts = [];
+        const entry = String((structuredPrice && structuredPrice.value) || "").trim();
+        const tp = String((structuredTp && structuredTp.value) || "").trim();
+        const sl = String((structuredSl && structuredSl.value) || "").trim();
+        if (entry) priceParts.push(`<b>Вход:</b> ${telegramTextWithBreaks(entry)}`);
+        if (tp) priceParts.push(`<b>Цель:</b> ${telegramTextWithBreaks(tp)}`);
+        if (sl) priceParts.push(`<b>Стоп:</b> ${telegramTextWithBreaks(sl)}`);
+        if (priceParts.length) dealLines.push(`<div>${priceParts.join("  ")}</div>`);
+        const extraParts = [];
+        const quantity = String((structuredQuantity && structuredQuantity.value) || "").trim();
+        if (quantity) extraParts.push(`<b>Объём:</b> ${telegramTextWithBreaks(quantity)}`);
+        if (amountValue) extraParts.push(`<b>Сумма:</b> ${telegramTextWithBreaks(amountValue)}`);
+        if (extraParts.length) dealLines.push(`<div>${extraParts.join("  ")}</div>`);
+        const note = String((dealNote && dealNote.value) || "").trim();
+        if (note) {
+          dealLines.push(`<div class="author-preview-divider">${PREVIEW_DIVIDER}</div>`);
+          dealLines.push(`<div>${telegramTextWithBreaks(note)}</div>`);
+        }
+        parts.push(`<div>${dealLines.join("")}</div>`);
+      }
+
+      if (docs.length) {
+        parts.push(`<div class="author-preview-divider">${PREVIEW_DIVIDER}</div>`);
+        const docHtml = docs
+          .map(function (name) {
+            return `📎 ${escapeTelegramText(name)}`;
           })
-          .filter(Boolean)
-          .join("");
-        sections.push(`<section class="author-preview-block"><h4>${escapeHtml(String(blockTitles.structured || "Structured сделка"))}</h4>${dealMeta}</section>`);
+          .join(docs.length <= 2 ? "  " : "<br>");
+        parts.push(`<div class="${docs.length <= 2 ? "author-preview-inline-docs" : ""}">${docHtml}</div>`);
       }
-      function pushDocumentsBlock() {
-        if (!documents.length) return;
-        const caption = String((documentCaption && documentCaption.value) || "").trim();
-        const items = documents.map(function (name) {
-          return `<li>${escapeHtml(name)}</li>`;
-        }).join("");
-        sections.push(
-          `<section class="author-preview-block"><h4>${escapeHtml(String(blockTitles.documents || "Документы"))}</h4>${caption ? `<div style="margin-bottom:8px;">${escapeHtml(caption)}</div>` : ""}<ul style="margin:0;padding-left:18px;">${items}</ul></section>`
-        );
-      }
-      const blockRenderers = {
-        text: pushTextBlock,
-        structured: pushStructuredBlock,
-        documents: pushDocumentsBlock,
-      };
-      blockOrder.forEach(function (blockName) {
-        const renderer = blockRenderers[blockName];
-        if (renderer) renderer();
-      });
-      return sections.join("");
+
+      parts.push(`<div class="author-preview-divider">${PREVIEW_DIVIDER}</div>`);
+      const footerName = previewFooterName();
+      parts.push(footerName ? `<div><i>${telegramTextWithBreaks(footerName)} • PitchCopyTrade</i></div>` : "<div><i>PitchCopyTrade</i></div>");
+      return parts.join("");
     }
     function openPreviewModal() {
       if (!previewModal || !previewBody) return;
-      previewBody.innerHTML = buildPreviewHtml();
+      previewBody.innerHTML = `<div class="author-preview-telegram">${buildTelegramPreviewHtml()}</div>`;
       if (typeof previewModal.showModal === "function") {
         previewModal.showModal();
         return;

@@ -10,7 +10,6 @@ from pitchcopytrade.db.models.catalog import Strategy
 from pitchcopytrade.db.models.commerce import Payment, Subscription
 from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
     InstrumentType,
     MessageStatus,
     PaymentProvider,

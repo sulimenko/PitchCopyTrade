@@ -15,17 +15,7 @@ from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import Bundle, Instrument, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription, UserConsent
 from pitchcopytrade.db.models.content import Message
-from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
-    InviteDeliveryStatus,
-    PaymentStatus,
-    ProductType,
-    RiskLevel,
-    RoleSlug,
-    StrategyStatus,
-    SubscriptionStatus,
-    UserStatus,
-)
+from pitchcopytrade.db.models.enums import InviteDeliveryStatus, PaymentStatus, ProductType, RiskLevel, RoleSlug, StrategyStatus, SubscriptionStatus, UserStatus
 from pitchcopytrade.auth.session import build_staff_invite_link, build_staff_invite_token
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
@@ -69,7 +59,7 @@ class ProductFormData:
     strategy_id: str | None
     author_id: str | None
     bundle_id: str | None
-    billing_period: BillingPeriod
+    duration_days: int
     price_rub: int
     trial_days: int
     is_active: bool
@@ -201,12 +191,18 @@ async def list_admin_strategies(session: AsyncSession | None) -> list[Strategy]:
     if session is None:
         graph, _store = _file_admin_graph()
         items = list(graph.strategies.values())
-        items.sort(key=lambda item: (item.created_at, item.title.lower()), reverse=True)
+        items.sort(
+            key=lambda item: (
+                ((item.author.display_name if getattr(item, "author", None) is not None else "") or "").lower(),
+                (item.title or "").lower(),
+            )
+        )
         return items
     query = (
         select(Strategy)
         .options(selectinload(Strategy.author).selectinload(AuthorProfile.user))
-        .order_by(Strategy.created_at.desc(), Strategy.title.asc())
+        .join(Strategy.author)
+        .order_by(AuthorProfile.display_name.asc(), Strategy.title.asc())
     )
     result = await session.execute(query)
     return list(result.scalars().all())
@@ -443,7 +439,7 @@ async def create_product(session: AsyncSession | None, data: ProductFormData) ->
             strategy_id=data.strategy_id,
             author_id=data.author_id,
             bundle_id=data.bundle_id,
-            billing_period=data.billing_period,
+            duration_days=data.duration_days,
             price_rub=data.price_rub,
             trial_days=data.trial_days,
             is_active=data.is_active,
@@ -460,7 +456,7 @@ async def create_product(session: AsyncSession | None, data: ProductFormData) ->
         strategy_id=data.strategy_id,
         author_id=data.author_id,
         bundle_id=data.bundle_id,
-        billing_period=data.billing_period,
+        duration_days=data.duration_days,
         price_rub=data.price_rub,
         trial_days=data.trial_days,
         is_active=data.is_active,
@@ -529,7 +525,7 @@ async def update_product(
     product.strategy_id = data.strategy_id
     product.author_id = data.author_id
     product.bundle_id = data.bundle_id
-    product.billing_period = data.billing_period
+    product.duration_days = data.duration_days
     product.price_rub = data.price_rub
     product.trial_days = data.trial_days
     product.is_active = data.is_active
@@ -546,7 +542,7 @@ async def update_product(
         persisted.strategy_id = product.strategy_id
         persisted.author_id = product.author_id
         persisted.bundle_id = product.bundle_id
-        persisted.billing_period = product.billing_period
+        persisted.duration_days = product.duration_days
         persisted.price_rub = product.price_rub
         persisted.trial_days = product.trial_days
         persisted.is_active = product.is_active
@@ -1836,4 +1832,3 @@ async def save_strategy_onepager(session: AsyncSession | None, strategy_id: str,
     await session.commit()
     await session.refresh(strategy)
     return strategy
-

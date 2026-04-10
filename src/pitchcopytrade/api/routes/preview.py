@@ -8,7 +8,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.services.subscriber import (
-    billing_period_label,
     build_action_cards,
     payment_history,
     payment_result_message,
@@ -115,7 +114,6 @@ async def preview_app_strategy_detail(slug: str, request: Request) -> Response:
             "strategy": strategy,
             "miniapp_mode": True,
             "preview_mode": True,
-            "billing_period_label": billing_period_label,
             "miniapp_user": preview["preview_user"],
             "miniapp_snapshot": snapshot,
             "miniapp_active": "strategy",
@@ -237,7 +235,6 @@ async def preview_app_payments(request: Request) -> Response:
             "user": preview["preview_user"],
             "snapshot": snapshot,
             "payment_status_label": payment_status_label,
-            "billing_period_label": billing_period_label,
             "miniapp_mode": True,
             "preview_mode": True,
             "miniapp_user": preview["preview_user"],
@@ -261,7 +258,6 @@ async def preview_app_subscriptions(request: Request) -> Response:
             "user": preview["preview_user"],
             "snapshot": snapshot,
             "subscription_status_label": subscription_status_label,
-            "billing_period_label": billing_period_label,
             "miniapp_mode": True,
             "preview_mode": True,
             "miniapp_user": preview["preview_user"],
@@ -361,7 +357,6 @@ async def preview_app_subscription_detail(subscription_id: str, request: Request
             "subscription": subscription,
             "renewal_history": subscription_renewal_history(snapshot, subscription),
             "subscription_status_label": subscription_status_label,
-            "billing_period_label": billing_period_label,
             "miniapp_mode": True,
             "preview_mode": True,
             "miniapp_user": preview["preview_user"],

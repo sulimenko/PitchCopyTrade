@@ -38,7 +38,6 @@ from pitchcopytrade.services.public import (
     list_public_strategies,
 )
 from pitchcopytrade.services.instruments import build_strategy_quote_strip
-from pitchcopytrade.services.subscriber import billing_period_label
 from pitchcopytrade.web.templates import templates
 
 
@@ -285,7 +284,6 @@ async def strategy_detail_page(
             "title": strategy.title,
             "strategy": strategy,
             "miniapp_mode": False,
-            "billing_period_label": billing_period_label,
             "entry_marker": entry_marker,
             "user_active_product_ids": user_active_product_ids,
             "already_subscribed_notice": request.query_params.get("notice") == "already_subscribed",

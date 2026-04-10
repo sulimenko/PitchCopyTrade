@@ -9,7 +9,7 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Subscription
 from pitchcopytrade.db.models.content import Message
-from pitchcopytrade.db.models.enums import BillingPeriod, ProductType, RiskLevel, StrategyStatus, SubscriptionStatus, UserStatus
+from pitchcopytrade.db.models.enums import ProductType, RiskLevel, StrategyStatus, SubscriptionStatus, UserStatus
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.services.notifications import (
@@ -70,19 +70,14 @@ def test_build_message_notification_text_uses_html_safe_message_payload() -> Non
 
     text = build_message_notification_text(message)
 
-    assert "<b>Новая публикация по вашей подписке</b>" in text
-    assert "<b>Покупка SBER</b>" in text
-    assert "Стратегия: Momentum RU" in text
-    assert "Тип: idea" in text
+    assert text.startswith("◻ <b>Покупка SBER</b> · <i>Momentum RU</i>")
+    assert "Новая публикация по вашей подписке" not in text
+    assert "Тип: idea" not in text
     assert "&lt;p&gt;Сильный спрос&lt;/p&gt;" in text
-    assert "<b>Structured сделка</b>" in text
-    assert "Инструмент: SBER" in text
-    assert "Действие: Купить" in text or "Действие: buy" in text
-    assert "Цена: 101.5" in text
-    assert "<b>Документы</b>" in text
-    assert "• idea.pdf" in text
-    assert "Deal:" not in text
-    assert text.index("&lt;p&gt;Сильный спрос&lt;/p&gt;") < text.index("<b>Structured сделка</b>") < text.index("<b>Документы</b>")
+    assert "🟢 Купить" in text
+    assert "<b>Вход:</b> 101.5" in text
+    assert "📎 idea.pdf" in text or '<a href="messages/msg-1/file.pdf">idea.pdf</a>' in text
+    assert text.index("&lt;p&gt;Сильный спрос&lt;/p&gt;") < text.index("━━━━━━━━━━━━━━━━━━━━") < text.index("<b>SBER</b>  🟢 Купить")
 
 
 def test_build_message_notification_text_renders_text_and_documents_in_order() -> None:
@@ -103,9 +98,8 @@ def test_build_message_notification_text_renders_text_and_documents_in_order() -
 
     assert "Сильный спрос" in text
     assert "<b>Structured сделка</b>" not in text
-    assert "<b>Документы</b>" in text
-    assert "• checklist.pdf" in text
-    assert text.index("Сильный спрос") < text.index("<b>Документы</b>")
+    assert "📎 checklist.pdf" in text
+    assert text.index("Сильный спрос") < text.index("━━━━━━━━━━━━━━━━━━━━") < text.index("📎 checklist.pdf")
 
 
 def test_build_message_notification_text_renders_text_and_deal_in_order() -> None:
@@ -125,13 +119,11 @@ def test_build_message_notification_text_renders_text_and_deal_in_order() -> Non
     text = build_message_notification_text(message)
 
     assert "Сильный спрос" in text
-    assert "<b>Structured сделка</b>" in text
-    assert "Инструмент: SBER" in text
-    assert "Действие: Продать" in text
-    assert "Цена: 101.5" in text
+    assert "<b>Structured сделка</b>" not in text
+    assert "<b>SBER</b>  🔴 Продать" in text
+    assert "<b>Вход:</b> 101.5" in text
     assert "Документы" not in text
-    assert "Deal:" not in text
-    assert text.index("Сильный спрос") < text.index("<b>Structured сделка</b>")
+    assert text.index("Сильный спрос") < text.index("━━━━━━━━━━━━━━━━━━━━") < text.index("<b>SBER</b>  🔴 Продать")
 
 
 def test_build_message_email_text_uses_same_content_order() -> None:
@@ -151,6 +143,7 @@ def test_build_message_email_text_uses_same_content_order() -> None:
     text = build_message_email_text(message)
 
     assert "Новая публикация по вашей подписке" in text
+    assert "Покупка SBER" in text
     assert "Сильный спрос" in text
     assert "Structured сделка" in text
     assert "Документы" in text
@@ -208,7 +201,7 @@ def test_subscription_matches_message_for_author_and_bundle_targets() -> None:
         author_id="author-1",
         strategy_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,
@@ -222,7 +215,7 @@ def test_subscription_matches_message_for_author_and_bundle_targets() -> None:
         author_id=None,
         strategy_id=None,
         bundle_id="bundle-1",
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,
@@ -284,7 +277,7 @@ async def test_deliver_message_notifications_file_logs_missing_telegram_identity
         strategy_id=strategy.id,
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,
@@ -386,7 +379,7 @@ async def test_deliver_message_notifications_file_falls_back_to_email(
         strategy_id=strategy.id,
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,
@@ -490,7 +483,7 @@ async def test_deliver_message_notifications_file_falls_back_to_email_after_tele
         strategy_id=strategy.id,
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,
@@ -592,7 +585,7 @@ async def test_deliver_message_notifications_file_adds_admin_copy_bcc(
         strategy_id=strategy.id,
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,
@@ -711,7 +704,7 @@ async def test_deliver_message_notifications_file_logs_audience_mismatch_reason(
         strategy_id=strategy.id,
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,

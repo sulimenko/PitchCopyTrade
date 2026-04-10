@@ -192,8 +192,14 @@ def serialize_products(products: list, request_url_for=None) -> str:
         is_active = item.is_active if hasattr(item, 'is_active') else True
         status_class = "ok" if is_active else "danger"
         product_type = _enum_str(item.product_type)
-        billing_period = _enum_str(item.billing_period)
-        period_label = "Месяц" if billing_period == "MONTHLY" else "Квартал" if billing_period == "QUARTERLY" else "Год" if billing_period == "ANNUAL" else "На всегда"
+        duration_days = getattr(item, "duration_days", None)
+        if duration_days is None:
+            period_label = "Период не указан"
+        else:
+            period_label = {30: "30 дней", 60: "60 дней", 90: "90 дней", 180: "180 дней", 365: "1 год"}.get(
+                int(duration_days),
+                f"{duration_days} дней",
+            )
 
         data.append({
             "product": f"<strong>{item.title}</strong><br>{item.slug}",

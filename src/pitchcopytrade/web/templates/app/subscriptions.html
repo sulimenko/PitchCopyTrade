@@ -25,7 +25,7 @@
           <strong>{{ subscription.product.title if subscription.product else "Продукт" }}</strong>
           <div class="muted" style="margin-top:8px;line-height:1.6;">
             Статус: {{ subscription_status_label(subscription.status) }}{% if subscription.is_trial %} · пробный период{% endif %}
-            <br />Период: {{ billing_period_label(subscription.product.billing_period if subscription.product else None) }}
+            <br />Период: {{ label_duration_days(subscription.product.duration_days if subscription.product else None) }}
           </div>
           <!-- 
           {% if subscription.manual_discount_rub or subscription.applied_promo_code %}

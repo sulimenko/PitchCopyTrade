@@ -9,7 +9,7 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Subscription
 from pitchcopytrade.db.models.content import Message
-from pitchcopytrade.db.models.enums import BillingPeriod, MessageStatus, ProductType, RiskLevel, StrategyStatus, SubscriptionStatus, UserStatus
+from pitchcopytrade.db.models.enums import MessageStatus, ProductType, RiskLevel, StrategyStatus, SubscriptionStatus, UserStatus
 from pitchcopytrade.repositories.file_store import FileDataStore
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.worker.jobs import placeholders
@@ -51,7 +51,7 @@ def _build_file_runtime_graph(tmp_path):
         title="Momentum RU Monthly",
         description="Monthly access",
         strategy_id=strategy.id,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,

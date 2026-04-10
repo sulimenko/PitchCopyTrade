@@ -12,7 +12,6 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription
 from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
     LegalDocumentType,
     PaymentProvider,
     PaymentStatus,
@@ -132,7 +131,7 @@ def _make_strategy_and_product() -> tuple[Strategy, SubscriptionProduct]:
         strategy_id="strategy-1",
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=499,
         trial_days=7,
         is_active=True,

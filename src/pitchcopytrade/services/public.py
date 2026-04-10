@@ -12,7 +12,6 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import LeadSource, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription
 from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
     LegalDocumentType,
     PaymentProvider,
     PaymentStatus,
@@ -23,6 +22,7 @@ from pitchcopytrade.db.models.enums import (
 )
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.contracts import PublicRepository
+from pitchcopytrade.billing import subscription_delta
 from pitchcopytrade.services.compliance import bind_consents_to_payment, record_user_consent
 from pitchcopytrade.services.promo import apply_promo_to_amount, sync_promo_redemption_counter, validate_promo_code_for_checkout
 
@@ -494,7 +494,7 @@ async def _create_checkout_records(
         manual_discount_rub=0,
         applied_promo_code=promo_code,
         start_at=timestamp,
-        end_at=timestamp + _billing_delta(product.billing_period),
+        end_at=timestamp + subscription_delta(product.duration_days),
     )
     repository.add(subscription)
 
@@ -536,7 +536,7 @@ async def _create_free_checkout_records(
         manual_discount_rub=0,
         applied_promo_code=promo_code,
         start_at=timestamp,
-        end_at=timestamp + _billing_delta(product.billing_period),
+        end_at=timestamp + subscription_delta(product.duration_days),
     )
     repository.add(subscription)
 
@@ -660,7 +660,7 @@ async def _create_tbank_checkout_records(
         manual_discount_rub=0,
         applied_promo_code=promo_code,
         start_at=timestamp,
-        end_at=timestamp + _billing_delta(product.billing_period),
+        end_at=timestamp + subscription_delta(product.duration_days),
     )
     repository.add(subscription)
 
@@ -729,14 +729,6 @@ def _infer_lead_source_type(name: str) -> LeadSourceType:
     if "ref" in normalized or "partner" in normalized or "telegram" in normalized:
         return LeadSourceType.REFERRAL
     return LeadSourceType.DIRECT
-
-
-def _billing_delta(period: BillingPeriod) -> timedelta:
-    if period is BillingPeriod.MONTH:
-        return timedelta(days=30)
-    if period is BillingPeriod.QUARTER:
-        return timedelta(days=90)
-    return timedelta(days=365)
 
 
 def _build_stub_reference(slug: str) -> str:

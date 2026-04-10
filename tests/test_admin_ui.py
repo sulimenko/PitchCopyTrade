@@ -19,7 +19,6 @@ from pitchcopytrade.db.models.commerce import Payment, PromoCode, Subscription, 
 from pitchcopytrade.db.models.content import Message
 from pitchcopytrade.db.models.commerce import LegalDocument
 from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
     InviteDeliveryStatus,
     LegalDocumentType,
     PaymentProvider,
@@ -154,7 +153,7 @@ def _make_product(product_id: str, strategy: Strategy) -> SubscriptionProduct:
         strategy_id=strategy.id,
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=7,
         is_active=True,
@@ -1183,7 +1182,7 @@ def test_product_create_submit_redirects_to_editor(monkeypatch) -> None:
         product.strategy_id = data.strategy_id
         product.author_id = data.author_id
         product.bundle_id = data.bundle_id
-        product.billing_period = data.billing_period
+        product.duration_days = data.duration_days
         product.price_rub = data.price_rub
         product.trial_days = data.trial_days
         product.is_active = data.is_active
@@ -1214,7 +1213,7 @@ def test_product_create_submit_redirects_to_editor(monkeypatch) -> None:
                 "title": "Momentum RU Monthly",
                 "description": "Месячная подписка",
                 "strategy_id": "strategy-1",
-                "billing_period": "month",
+                "duration_days": "60",
                 "price_rub": "4900",
                 "trial_days": "7",
                 "is_active": "1",
@@ -1226,7 +1225,7 @@ def test_product_create_submit_redirects_to_editor(monkeypatch) -> None:
         assert response.status_code == 303
         assert response.headers["location"] == "/admin/products/product-new/edit"
         assert created["data"].product_type == ProductType.STRATEGY
-        assert created["data"].billing_period == BillingPeriod.MONTH
+        assert created["data"].duration_days == 60
         assert created["data"].strategy_id == "strategy-1"
 
 
@@ -1246,6 +1245,7 @@ def test_product_edit_submit_redirects_after_update(monkeypatch) -> None:
         current_product.title = data.title
         current_product.slug = data.slug
         current_product.description = data.description
+        current_product.duration_days = data.duration_days
         current_product.price_rub = data.price_rub
         current_product.trial_days = data.trial_days
         return current_product
@@ -1265,7 +1265,7 @@ def test_product_edit_submit_redirects_after_update(monkeypatch) -> None:
                 "title": "Momentum RU Quarter",
                 "description": "Квартальная подписка",
                 "strategy_id": "strategy-1",
-                "billing_period": "quarter",
+                "duration_days": "90",
                 "price_rub": "12900",
                 "trial_days": "14",
                 "is_active": "1",
@@ -1277,8 +1277,64 @@ def test_product_edit_submit_redirects_after_update(monkeypatch) -> None:
         assert response.status_code == 303
         assert response.headers["location"] == "/admin/products/product-1/edit"
         assert updated["product"] is product
-        assert updated["data"].billing_period == BillingPeriod.QUARTER
+        assert updated["data"].duration_days == 90
         assert updated["data"].price_rub == 12900
+
+
+def test_product_form_renders_duration_targets_and_slug_autofill(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    strategy = _make_strategy("strategy-1", author, "Momentum RU")
+    bundle = _make_bundle("bundle-1", "Premium Pack")
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_authors", lambda _session: _async_return([author]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_strategies", lambda _session: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_bundles", lambda _session: _async_return([bundle]))
+
+    with _build_client(session, admin) as client:
+        response = client.get("/admin/products/new")
+
+        assert response.status_code == 200
+        assert 'name="duration_days"' in response.text
+        assert 'data-target="strategy"' in response.text
+        assert 'data-target="author"' in response.text
+        assert 'data-target="bundle"' in response.text
+        assert 'data-slug="momentum-ru"' in response.text
+        assert 'data-author="Alpha Desk"' in response.text
+        assert 'readonly' in response.text
+        assert "Введите 0 для бесплатного продукта." in response.text
+
+
+def test_product_create_rejects_invalid_duration_days(monkeypatch) -> None:
+    session = FakeAsyncSession()
+    admin = _make_admin_user()
+    author = _make_author("author-1", "author-user-1", "Alpha Desk")
+    strategy = _make_strategy("strategy-1", author, "Momentum RU")
+    bundle = _make_bundle("bundle-1", "Premium Pack")
+    session.users_by_id[admin.id] = admin
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_authors", lambda _session: _async_return([author]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_strategies", lambda _session: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.admin.list_admin_bundles", lambda _session: _async_return([bundle]))
+
+    with _build_client(session, admin) as client:
+        response = client.post(
+            "/admin/products",
+            data={
+                "product_type": "strategy",
+                "slug": "broken-product",
+                "title": "Broken Product",
+                "strategy_id": "strategy-1",
+                "duration_days": "45",
+                "price_rub": "1000",
+                "trial_days": "0",
+            },
+        )
+
+        assert response.status_code == 422
+        assert "Выберите корректный период подписки" in response.text
 
 
 def test_author_registry_renders_active_and_inactive(monkeypatch) -> None:
@@ -1963,7 +2019,7 @@ def test_product_create_shows_validation_error_for_missing_target(monkeypatch) -
                 "product_type": "strategy",
                 "slug": "broken-product",
                 "title": "Broken Product",
-                "billing_period": "month",
+                "duration_days": "30",
                 "price_rub": "1000",
                 "trial_days": "0",
             },

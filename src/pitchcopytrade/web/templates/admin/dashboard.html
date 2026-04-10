@@ -141,7 +141,7 @@
         <span class="pill">{{ label_product_type(product.product_type) }}</span>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-        <span class="pill">{{ label_billing_period(product.billing_period) }}</span>
+        <span class="pill">{{ label_duration_days(product.duration_days) }}</span>
         <span class="pill">{{ product.price_rub }} руб</span>
         {% if product.trial_days %}
         <span class="pill">{{ product.trial_days }} дней бесплатно</span>

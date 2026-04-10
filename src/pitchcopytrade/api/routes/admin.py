@@ -15,7 +15,7 @@ from pitchcopytrade.auth.session import build_staff_invite_link
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
-from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, ProductType, RiskLevel, RoleSlug, StrategyStatus
+from pitchcopytrade.db.models.enums import LegalDocumentType, ProductType, RiskLevel, RoleSlug, StrategyStatus
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.services.admin import (
     AdminAuthorUpdateData,
@@ -81,6 +81,7 @@ from pitchcopytrade.services.promo_admin import (
     list_admin_promo_codes,
     update_admin_promo_code,
 )
+from pitchcopytrade.billing import ALLOWED_DURATION_DAYS, normalize_duration_days
 from pitchcopytrade.web.templates import templates
 from pitchcopytrade.api.routes._grid_serializers import (
     serialize_strategies,
@@ -651,7 +652,7 @@ async def product_create_submit(
     strategy_id: str = Form(""),
     author_id: str = Form(""),
     bundle_id: str = Form(""),
-    billing_period: str = Form(""),
+    duration_days: str = Form(""),
     price_rub: str = Form(""),
     trial_days: str = Form("0"),
     is_active: str | None = Form(default=None),
@@ -666,7 +667,7 @@ async def product_create_submit(
             strategy_id=strategy_id,
             author_id=author_id,
             bundle_id=bundle_id,
-            billing_period=billing_period,
+            duration_days=duration_days,
             price_rub=price_rub,
             trial_days=trial_days,
             is_active=is_active,
@@ -689,7 +690,7 @@ async def product_create_submit(
                 "strategy_id": strategy_id,
                 "author_id": author_id,
                 "bundle_id": bundle_id,
-                "billing_period": billing_period,
+                "duration_days": duration_days,
                 "price_rub": price_rub,
                 "trial_days": trial_days,
                 "is_active": is_active is not None,
@@ -713,7 +714,7 @@ async def product_create_submit(
                 "strategy_id": strategy_id,
                 "author_id": author_id,
                 "bundle_id": bundle_id,
-                "billing_period": billing_period,
+                "duration_days": duration_days,
                 "price_rub": price_rub,
                 "trial_days": trial_days,
                 "is_active": is_active is not None,
@@ -759,7 +760,7 @@ async def product_edit_submit(
     strategy_id: str = Form(""),
     author_id: str = Form(""),
     bundle_id: str = Form(""),
-    billing_period: str = Form(""),
+    duration_days: str = Form(""),
     price_rub: str = Form(""),
     trial_days: str = Form("0"),
     is_active: str | None = Form(default=None),
@@ -779,7 +780,7 @@ async def product_edit_submit(
             strategy_id=strategy_id,
             author_id=author_id,
             bundle_id=bundle_id,
-            billing_period=billing_period,
+            duration_days=duration_days,
             price_rub=price_rub,
             trial_days=trial_days,
             is_active=is_active,
@@ -802,7 +803,7 @@ async def product_edit_submit(
                 "strategy_id": strategy_id,
                 "author_id": author_id,
                 "bundle_id": bundle_id,
-                "billing_period": billing_period,
+                "duration_days": duration_days,
                 "price_rub": price_rub,
                 "trial_days": trial_days,
                 "is_active": is_active is not None,
@@ -826,7 +827,7 @@ async def product_edit_submit(
                 "strategy_id": strategy_id,
                 "author_id": author_id,
                 "bundle_id": bundle_id,
-                "billing_period": billing_period,
+                "duration_days": duration_days,
                 "price_rub": price_rub,
                 "trial_days": trial_days,
                 "is_active": is_active is not None,
@@ -1361,7 +1362,7 @@ async def _render_product_form(
             "field_errors": field_errors or {},
             "form_values": form_values,
             "product_types": list(ProductType),
-            "billing_periods": list(BillingPeriod),
+            "duration_days_options": ALLOWED_DURATION_DAYS,
         },
         status_code=status_code,
     )
@@ -1517,7 +1518,7 @@ def _build_product_form_data(
     strategy_id: str,
     author_id: str,
     bundle_id: str,
-    billing_period: str,
+    duration_days: str,
     price_rub: str,
     trial_days: str,
     is_active: str | None,
@@ -1538,10 +1539,12 @@ def _build_product_form_data(
         errors["product_type"] = "Выберите тип продукта"
         parsed_type = None
     try:
-        parsed_billing_period = BillingPeriod(billing_period)
+        parsed_duration_days = normalize_duration_days(duration_days)
+        if parsed_duration_days is None:
+            errors["duration_days"] = "Выберите корректный период подписки"
     except ValueError:
-        errors["billing_period"] = "Выберите корректный период биллинга"
-        parsed_billing_period = None
+        errors["duration_days"] = "Выберите корректный период подписки"
+        parsed_duration_days = None
     strategy_value = strategy_id.strip() or None
     author_value = author_id.strip() or None
     bundle_value = bundle_id.strip() or None
@@ -1579,8 +1582,8 @@ def _build_product_form_data(
         errors["trial_days"] = "Trial days не может быть отрицательным"
     if errors:
         raise FormValidationError(errors)
-    if parsed_billing_period is None:
-        raise RuntimeError("unreachable: billing period must be validated before product form assembly")
+    if parsed_duration_days is None:
+        raise RuntimeError("unreachable: duration days must be validated before product form assembly")
     if parsed_price is None:
         raise RuntimeError("unreachable: price must be validated before product form assembly")
     if parsed_trial is None:
@@ -1594,7 +1597,7 @@ def _build_product_form_data(
         strategy_id=strategy_value,
         author_id=author_value,
         bundle_id=bundle_value,
-        billing_period=parsed_billing_period,
+        duration_days=parsed_duration_days,
         price_rub=parsed_price,
         trial_days=parsed_trial,
         is_active=is_active is not None,
@@ -1682,7 +1685,7 @@ def _form_values_from_product(product) -> dict[str, object]:
         "strategy_id": product.strategy_id or "",
         "author_id": product.author_id or "",
         "bundle_id": product.bundle_id or "",
-        "billing_period": product.billing_period.value,
+        "duration_days": product.duration_days,
         "price_rub": product.price_rub,
         "trial_days": product.trial_days,
         "is_active": product.is_active,

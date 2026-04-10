@@ -42,8 +42,15 @@ def label_product_type(value: object) -> str:
     return _label(value, {"strategy": "Стратегия", "author": "Автор", "bundle": "Пакет"})
 
 
-def label_billing_period(value: object) -> str:
-    return _label(value, {"month": "Месяц", "quarter": "Квартал", "year": "Год"})
+def label_duration_days(value: object) -> str:
+    raw = getattr(value, "duration_days", value)
+    if hasattr(raw, "value"):
+        raw = getattr(raw, "value")
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return "Период не указан"
+    return {30: "30 дней", 60: "60 дней", 90: "90 дней", 180: "180 дней", 365: "1 год"}.get(days, f"{days} дней")
 
 
 def label_payment_provider(value: object) -> str:
@@ -147,7 +154,7 @@ templates.env.globals.update(
     label_strategy_status=label_strategy_status,
     label_risk_level=label_risk_level,
     label_product_type=label_product_type,
-    label_billing_period=label_billing_period,
+    label_duration_days=label_duration_days,
     label_payment_provider=label_payment_provider,
     label_payment_status=label_payment_status,
     label_subscription_status=label_subscription_status,

@@ -211,9 +211,11 @@ def test_author_editor_is_message_centric(monkeypatch) -> None:
         assert 'id="block-documents"' in response.text
         assert 'id="block-deal"' in response.text
         assert 'id="block-history"' in response.text
+        assert "author-preview-telegram" in response.text
+        assert "message_render_contract" not in response.text
         assert "История сообщений и composer вынесены в dock" in response.text
         assert "Новое сообщение" in response.text
-        assert 'name="title"' not in response.text
+        assert 'data-message-title-hidden' in response.text
         assert 'name="summary"' not in response.text
         assert 'name="thesis"' not in response.text
         assert 'name="market_context"' not in response.text
@@ -255,9 +257,9 @@ def test_author_editor_is_message_centric(monkeypatch) -> None:
         assert 'data-preview-body' in response.text
         assert 'data-confirm-submit' in response.text
         assert "showModal()" in response.text
-        assert "const renderContract =" in response.text
-        assert '"block_order"' in response.text
-        assert '"Structured сделка"' in response.text
+        assert "author-preview-telegram" in response.text
+        assert "PREVIEW_DIVIDER" in response.text
+        assert "PREVIEW_KIND_ICONS" in response.text
         assert 'fetch("/api/instruments"' in response.text
         assert "window.PCTAuthorInstrumentState" in response.text
 

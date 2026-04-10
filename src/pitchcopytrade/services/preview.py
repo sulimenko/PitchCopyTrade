@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
     PaymentStatus,
     ProductType,
     MessageKind,
@@ -101,7 +100,7 @@ def build_preview_admin_context() -> dict[str, object]:
             title="Премиум доступ",
             description="Месячная подписка с быстрым доступом к ленте идей.",
             product_type=ProductType.STRATEGY,
-            billing_period=BillingPeriod.MONTH,
+            duration_days=30,
             price_rub=4900,
             trial_days=7,
             is_active=True,
@@ -197,7 +196,7 @@ def _build_preview_strategy(author: SimpleNamespace) -> SimpleNamespace:
         title="Премиум доступ",
         description="Месячная подписка с быстрым доступом к ленте идей.",
         product_type=ProductType.STRATEGY,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=7,
         is_active=True,
@@ -247,7 +246,7 @@ def _simple_strategy(
                 title="Премиум доступ",
                 description="Месячная подписка с быстрым доступом к ленте идей.",
                 product_type=ProductType.STRATEGY,
-                billing_period=BillingPeriod.MONTH,
+                duration_days=30,
                 price_rub=4900,
                 trial_days=7,
                 is_active=True,

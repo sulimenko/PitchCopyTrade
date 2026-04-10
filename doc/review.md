@@ -1,5 +1,5 @@
 # PitchCopyTrade — Current Review Gate
-> Обновлено: 2026-04-03
+> Обновлено: 2026-04-10
 > Этот файл хранит только актуальные findings и merge gate после перехода проекта на `messages` и unified author composer.
 
 ## Общий вывод
@@ -9,7 +9,7 @@
 - `recommendations` заменены на `messages`
 - author UI стал message-centric
 - unified composer, preview и history table уже есть
-- local gate green: `./.venv/bin/python -m pytest -q` -> `297 passed`
+- local gate green: `./.venv/bin/python -m pytest -q` -> `332 passed`
 
 P27, P28, P29, P30, P31, P32, P33, P34 и P35 теперь закрыты в коде и документации.
 P35 закрыл предыдущий auth blocker: production logs больше показывают `tg_webapp_auth_success`, а не `invalid_hash`.
@@ -17,9 +17,11 @@ P36 и P37 закрыты в коде и документации.
 P38 закрыт в коде и документации.
 P39 закрыл основной staff/admin onboarding blocker.
 P40 закрыт в коде и документации.
-Новый review follow-up P41 закрыт в этом pass-е.
-P42 в основном закрыт, но оставил два residual follow-up-а P44 и P45.
-Новый dev/runbook follow-up P43 закрыт в этом pass-е.
+P41, P42, P43, P44 и P45 закрыты.
+P53 и P54 закрыты.
+P60 закрыт: runtime contract полностью перешел на `duration_days`, clean schema обновлена, production migration добавлена.
+P61 закрыт.
+P62 частично реализован, но Telegram HTML renderer требует follow-up из-за `<br>`.
 P32 cleanup remains open, но это не blocker.
 
 ## Подтвержденные факты
@@ -27,11 +29,11 @@ P32 cleanup remains open, но это не blocker.
 - основной author surface теперь находится на `/author/messages`
 - composer действительно собирает одно сообщение из text/documents/structured секций
 - preview перед submit реализован
-- локальный test suite проходит полностью
+- локальный test suite проходит полностью: `332 passed in 147.01s`
 - clean db schema и startup path существуют
 - минимальный public checkout dataset в PostgreSQL теперь seed-ится автоматически
 
-## Findings (2026-04-04 full project review)
+## Findings (2026-04-10 full project review)
 
 ### [P1] UniqueViolationError race condition in `upsert_telegram_subscriber` `[x]`
 
@@ -51,25 +53,43 @@ Resolved в P53:
 - **Дубль подписки**: Top Gun оформлен дважды с интервалом 3 мин (12:00 и 12:03) — нет защиты от double submit
 - Нет дубликатов User — crash не оставил partial state
 
-### [P1] Duplicate subscription: нет защиты от double-submit checkout `[ ]`
+### [P1] Duplicate subscription: нет защиты от double-submit checkout `[x]`
 
-**Severity**: medium (data issue, не crash)
+Resolved in P54:
+- server-side guard добавлен перед созданием checkout records;
+- `AlreadySubscribedError` редиректит на strategy detail с `notice=already_subscribed`;
+- каталог и detail page показывают disabled CTA `Вы уже подписаны`;
+- public/Mini App tests покрывают duplicate-submit path.
 
-**Что видно из production SQL:**
-- Пользователь Andrey (tg=881271577) имеет 2 одинаковые подписки Top Gun:
-  - 081633b3: active, 2026-04-04 12:00:49
-  - 2226e947: active, 2026-04-04 12:03:02 (через 3 минуты — дубль)
-- Оба платежа paid, 500 руб каждый
+### [P1] `duration_days` добавлен в ORM/schema без миграции для существующей DB `[x]`
 
-**Почему это происходит:**
-- Checkout POST не проверяет, есть ли у пользователя уже active subscription на тот же product
-- JS-форма блокирует кнопку `submitButton.disabled = true`, но это client-side only — не спасает от:
-  - повторного открытия checkout в новой вкладке
-  - network retry
-  - кнопки «назад» + повторный submit
+Resolved in P63:
+- runtime ORM/model/schema/seed/file graph теперь используют только `duration_days`;
+- clean schema обновлена;
+- добавлен `deploy/product_duration_days.sql` для существующей server DB;
+- docs больше не описывают transitional compatibility field как допустимый runtime contract.
 
-**Что нужно:**
-- Server-side проверка в `create_telegram_stub_checkout` и `create_stub_checkout`: если у user уже есть active/trial subscription на этот же product — не создавать дубль, а возвращать существующую подписку или ошибку
+Подробные инструкции: `doc/task.md` -> Блок P63
+
+### [P1] Telegram HTML renderer emits unsupported `<br>` tags for multiline text `[ ]`
+
+**Severity**: high для delivery path.
+
+Что видно:
+- [message_rendering.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/message_rendering.py#L291) заменяет `\n` на `<br>`;
+- этот helper используется в Telegram header/body/deal/footer;
+- Telegram HTML parse mode не должен получать HTML `<br>`; переносы должны оставаться обычными newline символами после escaping.
+
+Почему это важно:
+- любое multiline author body/note/title может привести к `Bad Request: can't parse entities` и сорвать Telegram delivery;
+- текущие tests проверяют новый формат, но не покрывают multiline payload с реальным Telegram HTML constraints.
+
+Что нужно:
+- заменить `<br>` на сохранение `\n` после `html.escape`;
+- добавить regression test на multiline body/note: output содержит newline, не содержит `<br>`;
+- оставить email renderer без изменения.
+
+Подробные инструкции: `doc/task.md` -> Блок P64
 
 ### [P2] User status=invited не обновляется при Telegram auth `[ ]`
 
@@ -84,6 +104,8 @@ Resolved в P53:
 **Что нужно:**
 - В `upsert_telegram_subscriber`, при UPDATE existing user (line 141-149): если `user.status` == `invited`, обновить на `active`
 
+Подробные инструкции: `doc/task.md` -> Блок P65
+
 ### [P2] `status.html`: hardcoded hrefs без `preview_mode` `[ ]`
 
 **Severity**: low (ломается только в preview mode, не в production)
@@ -96,63 +118,64 @@ Resolved в P53:
 **Что нужно:**
 - Обернуть оба href в `{% if preview_mode %}/preview/app/…{% else %}/app/…{% endif %}` — как это сделано во всех остальных шаблонах
 
+Подробные инструкции: `doc/task.md` -> Блок P66
+
 ### [P2] App checkout POST error responses не передают `entry_marker` `[ ]`
 
 **Severity**: low (ссылки в error-форме теряют `?entry=…` suffix)
 
 **Что видно:**
-- [app.py:376-400](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L376): ValueError catch рендерит `checkout.html` без `entry_marker` в context
-- [app.py:401-427](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L401): Exception catch — аналогично
+- [app.py:404](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L404): ValueError catch рендерит `checkout.html` без `entry_marker` в context
+- [app.py:431](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/api/routes/app.py#L431): Exception catch — аналогично
 - Переменная `entry_marker` вычисляется в начале route, но не передаётся в error context
 - Шаблон `checkout.html` использует `{% if entry_marker %}?entry={{ entry_marker }}{% endif %}` — без entry_marker ссылки «Вернуться в каталог» теряют tracking
 
 **Что нужно:**
 - Добавить `"entry_marker": get_entry_marker(request) or resolved_entry_surface` в оба error-context dict
 
+Подробные инструкции: `doc/task.md` -> Блок P67
+
 ### [P3] `checkout_success.html` рендерит None для пустых полей `[ ]`
 
 **Severity**: low (UX, не crash)
 
 **Что видно:**
-- [checkout_success.html:62-64](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout_success.html#L62): рендерит `{{ result.user.full_name }}`, `{{ result.user.email }}`, `{{ result.user.timezone }}`
+- [checkout_success.html:70-72](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout_success.html#L70): рендерит `{{ result.user.full_name }}`, `{{ result.user.email }}`, `{{ result.user.timezone }}`
 - Если пользователь не ввёл имя/email, на экране буквально «None»
 
 **Что нужно:**
 - Заменить на `{{ result.user.full_name or "—" }}`, `{{ result.user.email or "—" }}`, `{{ result.user.timezone or "—" }}`
 
-### [P1] Disclaimer-only checkout still silently auto-submits hidden legal documents as accepted `[ ]`
+Подробные инструкции: `doc/task.md` -> Блок P67
 
-Почему это важно:
-- в текущем UI пользователю показывается только `Дисклеймер`;
-- при этом остальные документы рендерятся hidden checked inputs и уходят в `accepted_document_ids` как будто пользователь их уже принял;
-- backend service contract по-прежнему требует полный комплект документов, поэтому сейчас consent semantics расходятся с user-facing surface.
+### [P3] Checkout readiness copy still mentions the old full legal pack `[ ]`
 
 Что видно:
-- [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L95) auto-submit-ит скрытые документы;
-- [public.py](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/services/public.py#L573) и Mini App path требуют equality между required docs и `accepted_document_ids`;
-- это делает текущий `disclaimer-only` режим визуально упрощенным, но не юридически/продуктово честным.
+- [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L52) пишет `полный комплект обязательных документов`;
+- текущий `P44` contract уже disclaimer-only.
 
 Что нужно:
-- либо временно сузить backend consent contract до реально видимого `Дисклеймера`,
-- либо вернуть явное подтверждение остальных документов,
-- но не считать hidden pre-checked inputs допустимым окончательным решением.
+- заменить copy на `Checkout пока не готов: в системе должен быть опубликован дисклеймер.`;
+- не возвращать full legal pack wording без отдельного business sign-off.
+
+Подробные инструкции: `doc/task.md` -> Блок P68
+
+### [P1] Disclaimer-only checkout still silently auto-submits hidden legal documents as accepted `[x]`
+
+Resolved in P44:
+- hidden pre-checked inputs для не-disclaimer документов убраны;
+- visible checkout list фильтруется до `document_type == disclaimer`;
+- backend required document set временно сужен до `LegalDocumentType.DISCLAIMER`;
+- validation copy теперь говорит про дисклеймер.
 
 Подробные инструкции: `doc/task.md` -> Блок P44
 
-### [P2] Checkout/product-flow screens lost the visible local `К стратегии` action `[ ]`
+### [P2] Checkout/product-flow screens lost the visible local `К стратегии` action `[x]`
 
-Почему это важно:
-- product contract для P42 требовал держать `К стратегии` вне permanent menu, но оставлять ее как локальный CTA на checkout/product-flow surfaces;
-- сейчас checkout template просто закомментировал этот переход, и у пользователя остается только возврат в каталог.
-
-Что видно:
-- [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L5) содержит CTA назад к стратегии только в комментарии;
-- [checkout.html](/Users/alexey/site/PitchCopyTrade/src/pitchcopytrade/web/templates/public/checkout.html#L112) оставляет только `Вернуться в каталог`;
-- это не совпадает с [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md#L101), где checkout должен сохранять локальный page action назад к strategy detail.
-
-Что нужно:
-- вернуть видимый локальный CTA `К стратегии` на public / Mini App / preview checkout surfaces, когда у продукта есть связанная стратегия;
-- при этом не раздувать permanent menu и не возвращать `К стратегии` как постоянный primary-tab.
+Resolved in P45:
+- checkout topbar снова показывает visible `К стратегии`, если `product.strategy` существует;
+- URL строится через общий helper с public / Mini App / preview режимами;
+- `К стратегии` не возвращался в permanent primary nav.
 
 Подробные инструкции: `doc/task.md` -> Блок P45
 
@@ -230,9 +253,9 @@ Resolved in this pass:
 - catalog CTA overrides moved into shared classes;
 - checkout UI shows only the visible `Дисклеймер`.
 
-Residual follow-up:
-- hidden consent semantics moved into `P44`;
-- missing local `К стратегии` CTA on checkout/product-flow screens moved into `P45`.
+Previous residual follow-up:
+- hidden consent semantics closed in `P44`;
+- missing local `К стратегии` CTA on checkout/product-flow screens closed in `P45`.
 
 Подробные инструкции: `doc/task.md` -> Блок P42
 

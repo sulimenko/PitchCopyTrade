@@ -47,12 +47,6 @@ class ProductType(str, Enum):
     BUNDLE = "bundle"
 
 
-class BillingPeriod(str, Enum):
-    MONTH = "month"
-    QUARTER = "quarter"
-    YEAR = "year"
-
-
 class PaymentProvider(str, Enum):
     STUB_MANUAL = "stub_manual"
     TBANK = "tbank"

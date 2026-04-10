@@ -37,7 +37,6 @@ from pitchcopytrade.services.public import (
 from pitchcopytrade.services.instruments import build_strategy_quote_strip
 from pitchcopytrade.services.subscriber import SubscriberStatusSnapshot, get_subscriber_status_snapshot
 from pitchcopytrade.services.subscriber import (
-    billing_period_label,
     build_action_cards,
     build_subscriber_timeline,
     cancel_subscription,
@@ -180,7 +179,6 @@ async def app_strategy_detail(
         {
             "title": strategy.title,
             "strategy": strategy,
-            "billing_period_label": billing_period_label,
             "entry_marker": entry_marker,
             "user_active_product_ids": user_active_product_ids,
             "already_subscribed_notice": request.query_params.get("notice") == "already_subscribed",
@@ -539,7 +537,6 @@ async def app_subscriptions(
                 "user": user,
                 "snapshot": snapshot,
                 "subscription_status_label": subscription_status_label,
-                "billing_period_label": billing_period_label,
                 **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
             },
         )
@@ -622,7 +619,6 @@ async def app_subscription_detail(
                 "subscription": subscription,
                 "renewal_history": subscription_renewal_history(snapshot, subscription),
                 "subscription_status_label": subscription_status_label,
-                "billing_period_label": billing_period_label,
                 **_build_miniapp_context("subscriptions", user=user, snapshot=snapshot),
             },
         )

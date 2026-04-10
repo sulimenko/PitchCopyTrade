@@ -6,7 +6,7 @@ from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.enums import BillingPeriod, PaymentProvider, PaymentStatus, SubscriptionStatus
+from pitchcopytrade.db.models.enums import PaymentProvider, PaymentStatus, SubscriptionStatus
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.contracts import AccessRepository, PublicRepository
 from pitchcopytrade.services.payment_sync import apply_tbank_state_to_payment, extract_provider_payment_id
@@ -139,25 +139,12 @@ SUBSCRIPTION_STATUS_LABELS = {
     SubscriptionStatus.BLOCKED: "Заблокирована",
 }
 
-BILLING_PERIOD_LABELS = {
-    BillingPeriod.MONTH: "Месяц",
-    BillingPeriod.QUARTER: "Квартал",
-    BillingPeriod.YEAR: "Год",
-}
-
-
 def payment_status_label(status: PaymentStatus) -> str:
     return PAYMENT_STATUS_LABELS.get(status, status.value)
 
 
 def subscription_status_label(status: SubscriptionStatus) -> str:
     return SUBSCRIPTION_STATUS_LABELS.get(status, status.value)
-
-
-def billing_period_label(period: BillingPeriod | None) -> str:
-    if period is None:
-        return "Период не указан"
-    return BILLING_PERIOD_LABELS.get(period, period.value)
 
 
 def payment_result_message(payment: Payment) -> str:

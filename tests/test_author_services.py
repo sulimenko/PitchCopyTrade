@@ -25,7 +25,6 @@ from pitchcopytrade.services.author import (
 )
 from pitchcopytrade.services import author as author_service
 from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
     InstrumentType,
     ProductType,
     MessageKind,
@@ -791,7 +790,7 @@ async def test_file_mode_smoke_publish_notifies_active_subscriber(tmp_path, monk
         title="Momentum RU Monthly",
         description="Monthly access",
         strategy_id=strategy.id,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=0,
         is_active=True,

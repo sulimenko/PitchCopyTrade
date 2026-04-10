@@ -11,7 +11,7 @@ from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Subscription
 from pitchcopytrade.db.models.content import Message
-from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, PaymentProvider, PaymentStatus, ProductType, RiskLevel, StrategyStatus, SubscriptionStatus
+from pitchcopytrade.db.models.enums import LegalDocumentType, PaymentProvider, PaymentStatus, ProductType, RiskLevel, StrategyStatus, SubscriptionStatus
 from pitchcopytrade.db.models.enums import UserStatus
 from pitchcopytrade.services.public import (
     AlreadySubscribedError,
@@ -183,7 +183,7 @@ def _make_product() -> SubscriptionProduct:
         strategy_id="strategy-1",
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=7,
         is_active=True,

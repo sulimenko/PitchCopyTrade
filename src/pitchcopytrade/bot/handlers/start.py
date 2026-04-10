@@ -5,7 +5,7 @@ from urllib.parse import quote
 from aiogram.filters import Command, CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
-from pitchcopytrade.auth.session import decode_staff_invite_context
+from pitchcopytrade.auth.session import decode_staff_invite_context, decode_staff_invite_link_token
 from pitchcopytrade.core.config import get_settings
 
 
@@ -48,16 +48,21 @@ async def handle_start(message: Message) -> None:
     if payload.startswith("staffinvitehelp-"):
         try:
             invite_token = decode_staff_invite_context(payload.removeprefix("staffinvitehelp-"))
+            if decode_staff_invite_link_token(invite_token) is None:
+                raise ValueError("expired")
         except Exception:
-            await message.answer("Контекст приглашения не удалось прочитать. Попросите администратора отправить новое письмо.")
+            await message.answer(
+                "Приглашение устарело или недействительно.\n"
+                "Попросите администратора отправить новое приглашение через панель управления."
+            )
             return
         invite_url = f"{get_settings().app.base_url.rstrip('/')}/login?invite_token={quote(invite_token, safe='')}"
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[
-                InlineKeyboardButton(text="Открыть приглашение снова", url=invite_url),
+                InlineKeyboardButton(text="Открыть приглашение", url=invite_url),
             ]]
         )
-        await message.answer("Если приглашение устарело или не открылось, попросите администратора отправить новое письмо. Текущую ссылку можно открыть кнопкой ниже.", reply_markup=keyboard)
+        await message.answer("Приглашение действительно. Откройте его кнопкой ниже.", reply_markup=keyboard)
         return
     keyboard = _main_keyboard()
     if keyboard:

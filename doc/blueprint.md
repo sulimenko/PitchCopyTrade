@@ -1,5 +1,5 @@
 # PitchCopyTrade — Blueprint
-> Обновлено: 2026-04-03
+> Обновлено: 2026-04-10
 > Статус: canonical current contract for MVP clean-up
 
 ## 1. Политика документа
@@ -16,7 +16,7 @@
 ### 2.1 Поверхности продукта
 
 В проекте есть пять рабочих контуров:
-- `public web` на `/catalog`, `/catalog/strategies/{slug}`, `/checkout/{product_id}`;
+- `public web` на `/catalog`, `/catalog/strategies/{slug}`, `/checkout/{product_ref}`;
 - `miniapp web` на `/app/*`;
 - `staff admin` на `/admin/*`;
 - `staff author` на `/author/*`;
@@ -28,19 +28,21 @@
 - bot: `aiogram`;
 - worker: polling loop;
 - storage modes:
-  - `file` для локального запуска и MVP-исследования;
-  - `db` для серверного контура и production-like сценариев.
+  - `db` как основной product-critical режим;
+  - `file` как вторичный local preview / compatibility smoke режим.
 
 ### 2.3 Важные факты для текущего цикла
 
-- локальный запуск без Docker реально возможен в `APP_DATA_MODE=file`;
+- основной runtime priority для product-critical сценариев = `APP_DATA_MODE=db`;
+- `file`-mode остается вторичным compatibility/preview/smoke режимом;
+- локальный запуск без Docker возможен, но не заменяет production-like проверку на PostgreSQL schema path;
 - для старта `api` обязательны `APP_SECRET_KEY` и `INTERNAL_API_SECRET`;
 - `file`-mode читает состояние из `storage/runtime/*`, а не напрямую из `storage/seed/*`;
 - `storage/runtime/*` считается изменяемым runtime-слоем и перед воспроизводимыми проверками должен сбрасываться;
-- текущий public/Mini App слой уже рендерит HTML-экраны, но информационная архитектура и UX еще не соответствуют целевому MVP;
-- текущий `/api/instruments` не отдает real-time quotes: `last_price` и `change_pct` сейчас заглушены;
-- `bot /help` пока не открывает in-app help-screen, а просто отправляет еще одно сообщение;
-- внутри docs до этого цикла были устаревшие утверждения уровня "production bug-ов нет" и "все закрыто" — они больше не считаются допустимой формой документации.
+- Mini App first screen contract = `/app/catalog`, help contract = `/app/help`;
+- author/public/subscriber contour перешел на message-centric модель `messages`;
+- quote provider подключается backend-адаптером и не должен блокировать SSR;
+- внутри docs больше нельзя писать "все закрыто" без сверки с [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).
 
 ## 3. Цель текущего цикла
 
@@ -51,6 +53,8 @@
 - усилить описание стратегий как продающий и объясняющий экран;
 - подключить real-time market data по тикерам;
 - убрать основные product/runtime сбои вокруг подписки, оплаты и навигации.
+
+После последнего review критичный открытый scope не должен трактоваться как новый продуктовый redesign. Это короткий stabilization pass: Telegram HTML newline handling, invited-user status cleanup, preview links и мелкие checkout-copy/context исправления.
 
 ## 4. Canonical subscriber contract
 
@@ -233,7 +237,7 @@ Preview contract:
 - tests и product contract должны проверять только те narrative blocks, которые реально считаются canonical для текущего дизайна;
 - если UI intentionally упрощен, тесты обязаны быть пересобраны под этот contract, а не держать старые названия секций.
 
-## 8. Visual identity contract
+## 6. Visual identity contract
 
 Текущий ручной pass ввел новый visual mark `D / DESK`.
 
@@ -245,7 +249,7 @@ Preview contract:
 - visual brand slots можно менять независимо от внутренних технических имен;
 - юридические/system identifiers не должны переименовываться стихийно вместе с декоративным brand mark.
 
-## 6. Straddle как reference-стратегия
+## 7. Straddle как reference-стратегия
 
 Тема `Straddle` задает полезный пример для PitchCopyTrade:
 - стратегия продается не тикером, а механизмом заработка;
@@ -260,18 +264,19 @@ Preview contract:
 
 В MVP это должно быть изложено на русском, короткими блоками, без презентационного мусора и без ощущения "PDF вставили в web".
 
-## 7. Real-time market data contract
+## 8. Real-time market data contract
 
-### 7.1 Источник
+### 8.1 Источник
 
-Новый canonical source для real-time quote data:
-- provider origin: `https://meta.pbull.kz`
-- code-owned endpoint path: `/api/marketData/forceDataSymbol`
-- итоговый request: `https://meta.pbull.kz/api/marketData/forceDataSymbol?symbol={ticker}`
+Canonical source для real-time quote data:
+- provider origin задается через `INSTRUMENT_QUOTE_PROVIDER_BASE_URL`;
+- в `.env` должен передаваться только origin, например `https://meta.pbull.kz` или internal-network `http://meta-api-1:8000`;
+- code-owned endpoint path: `/api/marketData/forceDataSymbol`;
+- итоговый request: `{origin}/api/marketData/forceDataSymbol?symbol={ticker}`.
 
 Пример структуры подтвержден файлом `NVTK.json`.
 
-### 7.2 Нормализованный backend contract
+### 8.2 Нормализованный backend contract
 
 Backend не должен прокидывать ответ поставщика в шаблон как есть.
 
@@ -289,7 +294,7 @@ Backend не должен прокидывать ответ поставщика
 - `volume`;
 - `updated_at`.
 
-### 7.3 Правила интеграции
+### 8.3 Правила интеграции
 
 - источником тикера считается локальный `Instrument.ticker`;
 - provider-adapter живет на backend, не в шаблонах;
@@ -300,16 +305,16 @@ Backend не должен прокидывать ответ поставщика
   - источник временно недоступен;
 - нужен короткий cache TTL, чтобы не бить внешний API на каждый рендер страницы.
 
-## 8. Надежность checkout и подписок
+## 9. Надежность checkout и подписок
 
-### 8.1 Canonical expectation
+### 9.1 Canonical expectation
 
 Нажатие `Создать заявку на оплату` должно:
 - одинаково работать в desktop browser, mobile browser и Telegram Mini App;
 - либо создавать `payment + subscription` и отдавать ожидаемый следующий экран;
 - либо возвращать controlled business error без `500`.
 
-### 8.2 Недопустимые состояния
+### 9.2 Недопустимые состояния
 
 Недопустимы:
 - кнопка не делает ничего на desktop, но работает на mobile;
@@ -318,11 +323,13 @@ Backend не должен прокидывать ответ поставщика
 - "успех" без фактически созданной подписки;
 - raw JSON parse error после staff login redirect.
 
-## 9. Локальный preview contract для исследования
+## 10. Локальный preview contract для исследования
 
-Для локальной работы без Docker canonical research mode = `file`.
+Для локальной работы без Docker основной product-critical режим = `db`.
 
-Он должен поддерживать:
+`file` остается быстрым вспомогательным режимом для preview/smoke и верстки, но не является главным критерием готовности.
+
+Локальный контур должен поддерживать:
 - публичные GET/POST;
 - browser preview public views;
 - browser preview Mini App views через demo subscriber link;
@@ -332,7 +339,7 @@ Backend не должен прокидывать ответ поставщика
 - `browser preview` для верстки и быстрого редактирования;
 - `real Telegram WebApp check` для финальной валидации initData, webview-поведения и deeplink-сценариев.
 
-## 10. Что не входит в текущий цикл
+## 11. Что не входит в текущий цикл
 
 В текущий цикл не входят:
 - новый большой staff redesign;

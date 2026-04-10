@@ -10,6 +10,8 @@ from aiogram.methods import GetMe
 import pytest
 
 from pitchcopytrade.core.config import reset_settings_cache
+from pitchcopytrade.auth.session import build_staff_invite_token, encode_staff_invite_context
+from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.bot.dispatcher import build_dispatcher
 from pitchcopytrade.bot.handlers.start import HELP_HANDLER, START_HANDLER, _main_keyboard, handle_help, handle_start
 from pitchcopytrade.bot.main import (
@@ -45,6 +47,36 @@ async def test_start_handler_staff_invite_uses_plain_url_button() -> None:
     assert buttons[0].url is not None
     assert buttons[0].web_app is None
     assert buttons[0].url.endswith("/login?invite_token=invite-token-123")
+
+
+@pytest.mark.asyncio
+async def test_start_handler_staff_invite_help_rejects_invalid_token() -> None:
+    message = AsyncMock()
+    payload = base64.urlsafe_b64encode(b"invalid-token").decode("ascii").rstrip("=")
+    message.text = f"/start staffinvitehelp-{payload}"
+
+    await handle_start(message)
+
+    message.answer.assert_awaited_once()
+    assert "устарело" in message.answer.await_args.args[0]
+    assert "reply_markup" not in message.answer.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_start_handler_staff_invite_help_accepts_valid_token() -> None:
+    message = AsyncMock()
+    user = User(id="staff-1", invite_token_version=1)
+    invite_token = build_staff_invite_token(user)
+    payload = encode_staff_invite_context(invite_token)
+    message.text = f"/start staffinvitehelp-{payload}"
+
+    await handle_start(message)
+
+    message.answer.assert_awaited_once()
+    markup = message.answer.await_args.kwargs["reply_markup"]
+    buttons = [button for row in markup.inline_keyboard for button in row]
+    assert buttons[0].url is not None
+    assert buttons[0].text == "Открыть приглашение"
 
 
 @pytest.mark.asyncio

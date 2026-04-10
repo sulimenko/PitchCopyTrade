@@ -7,7 +7,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
     InstrumentType,
     LeadSourceType,
     ProductType,
@@ -133,7 +132,7 @@ class SubscriptionProduct(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     strategy_id: Mapped[str | None] = mapped_column(ForeignKey("strategies.id", ondelete="SET NULL"), nullable=True)
     author_id: Mapped[str | None] = mapped_column(ForeignKey("author_profiles.id", ondelete="SET NULL"), nullable=True)
     bundle_id: Mapped[str | None] = mapped_column(ForeignKey("bundles.id", ondelete="SET NULL"), nullable=True)
-    billing_period: Mapped[BillingPeriod] = mapped_column(sql_enum(BillingPeriod, name="billing_period"), nullable=False)
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     price_rub: Mapped[int] = mapped_column(Integer, nullable=False)
     trial_days: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(default=True)

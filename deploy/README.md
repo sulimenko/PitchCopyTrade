@@ -39,6 +39,7 @@ Product contract, backlog и review gate вынесены в:
 - `deploy/docker-compose.server.yml`
 - `deploy/nginx/pct.test.ptfin.ru.conf`
 - `deploy/migrate.sh`
+- `deploy/product_duration_days.sql`
 - `deploy/schema.sql`
 
 Корневого local-dev `docker-compose.yml` больше нет.  
@@ -119,6 +120,12 @@ Product contract, backlog и review gate вынесены в:
 ```bash
 bash deploy/migrate.sh
 bash deploy/migrate.sh --reset
+```
+
+Для существующей серверной БД без clean reset перед деплоем product-period изменения:
+
+```bash
+psql -U pct -d pct -f deploy/product_duration_days.sql
 ```
 
 Что делает `--reset`:

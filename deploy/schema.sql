@@ -15,7 +15,6 @@ CREATE TYPE lead_source_type AS ENUM ('ads', 'blogger', 'organic', 'direct', 're
 CREATE TYPE strategy_status AS ENUM ('draft', 'published', 'archived');
 CREATE TYPE risk_level AS ENUM ('low', 'medium', 'high');
 CREATE TYPE product_type AS ENUM ('strategy', 'author', 'bundle');
-CREATE TYPE billing_period AS ENUM ('month', 'quarter', 'year');
 CREATE TYPE payment_provider AS ENUM ('stub_manual', 'tbank');
 CREATE TYPE payment_status AS ENUM ('created', 'pending', 'paid', 'failed', 'expired', 'cancelled', 'refunded');
 CREATE TYPE subscription_status AS ENUM ('pending', 'trial', 'active', 'expired', 'cancelled', 'blocked');
@@ -154,7 +153,7 @@ CREATE TABLE subscription_products (
     strategy_id      UUID REFERENCES strategies (id) ON DELETE SET NULL,
     author_id        UUID REFERENCES author_profiles (id) ON DELETE SET NULL,
     bundle_id        UUID REFERENCES bundles (id) ON DELETE SET NULL,
-    billing_period   billing_period NOT NULL,
+    duration_days    INTEGER NOT NULL DEFAULT 30,
     price_rub        INTEGER NOT NULL,
     trial_days       INTEGER NOT NULL DEFAULT 0,
     is_active        BOOLEAN NOT NULL DEFAULT TRUE,

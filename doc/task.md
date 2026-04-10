@@ -1,5 +1,5 @@
 # PitchCopyTrade — Active Tasks
-> Обновлено: 2026-04-09
+> Обновлено: 2026-04-10
 > Это единый backlog-файл проекта. Все активные задачи ведутся только здесь.
 
 ## Статусы
@@ -4471,7 +4471,7 @@ API `meta.pbull.kz` оборачивает данные под ключом ти
       manual_discount_rub=0,
       applied_promo_code=promo_code,
       start_at=timestamp,
-      end_at=timestamp + _billing_delta(product.billing_period),
+      end_at=timestamp + subscription_delta(product.duration_days),
   )
   ```
 
@@ -4515,7 +4515,7 @@ API `meta.pbull.kz` оборачивает данные под ключом ти
               autorenew_enabled=False, is_trial=False,
               manual_discount_rub=0, applied_promo_code=promo_code,
               start_at=timestamp,
-              end_at=timestamp + _billing_delta(product.billing_period),
+              end_at=timestamp + subscription_delta(product.duration_days),
           )
           repository.add(subscription)
           await repository.commit()
@@ -9574,21 +9574,21 @@ Sidebar `<aside>` окажется под формой — это нормаль
 **Заменить на:**
 ```html
 <div style="display:flex;gap:10px;flex-wrap:wrap;">
-  <span class="pill">{{ billing_period_label(product.billing_period) }}</span>
+  <span class="pill">{{ label_duration_days(product.duration_days) }}</span>
   {% if product.trial_days %}
   <span class="pill">{{ product.trial_days }} дней бесплатно</span>
   {% endif %}
 </div>
 ```
 
-Убрана pill `{{ product.price_rub }} руб`. Хардкод «Месяц» заменён на `billing_period_label()` для consistency.
+Убрана pill `{{ product.price_rub }} руб`. Хардкод «Месяц» заменён на `label_duration_days()` для consistency.
 
 ### Acceptance P51
 
 1. Sidebar описывает что получит пользователь, а не внутреннюю механику
 2. 3 карточки: «Рекомендации в Telegram», «Доступ через Mini App», «Отмена в любой момент»
 3. Pill с ценой убрана из hero checkout
-4. Billing period pill использует `billing_period_label()`
+4. Period pill использует `label_duration_days()`
 5. Trial pill остаётся если есть
 
 ## P52 — Переделать `build_strategy_story` под реальные данные DB `[x]`
@@ -10080,7 +10080,7 @@ Root cause:
 - tests run + results
 ```
 
-## P54 — Запретить дубли активных подписок + неактивная кнопка в каталоге/детали
+## P54 — Запретить дубли активных подписок + неактивная кнопка в каталоге/детали [x]
 
 **Проблема (production):** пользователь Andrey (telegram_user_id=881271577) нажимает «Подписаться» несколько раз и каждый раз создаётся новая подписка на ту же стратегию (Top Gun). В БД 2 активные подписки на один и тот же subscription_product. Сервер не проверяет наличие существующей активной подписки, UI не показывает что юзер уже подписан.
 
@@ -10882,7 +10882,7 @@ except ValueError:
 if parsed_price is not None and parsed_price < 0:
     errors["price_rub"] = "Цена не может быть отрицательной"
 ```
-Аналогично `parsed_trial`. Убрать `assert parsed_billing_period is not None` — заменить на явный `if ... is None: raise RuntimeError("unreachable")` или `cast`.
+Аналогично `parsed_trial`. Убрать assert-based flow для периода — заменить на явный `if ... is None: raise RuntimeError("unreachable")` или `cast`.
 
 ### P59.3 — [low] `admin_lookups.py`: добавить `from __future__ import annotations` [x]
 **Файл:** `src/pitchcopytrade/services/admin_lookups.py` (шапка). Консистентность с остальными модулями. Одна строка.
@@ -10934,4 +10934,600 @@ def _ensure_promo_code_is_unique(items, target: PromoCode) -> None:
 - [x] `_SLUG_PATTERN` и `_PROMO_CODE_PATTERN` вынесены в константы.
 - [x] `_ensure_promo_code_is_unique` синхронизирован с SQL-путём по тексту и нормализации.
 - [x] `test_login_page_renders` зелёный.
-- [x] Все 320 тестов pass (сейчас 319 pass / 1 fail).
+- [x] Актуальный full suite green: `332 passed`.
+
+## P60 — UX формы продукта: автоподставка, авторы в select, фиксированные периоды [x]
+
+**Контекст:** Форма `product_form.html` функциональна, но заставляет админа помнить / копировать данные вручную. Проблемы:
+1. В select стратегии показан только `title` без автора — при 10+ стратегиях непонятно чья.
+2. Стратегия должна выбираться **раньше** slug. Slug может быть информационным (readonly/autofilled).
+3. Период подписки должен храниться как `duration_days` и выбираться из фиксированных дней `30/60/90/180/365`.
+4. Секция «Цель доступа» показывает все 3 select-а одновременно — путает.
+5. Нужна client-side pre-validation (показать все ошибки массивом перед отправкой).
+
+### P60.1 — Стратегия в select: «Автор → Название» + data-атрибуты
+**Файл:** `src/pitchcopytrade/web/templates/admin/product_form.html` (строка 115-119).
+
+Сейчас:
+```html
+<option value="{{ item.id }}">{{ item.title }}</option>
+```
+Нужно:
+```html
+<option value="{{ item.id }}"
+        data-slug="{{ item.slug }}"
+        data-title="{{ item.title }}"
+        data-author="{{ item.author.display_name if item.author else '' }}"
+        {% if form_values.strategy_id == item.id %}selected{% endif %}>
+  {{ item.author.display_name if item.author else '—' }} → {{ item.title }}
+</option>
+```
+`list_admin_strategies` уже загружает `.author.user` (services/admin.py:342). Дополнительно отсортировать по `author.display_name → title`.
+
+### P60.2 — Переместить «Стратегия» перед slug + автоподставка slug/title
+**Концепция:** порядок полей в форме должен соответствовать логике заполнения:
+1. **Тип продукта** (strategy/author/bundle) — определяет какой target-select показывать
+2. **Стратегия** (select) — выбирается из списка «Автор → Название»
+3. **Период** (select: 30/60/90/180/365 дней) — выбирается
+4. **Slug** — readonly, автозаполняется из `{strategy.slug}-{period}d`
+5. **Название** — автозаполняется из `{strategy.title} — {period} дн.`, но можно перезаписать
+
+**Логика slug:** slug генерируется автоматически при выборе стратегии + периода и **не редактируется руками** (readonly или visually disabled). Формат: `{strategy-slug}-{period}d` (например `top-gun-30d`, `pair-arbitrage-etf-90d`). При редактировании существующего продукта — slug заполнен из БД и readonly.
+
+**JS-автоподставка:**
+```javascript
+document.addEventListener('DOMContentLoaded', () => {
+  const stratSel = document.querySelector('select[name="strategy_id"]');
+  const periodSel = document.querySelector('select[name="duration_days"]');
+  const slugInput = document.querySelector('input[name="slug"]');
+  const titleInput = document.querySelector('input[name="title"]');
+  const isEdit = slugInput.value.trim() !== '';
+  const periodLabels = { '30': '30 дн.', '60': '60 дн.', '90': '90 дн.', '180': '180 дн.', '365': '1 год' };
+
+  function autofill() {
+    if (isEdit) return; // при редактировании — не трогать
+    const opt = stratSel.selectedOptions[0];
+    const days = periodSel.value;
+    if (!opt || !opt.value || !days) return;
+    slugInput.value = opt.dataset.slug + '-' + days + 'd';
+    if (!titleInput.value || titleInput.dataset.autoFilled === 'true') {
+      titleInput.value = opt.dataset.title + ' — ' + (periodLabels[days] || days + ' дн.');
+      titleInput.dataset.autoFilled = 'true';
+    }
+  }
+  titleInput.addEventListener('input', () => { titleInput.dataset.autoFilled = 'false'; });
+  stratSel.addEventListener('change', autofill);
+  periodSel.addEventListener('change', autofill);
+});
+```
+Slug `<input>` — `readonly` и для создания, и для редактирования: источник значения — выбранный target + период.
+
+### P60.3 — Период подписки: `duration_days: int` с фиксированными вариантами
+Используем только целочисленное поле `duration_days` с select из фиксированных вариантов: **30, 60, 90, 180, 365**.
+
+**Почему выбран такой подход:**
+- Целое число проще сопровождать и расширять, чем отдельный PostgreSQL enum.
+- 5 фиксированных значений покрывают все текущие и прогнозируемые потребности.
+- Одно int-поле проще чем enum + nullable custom_duration_days + check constraint.
+
+**Миграция данных:** существующая серверная БД обновляется через `deploy/product_duration_days.sql`; clean reset использует `deploy/schema.sql`.
+
+**Модель** (`catalog.py`): `duration_days: Mapped[int] = mapped_column(Integer, nullable=False)`.
+
+**Форма** (`product_form.html`):
+```html
+<label class="staff-field">
+  <span>Период подписки</span>
+  <select name="duration_days" required>
+    <option value="">выберите</option>
+    <option value="30" {% if form_values.duration_days == 30 %}selected{% endif %}>30 дней</option>
+    <option value="60" {% if form_values.duration_days == 60 %}selected{% endif %}>60 дней</option>
+    <option value="90" {% if form_values.duration_days == 90 %}selected{% endif %}>90 дней</option>
+    <option value="180" {% if form_values.duration_days == 180 %}selected{% endif %}>180 дней</option>
+    <option value="365" {% if form_values.duration_days == 365 %}selected{% endif %}>1 год (365 дней)</option>
+  </select>
+</label>
+```
+
+**Subscription delta helper:**
+```python
+def _subscription_delta(duration_days: int) -> timedelta:
+    return timedelta(days=duration_days)
+```
+
+**Period label helper:**
+```python
+_DURATION_LABELS = {30: "30 дней", 60: "60 дней", 90: "90 дней", 180: "180 дней", 365: "1 год"}
+def label_duration_days(days: int) -> str:
+    return _DURATION_LABELS.get(days, f"{days} дней")
+```
+
+**Обновить все вызовы:**
+- `_build_product_form_data`: парсить `duration_days` как int из Form, валидировать `in {30, 60, 90, 180, 365}`.
+- `ProductFormData`: использовать только `duration_days: int`.
+- Jinja-фильтр / label-функция: `label_duration_days(product.duration_days)`.
+- Все templates и routes, отображающие период, должны использовать `duration_days`.
+- Каталог/strategy_detail: вместо «Месяц» показывать «30 дней» и т. д.
+- `create_product` / `update_product` services — использовать `data.duration_days`.
+- `create_stub_checkout` / `create_telegram_stub_checkout` — рассчитывать окончание подписки через `subscription_delta(product.duration_days)`.
+
+**ВАЖНО:** transitional compatibility-layer не оставлять в runtime-коде: код и schema должны читать только `duration_days`.
+
+### P60.4 — Динамическое скрытие нерелевантных target-select-ов
+**Файл:** `product_form.html`, секция «Цель доступа» (строки 112-149).
+
+Сейчас 3 select-а visible одновременно. Админ может ошибиться.
+
+**Fix (vanilla JS, без inline-style display):**
+```javascript
+const typeSelect = document.querySelector('select[name="product_type"]');
+const groups = {
+  strategy: document.querySelector('[data-target="strategy"]'),
+  author: document.querySelector('[data-target="author"]'),
+  bundle: document.querySelector('[data-target="bundle"]'),
+};
+function updateTargets() {
+  const val = typeSelect.value;
+  Object.entries(groups).forEach(([key, el]) => {
+    el.hidden = key !== val;
+    if (key !== val) el.querySelector('select').value = '';
+  });
+}
+typeSelect.addEventListener('change', updateTargets);
+updateTargets();
+```
+Обернуть каждый target-label в `<div data-target="strategy">` / `author` / `bundle`. При edit — выбранный target уже заполнен, остальные скрыты.
+
+### P60.5 — Hint для цены 0 = бесплатно
+**Файл:** `product_form.html` (строка 162).
+
+Добавить подсказку:
+```html
+<small class="muted">Введите 0 для бесплатного продукта.</small>
+```
+
+### P60.6 — Client-side pre-validation (все ошибки массивом)
+**Файл:** `product_form.html` (JS-блок).
+
+Перед отправкой формы собрать все ошибки и показать одним блоком:
+```javascript
+document.querySelector('form').addEventListener('submit', (e) => {
+  const errors = [];
+  const strategy = document.querySelector('select[name="strategy_id"]');
+  const slug = document.querySelector('input[name="slug"]');
+  const title = document.querySelector('input[name="title"]');
+  const duration = document.querySelector('select[name="duration_days"]');
+  const price = document.querySelector('input[name="price_rub"]');
+
+  if (!strategy.value) errors.push('Выберите стратегию');
+  if (!slug.value.trim()) errors.push('Код продукта обязателен');
+  if (!title.value.trim()) errors.push('Название обязательно');
+  if (!duration.value) errors.push('Выберите период подписки');
+  if (price.value === '') errors.push('Укажите цену');
+
+  if (errors.length > 0) {
+    e.preventDefault();
+    let errBlock = document.getElementById('client-errors');
+    if (!errBlock) {
+      errBlock = document.createElement('div');
+      errBlock.id = 'client-errors';
+      errBlock.className = 'staff-error';
+      document.querySelector('form').prepend(errBlock);
+    }
+    errBlock.innerHTML = '<strong>Исправьте ошибки:</strong><ul>' +
+      errors.map(err => '<li>' + err + '</li>').join('') + '</ul>';
+    errBlock.scrollIntoView({ behavior: 'smooth' });
+  }
+});
+```
+Ошибки отображаются **списком** в общем баннере сверху формы. Форма НЕ отправляется, страница не перезагружается. Серверная валидация остаётся как fallback.
+
+### P60.7 — Тесты
+- `tests/test_admin_ui.py`:
+  - POST create product с `duration_days=60` → успех.
+  - POST с `duration_days=45` (не из разрешённых) → ошибка валидации.
+  - Проверить что в `<option>` стратегий присутствует `data-slug` и `data-author`.
+  - Проверить что при `product_type=strategy` в HTML select автора hidden (JS-тест не обязателен, достаточно наличия `data-target` атрибутов).
+- Production migration artifact: `deploy/product_duration_days.sql` применяется к существующей БД без clean reset.
+- Все расчёты окончания подписки используют `subscription_delta(product.duration_days)`.
+
+### Что нельзя
+- Менять DB constraint `target_matches_product_type` — скрытие UI-ом достаточно, constraint остаётся как safety net.
+- Автоподставка slug не должна перезаписывать ручной ввод title (slug readonly всегда).
+- `duration_days` принимает ТОЛЬКО значения из списка `{30, 60, 90, 180, 365}` — произвольные числа запрещены (серверная валидация).
+
+### Acceptance criteria (P60)
+- [x] В select стратегии видно «Автор → Название», отсортировано по автору.
+- [x] Стратегия выбирается **до** slug. Slug readonly/autofilled из `{strategy}-{period}d`.
+- [x] Период: select из 30/60/90/180/365 дней.
+- [x] Production migration на `duration_days` создана и работает.
+- [x] Нерелевантные target-select-ы скрыты при смене типа продукта.
+- [x] Цена: подсказка «0 = бесплатно».
+- [x] Client-side: при submit все ошибки списком, форма не отправляется.
+- [x] Тесты зелёные.
+
+---
+
+## P61 — «Запросить новое приглашение» → кнопка ведёт в бота без авторизации
+
+**Проблема (production):** На странице `/login?invite_token=...` кнопка «Запросить новое приглашение» генерирует ссылку `https://t.me/{bot}?start=staffinvitehelp-{token}`. При нажатии пользователь попадает **просто в бота** (handle_start), бот показывает кнопку «Открыть приглашение снова» с URL `/login?invite_token=...` — т. е. **тот же token**, который уже не работает. Получается бессмысленный цикл.
+
+**Root cause:** `build_staff_invite_help_bot_link(invite_token)` (`auth/session.py:95-98`) просто пересылает тот же `invite_token` обратно через бота. Если token истёк или невалиден — повторная попытка тоже провалится.
+
+**Flow сейчас:**
+1. Юзер открывает `/login?invite_token=EXPIRED_TOKEN`
+2. Виджет Telegram Login не срабатывает (или юзер не может авторизоваться)
+3. Жмёт «Запросить новое приглашение»
+4. Попадает в бота → `staffinvitehelp-{EXPIRED_TOKEN}`
+5. Бот показывает ту же ссылку → `/login?invite_token=EXPIRED_TOKEN`
+6. Цикл
+
+**Правильный flow:**
+Кнопка «Запросить новое приглашение» должна:
+- **Вариант A (рекомендуемый):** Генерировать **новый token** на сервере через POST-запрос (endpoint `/auth/resend-invite`) и показывать обновлённую ссылку / отправлять email / отправлять боту.
+- **Вариант B (проще для MVP):** Показывать текст «Обратитесь к администратору для получения нового приглашения» с контактной ссылкой, вместо бесполезного перехода в бота.
+- **Вариант C (компромисс):** Бот при получении `staffinvitehelp-` проверяет токен: если валиден — показывает кнопку; если невалиден — пишет «Токен устарел. Обратитесь к администратору {admin_contact}».
+
+**Файлы:**
+- `src/pitchcopytrade/bot/handlers/start.py` — `handle_start` (48-61)
+- `src/pitchcopytrade/auth/session.py` — `build_staff_invite_help_bot_link` (95-98)
+- `src/pitchcopytrade/api/routes/auth.py` — login context (915)
+- `src/pitchcopytrade/web/templates/auth/login.html` — кнопка (59)
+
+### P61.1 — Вариант C: проверка токена в боте (минимальный fix)
+В `handle_start` (start.py:48-61):
+```python
+if payload.startswith("staffinvitehelp-"):
+    try:
+        invite_token = decode_staff_invite_context(payload.removeprefix("staffinvitehelp-"))
+        # Проверить валидность токена
+        decoded = decode_staff_invite_link_token(invite_token)
+        if decoded is None:
+            raise ValueError("expired")
+    except Exception:
+        await message.answer(
+            "Приглашение устарело или недействительно.\n"
+            "Попросите администратора отправить новое приглашение через панель управления."
+        )
+        return
+    invite_url = f"{get_settings().app.base_url.rstrip('/')}/login?invite_token={quote(invite_token, safe='')}"
+    keyboard = InlineKeyboardMarkup(...)
+    await message.answer("Приглашение действительно. Откройте его кнопкой ниже.", reply_markup=keyboard)
+    return
+```
+Импортировать `decode_staff_invite_link_token` из `auth/session.py`. Если токен невалиден — явное сообщение без бесполезной кнопки.
+
+### P61.2 — Обновить текст кнопки и подсказку в login.html
+**Файл:** `src/pitchcopytrade/web/templates/auth/login.html` (строка 59).
+
+Сейчас:
+```html
+<a class="action ghost" href="{{ telegram_request_invite_url }}">Запросить новое приглашение</a>
+```
+Изменить на:
+```html
+<a class="action ghost" href="{{ telegram_request_invite_url }}">Проверить приглашение в Telegram</a>
+<small class="muted">Если приглашение устарело, бот подскажет обратиться к администратору.</small>
+```
+
+### P61.3 — Тесты
+- Unit-тест для `handle_start` с `staffinvitehelp-` payload и просроченным токеном → бот отвечает «устарело», не показывает кнопку.
+- С валидным токеном → бот показывает кнопку.
+
+### Acceptance criteria (P61)
+- [x] Бот проверяет валидность invite token при `staffinvitehelp-` payload.
+- [x] При невалидном/просроченном токене — сообщение «устарело, обратитесь к администратору».
+- [x] При валидном — кнопка «Открыть приглашение».
+- [x] Кнопка в login.html переименована, есть подсказка.
+- [x] Тесты зелёные.
+
+---
+
+## P62 — Форматирование Telegram-сообщений: строгая карточка инвестиционной идеи
+
+**Проблема:** Текущий формат сообщения в Telegram (через `render_message_notification_text` в `services/message_rendering.py`) — плоский, все секции сливаются в одну стену текста. Содержит бессмысленные «заглушки»: `<b>Новая публикация по вашей подписке</b>` (пустое по смыслу), `Тип: recommendation` (клиенту неинформативно).
+
+**Текущий рендер** (`message_rendering.py:44-70`):
+```
+<b>Новая публикация по вашей подписке</b>     ← УБРАТЬ: пустая фраза
+<b>Риск на пробое</b>
+Стратегия: Top Gun
+Тип: recommendation                          ← УБРАТЬ: клиенту не нужно
+<b>Описание</b>
+Текст тела...
+<b>Structured сделка</b>
+Инструмент: SBER
+Действие: Купить
+Цена: 250
+TP: 280
+SL: 240
+```
+
+**Целевой формат** — плотный, строгий, без пустых отступов:
+```
+◼ <b>Риск на пробое</b> · <i>Top Gun</i>
+
+Ожидаем пробой уровня 255 на повышенных
+объёмах. Цель — движение к 280 за 2-3 дня.
+━━━━━━━━━━━━━━━━━━━━
+<b>SBER</b>  🟢 Купить
+<b>Вход:</b> 250  <b>Цель:</b> 280  <b>Стоп:</b> 240
+━━━━━━━━━━━━━━━━━━━━
+Текст с описанием сути сделки, почему именно
+этот уровень, на что обратить внимание...
+━━━━━━━━━━━━━━━━━━━━
+📎 <a href="...">Обзор рынка.pdf</a>  📎 <a href="...">График.png</a>
+━━━━━━━━━━━━━━━━━━━━
+<i>Top Gun • PitchCopyTrade</i>
+```
+
+**Структура секций (порядок фиксирован):**
+1. **Header** — иконка kind + заголовок + стратегия, одна строка
+2. **Текст (body)** — главная мысль автора, идёт ПЕРВЫМ (не после deal)
+3. **Deal** — плотный блок: тикер + side в одну строку, цены в одну строку
+4. **Примечание deal** — описание сути сделки (если есть)
+5. **Файлы** — inline через пробел, иконка 📎 + имя файла (ссылка если есть)
+6. **Footer** — бренд
+
+**Принципы форматирования:**
+- **Плотная вёрстка**: минимум пустых строк. Одна пустая строка только после header (перед body). Разделитель `━━━` без пустых строк вокруг.
+- **Никаких пустых фраз** — убрано «Новая публикация», «Описание», «Structured сделка», «Тип: recommendation».
+- **Kind → иконка**: `◼` (recommendation), `◻` (idea), `▲` (alert). Строгая форма, без цвета.
+- **Цвет**: единственные цветные — 🟢 Купить / 🔴 Продать. Остальное чёрно-белое.
+- **Deal плотный**: тикер bold + side с иконкой в одну строку. Вход/Цель/Стоп через пробел-разделитель в одну строку.
+- **Файлы inline**: `📎 name  📎 name` через два пробела, не отдельными строками (если 1-2 файла). При 3+ файлов — по одному на строку.
+- Пустые секции не рендерятся.
+
+### P62.1 — Переписать `_render_message_content` (telegram-ветка)
+**Файл:** `src/pitchcopytrade/services/message_rendering.py` (44-70).
+
+Разделить на два формата:
+- `render_message_notification_text(message)` → новый строгий формат (для Telegram).
+- `render_message_email_text(message)` → оставить текущий плоский формат (для email, без изменений).
+
+Новая реализация `_render_telegram_content`:
+```python
+_DIVIDER = "━━━━━━━━━━━━━━━━━━━━"
+_KIND_ICONS = {"recommendation": "◼", "idea": "◻", "alert": "▲"}
+_SIDE_ICONS = {"buy": "🟢", "sell": "🔴"}
+
+
+def _render_telegram_content(message: Message) -> str:
+    kind_icon = _KIND_ICONS.get(str(message.kind), "◼")
+    strategy_name = escape(message.strategy.title) if message.strategy else "—"
+    title = escape(_message_title(message))
+
+    lines: list[str] = []
+
+    # 1. Header — одна строка: иконка + заголовок + стратегия
+    lines.append(f"{kind_icon} <b>{title}</b> · <i>{strategy_name}</i>")
+
+    # 2. Body — главная мысль автора, идёт ПЕРВЫМ
+    body = _message_body(message)
+    if body:
+        lines.append("")
+        lines.append(escape(body))
+
+    # 3. Deal — плотный блок
+    deal_block = _render_telegram_deal(message)
+    if deal_block:
+        lines.append(_DIVIDER)
+        lines.append(deal_block)
+
+    # 4. Documents — inline
+    docs = _render_telegram_documents(message)
+    if docs:
+        lines.append(_DIVIDER)
+        lines.append(docs)
+
+    # 5. Footer
+    lines.append(_DIVIDER)
+    lines.append(f"<i>{strategy_name} • PitchCopyTrade</i>")
+    return "\n".join(lines)
+
+
+def _render_telegram_deal(message: Message) -> str:
+    """Плотный формат: тикер + side в одну строку, цены в одну строку."""
+    if not message.deals:
+        return ""
+    deal = message.deals[0] or {}
+    lines: list[str] = []
+
+    # Первая строка: SBER  🟢 Купить
+    ticker = escape(_deal_instrument_label(deal))
+    side = _deal_side_with_icon(deal)
+    lines.append(f"<b>{ticker}</b>  {side}")
+
+    # Вторая строка (компактная): Вход: 250  Цель: 280  Стоп: 240
+    price_parts: list[str] = []
+    entry = _deal_value(deal, "price", "entry_from")
+    if entry:
+        price_parts.append(f"<b>Вход:</b> {escape(entry)}")
+    tp = _deal_take_profit_label(deal)
+    if tp:
+        price_parts.append(f"<b>Цель:</b> {escape(tp)}")
+    sl = _deal_value(deal, "stop_loss", "stop")
+    if sl:
+        price_parts.append(f"<b>Стоп:</b> {escape(sl)}")
+    if price_parts:
+        lines.append("  ".join(price_parts))
+
+    # Доп. поля (объём, сумма) — только если есть
+    qty = _deal_value(deal, "quantity")
+    amt = _deal_value(deal, "amount")
+    extra_parts: list[str] = []
+    if qty:
+        extra_parts.append(f"<b>Объём:</b> {escape(qty)}")
+    if amt:
+        extra_parts.append(f"<b>Сумма:</b> {escape(amt)}")
+    if extra_parts:
+        lines.append("  ".join(extra_parts))
+
+    # Примечание deal — описание сути сделки
+    note = _deal_value(deal, "note")
+    if note:
+        lines.append(_DIVIDER)
+        lines.append(escape(note))
+
+    return "\n".join(lines)
+
+
+def _deal_side_with_icon(deal: dict) -> str:
+    side = str(deal.get("side") or "").strip().lower()
+    icon = _SIDE_ICONS.get(side, "")
+    label = {"buy": "Купить", "sell": "Продать"}.get(side, side or "—")
+    return f"{icon} {label}" if icon else label
+
+
+def _render_telegram_documents(message: Message) -> str:
+    """Файлы inline: 📎 name  📎 name. При 3+ — по одному на строку."""
+    if not message.documents:
+        return ""
+    names = [escape(_document_name(doc)) for doc in message.documents if _document_name(doc)]
+    if not names:
+        return ""
+    if len(names) <= 2:
+        return "  ".join(f"📎 {n}" for n in names)
+    return "\n".join(f"📎 {n}" for n in names)
+```
+
+### P62.2 — Обновить preview в кабинете автора
+**Файл:** `src/pitchcopytrade/api/routes/cabinet.py` или `preview.py` — где рендерится превью рекомендации.
+
+Добавить `telegram_preview_text = render_message_notification_text(message)` и показать в шаблоне:
+```html
+<div class="telegram-preview" style="font-family:monospace;white-space:pre-wrap;background:#f5f5f5;padding:16px;border-radius:8px;line-height:1.6;">
+  {{ telegram_preview_text | safe }}
+</div>
+```
+Автор должен видеть как будет выглядеть сообщение в Telegram **до** публикации.
+
+### P62.3 — Тесты
+- `tests/test_message_rendering.py` (новый или расширить):
+  - Рендер сообщения `kind=recommendation` → начинается с `◼ <b>`, **НЕ содержит** «Новая публикация», «Тип: recommendation».
+  - Рендер с deal (ticker=SBER, side=buy) → содержит `🟢 Купить`, `<b>Инструмент:</b>  SBER`, `━━━`.
+  - Рендер без deal → блок deal отсутствует, нет лишних разделителей подряд.
+  - Рендер с body → текст присутствует, **НЕ содержит** «Описание» или «КОММЕНТАРИЙ».
+  - Рендер без body и без deal → header + footer через один разделитель.
+  - Footer содержит `PitchCopyTrade`.
+  - Email рендер (`render_message_email_text`) **не изменён** — старый плоский формат.
+  - XSS: body `<script>alert(1)</script>` → `&lt;script&gt;` (escaped).
+  - Kind-иконки: recommendation→`◼`, idea→`◻`, alert→`▲`, unknown→`◼`.
+
+### Что нельзя
+- Менять email-формат (`render_message_email_text`) — оставить плоский.
+- Использовать Markdown parse_mode — бот настроен на HTML (`bot/main.py:28`).
+- Добавлять пустые фразы «Новая публикация…», «Описание:», «Структурированная сделка:» — данные говорят сами за себя.
+- Использовать цветные emoji кроме 🟢/🔴 для buy/sell — общий фон строгий.
+
+### Acceptance criteria (P62)
+- [ ] **Нет** «Новая публикация по вашей подписке» и «Тип: recommendation» в Telegram-сообщении.
+- [ ] Kind отображается как иконка (◼/◻/▲) перед заголовком, без текстовой расшифровки.
+- [ ] Telegram-сообщение визуально разделено на секции: header, deal, body, footer.
+- [ ] Между секциями — разделитель `━━━`. Пустые секции не рендерятся.
+- [ ] Side buy/sell — единственные цветные элементы (🟢/🔴). Всё остальное строгое.
+- [ ] Нет лишних секционных заголовков («Описание», «Structured сделка», «КОММЕНТАРИЙ»).
+- [ ] Email-формат не затронут.
+- [ ] Preview в кабинете показывает Telegram-формат.
+- [ ] Тесты зелёные.
+
+---
+
+## P63 — Production migration для `subscription_products.duration_days` [x]
+
+**Проблема:** `P60` был частично реализован в clean schema и ORM, но для существующей production DB не было явной миграции. `SubscriptionProduct.duration_days` уже мапился в ORM, а `deploy/schema.sql` покрывал только чистую схему.
+
+**Риск:** на существующей базе после deploy SQLAlchemy может начать читать/писать колонку `subscription_products.duration_days`, которой еще нет. Это приведет к `UndefinedColumn` в runtime, несмотря на зеленые тесты на clean schema.
+
+### Что сделано
+- Добавлен безопасный production migration/backfill artifact `deploy/product_duration_days.sql`, так как в проекте нет Alembic/migrations directory.
+- Миграция идемпотентно добавляет `duration_days`, заполняет existing rows, ставит default `30` и `NOT NULL`, затем удаляет legacy period column/type.
+- Runtime-код после миграции не содержит compatibility field.
+- Deploy runbook показывает, где оператор применяет migration перед restart.
+
+### Acceptance criteria (P63)
+- [x] Existing DB получает `subscription_products.duration_days` без clean reset.
+- [x] Existing rows backfilled to fixed day values.
+- [x] Runtime не падает на `UndefinedColumn` после deploy.
+- [x] Clean schema path остается зеленым.
+
+---
+
+## P64 — Telegram HTML renderer: переносы строк без `<br>` [ ]
+
+**Проблема:** Telegram renderer сохраняет переносы как `<br>`, но Telegram HTML parse mode не должен получать этот tag. Multiline body/note/title может сорвать доставку с `can't parse entities`.
+
+### Что сделать
+- В `src/pitchcopytrade/services/message_rendering.py` заменить escaping helper так, чтобы он сохранял `\n`, а не подставлял `<br>`.
+- Не менять email renderer.
+- Добавить regression tests для multiline body/note/title: output содержит newline, не содержит `<br>`.
+
+### Acceptance criteria (P64)
+- [ ] Telegram notification text не содержит `<br>`.
+- [ ] Multiline текст сохраняет реальные переносы строк.
+- [ ] HTML по-прежнему escaped.
+- [ ] Email формат не изменился.
+
+---
+
+## P65 — Existing invited user becomes active after Telegram subscriber auth [ ]
+
+**Проблема:** при `upsert_telegram_subscriber` существующий user с `status=invited` получает Telegram metadata, но статус может остаться `invited` после успешного auth и checkout.
+
+### Что сделать
+- В existing-user ветках `upsert_telegram_subscriber` переводить `UserStatus.INVITED` в `UserStatus.ACTIVE`.
+- Не менять suspended/disabled statuses, если такие появятся в enum.
+- Добавить tests для existing telegram user и existing email-linked user.
+
+### Acceptance criteria (P65)
+- [ ] User со статусом `invited` становится `active` после успешной Telegram subscriber auth.
+- [ ] Данные Telegram metadata продолжают обновляться.
+- [ ] Не создается duplicate user.
+
+---
+
+## P66 — Preview links in `app/status.html` must stay under `/preview/app` [ ]
+
+**Проблема:** `status.html` содержит hardcoded `/app/subscriptions/...` и `/app/payments/...`. В preview mode такие ссылки выводят пользователя из `/preview/app/*` и могут дать 403/redirect.
+
+### Что сделать
+- Заменить hardcoded hrefs на preview-aware hrefs.
+- Использовать тот же pattern, что в остальных Mini App templates.
+- Добавить regression test на preview status screen.
+
+### Acceptance criteria (P66)
+- [ ] `/preview/app/status` ведет на `/preview/app/subscriptions/{id}`.
+- [ ] `/preview/app/status` ведет на `/preview/app/payments/{id}`.
+- [ ] Production `/app/status` сохраняет обычные `/app/*` ссылки.
+
+---
+
+## P67 — App checkout error context and empty success fields cleanup [ ]
+
+**Проблема:** app checkout POST error responses не передают `entry_marker`, а `checkout_success.html` может показать буквальный `None` для пустых пользовательских полей.
+
+### Что сделать
+- В error context для `src/pitchcopytrade/api/routes/app.py` добавить `entry_marker`.
+- В `checkout_success.html` использовать fallback `or "—"` для `full_name`, `email`, `timezone`.
+- Добавить route/template regression tests.
+
+### Acceptance criteria (P67)
+- [ ] Error form after app checkout POST сохраняет `?entry=...` в навигации.
+- [ ] Success page не показывает строку `None`.
+- [ ] Public and Mini App checkout success paths остаются рабочими.
+
+---
+
+## P68 — Checkout readiness copy matches disclaimer-only contract [ ]
+
+**Проблема:** checkout readiness copy все еще говорит про `полный комплект обязательных документов`, хотя текущий business contract временно требует только `Дисклеймер`.
+
+### Что сделать
+- Заменить copy на смысл `Checkout пока не готов: в системе должен быть опубликован дисклеймер.`
+- Не возвращать wording про полный legal pack без отдельного business sign-off.
+- Добавить/обновить тест на readiness copy.
+
+### Acceptance criteria (P68)
+- [ ] User-facing readiness copy говорит только про `Дисклеймер`.
+- [ ] В checkout UI нет обещания полного legal pack в текущем temporary mode.
+- [ ] Тест фиксирует новый текст.

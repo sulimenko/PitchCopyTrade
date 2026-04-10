@@ -34,37 +34,115 @@ def build_message_render_contract() -> dict[str, object]:
 
 
 def render_message_notification_text(message: Message) -> str:
-    return _render_message_content(message, escape_markup=True)
+    return _render_telegram_content(message)
 
 
 def render_message_email_text(message: Message) -> str:
-    return _render_message_content(message, escape_markup=False)
+    return _render_email_content(message)
 
 
-def _render_message_content(message: Message, *, escape_markup: bool) -> str:
-    if escape_markup:
-        lines = [
-            "<b>Новая публикация по вашей подписке</b>",
-            f"<b>{escape(_message_title(message))}</b>",
-            f"Стратегия: {escape(message.strategy.title) if message.strategy is not None else 'не указана'}",
-            f"Тип: {escape(str(message.kind))}",
-        ]
+_DIVIDER = "━━━━━━━━━━━━━━━━━━━━"
+_KIND_ICONS = {
+    "recommendation": "◼",
+    "idea": "◻",
+    "alert": "▲",
+}
+_SIDE_ICONS = {
+    "buy": "🟢",
+    "sell": "🔴",
+}
+
+
+def _render_telegram_content(message: Message) -> str:
+    kind_icon = _KIND_ICONS.get(str(message.kind or "").strip().lower(), "◼")
+    title = _message_title(message)
+    strategy_name = _message_strategy_name(message) or "—"
+
+    lines: list[str] = [f"{kind_icon} <b>{_escape_preserving_linebreaks(title)}</b> · <i>{_escape_preserving_linebreaks(strategy_name)}</i>"]
+
+    body = _message_body(message)
+    if body:
+        lines.extend(["", _escape_preserving_linebreaks(body)])
+
+    deal = _render_telegram_deal(message)
+    if deal:
+        lines.extend([_DIVIDER, deal])
+
+    documents = _render_telegram_documents(message)
+    if documents:
+        lines.extend([_DIVIDER, documents])
+
+    footer_name = _message_strategy_name(message)
+    if footer_name:
+        lines.extend([_DIVIDER, f"<i>{_escape_preserving_linebreaks(footer_name)} • PitchCopyTrade</i>"])
     else:
-        lines = [
-            "Новая публикация по вашей подписке",
-            _message_title(message),
-            f"Стратегия: {message.strategy.title if message.strategy is not None else 'не указана'}",
-            f"Тип: {message.kind}",
-        ]
+        lines.extend([_DIVIDER, "<i>PitchCopyTrade</i>"])
+    return "\n".join(lines)
+
+
+def _render_telegram_deal(message: Message) -> str:
+    if not message.deals:
+        return ""
+    deal = message.deals[0] or {}
+    lines: list[str] = []
+    lines.append(f"<b>{_escape_preserving_linebreaks(_deal_instrument_label(deal))}</b>  {_deal_side_with_icon(deal)}")
+
+    price_parts: list[str] = []
+    entry = _deal_value(deal, "price", "entry_from")
+    if entry:
+        price_parts.append(f"<b>Вход:</b> {_escape_preserving_linebreaks(entry)}")
+    tp = _deal_take_profit_label(deal)
+    if tp:
+        price_parts.append(f"<b>Цель:</b> {_escape_preserving_linebreaks(tp)}")
+    sl = _deal_value(deal, "stop_loss", "stop")
+    if sl:
+        price_parts.append(f"<b>Стоп:</b> {_escape_preserving_linebreaks(sl)}")
+    if price_parts:
+        lines.append("  ".join(price_parts))
+
+    extra_parts: list[str] = []
+    qty = _deal_value(deal, "quantity")
+    if qty:
+        extra_parts.append(f"<b>Объём:</b> {_escape_preserving_linebreaks(qty)}")
+    amount = _deal_value(deal, "amount")
+    if amount:
+        extra_parts.append(f"<b>Сумма:</b> {_escape_preserving_linebreaks(amount)}")
+    if extra_parts:
+        lines.append("  ".join(extra_parts))
+
+    note = _deal_value(deal, "note")
+    if note:
+        lines.extend([_DIVIDER, _escape_preserving_linebreaks(note)])
+
+    return "\n".join(lines)
+
+
+def _render_telegram_documents(message: Message) -> str:
+    documents = [_render_document_link(document) for document in message.documents or []]
+    documents = [item for item in documents if item]
+    if not documents:
+        return ""
+    if len(documents) <= 2:
+        return "  ".join(f"📎 {item}" for item in documents)
+    return "\n".join(f"📎 {item}" for item in documents)
+
+
+def _render_email_content(message: Message) -> str:
+    lines = [
+        "Новая публикация по вашей подписке",
+        _message_title(message),
+        f"Стратегия: {message.strategy.title if message.strategy is not None else 'не указана'}",
+        f"Тип: {message.kind}",
+    ]
 
     blocks: list[str] = []
     body = _message_body(message)
     if body:
-        blocks.append(_render_text_block(body, escape_markup=escape_markup))
-    structured = _render_structured_block(message, escape_markup=escape_markup)
+        blocks.append(_render_text_block(body, escape_markup=False))
+    structured = _render_structured_block(message, escape_markup=False)
     if structured:
         blocks.append(structured)
-    documents = _render_documents_block(message, escape_markup=escape_markup)
+    documents = _render_documents_block(message, escape_markup=False)
     if documents:
         blocks.append(documents)
     return "\n".join(lines + blocks)
@@ -143,6 +221,13 @@ def _deal_side_label(deal: dict[str, object]) -> str:
     return {"buy": "Купить", "sell": "Продать"}.get(side, side or "n/a")
 
 
+def _deal_side_with_icon(deal: dict[str, object]) -> str:
+    side = str(deal.get("side") or "").strip().lower()
+    label = {"buy": "Купить", "sell": "Продать"}.get(side, side or "—")
+    icon = _SIDE_ICONS.get(side, "")
+    return f"{icon} {label}".strip()
+
+
 def _deal_value(deal: dict[str, object], *keys: str) -> str:
     for key in keys:
         value = deal.get(key)
@@ -180,3 +265,28 @@ def _document_name(document: object) -> str:
                 if text:
                     return text
     return ""
+
+
+def _render_document_link(document: object) -> str:
+    if not isinstance(document, dict):
+        return ""
+    name = _document_name(document)
+    if not name:
+        return ""
+    for key in ("url", "href", "link"):
+        value = document.get(key)
+        if value:
+            href = str(value).strip()
+            if href:
+                return f'<a href="{escape(href)}">{escape(name)}</a>'
+    return escape(name)
+
+
+def _message_strategy_name(message: Message) -> str:
+    if message.strategy is not None and message.strategy.title:
+        return str(message.strategy.title).strip()
+    return ""
+
+
+def _escape_preserving_linebreaks(value: str) -> str:
+    return escape(value).replace("\n", "<br>")

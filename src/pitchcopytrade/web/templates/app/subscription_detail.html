@@ -17,7 +17,7 @@
 <section class="surface" style="padding:24px;margin-top:18px;">
   <div style="display:grid;gap:12px;">
     <div><strong>Статус:</strong> <span class="muted">{{ subscription_status_label(subscription.status) }}</span></div>
-    <div><strong>Период:</strong> <span class="muted">{{ billing_period_label(subscription.product.billing_period if subscription.product else None) }}</span></div>
+    <div><strong>Период:</strong> <span class="muted">{{ label_duration_days(subscription.product.duration_days if subscription.product else None) }}</span></div>
     <div><strong>Начало:</strong> <span class="muted">{{ subscription.start_at or "не указано" }}</span></div>
     <div><strong>Окончание:</strong> <span class="muted">{{ subscription.end_at or "не указано" }}</span></div>
     <div><strong>Пробный период:</strong> <span class="muted">{{ "да" if subscription.is_trial else "нет" }}</span></div>
