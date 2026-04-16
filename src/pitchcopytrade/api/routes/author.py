@@ -41,7 +41,7 @@ from pitchcopytrade.services.author import (
     update_author_strategy,
 )
 from pitchcopytrade.services.notifications import deliver_message_notifications, deliver_message_notifications_file
-from pitchcopytrade.services.instruments import build_instrument_payloads
+from pitchcopytrade.services.instruments import build_instrument_payloads, get_or_import_instrument_by_symbol
 from pitchcopytrade.web.templates import label_message_status, templates
 from pitchcopytrade.api.routes._grid_serializers import (
     serialize_recommendations,
@@ -465,8 +465,6 @@ async def recommendation_create_submit(
     strategies = await list_author_strategies(repository, author)
     instruments = await list_active_instruments(repository)
     form = await request.form()
-    selected_instrument_id = str(form.get("structured_instrument_id", "") or "").strip()
-    selected_instrument = next((item for item in instruments if item.id == selected_instrument_id), None)
     resolved_status = _resolve_status_value(
         status_value=str(form.get("status", "") or ""),
         workflow_action=str(form.get("workflow_action", "") or ""),
@@ -484,8 +482,17 @@ async def recommendation_create_submit(
             inline_mode=inline_mode,
             error_text="Выберите стратегию автора.",
         )
+    selected_instrument_id = str(form.get("structured_instrument_id", "") or "").strip()
+    selected_instrument = next((item for item in instruments if item.id == selected_instrument_id), None)
+    structured_instrument_query = str(form.get("structured_instrument_query", "") or "").strip()
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
+        selected_instrument, selected_instrument_id = await _resolve_structured_instrument_selection(
+            repository,
+            instruments,
+            selected_instrument_id=selected_instrument_id,
+            structured_instrument_query=structured_instrument_query,
+        )
         remaining_documents: list[dict[str, object]] = []
         message_type_value = _derive_message_type_value(
             text_value=str(form.get("message_text", "") or ""),
@@ -498,6 +505,18 @@ async def recommendation_create_submit(
             structured_sl_value=str(form.get("structured_sl", "") or ""),
             structured_note_value=str(form.get("structured_note", "") or ""),
         )
+    except ValueError as exc:
+        return await _render_recommendation_create_error(
+            request=request,
+            user=user,
+            author=author,
+            repository=repository,
+            form=form,
+            resolved_status=resolved_status,
+            inline_mode=inline_mode,
+            error_text=str(exc),
+        )
+    try:
         data = build_recommendation_form_data(
             strategy_id=strategy_id,
             kind_value=str(form.get("kind", "new_idea") or "new_idea"),
@@ -517,7 +536,7 @@ async def recommendation_create_submit(
             author_requires_moderation=author.requires_moderation,
             scheduled_for=str(form.get("scheduled_for", "") or ""),
             allowed_strategy_ids={item.id for item in strategies},
-            allowed_instrument_ids={item.id for item in instruments},
+            allowed_instrument_ids={item.id for item in instruments} | ({selected_instrument.id} if selected_instrument is not None else set()),
             selected_instrument=selected_instrument,
             attachments=uploads,
         )
@@ -610,19 +629,65 @@ async def recommendation_edit_submit(
     strategies = await list_author_strategies(repository, author)
     instruments = await list_active_instruments(repository)
     form = await request.form()
-    selected_instrument_id = str(form.get("structured_instrument_id", "") or "").strip()
-    selected_instrument = next((item for item in instruments if item.id == selected_instrument_id), None)
     resolved_status = _resolve_status_value(
         status_value=str(form.get("status", "") or ""),
         workflow_action=str(form.get("workflow_action", "") or ""),
     )
-    was_published = getattr(recommendation.status, "value", recommendation.status) == MessageStatus.PUBLISHED.value
+    selected_instrument_id = str(form.get("structured_instrument_id", "") or "").strip()
+    selected_instrument = next((item for item in instruments if item.id == selected_instrument_id), None)
+    structured_instrument_query = str(form.get("structured_instrument_query", "") or "").strip()
     remove_attachment_ids = [str(item) for item in form.getlist("remove_attachment_ids")]
     current_documents = list(recommendation.documents or [])
     remaining_documents = [item for item in current_documents if str(item.get("id")) not in remove_attachment_ids]
     message_type_value = str(form.get("message_type", "") or form.get("message_mode", "") or "mixed")
+    strategy_id = str(form.get("strategy_id", "") or "")
+    if not strategy_id.strip():
+        feedback = _build_recommendation_form_feedback("Выберите стратегию автора.")
+        return await _render_recommendation_form(
+            request=request,
+            user=user,
+            author=author,
+            repository=repository,
+            recommendation=recommendation,
+            error=feedback["error"],
+            form_values={
+                "strategy_id": "",
+                "kind": str(form.get("kind", "") or ""),
+                "status": resolved_status,
+                "title": str(form.get("title", "") or ""),
+                "message_type": message_type_value,
+                "message_mode": message_type_value,
+                "message_text": str(form.get("message_text", "") or ""),
+                "document_caption": str(form.get("document_caption", "") or ""),
+                "structured_instrument_id": selected_instrument_id,
+                "structured_instrument_query": structured_instrument_query,
+                "structured_instrument_ticker": selected_instrument.ticker if selected_instrument is not None else "",
+                "structured_instrument_name": selected_instrument.name if selected_instrument is not None else "",
+                "structured_amount": str(form.get("structured_amount", "") or ""),
+                "structured_side": str(form.get("structured_side", "") or ""),
+                "structured_price": str(form.get("structured_price", "") or ""),
+                "structured_quantity": str(form.get("structured_quantity", "") or ""),
+                "structured_tp": str(form.get("structured_tp", "") or ""),
+                "structured_sl": str(form.get("structured_sl", "") or ""),
+                "structured_note": str(form.get("structured_note", "") or ""),
+                "requires_moderation": author.requires_moderation,
+                "scheduled_for": str(form.get("scheduled_for", "") or ""),
+                "documents": remaining_documents,
+            },
+            field_errors=feedback["field_errors"],
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            embedded=str(form.get("embedded", "") or "") == "1",
+            next_path=str(form.get("next_path", "") or ""),
+        )
+    was_published = getattr(recommendation.status, "value", recommendation.status) == MessageStatus.PUBLISHED.value
     try:
         uploads = await normalize_attachment_uploads(form.getlist("attachment_files"))
+        selected_instrument, selected_instrument_id = await _resolve_structured_instrument_selection(
+            repository,
+            instruments,
+            selected_instrument_id=selected_instrument_id,
+            structured_instrument_query=structured_instrument_query,
+        )
         message_type_value = _derive_message_type_value(
             text_value=str(form.get("message_text", "") or ""),
             documents=remaining_documents + uploads,
@@ -634,6 +699,45 @@ async def recommendation_edit_submit(
             structured_sl_value=str(form.get("structured_sl", "") or ""),
             structured_note_value=str(form.get("structured_note", "") or ""),
         )
+    except ValueError as exc:
+        feedback = _build_recommendation_form_feedback(str(exc))
+        return await _render_recommendation_form(
+            request=request,
+            user=user,
+            author=author,
+            repository=repository,
+            recommendation=recommendation,
+            error=feedback["error"],
+            form_values={
+                "strategy_id": str(form.get("strategy_id", "") or ""),
+                "kind": str(form.get("kind", "") or ""),
+                "status": resolved_status,
+                "title": str(form.get("title", "") or ""),
+                "message_type": message_type_value,
+                "message_mode": message_type_value,
+                "message_text": str(form.get("message_text", "") or ""),
+                "document_caption": str(form.get("document_caption", "") or ""),
+                "structured_instrument_id": selected_instrument_id,
+                "structured_instrument_query": structured_instrument_query,
+                "structured_instrument_ticker": selected_instrument.ticker if selected_instrument is not None else "",
+                "structured_instrument_name": selected_instrument.name if selected_instrument is not None else "",
+                "structured_amount": str(form.get("structured_amount", "") or ""),
+                "structured_side": str(form.get("structured_side", "") or ""),
+                "structured_price": str(form.get("structured_price", "") or ""),
+                "structured_quantity": str(form.get("structured_quantity", "") or ""),
+                "structured_tp": str(form.get("structured_tp", "") or ""),
+                "structured_sl": str(form.get("structured_sl", "") or ""),
+                "structured_note": str(form.get("structured_note", "") or ""),
+                "requires_moderation": author.requires_moderation,
+                "scheduled_for": str(form.get("scheduled_for", "") or ""),
+                "documents": remaining_documents,
+            },
+            field_errors=feedback["field_errors"],
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            embedded=str(form.get("embedded", "") or "") == "1",
+            next_path=str(form.get("next_path", "") or ""),
+        )
+    try:
         data = build_recommendation_form_data(
             strategy_id=str(form.get("strategy_id", "") or ""),
             kind_value=str(form.get("kind", "") or ""),
@@ -653,7 +757,7 @@ async def recommendation_edit_submit(
             author_requires_moderation=author.requires_moderation,
             scheduled_for=str(form.get("scheduled_for", "") or ""),
             allowed_strategy_ids={item.id for item in strategies},
-            allowed_instrument_ids={item.id for item in instruments},
+            allowed_instrument_ids={item.id for item in instruments} | ({selected_instrument.id} if selected_instrument is not None else set()),
             selected_instrument=selected_instrument,
             documents=remaining_documents,
             attachments=uploads,
@@ -1054,6 +1158,8 @@ def _build_recommendation_form_feedback(error_text: str) -> dict[str, object]:
     field_errors: dict[str, str] = {}
     if error_text == "Выберите стратегию автора.":
         field_errors["strategy_id"] = "Выберите стратегию автора"
+    if error_text == "Инструмент не найден по точному тикеру. Укажите корректный symbol.":
+        field_errors["structured_instrument_query"] = "Укажите корректный symbol"
     return {"error": _friendly_recommendation_error_message(error_text), "field_errors": field_errors}
 
 
@@ -1069,6 +1175,8 @@ def _friendly_recommendation_error_message(error_text: str) -> str:
         return "Для structured сообщения укажите инструмент, цену и количество."
     if error_text == "Для structured message нужен инструмент.":
         return "Выберите инструмент для structured сообщения."
+    if error_text == "Инструмент не найден по точному тикеру. Укажите корректный symbol.":
+        return "Инструмент не найден по точному тикеру. Укажите корректный symbol."
     if error_text == "Для structured message нужно выбрать Buy или Sell.":
         return "Выберите Buy или Sell для structured сообщения."
     if error_text == "Для structured message нужна цена.":
@@ -1287,6 +1395,27 @@ def _build_recommendation_prefill_form_values(*, request: Request, author: Autho
         }
     )
     return form_values
+
+
+async def _resolve_structured_instrument_selection(
+    repository: AuthorRepository,
+    instruments: list[Instrument],
+    *,
+    selected_instrument_id: str,
+    structured_instrument_query: str,
+) -> tuple[Instrument | None, str]:
+    selected_instrument = next((item for item in instruments if item.id == selected_instrument_id), None)
+    if selected_instrument is not None:
+        return selected_instrument, selected_instrument.id
+
+    normalized_query = structured_instrument_query.strip()
+    if not normalized_query:
+        return None, ""
+
+    imported_instrument = await get_or_import_instrument_by_symbol(repository, normalized_query)
+    if imported_instrument is None:
+        raise ValueError("Инструмент не найден по точному тикеру. Укажите корректный symbol.")
+    return imported_instrument, imported_instrument.id
 
 
 def _normalize_inline_message_form_values(

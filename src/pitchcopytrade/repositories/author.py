@@ -47,6 +47,14 @@ class SqlAlchemyAuthorRepository(AuthorRepository):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def get_instrument_by_ticker(self, ticker: str) -> Instrument | None:
+        normalized = ticker.strip().upper()
+        if not normalized:
+            return None
+        query = select(Instrument).where(func.upper(Instrument.ticker) == normalized)
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def get_instrument(self, instrument_id: str) -> Instrument | None:
         query = select(Instrument).where(Instrument.id == instrument_id, Instrument.is_active.is_(True))
         result = await self.session.execute(query)
@@ -187,6 +195,12 @@ class FileAuthorRepository(AuthorRepository):
             [item for item in self.graph.instruments.values() if item.is_active],
             key=lambda item: item.ticker.lower(),
         )
+
+    async def get_instrument_by_ticker(self, ticker: str) -> Instrument | None:
+        normalized = ticker.strip().upper()
+        if not normalized:
+            return None
+        return next((item for item in self.graph.instruments.values() if item.ticker.strip().upper() == normalized), None)
 
     async def get_instrument(self, instrument_id: str) -> Instrument | None:
         instrument = self.graph.instruments.get(instrument_id)

@@ -24,7 +24,7 @@ def _webapp_keyboard(label: str, path: str) -> InlineKeyboardMarkup | None:
 
 
 def _main_keyboard() -> InlineKeyboardMarkup | None:
-    return _webapp_keyboard("Открыть каталог", "/app?entry=bot_start")
+    return _webapp_keyboard("Открыть каталог", "/app/catalog?entry=bot_start")
 
 
 async def handle_start(message: Message) -> None:
@@ -66,7 +66,7 @@ async def handle_start(message: Message) -> None:
         return
     keyboard = _main_keyboard()
     if keyboard:
-        await message.answer("Откройте каталог стратегий в Mini App.", reply_markup=keyboard)
+        await message.answer("Откройте каталог стратегий в Mini App или через кнопку меню Telegram.", reply_markup=keyboard)
     else:
         await message.answer("Откройте Mini App в браузере по HTTPS, чтобы перейти в каталог стратегий.")
 

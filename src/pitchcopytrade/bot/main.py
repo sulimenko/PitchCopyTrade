@@ -13,11 +13,13 @@ from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, Telegra
 from aiogram.client.default import DefaultBotProperties
 from aiogram.methods import GetMe
 from aiogram.enums import ParseMode
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from pitchcopytrade.bot.dispatcher import build_dispatcher
 from pitchcopytrade.core.runtime import bootstrap_runtime
 from pitchcopytrade.core.runtime import secret_fingerprint
+from pitchcopytrade.services.notifications import deliver_message_notifications_by_id
 
 logger = logging.getLogger(__name__)
 DEFAULT_POLLING_RETRY_DELAY_SECONDS = 2
@@ -55,53 +57,31 @@ async def _handle_internal_broadcast(request: web.Request) -> web.Response:
 
 async def _broadcast_message(bot: Bot, settings: Any, message_id: str) -> None:
     from pitchcopytrade.db.session import AsyncSessionLocal
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-    from pitchcopytrade.db.models.content import Message
-    from pitchcopytrade.db.models.catalog import Strategy, SubscriptionProduct
-    from pitchcopytrade.db.models.commerce import Subscription
-    from pitchcopytrade.db.models.enums import SubscriptionStatus
 
     if AsyncSessionLocal is None:
         logger.warning("No DB session, skipping broadcast")
         return
 
     async with AsyncSessionLocal() as session:
-        rec_result = await session.execute(
-            select(Message)
-            .options(
-                selectinload(Message.strategy),
-            )
-            .where(Message.id == message_id)
-        )
-        rec = rec_result.scalar_one_or_none()
-        if rec is None:
-            logger.warning("Message %s not found", message_id)
-            return
+        delivered = await deliver_message_notifications_by_id(session, message_id, bot, trigger="internal_broadcast")
+        logger.info("Sent broadcast message %s to %d telegram recipient(s)", message_id, len(delivered or []))
 
-        strategy: Strategy = rec.strategy
 
-        subs_result = await session.execute(
-            select(Subscription)
-            .join(SubscriptionProduct, Subscription.product_id == SubscriptionProduct.id)
-            .options(selectinload(Subscription.user))
-            .where(
-                SubscriptionProduct.strategy_id == strategy.id,
-                Subscription.status == SubscriptionStatus.ACTIVE,
+async def _configure_catalog_menu_button(bot: Bot, settings: Any) -> None:
+    base_url = str(getattr(settings.app, "base_url", "") or "").rstrip("/")
+    if not base_url.startswith("https://"):
+        logger.warning("Skipping Telegram menu button setup: BASE_URL is not HTTPS (%s)", base_url or "empty")
+        return
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="Открыть каталог",
+                web_app=WebAppInfo(url=f"{base_url}/app/catalog"),
             )
         )
-        subscriptions = subs_result.scalars().all()
-
-        text = _format_message(rec, strategy)
-
-        for sub in subscriptions:
-            user = sub.user
-            if user and user.telegram_user_id:
-                try:
-                    await bot.send_message(chat_id=user.telegram_user_id, text=text)
-                    logger.info("Sent broadcast to user %s", user.telegram_user_id)
-                except Exception as exc:
-                    logger.error("Failed to send to user %s: %s", user.telegram_user_id, exc)
+        logger.info("Telegram menu button configured for catalog")
+    except Exception as exc:
+        logger.warning("Unable to configure Telegram menu button: %s", exc)
 
 
 def _format_message(rec: Any, strategy: Any) -> str:
@@ -189,6 +169,7 @@ async def run_bot() -> None:
         secret_fingerprint(settings.telegram.bot_token.get_secret_value()),
         "webhook" if settings.telegram.use_webhook else "polling",
     )
+    await _configure_catalog_menu_button(bot, settings)
 
     if settings.telegram.use_webhook:
         logger.info("Starting bot in webhook mode on port 8080")

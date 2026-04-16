@@ -1011,7 +1011,7 @@ def test_checkout_submit_redirects_telegram_intended_flow_without_context(monkey
 
     captured = capsys.readouterr()
     assert response.status_code == 303
-    assert response.headers["location"] == "/verify/telegram?next=/app/catalog&requested_next=/checkout/momentum-ru-month"
+    assert response.headers["location"] == "/verify/telegram?next=/app/catalog&requested_next=%2Fapp%2Fcatalog"
     assert create_stub_called is False
     assert "Public checkout route path=/checkout/momentum-ru-month" in captured.out
     assert "lead_source=telegram_miniapp" in captured.out

@@ -171,8 +171,7 @@ async def telegram_widget_callback(
         )
 
     redirect_url, staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
-    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-    _set_staff_session_cookies(response, user, staff_mode)
+    response = _build_staff_session_redirect_response(user, staff_mode, redirect_url)
     log_request_trace(
         logger,
         request,
@@ -323,16 +322,14 @@ async def logout() -> Response:
 async def switch_staff_mode(
     request: Request,
     mode: str = Form(...),
-    next: str = Form("/workspace"),
+    next: str = Form("/author/dashboard"),
     repository: AuthRepository = Depends(get_auth_repository),
 ) -> Response:
     user = await _require_authenticated_user(request, repository)
     staff_mode = resolve_staff_mode(user, mode)
     if staff_mode != mode.strip().lower():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недопустимый режим")
-    response = RedirectResponse(url=_canonical_staff_home(staff_mode), status_code=status.HTTP_303_SEE_OTHER)
-    _set_staff_session_cookies(response, user, staff_mode)
-    return response
+    return _build_staff_session_redirect_response(user, staff_mode, _canonical_staff_home(staff_mode))
 
 
 @router.get("/tg-auth", include_in_schema=False)
@@ -581,17 +578,15 @@ async def workspace_home(request: Request, repository: AuthRepository = Depends(
         response.delete_cookie(settings.auth.session_cookie_name, path="/")
         return response
 
-    role_labels = sorted(role.value for role in get_user_role_slugs(user))
-    return templates.TemplateResponse(
-        request,
-        "auth/app_home.html",
-        {
-            "title": "PitchCopyTrade Workspace",
-            "user": user,
-            "role_labels": role_labels,
-            "role_home": _resolve_role_home(role_labels),
-        },
-    )
+    redirect_url, staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
+    if redirect_url == "/login":
+        response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+        response.delete_cookie(settings.auth.session_cookie_name, path="/")
+        response.delete_cookie(get_staff_mode_cookie_name(), path="/")
+        return response
+    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    _set_staff_session_cookies(response, user, staff_mode)
+    return response
 
 
 # X4: OAuth routes for Google and Yandex (disabled if credentials not configured)
@@ -701,18 +696,8 @@ async def google_oauth_callback(
             user.status = UserStatus.ACTIVE
             await repository.commit()
 
-        # Create session and redirect
-        session_value = build_session_cookie_value(user)
-        response = RedirectResponse(url="/workspace", status_code=status.HTTP_303_SEE_OTHER)
-        response.set_cookie(
-            key=settings.auth.session_cookie_name,
-            value=session_value,
-            httponly=True,
-            max_age=settings.auth.session_ttl_seconds,
-            samesite="lax",
-            secure=settings.app.base_url.startswith("https://"),
-            path="/",
-        )
+        redirect_url, staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
+        response = _build_staff_session_redirect_response(user, staff_mode, redirect_url)
         response.delete_cookie("oauth_state", path="/")
         return response
 
@@ -822,20 +807,10 @@ async def yandex_oauth_callback(
         # If inactive, mark as active
         if user.status != UserStatus.ACTIVE:
             user.status = UserStatus.ACTIVE
-            await repository.save_user(user)
+            await repository.commit()
 
-        # Create session and redirect
-        session_value = build_session_cookie_value(user)
-        response = RedirectResponse(url="/workspace", status_code=status.HTTP_303_SEE_OTHER)
-        response.set_cookie(
-            key=settings.auth.session_cookie_name,
-            value=session_value,
-            httponly=True,
-            max_age=settings.auth.session_ttl_seconds,
-            samesite="lax",
-            secure=settings.app.base_url.startswith("https://"),
-            path="/",
-        )
+        redirect_url, staff_mode = _resolve_role_redirect(user, request.cookies.get(get_staff_mode_cookie_name()))
+        response = _build_staff_session_redirect_response(user, staff_mode, redirect_url)
         response.delete_cookie("oauth_state", path="/")
         return response
 
@@ -844,7 +819,7 @@ async def yandex_oauth_callback(
         return templates.TemplateResponse(
             request,
             "auth/login.html",
-            _build_login_template_context(title="PitchCopyTrade", error=f"OAuth error: {str(exc)[:100]}"),
+            _build_login_template_context(title="PitchCopyTrade", error="Не удалось завершить вход через Yandex OAuth"),
         )
 
 
@@ -977,6 +952,12 @@ def _set_staff_session_cookies(response: Response, user, staff_mode: str) -> Non
     )
 
 
+def _build_staff_session_redirect_response(user, staff_mode: str, redirect_url: str) -> Response:
+    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    _set_staff_session_cookies(response, user, staff_mode)
+    return response
+
+
 def _merge_staff_user_identity(existing_user, invited_user, telegram_user_id: int) -> None:
     existing_user.status = UserStatus.ACTIVE
     apply_staff_surviving_metadata(
@@ -1011,4 +992,4 @@ def _canonical_staff_home(staff_mode: str) -> str:
         return "/author/dashboard"
     if staff_mode == "moderator":
         return "/moderation/queue"
-    return "/workspace"
+    return "/login"

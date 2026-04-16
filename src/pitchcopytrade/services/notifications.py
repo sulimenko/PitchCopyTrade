@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from aiogram.types import BufferedInputFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -19,6 +20,7 @@ from pitchcopytrade.db.models.enums import MessageDeliver, MessageStatus, Paymen
 from pitchcopytrade.db.models.notification_log import NotificationChannelEnum, NotificationLog
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.storage.local import LocalFilesystemStorage
 from pitchcopytrade.services.email_transport import send_smtp_email
 from pitchcopytrade.services.message_rendering import render_message_email_text, render_message_notification_text
 
@@ -131,6 +133,7 @@ async def deliver_message_notifications_by_id(
     *,
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
+    attachment_storage: LocalFilesystemStorage | None = None,
 ) -> list[int] | None:
     message = await get_message_for_notification(session, message_id)
     if message is None:
@@ -141,6 +144,7 @@ async def deliver_message_notifications_by_id(
         notifier,
         trigger=trigger,
         attempts=attempts,
+        attachment_storage=attachment_storage,
     )
 
 
@@ -151,6 +155,7 @@ async def deliver_message_notifications(
     *,
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
+    attachment_storage: LocalFilesystemStorage | None = None,
 ) -> list[int]:
     recipients, diagnostics = await _collect_message_recipients_db(session, message)
     return await _deliver_message_notifications_db(
@@ -161,6 +166,7 @@ async def deliver_message_notifications(
         diagnostics,
         trigger=trigger,
         attempts=attempts,
+        attachment_storage=attachment_storage,
     )
 
 
@@ -172,6 +178,7 @@ async def deliver_message_notifications_file(
     *,
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
+    attachment_storage: LocalFilesystemStorage | None = None,
 ) -> list[int]:
     recipients, diagnostics = _collect_message_recipients_file(graph, message)
     return await _deliver_message_notifications_file(
@@ -183,6 +190,7 @@ async def deliver_message_notifications_file(
         diagnostics,
         trigger=trigger,
         attempts=attempts,
+        attachment_storage=attachment_storage,
     )
 
 
@@ -218,12 +226,13 @@ async def _deliver_message_notifications_db(
     *,
     trigger: str,
     attempts: int,
+    attachment_storage: LocalFilesystemStorage | None,
 ) -> list[int]:
     return await _deliver_message_notifications_runtime(
         message=message,
         recipients=recipients,
         diagnostics=diagnostics,
-        send_telegram=notifier.send_message,
+        telegram_client=notifier,
         send_email_subject=f"Новая публикация: {_message_title(message)}",
         send_email_body=build_message_email_text(message),
         admin_email=get_settings().admin_email,
@@ -232,6 +241,7 @@ async def _deliver_message_notifications_db(
         append_notification_log=lambda log: session.add(log),
         append_audit_event=lambda event: session.add(event),
         finalize=session.commit,
+        attachment_storage=attachment_storage,
     )
 
 
@@ -245,12 +255,13 @@ async def _deliver_message_notifications_file(
     *,
     trigger: str,
     attempts: int,
+    attachment_storage: LocalFilesystemStorage | None,
 ) -> list[int]:
     return await _deliver_message_notifications_runtime(
         message=message,
         recipients=recipients,
         diagnostics=diagnostics,
-        send_telegram=notifier.send_message,
+        telegram_client=notifier,
         send_email_subject=f"Новая публикация: {_message_title(message)}",
         send_email_body=build_message_email_text(message),
         admin_email=get_settings().admin_email,
@@ -259,6 +270,7 @@ async def _deliver_message_notifications_file(
         append_notification_log=lambda log: graph.add(log),
         append_audit_event=lambda event: graph.add(event),
         finalize=lambda: graph.save(store),
+        attachment_storage=attachment_storage,
     )
 
 
@@ -267,7 +279,7 @@ async def _deliver_message_notifications_runtime(
     message: Message,
     recipients: list[MessageRecipient],
     diagnostics: RecipientSelectionDiagnostics,
-    send_telegram: Callable[[int, str], Awaitable[object]],
+    telegram_client,
     send_email_subject: str,
     send_email_body: str,
     admin_email: str | None,
@@ -276,6 +288,7 @@ async def _deliver_message_notifications_runtime(
     append_notification_log: Callable[[NotificationLog], None],
     append_audit_event: Callable[[AuditEvent], None],
     finalize: Callable[[], Awaitable[None] | None],
+    attachment_storage: LocalFilesystemStorage | None,
 ) -> list[int]:
     logger.info(
         "Message delivery for %s: recipients=%d active=%d tg_bound=%d matching=%d",
@@ -300,6 +313,7 @@ async def _deliver_message_notifications_runtime(
         )
 
     telegram_text = build_message_notification_text(message)
+    runtime_attachment_storage = attachment_storage or LocalFilesystemStorage()
     delivered_telegram_ids: list[int] = []
     telegram_success_count = 0
     email_success_count = 0
@@ -323,10 +337,27 @@ async def _deliver_message_notifications_runtime(
                 recipient.user_id,
                 recipient.telegram_user_id,
             )
-            telegram_sent = await _send_with_retry(send_telegram, recipient.telegram_user_id, telegram_text, attempts=attempts)
+            telegram_sent = await _send_with_retry(
+                telegram_client.send_message,
+                recipient.telegram_user_id,
+                telegram_text,
+                attempts=attempts,
+            )
             if telegram_sent:
-                telegram_success_count += 1
-                delivered_telegram_ids.append(recipient.telegram_user_id)
+                attachments_sent = await _send_message_attachments(
+                    telegram_client,
+                    recipient.telegram_user_id,
+                    message,
+                    runtime_attachment_storage,
+                )
+                if not attachments_sent:
+                    telegram_sent = False
+                    telegram_failure_count += 1
+                    telegram_transport_failure_count += 1
+                    telegram_error_detail = "telegram attachment delivery failure"
+                else:
+                    telegram_success_count += 1
+                    delivered_telegram_ids.append(recipient.telegram_user_id)
             else:
                 telegram_failure_count += 1
                 telegram_transport_failure_count += 1
@@ -436,6 +467,62 @@ async def _deliver_message_notifications_runtime(
     if hasattr(result, "__await__"):
         await result
     return delivered_telegram_ids
+
+
+async def _send_message_attachments(
+    telegram_client,
+    chat_id: int,
+    message: Message,
+    attachment_storage: LocalFilesystemStorage,
+) -> bool:
+    documents = list(message.documents or [])
+    if not documents:
+        return True
+
+    attachment_storage.bootstrap()
+    for document in documents:
+        content_type = str(document.get("content_type") or document.get("type") or "").strip().lower()
+        object_key = str(document.get("key") or document.get("object_key") or "").strip()
+        if not object_key:
+            logger.warning("Skipping message attachment without storage key: message=%s document=%s", message.id, document.get("id"))
+            return False
+        if content_type not in {"image/jpeg", "application/pdf"}:
+            logger.warning(
+                "Skipping unsupported Telegram attachment type: message=%s object_key=%s content_type=%s",
+                message.id,
+                object_key,
+                content_type or "unknown",
+            )
+            return False
+
+        filename = str(document.get("name") or document.get("title") or document.get("original_filename") or object_key.rsplit("/", 1)[-1]).strip() or "attachment"
+        try:
+            payload = attachment_storage.download_bytes(object_key)
+        except Exception as exc:
+            logger.warning(
+                "Failed to load attachment for Telegram delivery: message=%s object_key=%s error=%s",
+                message.id,
+                object_key,
+                exc,
+            )
+            return False
+
+        input_file = BufferedInputFile(payload, filename=filename)
+        try:
+            if content_type == "image/jpeg":
+                await telegram_client.send_photo(chat_id=chat_id, photo=input_file)
+            else:
+                await telegram_client.send_document(chat_id=chat_id, document=input_file)
+        except Exception as exc:
+            logger.warning(
+                "Failed to deliver Telegram attachment: message=%s object_key=%s content_type=%s error=%s",
+                message.id,
+                object_key,
+                content_type,
+                exc,
+            )
+            return False
+    return True
 
 
 async def deliver_subscriber_reminders(

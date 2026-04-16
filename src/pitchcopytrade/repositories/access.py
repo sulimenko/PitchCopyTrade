@@ -120,15 +120,12 @@ class SqlAlchemyAccessRepository(AccessRepository):
         query = (
             select(AuditEvent)
             .where(AuditEvent.action == "notification.reminder")
+            .where(AuditEvent.payload["user_id"].astext == user_id)
             .order_by(AuditEvent.created_at.desc())
+            .limit(limit)
         )
         result = await self.session.execute(query)
-        items = [
-            event
-            for event in result.scalars().all()
-            if str((event.payload or {}).get("user_id")) == user_id
-        ]
-        return items[:limit]
+        return list(result.scalars().all())
 
     async def get_notification_preferences(self, *, user_id: str) -> dict[str, bool]:
         query = (

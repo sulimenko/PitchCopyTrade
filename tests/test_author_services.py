@@ -24,6 +24,8 @@ from pitchcopytrade.services.author import (
     update_author_recommendation,
 )
 from pitchcopytrade.services import author as author_service
+from pitchcopytrade.services import instruments as instrument_service
+from pitchcopytrade.services.instruments import get_or_import_instrument_by_symbol
 from pitchcopytrade.db.models.enums import (
     InstrumentType,
     ProductType,
@@ -43,13 +45,32 @@ from pitchcopytrade.storage.local import LocalFilesystemStorage
 
 @pytest.mark.asyncio
 async def test_normalize_attachment_uploads_accepts_pdf() -> None:
-    upload = UploadFile(file=BytesIO(b"pdf-data"), filename="idea.pdf", headers=Headers({"content-type": "application/pdf"}))
+    upload = UploadFile(file=BytesIO(b"%PDF-1.4\npdf-data"), filename="idea.pdf", headers=Headers({"content-type": "application/pdf"}))
 
     items = await normalize_attachment_uploads([upload])
 
     assert len(items) == 1
     assert items[0].filename == "idea.pdf"
     assert items[0].content_type == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_normalize_attachment_uploads_accepts_jpeg() -> None:
+    upload = UploadFile(file=BytesIO(b"\xff\xd8\xffjpeg-data"), filename="photo.jpg", headers=Headers({"content-type": "image/jpeg"}))
+
+    items = await normalize_attachment_uploads([upload])
+
+    assert len(items) == 1
+    assert items[0].filename == "photo.jpg"
+    assert items[0].content_type == "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_normalize_attachment_uploads_rejects_invalid_magic_bytes() -> None:
+    upload = UploadFile(file=BytesIO(b"not-a-pdf"), filename="idea.pdf", headers=Headers({"content-type": "application/pdf"}))
+
+    with pytest.raises(ValueError, match="Файл не является допустимым PDF или JPG"):
+        await normalize_attachment_uploads([upload])
 
 
 @pytest.mark.asyncio
@@ -715,6 +736,123 @@ async def test_search_author_watchlist_candidates_excludes_existing_watchlist() 
     items = await search_author_watchlist_candidates(DummyRepository(), author, "gaz")
 
     assert [item.id for item in items] == ["instrument-2"]
+
+
+@pytest.mark.asyncio
+async def test_get_or_import_instrument_by_symbol_imports_provider_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyRepository:
+        def __init__(self) -> None:
+            self.existing: Instrument | None = None
+            self.added: list[Instrument] = []
+            self.committed = 0
+            self.refreshed: list[Instrument] = []
+
+        async def get_instrument_by_ticker(self, ticker: str) -> Instrument | None:
+            if self.existing is not None and self.existing.ticker.upper() == ticker.upper():
+                return self.existing
+            return None
+
+        def add(self, entity: object) -> None:
+            assert isinstance(entity, Instrument)
+            self.added.append(entity)
+            self.existing = entity
+
+        async def commit(self) -> None:
+            self.committed += 1
+
+        async def refresh(self, entity: object) -> None:
+            assert isinstance(entity, Instrument)
+            self.refreshed.append(entity)
+
+    repository = DummyRepository()
+    monkeypatch.setattr(
+        instrument_service,
+        "get_instrument_quote",
+        AsyncMock(
+            return_value=type(
+                "Quote",
+                (),
+                {
+                    "payload": {
+                        "symbol": "SBER",
+                        "short_name": "SBER",
+                        "description": "Sberbank",
+                        "listed_exchange": "TQBR",
+                        "currency_code": "RUB",
+                    }
+                },
+            )()
+        ),
+    )
+
+    instrument = await get_or_import_instrument_by_symbol(repository, "SBER")
+
+    assert instrument is not None
+    assert instrument.ticker == "SBER"
+    assert instrument.name == "Sberbank"
+    assert instrument.board == "TQBR"
+    assert instrument.currency == "RUB"
+    assert instrument.lot_size == 1
+    assert instrument.is_active is True
+    assert repository.committed == 1
+    assert len(repository.added) == 1
+    assert len(repository.refreshed) == 1
+
+    same_instrument = await get_or_import_instrument_by_symbol(repository, "SBER")
+
+    assert same_instrument is instrument
+    assert repository.committed == 1
+    assert len(repository.added) == 1
+    assert len(repository.refreshed) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_or_import_instrument_by_symbol_reuses_existing_instrument(monkeypatch: pytest.MonkeyPatch) -> None:
+    existing = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+
+    class DummyRepository:
+        def __init__(self) -> None:
+            self.added = 0
+            self.committed = 0
+            self.refreshed = 0
+
+        async def get_instrument_by_ticker(self, ticker: str) -> Instrument | None:
+            if ticker.upper() == existing.ticker:
+                return existing
+            return None
+
+        def add(self, entity: object) -> None:
+            self.added += 1
+
+        async def commit(self) -> None:
+            self.committed += 1
+
+        async def refresh(self, entity: object) -> None:
+            self.refreshed += 1
+
+    repository = DummyRepository()
+
+    monkeypatch.setattr(
+        instrument_service,
+        "get_instrument_quote",
+        AsyncMock(side_effect=AssertionError("provider lookup should not run for an existing instrument")),
+    )
+
+    instrument = await get_or_import_instrument_by_symbol(repository, "SBER")
+
+    assert instrument is existing
+    assert repository.added == 0
+    assert repository.committed == 0
+    assert repository.refreshed == 0
 
 
 @pytest.mark.asyncio

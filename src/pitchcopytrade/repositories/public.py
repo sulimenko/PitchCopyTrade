@@ -105,7 +105,12 @@ class SqlAlchemyPublicRepository(PublicRepository):
         product = result.scalar_one_or_none()
         if product is None:
             return None
-        return await self.get_public_product_by_ref(product.id)
+        if (
+            product.strategy is not None
+            and (not product.strategy.is_public or product.strategy.status is not StrategyStatus.PUBLISHED)
+        ):
+            return None
+        return product
 
     async def list_active_checkout_documents(self) -> list[LegalDocument]:
         query = (

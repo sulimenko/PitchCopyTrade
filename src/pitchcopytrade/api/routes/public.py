@@ -103,7 +103,10 @@ def _wants_json_response(request: Request) -> bool:
 
 
 def _verify_redirect_url(requested_next: str) -> str:
-    return f"/verify/telegram?next=/app/catalog&requested_next={quote(requested_next, safe='/')}"
+    normalized = (requested_next or "").strip()
+    if not normalized.startswith("/app/") or normalized.startswith("//"):
+        normalized = "/app/catalog"
+    return f"/verify/telegram?next=/app/catalog&requested_next={quote(normalized, safe='')}"
 
 
 @router.get("/", include_in_schema=False)

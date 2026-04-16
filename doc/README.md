@@ -16,22 +16,22 @@
 
 ## Текущий Snapshot
 
-Проверенный runtime snapshot на `2026-04-10` такой:
+Актуальный рабочий снимок на `2026-04-16` такой:
 
-- local gate green: `./.venv/bin/python -m pytest -q` -> `332 passed`;
-- Mini App auth, checkout, subscriptions, staff/admin invite onboarding и subscriber delivery в основном контуре восстановлены;
-- `recommendations` заменены на `messages`, author composer и preview уже message-centric;
-- duplicate checkout guard закрыт, hidden legal docs больше не auto-submit-ятся как принятые, `К стратегии` восстановлена как локальный CTA;
-- local `BASE_URL` / `ADMIN_BASE_URL` и raw `uvicorn` contract синхронизированы на `http://127.0.0.1:8000`;
-- operator-facing runtime log source = `storage/api.log`.
+- последний исторически подтверждённый local gate: `./.venv/bin/python -m pytest -q` -> `336 passed`;
+- disclaimer-only checkout contract уже зафиксирован в runtime и не должен переоткрываться как finding;
+- Mini App primary nav в шаблонах уже сведён к `Каталог / Подписки / История`;
+- operator-facing runtime log source = `storage/api.log`;
+- production state сейчас не GREEN из-за открытого stabilization block `T-008` ... `T-012`.
 
-Текущие открытые follow-up после последнего full review:
+Текущие открытые follow-up:
 
-- `P64`: Telegram HTML renderer должен сохранять переносы строк без `<br>`;
-- `P65`: existing `invited` user должен становиться `active` после успешной Telegram subscriber auth;
-- `P66`: preview-ссылки в `app/status.html` должны оставаться под `/preview/app`;
-- `P67`: app checkout error context должен сохранять `entry_marker`, success page не должен показывать `None`;
-- `P68`: checkout readiness copy должен говорить про `Дисклеймер`, а не про полный legal pack.
+- `T-001` ... `T-007`: security/db cleanup backlog;
+- `T-008`: Yandex OAuth callback crash из-за dead repository API;
+- `T-009`: staff auth redirect идёт в legacy `/workspace` вместо role dashboard;
+- `T-010`: structured composer не принимает произвольный тикер вне локального каталога;
+- `T-011`: Telegram delivery не отправляет реальные attachments как media/document;
+- `T-012`: у бота нет постоянной menu button на каталог.
 
 ## Правила работы
 
@@ -66,6 +66,7 @@ Storage modes:
 - `file`-mode можно использовать для быстрой верстки, preview и compatibility smoke, но не как основной критерий готовности product-flow
 - `db`-mode сейчас не означает полный business seed: после clean reset автоматически поднимаются только schema, `instruments` и bootstrap `admin`; полный dataset пока требует отдельного importer/seed pass
 - для operator RCA используйте прежде всего `storage/api.log`
+- если RCA делается по внешнему server-backup log, после локального анализа выводы всё равно нужно синхронизировать обратно в `doc/review.md` и `doc/task.md`
 - если запускаете raw `uvicorn` локально без proxy/hosts-entry, `BASE_URL` и `ADMIN_BASE_URL` должны совпадать с реальным reachable origin `http://127.0.0.1:8000`
 
 ## Подготовка окружения

@@ -40,25 +40,24 @@ def validate_telegram_webapp_init_data(
 
     items = dict(parse_qsl(init_data, keep_blank_values=True))
     received_hash = items.pop("hash", None)
-    had_signature = "signature" in items
     signature_value = items.pop("signature", None)
     if not received_hash:
         raise TelegramWebAppAuthError("missing_hash", "Missing hash")
 
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
     data_check_items_without_signature = dict(items)
     data_check_string_without_signature = "\n".join(
         f"{key}={value}" for key, value in sorted(data_check_items_without_signature.items())
     )
-    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
     expected_hash_without_signature = hmac.new(
         secret_key,
         data_check_string_without_signature.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
 
-    expected_hash_with_signature = None
     data_check_string_with_signature = None
-    if had_signature and signature_value is not None:
+    expected_hash_with_signature = None
+    if signature_value is not None:
         items_with_signature = dict(items)
         items_with_signature["signature"] = signature_value
         data_check_string_with_signature = "\n".join(
@@ -78,9 +77,9 @@ def validate_telegram_webapp_init_data(
     )
 
     logger.info(
-        "initData validation keys=%s had_signature=%s received_hash_prefix=%s hash_without_signature_prefix=%s match_without_signature=%s hash_with_signature_prefix=%s match_with_signature=%s data_check_len_without_signature=%s data_check_len_with_signature=%s bot_token_fingerprint=%s",
+        "initData validation keys=%s has_signature=%s received_hash_prefix=%s hash_without_signature_prefix=%s match_without_signature=%s hash_with_signature_prefix=%s match_with_signature=%s data_check_len_without_signature=%s data_check_len_with_signature=%s bot_token_fingerprint=%s",
         sorted(items.keys()),
-        had_signature,
+        signature_value is not None,
         received_hash[:12] if received_hash else "-",
         expected_hash_without_signature[:12],
         match_without_signature,
@@ -91,11 +90,14 @@ def validate_telegram_webapp_init_data(
         hashlib.sha256(bot_token.encode("utf-8")).hexdigest()[:12],
     )
 
-    if match_without_signature:
+    if signature_value is not None:
+        if match_with_signature:
+            items["signature"] = signature_value
+            logger.warning("initData validated WITH signature in data_check_string")
+        else:
+            raise TelegramWebAppAuthError("invalid_hash", "Invalid hash")
+    elif match_without_signature:
         pass
-    elif match_with_signature:
-        items["signature"] = signature_value
-        logger.warning("initData validated WITH signature in data_check_string")
     else:
         raise TelegramWebAppAuthError("invalid_hash", "Invalid hash")
 

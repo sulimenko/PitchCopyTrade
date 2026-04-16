@@ -20,6 +20,7 @@ from pitchcopytrade.services.notifications import (
     build_message_notification_text,
     deliver_message_notifications_file,
 )
+from pitchcopytrade.storage.local import LocalFilesystemStorage
 
 
 def test_build_message_notification_text_uses_html_safe_message_payload() -> None:
@@ -759,3 +760,249 @@ async def test_deliver_message_notifications_file_logs_audience_mismatch_reason(
 
     assert fake_bot.send_message.await_count == 0
     assert "active subscriptions exist but do not match message audience" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_deliver_message_notifications_file_sends_photo_and_pdf_attachments(tmp_path) -> None:
+    store = FileDataStore(root_dir=tmp_path / "runtime", seed_dir=tmp_path / "runtime")
+    graph = FileDatasetGraph.load(store)
+    attachment_storage = LocalFilesystemStorage(root_dir=tmp_path / "blob", seed_root_dir=tmp_path / "blob")
+
+    now = datetime(2026, 3, 11, tzinfo=timezone.utc)
+    author_user = User(id="author-user-1", full_name="Alpha Desk", status=UserStatus.ACTIVE, timezone="Europe/Moscow")
+    subscriber = User(
+        id="subscriber-1",
+        email="subscriber@example.com",
+        telegram_user_id=222,
+        username="subscriber1",
+        full_name="Subscriber One",
+        status=UserStatus.ACTIVE,
+        timezone="Europe/Moscow",
+    )
+    author = AuthorProfile(id="author-1", user_id="author-user-1", display_name="Alpha Desk", slug="alpha-desk", is_active=True)
+    author.user = author_user
+    strategy = Strategy(
+        id="strategy-1",
+        author_id="author-1",
+        slug="momentum-ru",
+        title="Momentum RU",
+        short_description="desc",
+        full_description="full",
+        risk_level=RiskLevel.MEDIUM,
+        status=StrategyStatus.PUBLISHED,
+        min_capital_rub=150000,
+        is_public=True,
+    )
+    strategy.author = author
+    product = SubscriptionProduct(
+        id="product-1",
+        product_type=ProductType.STRATEGY,
+        slug="momentum-ru-month",
+        title="Momentum RU Monthly",
+        description="Monthly access",
+        strategy_id=strategy.id,
+        author_id=None,
+        bundle_id=None,
+        duration_days=30,
+        price_rub=4900,
+        trial_days=0,
+        is_active=True,
+        autorenew_allowed=True,
+    )
+    subscription = Subscription(
+        id="subscription-1",
+        user_id=subscriber.id,
+        product_id=product.id,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=False,
+        manual_discount_rub=0,
+        start_at=now,
+        end_at=now.replace(month=4),
+    )
+    subscription.user = subscriber
+    subscription.product = product
+    subscriber.subscriptions = [subscription]
+    product.subscriptions = [subscription]
+    message = Message(
+        id="message-1",
+        strategy_id=strategy.id,
+        author_id=author.id,
+        kind="idea",
+        status="published",
+        type="mixed",
+        title="Покупка SBER",
+        text={"body": "Сильный спрос", "plain": "Сильный спрос"},
+        documents=[
+            {
+                "id": "doc-photo",
+                "key": "messages/message-1/photo.jpg",
+                "original_filename": "photo.jpg",
+                "content_type": "image/jpeg",
+                "size_bytes": 4,
+            },
+            {
+                "id": "doc-pdf",
+                "object_key": "messages/message-1/onepager.pdf",
+                "original_filename": "onepager.pdf",
+                "content_type": "application/pdf",
+                "size_bytes": 8,
+            },
+        ],
+        deals=[],
+        deliver=["strategy"],
+        published=now,
+    )
+    message.strategy = strategy
+    message.author = author
+    attachment_storage.upload_bytes("messages/message-1/photo.jpg", b"\xff\xd8\xffphoto", "image/jpeg")
+    attachment_storage.upload_bytes("messages/message-1/onepager.pdf", b"%PDF-1.4\npdf", "application/pdf")
+
+    for entity in (author_user, subscriber, author, strategy, product, subscription, message):
+        graph.add(entity)
+
+    calls: list[str] = []
+
+    class FakeBot:
+        async def send_message(self, chat_id: int, text: str):
+            calls.append("message")
+
+        async def send_photo(self, chat_id: int, photo):
+            calls.append("photo")
+
+        async def send_document(self, chat_id: int, document):
+            calls.append("document")
+
+        session = type("FakeSession", (), {"close": AsyncMock()})()
+
+    delivered = await deliver_message_notifications_file(
+        graph,
+        store,
+        message,
+        FakeBot(),
+        trigger="test_attachments",
+        attachment_storage=attachment_storage,
+    )
+
+    assert delivered == [222]
+    assert calls == ["message", "photo", "document"]
+
+
+@pytest.mark.asyncio
+async def test_deliver_message_notifications_file_falls_back_when_attachment_delivery_fails(tmp_path, monkeypatch) -> None:
+    store = FileDataStore(root_dir=tmp_path / "runtime", seed_dir=tmp_path / "runtime")
+    graph = FileDatasetGraph.load(store)
+    attachment_storage = LocalFilesystemStorage(root_dir=tmp_path / "blob", seed_root_dir=tmp_path / "blob")
+
+    now = datetime(2026, 3, 11, tzinfo=timezone.utc)
+    author_user = User(id="author-user-1", full_name="Alpha Desk", status=UserStatus.ACTIVE, timezone="Europe/Moscow")
+    subscriber = User(
+        id="subscriber-1",
+        email="subscriber@example.com",
+        telegram_user_id=222,
+        username="subscriber1",
+        full_name="Subscriber One",
+        status=UserStatus.ACTIVE,
+        timezone="Europe/Moscow",
+    )
+    author = AuthorProfile(id="author-1", user_id="author-user-1", display_name="Alpha Desk", slug="alpha-desk", is_active=True)
+    author.user = author_user
+    strategy = Strategy(
+        id="strategy-1",
+        author_id="author-1",
+        slug="momentum-ru",
+        title="Momentum RU",
+        short_description="desc",
+        full_description="full",
+        risk_level=RiskLevel.MEDIUM,
+        status=StrategyStatus.PUBLISHED,
+        min_capital_rub=150000,
+        is_public=True,
+    )
+    strategy.author = author
+    product = SubscriptionProduct(
+        id="product-1",
+        product_type=ProductType.STRATEGY,
+        slug="momentum-ru-month",
+        title="Momentum RU Monthly",
+        description="Monthly access",
+        strategy_id=strategy.id,
+        author_id=None,
+        bundle_id=None,
+        duration_days=30,
+        price_rub=4900,
+        trial_days=0,
+        is_active=True,
+        autorenew_allowed=True,
+    )
+    subscription = Subscription(
+        id="subscription-1",
+        user_id=subscriber.id,
+        product_id=product.id,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=False,
+        manual_discount_rub=0,
+        start_at=now,
+        end_at=now.replace(month=4),
+    )
+    subscription.user = subscriber
+    subscription.product = product
+    subscriber.subscriptions = [subscription]
+    product.subscriptions = [subscription]
+    message = Message(
+        id="message-1",
+        strategy_id=strategy.id,
+        author_id=author.id,
+        kind="idea",
+        status="published",
+        type="mixed",
+        title="Покупка SBER",
+        text={"body": "Сильный спрос", "plain": "Сильный спрос"},
+        documents=[
+            {
+                "id": "doc-photo",
+                "key": "messages/message-1/photo.jpg",
+                "original_filename": "photo.jpg",
+                "content_type": "image/jpeg",
+                "size_bytes": 4,
+            }
+        ],
+        deals=[],
+        deliver=["strategy"],
+        published=now,
+    )
+    message.strategy = strategy
+    message.author = author
+    attachment_storage.upload_bytes("messages/message-1/photo.jpg", b"\xff\xd8\xffphoto", "image/jpeg")
+
+    for entity in (author_user, subscriber, author, strategy, product, subscription, message):
+        graph.add(entity)
+
+    fake_sender = AsyncMock(return_value=(True, None))
+
+    class FakeBot:
+        async def send_message(self, chat_id: int, text: str):
+            return None
+
+        async def send_photo(self, chat_id: int, photo):
+            raise RuntimeError("telegram photo failed")
+
+        async def send_document(self, chat_id: int, document):
+            return None
+
+        session = type("FakeSession", (), {"close": AsyncMock()})()
+
+    monkeypatch.setattr("pitchcopytrade.services.notifications.send_smtp_email", fake_sender)
+
+    delivered = await deliver_message_notifications_file(
+        graph,
+        store,
+        message,
+        FakeBot(),
+        trigger="test_attachment_failure",
+        attachment_storage=attachment_storage,
+    )
+
+    assert delivered == []
+    assert fake_sender.await_count == 1

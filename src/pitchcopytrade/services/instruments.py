@@ -9,6 +9,9 @@ import re
 import httpx
 
 from pitchcopytrade.core.config import get_settings
+from pitchcopytrade.db.models.catalog import Instrument
+from pitchcopytrade.db.models.enums import InstrumentType
+from pitchcopytrade.repositories.contracts import AuthorRepository
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +147,30 @@ async def build_instrument_payload(instrument, *, allow_live_fetch: bool = True)
         "quote": quote.as_dict(),
     }
     return payload
+
+
+async def get_or_import_instrument_by_symbol(
+    repository: AuthorRepository,
+    symbol: str,
+) -> Instrument | None:
+    normalized_symbol = _normalize_ticker(symbol)
+    if not normalized_symbol:
+        return None
+
+    existing = await repository.get_instrument_by_ticker(normalized_symbol)
+    if existing is not None:
+        return existing
+
+    quote = await get_instrument_quote(normalized_symbol)
+    payload = quote.payload
+    if not isinstance(payload, dict) or not payload:
+        logger.warning("Instrument import lookup failed for %s: provider returned no payload", normalized_symbol)
+        return None
+
+    imported = await _build_instrument_from_provider_payload(repository, normalized_symbol, payload)
+    if imported is not None:
+        logger.info("Imported instrument %s from provider payload", imported.ticker)
+    return imported
 
 
 async def build_instrument_payloads(instruments, *, allow_live_fetch: bool = True) -> list[dict[str, object]]:
@@ -387,6 +414,55 @@ def _normalize_ticker(value: str) -> str:
 
 def _provider_source(settings) -> str:
     return settings.provider_base_url
+
+
+async def _build_instrument_from_provider_payload(
+    repository: AuthorRepository,
+    symbol: str,
+    payload: dict[str, object],
+) -> Instrument | None:
+    existing = await repository.get_instrument_by_ticker(symbol)
+    if existing is not None:
+        return existing
+
+    ticker = _first_text(
+        payload,
+        "short_name",
+        "symbol",
+    ) or symbol
+    if not ticker:
+        ticker = symbol
+    name = _first_text(
+        payload,
+        "description",
+        "original_name",
+        "short_name",
+    ) or ticker
+    board = _first_text(
+        payload,
+        "listed_exchange",
+        "source",
+    ) or _nested_text(payload, "levelI.source") or "UNKNOWN"
+    currency = _first_text(
+        payload,
+        "currency_code",
+        "currency",
+    ) or "UNK"
+
+    instrument = Instrument(
+        ticker=ticker[:32],
+        name=name[:255],
+        board=board[:32],
+        # Temporary provider compatibility rule: the exact provider payload does not always expose lot size.
+        lot_size=1,
+        currency=currency[:3] or "UNK",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    repository.add(instrument)
+    await repository.commit()
+    await repository.refresh(instrument)
+    return instrument
 
 
 def _empty_quote(ticker: str, *, source: str, status: str) -> InstrumentQuote:

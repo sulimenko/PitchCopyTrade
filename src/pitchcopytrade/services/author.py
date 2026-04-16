@@ -581,6 +581,8 @@ async def normalize_attachment_uploads(files: Iterable[UploadFile]) -> list[Inco
             raise ValueError("Нельзя загрузить пустой файл.")
         if len(data) > MAX_ATTACHMENT_SIZE_BYTES:
             raise ValueError("Файл слишком большой. Лимит 10 MB.")
+        if not _attachment_magic_bytes_match(content_type, data):
+            raise ValueError("Файл не является допустимым PDF или JPG.")
         uploads.append(
             IncomingAttachment(
                 filename=Path(filename).name,
@@ -1178,3 +1180,11 @@ def _slugify(text: str) -> str:
     normalized = re.sub(r"[^\w\s-]", "", normalized)
     normalized = re.sub(r"[\s_-]+", "-", normalized)
     return normalized.strip("-")[:120]
+
+
+def _attachment_magic_bytes_match(content_type: str, data: bytes) -> bool:
+    if content_type == "application/pdf":
+        return data.startswith(b"%PDF")
+    if content_type == "image/jpeg":
+        return data.startswith(b"\xff\xd8\xff")
+    return False

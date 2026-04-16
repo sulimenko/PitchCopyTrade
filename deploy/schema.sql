@@ -270,11 +270,11 @@ CREATE TABLE messages (
     id          UUID PRIMARY KEY,
     thread      UUID,
     parent      UUID,
-    author      UUID,
-    "user"      UUID,
-    moderator   UUID,
-    strategy    UUID,
-    bundle      UUID,
+    author      UUID REFERENCES author_profiles (id) ON DELETE SET NULL,
+    "user"      UUID REFERENCES users (id) ON DELETE SET NULL,
+    moderator   UUID REFERENCES users (id) ON DELETE SET NULL,
+    strategy    UUID REFERENCES strategies (id) ON DELETE SET NULL,
+    bundle      UUID REFERENCES bundles (id) ON DELETE SET NULL,
     deliver     VARCHAR(32)[] DEFAULT ARRAY[]::VARCHAR(32)[],
     channel     VARCHAR(32)[] DEFAULT ARRAY['telegram', 'miniapp']::VARCHAR(32)[],
     kind        VARCHAR(32),
@@ -315,3 +315,34 @@ CREATE TABLE notification_log (
     created_at        TIMESTAMPTZ NOT NULL,
     updated_at        TIMESTAMPTZ NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS ix_users_lead_source_id ON users (lead_source_id);
+CREATE INDEX IF NOT EXISTS ix_user_roles_user_id ON user_roles (user_id);
+CREATE INDEX IF NOT EXISTS ix_user_roles_role_id ON user_roles (role_id);
+CREATE INDEX IF NOT EXISTS ix_author_profiles_user_id ON author_profiles (user_id);
+CREATE INDEX IF NOT EXISTS ix_author_watchlist_instruments_author_id ON author_watchlist_instruments (author_id);
+CREATE INDEX IF NOT EXISTS ix_author_watchlist_instruments_instrument_id ON author_watchlist_instruments (instrument_id);
+CREATE INDEX IF NOT EXISTS ix_strategies_author_id ON strategies (author_id);
+CREATE INDEX IF NOT EXISTS ix_bundle_members_bundle_id ON bundle_members (bundle_id);
+CREATE INDEX IF NOT EXISTS ix_bundle_members_strategy_id ON bundle_members (strategy_id);
+CREATE INDEX IF NOT EXISTS ix_subscription_products_strategy_id ON subscription_products (strategy_id);
+CREATE INDEX IF NOT EXISTS ix_subscription_products_author_id ON subscription_products (author_id);
+CREATE INDEX IF NOT EXISTS ix_subscription_products_bundle_id ON subscription_products (bundle_id);
+CREATE INDEX IF NOT EXISTS ix_payments_user_id ON payments (user_id);
+CREATE INDEX IF NOT EXISTS ix_payments_product_id ON payments (product_id);
+CREATE INDEX IF NOT EXISTS ix_payments_promo_code_id ON payments (promo_code_id);
+CREATE INDEX IF NOT EXISTS ix_subscriptions_user_id ON subscriptions (user_id);
+CREATE INDEX IF NOT EXISTS ix_subscriptions_product_id ON subscriptions (product_id);
+CREATE INDEX IF NOT EXISTS ix_subscriptions_payment_id ON subscriptions (payment_id);
+CREATE INDEX IF NOT EXISTS ix_subscriptions_lead_source_id ON subscriptions (lead_source_id);
+CREATE INDEX IF NOT EXISTS ix_subscriptions_applied_promo_code_id ON subscriptions (applied_promo_code_id);
+CREATE INDEX IF NOT EXISTS ix_user_consents_user_id ON user_consents (user_id);
+CREATE INDEX IF NOT EXISTS ix_user_consents_document_id ON user_consents (document_id);
+CREATE INDEX IF NOT EXISTS ix_user_consents_payment_id ON user_consents (payment_id);
+CREATE INDEX IF NOT EXISTS ix_messages_author ON messages (author);
+CREATE INDEX IF NOT EXISTS ix_messages_user ON messages ("user");
+CREATE INDEX IF NOT EXISTS ix_messages_moderator ON messages (moderator);
+CREATE INDEX IF NOT EXISTS ix_messages_strategy ON messages (strategy);
+CREATE INDEX IF NOT EXISTS ix_messages_bundle ON messages (bundle);
+CREATE INDEX IF NOT EXISTS ix_audit_events_actor_user_id ON audit_events (actor_user_id);
+CREATE INDEX IF NOT EXISTS ix_notification_log_user_id ON notification_log (user_id);

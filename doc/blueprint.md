@@ -1,5 +1,5 @@
 # PitchCopyTrade — Blueprint
-> Обновлено: 2026-04-10
+> Обновлено: 2026-04-16
 > Статус: canonical current contract for MVP clean-up
 
 ## 1. Политика документа
@@ -59,7 +59,10 @@
 - `file`-mode читает состояние из `storage/runtime/*`, а не напрямую из `storage/seed/*`;
 - `storage/runtime/*` считается изменяемым runtime-слоем и перед воспроизводимыми проверками должен сбрасываться;
 - Mini App first screen contract = `/app/catalog`, help contract = `/app/help`;
+- canonical staff auth success destination = role-specific dashboard, а не legacy `/workspace`;
 - author/public/subscriber contour перешел на message-centric модель `messages`;
+- author structured deal contract должен поддерживать exact-lookup import нового инструмента через текущий provider endpoint с последующей materialize-записью в `instruments`;
+- Telegram delivery для author messages с attachments должна отправлять реальные media/document payloads, а не только имя файла в тексте;
 - quote provider подключается backend-адаптером и не должен блокировать SSR;
 - внутри docs больше нельзя писать "все закрыто" без сверки с [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).
 
@@ -73,7 +76,7 @@
 - подключить real-time market data по тикерам;
 - убрать основные product/runtime сбои вокруг подписки, оплаты и навигации.
 
-После последнего review критичный открытый scope не должен трактоваться как новый продуктовый redesign. Это короткий stabilization pass: Telegram HTML newline handling, invited-user status cleanup, preview links и мелкие checkout-copy/context исправления.
+После последнего review критичный открытый scope не должен трактоваться как новый продуктовый redesign. Это короткий stabilization pass: staff OAuth/redirect, author structured ticker fallback, Telegram media delivery и постоянный bot entry в каталог.
 
 ## 4. Canonical subscriber contract
 
@@ -99,6 +102,7 @@ Canonical rule:
 
 Это означает:
 - из бота открывается один основной web_app entry;
+- у бота должна быть постоянная menu button на каталог; inline `/start`-кнопка считается fallback, а не единственным входом;
 - далее пользователь ходит по внутренним маршрутам приложения;
 - `/help` и витрина открываются внутри того же webview;
 - повторные bot-команды не должны быть обязательным способом навигации;
@@ -255,6 +259,26 @@ Preview contract:
 Правило текущего цикла:
 - tests и product contract должны проверять только те narrative blocks, которые реально считаются canonical для текущего дизайна;
 - если UI intentionally упрощен, тесты обязаны быть пересобраны под этот contract, а не держать старые названия секций.
+
+### 5.5 Structured deal authoring contract
+
+Structured deal в author composer не должен зависеть только от локального master-catalog.
+
+Canonical contract:
+- автор может указать локальный инструмент из autocomplete;
+- если нужного инструмента нет в каталоге, composer может принять точный ticker/symbol в input;
+- на submit backend делает exact lookup через текущий provider endpoint;
+- если provider подтверждает инструмент, backend создаёт или переиспользует локальную запись в `instruments`;
+- только после materialize/import появляется валидный `structured_instrument_id`, и дальше форма работает как обычный локальный instrument flow;
+- минимально обязательные поля для structured deal:
+  - локальный `structured_instrument_id`
+  - цена
+  - количество
+- buy/sell считается always-selected UI control и не требует отдельного product workaround;
+- отсутствие live quote не должно блокировать сохранение и публикацию;
+- но отсутствие materialized local instrument не считается допустимым submit state;
+- текущий provider contract для этого flow = full match по `symbol`, не like-search;
+- preview, email и Telegram delivery должны отображать imported instrument единообразно, без `None`, raw JSON и пустых placeholder-ов.
 
 ## 6. Visual identity contract
 

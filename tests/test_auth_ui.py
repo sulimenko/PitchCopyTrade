@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import sys
 from datetime import datetime, timezone
+from types import ModuleType
 from urllib.parse import urlencode
 
 from fastapi.testclient import TestClient
@@ -339,6 +341,104 @@ def test_login_submit_rejects_invited_staff_user() -> None:
 
         assert response.status_code == 403
         assert "ещё не активирован" in response.text
+
+
+def test_workspace_route_redirects_to_canonical_dashboard() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/workspace", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+
+
+def test_yandex_oauth_callback_redirects_to_canonical_dashboard(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("YANDEX_CLIENT_ID", "yandex-client-id")
+    monkeypatch.setenv("YANDEX_CLIENT_SECRET", "yandex-client-secret")
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_identity["staff@example.com"] = user
+
+    class FakeOAuthClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        async def fetch_token(self, url: str, code: str | None = None):
+            return {"access_token": "token-123"}
+
+    class FakeHTTPResponse:
+        def json(self):
+            return {"default_email": "staff@example.com"}
+
+    class FakeHTTPClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers: dict[str, str] | None = None):
+            return FakeHTTPResponse()
+
+    authlib_module = ModuleType("authlib")
+    integrations_module = ModuleType("authlib.integrations")
+    httpx_client_module = ModuleType("authlib.integrations.httpx_client")
+    httpx_client_module.AsyncOAuth2Client = FakeOAuthClient
+    integrations_module.httpx_client = httpx_client_module
+    authlib_module.integrations = integrations_module
+    monkeypatch.setitem(sys.modules, "authlib", authlib_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations", integrations_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations.httpx_client", httpx_client_module)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kwargs: FakeHTTPClient())
+
+    with _build_client(repository) as client:
+        client.cookies.set("oauth_state", "state-123")
+        response = client.get("/auth/yandex/callback?code=code-123&state=state-123", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        assert user.status == UserStatus.ACTIVE
+
+
+def test_yandex_oauth_callback_shows_safe_error_message(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("YANDEX_CLIENT_ID", "yandex-client-id")
+    monkeypatch.setenv("YANDEX_CLIENT_SECRET", "yandex-client-secret")
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_identity["staff@example.com"] = user
+
+    class FakeOAuthClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        async def fetch_token(self, url: str, code: str | None = None):
+            raise RuntimeError("boom")
+
+    authlib_module = ModuleType("authlib")
+    integrations_module = ModuleType("authlib.integrations")
+    httpx_client_module = ModuleType("authlib.integrations.httpx_client")
+    httpx_client_module.AsyncOAuth2Client = FakeOAuthClient
+    integrations_module.httpx_client = httpx_client_module
+    authlib_module.integrations = integrations_module
+    monkeypatch.setitem(sys.modules, "authlib", authlib_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations", integrations_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations.httpx_client", httpx_client_module)
+
+    with _build_client(repository) as client:
+        client.cookies.set("oauth_state", "state-123")
+        response = client.get("/auth/yandex/callback?code=code-123&state=state-123")
+
+        assert response.status_code == 200
+        assert "Не удалось завершить вход через Yandex OAuth" in response.text
+        assert "RuntimeError" not in response.text
+        assert "boom" not in response.text
 
 
 def test_app_requires_session_cookie() -> None:

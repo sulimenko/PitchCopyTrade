@@ -104,7 +104,7 @@ def test_main_keyboard_returns_keyboard_for_https(monkeypatch) -> None:
     labels = [button.text for row in markup.inline_keyboard for button in row]
     urls = [button.web_app.url for row in markup.inline_keyboard for button in row if button.web_app is not None]
     assert "Открыть каталог" in labels
-    assert any(url.endswith("/app?entry=bot_start") for url in urls)
+    assert any(url.endswith("/app/catalog?entry=bot_start") for url in urls)
 
 
 def test_build_dispatcher_registers_start_handler() -> None:
@@ -171,13 +171,19 @@ async def test_run_bot_smoke_check_calls_get_me() -> None:
 @pytest.mark.asyncio
 async def test_run_bot_logs_startup_fingerprint(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
     fake_settings = SimpleNamespace(
+        app=SimpleNamespace(base_url="https://pct.test.ptfin.ru"),
         telegram=SimpleNamespace(
             bot_token=SimpleNamespace(get_secret_value=lambda: "123456:valid-token"),
             bot_username="pitchcopytrade_bot",
             use_webhook=False,
         )
     )
+    fake_bot = AsyncMock()
+    fake_bot.get_me = AsyncMock(return_value=SimpleNamespace(id=1, username="pct_test_bot"))
+    fake_bot.set_chat_menu_button = AsyncMock()
+    fake_bot.session = type("FakeSession", (), {"close": AsyncMock()})()
     monkeypatch.setattr("pitchcopytrade.bot.main.bootstrap_runtime", lambda service_name: fake_settings)
+    monkeypatch.setattr("pitchcopytrade.bot.main.create_bot", lambda token: fake_bot)
     monkeypatch.setattr("pitchcopytrade.bot.main.run_polling_with_backoff", AsyncMock())
     caplog.set_level(logging.INFO)
 
@@ -187,3 +193,7 @@ async def test_run_bot_logs_startup_fingerprint(monkeypatch, caplog: pytest.LogC
     assert any("Bot startup complete" in message for message in messages)
     assert any("telegram_bot_username=pitchcopytrade_bot" in message for message in messages)
     assert any("telegram_bot_token_fingerprint=" in message for message in messages)
+    assert fake_bot.set_chat_menu_button.await_count == 1
+    menu_button = fake_bot.set_chat_menu_button.await_args.kwargs["menu_button"]
+    assert menu_button.text == "Открыть каталог"
+    assert menu_button.web_app.url.endswith("/app/catalog")
