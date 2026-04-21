@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from urllib.parse import urlencode
+from urllib.parse import quote
 
 from pitchcopytrade.auth.roles import get_user_role_slugs
 from pitchcopytrade.auth.tokens import (
@@ -96,6 +97,12 @@ def build_staff_invite_help_bot_link(invite_token: str) -> str:
     username = get_settings().telegram.bot_username
     payload = f"staffinvitehelp-{encode_staff_invite_context(invite_token)}"
     return f"https://t.me/{username}?start={payload}"
+
+
+def build_telegram_start_link(payload: str) -> str:
+    username = get_settings().telegram.bot_username
+    start_payload = quote(payload.strip(), safe="")
+    return f"https://t.me/{username}?start={start_payload}"
 
 
 def decode_staff_invite_link_token(token: str):

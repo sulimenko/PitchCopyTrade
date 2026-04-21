@@ -1,8 +1,8 @@
 # PitchCopyTrade — Active Tasks
-> Обновлено: 2026-04-16
+> Обновлено: 2026-04-21
 
 Закрытые задачи этого цикла. Архив закрытых блоков — в `doc/changelog.md`.
-Активных задач в текущем цикле не осталось.
+Активных задач в текущем цикле не осталось; финальный review-pass 2026-04-21 не открыл новых блоков.
 
 ## Правила
 
@@ -122,7 +122,7 @@
 
 ### T-010 Structured message: если инструмента нет в `instruments`, импортировать его через `meta.pbull.kz` по точному `symbol` во время submit [AUTHOR, HIGH]
 
-- [x] Убрать transient free-text fallback и перевести composer на submit-time instrument import
+- [x] Backend exact-import path и submit/preview contract восстановлены для ручного точного ticker
 - Актуальный business contract:
   - structured deal не должен публиковаться по "сырым" введённым символам без локальной записи в `instruments`;
   - если нужного инструмента нет в локальной таблице `instruments`, backend должен попытаться найти его через уже используемый quote provider endpoint `https://meta.pbull.kz/api/marketData/forceDataSymbol?symbol=...`;
@@ -134,6 +134,11 @@
   - если тикера нет в локальном каталоге, backend отвечает ошибкой `Для structured message нужны инструмент, цена и количество.`;
   - `_search_external_instruments_stub()` всегда возвращает пусто;
   - нет path "на submit не нашли local instrument -> exact lookup в provider -> upsert в `instruments` -> продолжили обычную валидацию".
+- Фактическая текущая проблема после частичной реализации:
+  - backend exact-import path уже существует, но author composer всё ещё блокирует submit/preview, если у пользователя нет локального `structured_instrument_id`;
+  - в текущем UI новый symbol нельзя "выбрать", потому что autocomplete знает только локальные инструменты;
+  - если автор руками вводит новый ticker, frontend считает structured block незавершённым и не даёт дойти до backend submit/import path;
+  - в результате задача закрыта преждевременно: импорт на submit технически есть, но до него нельзя дойти из реального UI.
 - Важное уточнение по логике:
   - исходная формулировка "по like из введённых символов" конфликтует с текущим provider contract;
   - при использовании только `forceDataSymbol?symbol=...` worker не должен пытаться строить внешний autocomplete по частичной строке;
@@ -149,6 +154,15 @@
     - если локально не найдено, сделать backend-запрос в текущий provider endpoint по точному `symbol`;
     - если provider вернул корректный payload для этого `symbol`, создать или переиспользовать локальную запись `Instrument`;
     - после этого продолжить стандартную валидацию уже через локальный `structured_instrument_id`.
+- Что дополнительно исправить в UI/preview contract:
+  - structured block не должен требовать локальный `structured_instrument_id` как единственный признак "complete", если автор ввёл новый точный ticker вручную;
+  - preview modal и pre-submit validation должны разрешать submit при условиях:
+    - указан `structured_instrument_query`;
+    - указаны цена и количество;
+    - выбрана сторона buy/sell;
+  - если query соответствует уже существующему локальному инструменту, UI может продолжать проставлять `structured_instrument_id` как сейчас;
+  - если query не выбран из локального popup, submit всё равно должен уйти на backend, где exact lookup/import решит дальнейшую судьбу symbol;
+  - placeholder/copy поля не должны обещать поиск по названию, если runtime contract поддерживает только точный ticker/symbol для нового инструмента.
 - Правила import/upsert:
   - не создавать запись в `instruments` на каждый ввод символа;
   - import только при реальном submit structured message;
@@ -202,7 +216,7 @@
   - `src/pitchcopytrade/services/instruments.py`
   - `src/pitchcopytrade/repositories/*`, если нужен явный upsert/import path
   - `src/pitchcopytrade/web/templates/author/_composer_form.html`
-  - tests на local lookup / provider import / duplicate import / validation
+  - tests на local lookup / provider import / duplicate import / validation / preview-submit
 - Не делать:
   - не строить внешний like-search поверх endpoint, который его не поддерживает;
   - не делать browser-to-meta прямой вызов;
@@ -214,12 +228,14 @@
   - при успешном lookup создаётся или переиспользуется запись в `instruments`;
   - запись содержит валидные для текущей модели поля, включая `lot_size`;
   - после import сообщение успешно создаётся и публикуется;
+  - frontend preview/submit не блокирует автора только потому, что новый symbol ещё не имеет локального `structured_instrument_id`;
   - если provider ничего не нашёл, пользователь получает controlled validation error;
   - добавлены тесты на:
     - local instrument path;
     - provider import path;
     - duplicate import path;
-    - validation path для несуществующего точного `symbol`.
+    - validation path для несуществующего точного `symbol`;
+    - UI/pre-submit path для ручного ввода нового точного ticker.
 
 ### T-011 Telegram attachments: отправлять реальный media/document payload, а не только имя файла в тексте [DELIVERY, HIGH]
 
@@ -282,3 +298,140 @@
   - `/start` всё ещё работает;
   - сбой установки menu button не валит polling/webhook runtime;
   - если локально нет HTTPS, поведение деградирует контролируемо.
+
+---
+
+## Блок 3 — OAuth hardening follow-up
+
+### T-013 Google OAuth: убрать утечку сырого backend exception в login UI [AUTH, MEDIUM]
+
+- [x] Синхронизировать Google OAuth error UX с уже исправленным Yandex flow
+- До исправления:
+  - в `src/pitchcopytrade/api/routes/auth.py` ветка `except` у `google_oauth_callback` рендерит в шаблон логина строку вида `OAuth error: {str(exc)[:100]}`;
+  - пользователю показываются технические детали runtime, provider-ошибок или внутренних исключений;
+  - это расходится с контрактом `T-008`, где user-facing ошибка должна быть общей и безопасной, а техническая причина оставаться только в логе.
+- Что сделать:
+  - в `google_oauth_callback` заменить сырой `error=f"OAuth error: {str(exc)[:100]}"` на безопасное человекочитаемое сообщение того же уровня, что уже используется в `yandex_oauth_callback`;
+  - не скрывать сам факт ошибки: пользователь должен понять, что вход через Google не завершился;
+  - сохранить `logger.exception("Google OAuth error")`, чтобы полная техническая причина осталась в логах;
+  - не менять success path, state validation, redirect contract и cookie logic;
+  - привести тексты Google и Yandex OAuth к одному UX-подходу:
+    - безопасное сообщение в UI;
+    - техническая детализация только в логах.
+- Файлы:
+  - `src/pitchcopytrade/api/routes/auth.py`
+  - `tests/test_auth_ui.py`
+  - при необходимости docs (`doc/review.md`)
+- Не делать:
+  - не добавлять новый repository API;
+  - не менять redirect target после успешного входа;
+  - не убирать `logger.exception`;
+  - не делать silent redirect без сообщения об ошибке.
+- Проверки:
+  - вручную: сломанный Google OAuth flow не показывает `RuntimeError`, имя класса, traceback-фрагменты, provider response text;
+  - regression: успешный Google OAuth flow по-прежнему уводит staff на canonical dashboard;
+  - regression: Yandex OAuth поведение не меняется.
+- Acceptance:
+  - при ошибке Google OAuth login page показывает только безопасное сообщение без backend деталей;
+  - в HTML нет `OAuth error:`, `RuntimeError`, имён repository-классов и фрагментов Python exception text;
+  - success path Google OAuth остаётся рабочим;
+  - добавлены tests на:
+    - безопасный Google OAuth error message;
+    - отсутствие утечки exception text;
+    - сохранение canonical redirect на успешном callback.
+
+---
+
+## Блок 4 — Subscriber auth recovery from bot/start
+
+### T-014 Subscriber Mini App entry: из бота нельзя открывать защищённый `/app/catalog` до Telegram bootstrap auth [SUBSCRIBER, HIGH]
+
+- [x] Перевести bot/menu entry для клиента на bootstrap route, который умеет обменять `Telegram.WebApp.initData` на auth cookie до перехода в каталог
+- Текущая проблема:
+  - сейчас bot `/start` keyboard и Telegram menu button открывают `web_app` URL на `/app/catalog`;
+  - `/app/catalog` — уже защищённый subscriber route и он ожидает существующий Telegram fallback cookie/session;
+  - для нового клиента это даёт loop: пользователь открывает Mini App, cookie ещё нет, route уводит на recovery/verify surface, а кнопки дальше не завершают авторизацию;
+  - по факту входной путь идёт мимо bootstrap-страницы, которая умеет отправить `initData` в `/tg-webapp/auth`.
+- Что сделать:
+  - primary bot/web_app entry для subscriber path должен открывать не защищённый `/app/catalog`, а canonical bootstrap route;
+  - bootstrap route обязан:
+    - если subscriber уже авторизован или Telegram cookie уже есть, сразу уводить на `/app/catalog`;
+    - принимать открытие внутри Telegram WebApp;
+    - читать `Telegram.WebApp.initData`;
+    - POST-ить `init_data` в `/tg-webapp/auth`;
+    - только после успешного server-side bind/cookie setup уводить на `/app/catalog`;
+  - использовать уже существующий bootstrap route, если он покрывает этот contract;
+  - если текущих bootstrap routes два (`/app` и `/miniapp`), выбрать один canonical subscriber entry и убрать двусмысленность в bot/start/menu flows;
+  - `Каталог` остаётся целевым экраном после auth, но не должен быть первым URL из бота для нового пользователя без cookie.
+  - важно: Telegram menu button и `/start` web_app link должны вести в один и тот же canonical bootstrap route; условие "если доступен каталог -> открыть каталог, иначе -> bootstrap" должно решаться внутри route, а не разными URL в кнопках.
+- Файлы:
+  - `src/pitchcopytrade/bot/handlers/start.py`
+  - `src/pitchcopytrade/bot/main.py`
+  - `src/pitchcopytrade/api/routes/auth.py`
+  - `src/pitchcopytrade/api/routes/public.py`
+  - `src/pitchcopytrade/web/templates/app/miniapp_entry.html`
+  - tests: `tests/test_bot_baseline.py`, `tests/test_auth_ui.py`
+- Важное уточнение по test contract:
+  - текущие tests всё ещё ожидают старый URL `/app/catalog`;
+  - при реальном закрытии задачи нужно обновить assertions в bot/auth tests, иначе regression suite будет закреплять старое поведение.
+- Не делать:
+  - не оставлять primary entry на `/app/catalog` для first-time subscriber auth;
+  - не плодить несколько равноправных bootstrap URLs без явного canonical contract;
+  - не завязывать решение на уже существующем cookie как обязательном условии старта.
+- Проверить:
+  - новый пользователь из Telegram бота проходит путь `/start -> web_app -> tg-webapp/auth -> /app/catalog`;
+  - повторный пользователь с cookie всё ещё быстро попадает в каталог;
+  - existing staff `/login` и invite flows не затрагиваются.
+- Acceptance:
+  - bot `/start` и menu button ведут в canonical bootstrap route;
+  - если auth уже есть, bootstrap route сразу открывает `/app/catalog`;
+  - если auth нет, bootstrap route запускает subscriber auth flow с `initData` или показывает recovery CTA;
+  - после успешного bind пользователь попадает в `/app/catalog`;
+  - добавлены regression tests на bot keyboard/menu button URL и на first-time subscriber bootstrap flow.
+
+### T-015 Recovery CTA: вместо dead-end `Открыть бота` нужен явный deep-link на `/start payload`, а не попытка «отправить /start из сайта» [SUBSCRIBER, HIGH]
+
+- [x] Исправить recovery UX для неавторизованных клиентов на `/verify/telegram` и fallback surfaces
+- Ограничение Telegram, которое worker обязан учитывать:
+  - обычная HTML-кнопка на сайте не может тихо отправить команду `/start` в Telegram-бота от имени пользователя;
+  - сайт не может программно «нажать /start» в чате;
+  - разрешённые варианты:
+    - deep link `https://t.me/<bot_username>?start=<payload>` — пользователь открывает бота, а bot получает `/start <payload>`;
+    - `web_app` button / menu button, если пользователь уже находится в Telegram и открывает Mini App;
+    - внутри уже открытого WebApp возможны собственные client-side calls, но это не эквивалент команде `/start`.
+- Текущая проблема:
+  - recovery pages показывают generic CTA `Открыть бота`;
+  - generic `https://t.me/<bot_username>` не гарантирует повторный `/start`, пользователь просто попадает в чат/историю и остаётся без следующего шага;
+  - из-за этого кнопки на verify/entry surfaces выглядят «ни к чему не приводят».
+- Что сделать:
+  - заменить generic CTA `Открыть бота` на явный recovery/start CTA:
+    - primary label = `Начать авторизацию в Telegram`;
+    - URL должен быть deep link с payload, а не просто `https://t.me/<bot_username>`;
+  - добавить обработку соответствующего `/start payload` в `handle_start`;
+  - bot по этому payload должен отправлять пользователю понятный следующий шаг:
+    - свежую `web_app` кнопку на canonical bootstrap route;
+    - короткий текст без двусмысленности;
+  - recovery surfaces (`/verify/telegram`, `app/miniapp_entry.html`, при необходимости `public/miniapp_bootstrap.html`) должны использовать этот же deep-link contract;
+  - copy на recovery surfaces должна прямо объяснять: сначала открыть бота по кнопке, затем нажать кнопку запуска Mini App / авторизации.
+- Файлы:
+  - `src/pitchcopytrade/bot/handlers/start.py`
+  - `src/pitchcopytrade/web/templates/public/telegram_verify.html`
+  - `src/pitchcopytrade/web/templates/app/miniapp_entry.html`
+  - `src/pitchcopytrade/web/templates/public/miniapp_bootstrap.html`
+  - tests: `tests/test_bot_baseline.py`, `tests/test_auth_ui.py`
+- Важное уточнение по test contract:
+  - `tests/test_auth_ui.py` сейчас ещё ожидает generic `Открыть бота` на verify surface;
+  - при закрытии задачи test suite должен быть переведён на новый deep-link/start-payload contract.
+- Не делать:
+  - не обещать literal «кнопку, отправляющую /start из сайта»;
+  - не оставлять generic `https://t.me/<bot_username>` как единственный recovery CTA;
+  - не строить recovery UX вокруг того, что пользователь сам догадается вручную ввести `/start`.
+- Важное UX-решение:
+  - Telegram menu button нельзя надёжно делать условной по browser auth state;
+  - если нужен универсальный label, лучше использовать нейтральное `Открыть Mini App` или `Начать`, а условный recovery CTA показывать уже на HTML recovery surfaces;
+  - worker не должен пытаться делать menu button «если не авторизован → Start, иначе → Каталог» без отдельного per-user bot state contract.
+- Acceptance:
+  - неавторизованный клиент на `/verify/telegram` и bootstrap fallback видит primary CTA `Начать авторизацию в Telegram` на deep link `/start <payload>`, а не просто `Открыть бота`;
+  - bot обрабатывает этот payload и присылает понятную кнопку для запуска авторизации;
+  - recovery путь больше не зависит от ручного ввода `/start`;
+  - добавлены tests на deep-link generation и на `/start payload` handler.

@@ -24,7 +24,11 @@ def _webapp_keyboard(label: str, path: str) -> InlineKeyboardMarkup | None:
 
 
 def _main_keyboard() -> InlineKeyboardMarkup | None:
-    return _webapp_keyboard("Открыть каталог", "/app/catalog?entry=bot_start")
+    return _webapp_keyboard("Открыть каталог", "/miniapp?entry=bot_start")
+
+
+def _verify_keyboard() -> InlineKeyboardMarkup | None:
+    return _webapp_keyboard("Начать авторизацию в Telegram", "/miniapp?entry=verify_telegram")
 
 
 async def handle_start(message: Message) -> None:
@@ -63,6 +67,13 @@ async def handle_start(message: Message) -> None:
             ]]
         )
         await message.answer("Приглашение действительно. Откройте его кнопкой ниже.", reply_markup=keyboard)
+        return
+    if payload == "verify_telegram":
+        keyboard = _verify_keyboard()
+        if keyboard:
+            await message.answer("Начните авторизацию в Telegram, затем откройте Mini App.", reply_markup=keyboard)
+        else:
+            await message.answer(f"Откройте бота @{get_settings().telegram.bot_username} и затем запустите Mini App.")
         return
     keyboard = _main_keyboard()
     if keyboard:

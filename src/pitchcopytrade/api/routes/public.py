@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.repositories import get_auth_repository, get_public_repository
 from pitchcopytrade.auth.session import (
+    build_telegram_start_link,
     get_telegram_fallback_cookie_name,
     get_user_from_session_token,
     get_user_from_telegram_fallback_cookie,
@@ -163,7 +164,7 @@ async def miniapp_root(
         "app/miniapp_entry.html",
         {
             "title": "PitchCopyTrade",
-            "bot_url": f"https://t.me/{get_settings().telegram.bot_username}",
+            "bot_url": build_telegram_start_link("verify_telegram"),
         },
     )
     return attach_journey_cookie(response, journey_id)
@@ -202,6 +203,7 @@ async def telegram_verify_page(
             "requested_next": requested_next,
             "base_url": get_settings().app.base_url,
             "webapp_enabled": get_settings().app.base_url.startswith("https://"),
+            "bot_url": build_telegram_start_link("verify_telegram"),
         },
     )
     return attach_journey_cookie(response, journey_id)

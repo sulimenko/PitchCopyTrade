@@ -258,6 +258,10 @@ def test_author_editor_is_message_centric(monkeypatch) -> None:
         assert 'data-confirm-submit' in response.text
         assert "showModal()" in response.text
         assert "author-preview-telegram" in response.text
+        assert 'placeholder="Ticker или symbol"' in response.text
+        assert 'Ticker или название' not in response.text
+        assert 'const complete = Boolean((instrumentId || instrumentLabel) && price != null && quantity != null && side);' in response.text
+        assert 'instrumentInput.classList.toggle("is-invalid", invalid && !state.instrumentLabel && !state.instrumentId)' in response.text
         assert "PREVIEW_DIVIDER" in response.text
         assert "PREVIEW_KIND_ICONS" in response.text
         assert 'fetch("/api/instruments"' in response.text
@@ -313,6 +317,82 @@ def test_author_message_create_returns_422_on_missing_strategy(monkeypatch) -> N
         assert 'value="130"' in response.text
         assert 'value="110"' in response.text
         assert 'Проверка' in response.text
+
+
+def test_author_message_create_accepts_manual_structured_symbol_without_local_id(monkeypatch) -> None:
+    user = _make_author_user()
+    strategy = _make_strategy()
+    imported_instrument = Instrument(
+        id="instrument-imported",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.get_or_import_instrument_by_symbol",
+        lambda _repository, symbol: _async_return(imported_instrument if symbol == "SBER" else None),
+    )
+
+    async def fake_create_author_recommendation(repository, author, data, uploaded_by_user_id=None):
+        captured["repository"] = repository
+        captured["author"] = author
+        captured["data"] = data
+        captured["uploaded_by_user_id"] = uploaded_by_user_id
+        return Message(
+            id="msg-new",
+            author_id=author.id,
+            strategy_id=data.strategy_id,
+            kind=data.kind.value,
+            type=data.message_type.value,
+            status=data.status.value,
+            moderation=data.moderation.value,
+            title="SBER · BUY",
+            deliver=data.deliver,
+            channel=data.channel,
+            text={"body": "<p>Deal</p>", "plain": "Deal"},
+            documents=[],
+            deals=[],
+        )
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.create_author_recommendation", fake_create_author_recommendation)
+
+    with _build_client(user) as client:
+        response = client.post(
+            "/author/messages",
+            data={
+                "strategy_id": strategy.id,
+                "kind": "idea",
+                "status": "draft",
+                "title": "",
+                "message_type": "deal",
+                "structured_instrument_id": "",
+                "structured_instrument_query": "SBER",
+                "structured_side": "buy",
+                "structured_price": "120",
+                "structured_quantity": "100",
+                "structured_note": "Проверка exact lookup",
+                "embedded": "1",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/messages/msg-new/edit"
+        assert captured["uploaded_by_user_id"] == user.id
+        data = captured["data"]
+        assert data.structured_instrument_id == imported_instrument.id
+        assert data.structured_instrument_ticker == imported_instrument.ticker
+        assert data.structured_side == "buy"
+        assert data.structured_price is not None
+        assert data.structured_quantity is not None
 
 
 def test_author_message_list_omits_inline_form(monkeypatch) -> None:

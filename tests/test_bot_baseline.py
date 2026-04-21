@@ -24,12 +24,18 @@ from pitchcopytrade.bot.main import (
 
 
 @pytest.mark.asyncio
-async def test_start_handler_sends_message() -> None:
+async def test_start_handler_sends_message(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("BASE_URL", "https://pct.test.ptfin.ru")
     message = AsyncMock()
     message.from_user = None
     await handle_start(message)
     message.answer.assert_awaited_once()
     assert "каталог стратегий" in message.answer.await_args.args[0]
+    markup = message.answer.await_args.kwargs["reply_markup"]
+    buttons = [button for row in markup.inline_keyboard for button in row]
+    assert buttons[0].web_app.url.endswith("/miniapp?entry=bot_start")
+    reset_settings_cache()
 
 
 @pytest.mark.asyncio
@@ -80,6 +86,24 @@ async def test_start_handler_staff_invite_help_accepts_valid_token() -> None:
 
 
 @pytest.mark.asyncio
+async def test_start_handler_verify_payload_uses_recovery_webapp(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("BASE_URL", "https://pct.test.ptfin.ru")
+    message = AsyncMock()
+    message.text = "/start verify_telegram"
+
+    await handle_start(message)
+
+    message.answer.assert_awaited_once()
+    assert "авторизацию" in message.answer.await_args.args[0]
+    markup = message.answer.await_args.kwargs["reply_markup"]
+    buttons = [button for row in markup.inline_keyboard for button in row]
+    assert buttons[0].text == "Начать авторизацию в Telegram"
+    assert buttons[0].web_app.url.endswith("/miniapp?entry=verify_telegram")
+    reset_settings_cache()
+
+
+@pytest.mark.asyncio
 async def test_help_handler_sends_message() -> None:
     message = AsyncMock()
     await handle_help(message)
@@ -104,7 +128,7 @@ def test_main_keyboard_returns_keyboard_for_https(monkeypatch) -> None:
     labels = [button.text for row in markup.inline_keyboard for button in row]
     urls = [button.web_app.url for row in markup.inline_keyboard for button in row if button.web_app is not None]
     assert "Открыть каталог" in labels
-    assert any(url.endswith("/app/catalog?entry=bot_start") for url in urls)
+    assert any(url.endswith("/miniapp?entry=bot_start") for url in urls)
 
 
 def test_build_dispatcher_registers_start_handler() -> None:
@@ -196,4 +220,4 @@ async def test_run_bot_logs_startup_fingerprint(monkeypatch, caplog: pytest.LogC
     assert fake_bot.set_chat_menu_button.await_count == 1
     menu_button = fake_bot.set_chat_menu_button.await_args.kwargs["menu_button"]
     assert menu_button.text == "Открыть каталог"
-    assert menu_button.web_app.url.endswith("/app/catalog")
+    assert menu_button.web_app.url.endswith("/miniapp?entry=bot_menu")

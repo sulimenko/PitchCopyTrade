@@ -123,7 +123,7 @@
           <label class="author-editor-field deal-field">
             <span class="author-editor-field-title">Наименование ценной бумаги</span>
             <div class="author-instrument-picker">
-              <input type="text" name="structured_instrument_query" value="{{ composer.structured_instrument_query or composer.structured_instrument_ticker or composer.structured_instrument_id or '' }}" placeholder="Ticker или название" autocomplete="off" data-instrument-input />
+              <input type="text" name="structured_instrument_query" value="{{ composer.structured_instrument_query or composer.structured_instrument_ticker or composer.structured_instrument_id or '' }}" placeholder="Ticker или symbol" autocomplete="off" data-instrument-input />
             </div>
             <input type="hidden" name="structured_instrument_id" value="{{ composer.structured_instrument_id or '' }}" data-instrument-id />
             <div id="instrument-autocomplete" class="instrument-autocomplete-popup" hidden></div>
@@ -615,7 +615,7 @@
       const note = String((dealNote && dealNote.value) || "").trim();
       const side = selectedSideValue();
       const started = Boolean(instrumentLabel || instrumentId || price != null || quantity != null || tp != null || sl != null || note);
-      const complete = Boolean(instrumentId && price != null && quantity != null && side);
+      const complete = Boolean((instrumentId || instrumentLabel) && price != null && quantity != null && side);
       return {
         instrumentLabel,
         instrumentId,
@@ -663,7 +663,7 @@
     function validateDealBlock() {
       const state = structuredState();
       const invalid = state.started && !state.complete;
-      if (instrumentInput) instrumentInput.classList.toggle("is-invalid", invalid && !state.instrumentId);
+      if (instrumentInput) instrumentInput.classList.toggle("is-invalid", invalid && !state.instrumentLabel && !state.instrumentId);
       if (structuredPrice) structuredPrice.classList.toggle("is-invalid", invalid && state.price == null);
       if (structuredQuantity) structuredQuantity.classList.toggle("is-invalid", invalid && state.quantity == null);
       return !invalid;

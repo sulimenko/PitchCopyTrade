@@ -220,7 +220,8 @@ def test_app_renders_bootstrap_page() -> None:
 
         assert response.status_code == 200
         assert "Запустите Mini App из бота" in response.text
-        assert "Открыть бота" in response.text
+        assert "Начать авторизацию в Telegram" in response.text
+        assert "start=verify_telegram" in response.text
         assert "pct_journey_id=" in response.headers["set-cookie"]
 
 
@@ -230,7 +231,8 @@ def test_miniapp_root_renders_entry_page() -> None:
 
         assert response.status_code == 200
         assert "Запустите Mini App из бота" in response.text
-        assert "Открыть бота" in response.text
+        assert "Начать авторизацию в Telegram" in response.text
+        assert "start=verify_telegram" in response.text
         assert "pct_journey_id=" in response.headers["set-cookie"]
 
 

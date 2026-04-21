@@ -76,7 +76,7 @@ async def _configure_catalog_menu_button(bot: Bot, settings: Any) -> None:
         await bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="Открыть каталог",
-                web_app=WebAppInfo(url=f"{base_url}/app/catalog"),
+                web_app=WebAppInfo(url=f"{base_url}/miniapp?entry=bot_menu"),
             )
         )
         logger.info("Telegram menu button configured for catalog")

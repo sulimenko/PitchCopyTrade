@@ -441,6 +441,57 @@ def test_yandex_oauth_callback_shows_safe_error_message(monkeypatch) -> None:
         assert "boom" not in response.text
 
 
+def test_google_oauth_callback_shows_safe_error_message(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client-id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-client-secret")
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_identity["staff@example.com"] = user
+
+    class FakeOAuthClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        async def fetch_token(self, url: str, code: str | None = None):
+            raise RuntimeError("boom")
+
+    class FakeHTTPResponse:
+        def json(self):
+            return {"email": "staff@example.com"}
+
+    class FakeHTTPClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers: dict[str, str] | None = None):
+            return FakeHTTPResponse()
+
+    authlib_module = ModuleType("authlib")
+    integrations_module = ModuleType("authlib.integrations")
+    httpx_client_module = ModuleType("authlib.integrations.httpx_client")
+    httpx_client_module.AsyncOAuth2Client = FakeOAuthClient
+    integrations_module.httpx_client = httpx_client_module
+    authlib_module.integrations = integrations_module
+    monkeypatch.setitem(sys.modules, "authlib", authlib_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations", integrations_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations.httpx_client", httpx_client_module)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kwargs: FakeHTTPClient())
+
+    with _build_client(repository) as client:
+        client.cookies.set("oauth_state", "state-123")
+        response = client.get("/auth/google/callback?code=code-123&state=state-123")
+
+        assert response.status_code == 200
+        assert "Не удалось завершить вход через Google OAuth" in response.text
+        assert "RuntimeError" not in response.text
+        assert "boom" not in response.text
+    reset_settings_cache()
+
+
 def test_app_requires_session_cookie() -> None:
     repository = FakeAuthRepository()
     with _build_client(repository) as client:
@@ -448,7 +499,8 @@ def test_app_requires_session_cookie() -> None:
 
         assert response.status_code == 200
         assert "Запустите Mini App из бота" in response.text
-        assert "Открыть бота" in response.text
+        assert "Начать авторизацию в Telegram" in response.text
+        assert "start=verify_telegram" in response.text
 
 
 def test_app_redirects_tg_fallback_user_to_catalog() -> None:
@@ -897,7 +949,7 @@ def test_app_home_renders_bootstrap_page() -> None:
 
         assert response.status_code == 200
         assert "Запустите Mini App из бота" in response.text
-        assert "Открыть бота" in response.text
+        assert "Начать авторизацию в Telegram" in response.text
 
 
 def test_app_home_redirects_to_catalog_with_telegram_cookie() -> None:
@@ -924,7 +976,8 @@ def test_verify_telegram_page_renders() -> None:
         assert response.status_code == 200
         assert "Подтверждение через" in response.text
         assert "Похоже, Telegram-профиль еще не подтвержден" in response.text
-        assert "Открыть бота" in response.text
+        assert "Начать авторизацию в Telegram" in response.text
+        assert "start=verify_telegram" in response.text
         assert "/app/catalog" in response.text
         assert "requested_next" not in response.text
         assert "/app/help" not in response.text

@@ -1,5 +1,5 @@
 # PitchCopyTrade — Blueprint
-> Обновлено: 2026-04-16
+> Обновлено: 2026-04-21
 > Статус: canonical current contract for MVP clean-up
 
 ## 1. Политика документа
@@ -59,11 +59,14 @@
 - `file`-mode читает состояние из `storage/runtime/*`, а не напрямую из `storage/seed/*`;
 - `storage/runtime/*` считается изменяемым runtime-слоем и перед воспроизводимыми проверками должен сбрасываться;
 - Mini App first screen contract = `/app/catalog`, help contract = `/app/help`;
+- subscriber first-time entry из бота не должен открывать защищённый `/app/catalog` напрямую; сначала нужен bootstrap route, который обменивает `Telegram.WebApp.initData` на server-side auth cookie и только потом ведёт в каталог;
+- Telegram menu button и bot `/start` web_app entry по текущему контракту должны вести в один canonical bootstrap route; route сам решает: если auth уже доступен, сразу открыть `/app/catalog`, если нет — показать recovery/auth flow;
 - canonical staff auth success destination = role-specific dashboard, а не legacy `/workspace`;
 - author/public/subscriber contour перешел на message-centric модель `messages`;
 - author structured deal contract должен поддерживать exact-lookup import нового инструмента через текущий provider endpoint с последующей materialize-записью в `instruments`;
 - Telegram delivery для author messages с attachments должна отправлять реальные media/document payloads, а не только имя файла в тексте;
 - quote provider подключается backend-адаптером и не должен блокировать SSR;
+- обычная HTML-кнопка на сайте не может программно отправить `/start` в Telegram-бота; recovery path должен использовать Telegram deep link `?start=<payload>` или `web_app` button, а не generic `https://t.me/<bot>`;
 - внутри docs больше нельзя писать "все закрыто" без сверки с [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).
 
 ## 3. Цель текущего цикла
@@ -103,10 +106,17 @@ Canonical rule:
 Это означает:
 - из бота открывается один основной web_app entry;
 - у бота должна быть постоянная menu button на каталог; inline `/start`-кнопка считается fallback, а не единственным входом;
+- для нового неавторизованного пользователя этот entry обязан идти через bootstrap auth surface, а не в защищённый каталог напрямую;
 - далее пользователь ходит по внутренним маршрутам приложения;
 - `/help` и витрина открываются внутри того же webview;
 - повторные bot-команды не должны быть обязательным способом навигации;
 - если нужен возврат, используется browser/webview history внутри приложения, а не новое сообщение в чате.
+
+Recovery contract:
+- если Telegram cookie ещё не выставлен, user-facing recovery surfaces должны показывать primary CTA на deep link `/start payload`, а не generic `Открыть бота`;
+- primary label recovery CTA = `Начать авторизацию в Telegram`;
+- bot по recovery payload должен присылать свежую web_app-кнопку на bootstrap route;
+- worker не должен пытаться реализовать «кнопку на сайте, которая сама отправляет `/start`» — это вне возможностей обычной web surface.
 
 ### 4.3 Mini App menu contract
 

@@ -25,6 +25,7 @@ from pitchcopytrade.auth.staff_mode import get_staff_mode_cookie_name, resolve_s
 from pitchcopytrade.auth.session import (
     build_staff_invite_help_bot_link,
     build_session_cookie_value,
+    build_telegram_start_link,
     build_telegram_fallback_cookie_value,
     get_telegram_fallback_cookie_name,
     get_user_from_staff_invite_token,
@@ -526,7 +527,7 @@ async def app_home(request: Request, repository: AuthRepository = Depends(get_au
     try:
         user = await _require_authenticated_user(request, repository)
     except HTTPException:
-        bot_url = f"https://t.me/{get_settings().telegram.bot_username}"
+        bot_url = build_telegram_start_link("verify_telegram")
         log_request_trace(
             logger,
             request,
@@ -706,7 +707,7 @@ async def google_oauth_callback(
         return templates.TemplateResponse(
             request,
             "auth/login.html",
-            _build_login_template_context(title="PitchCopyTrade", error=f"OAuth error: {str(exc)[:100]}"),
+            _build_login_template_context(title="PitchCopyTrade", error="Не удалось завершить вход через Google OAuth"),
         )
 
 
