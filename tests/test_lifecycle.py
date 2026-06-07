@@ -40,7 +40,7 @@ def _write_runtime_dataset(store: FileDataStore) -> None:
                 "strategy_id": None,
                 "author_id": None,
                 "bundle_id": None,
-                "billing_period": "month",
+                "duration_days": 30,
                 "price_rub": 499,
                 "trial_days": 0,
                 "is_active": True,
@@ -101,8 +101,7 @@ def _write_runtime_dataset(store: FileDataStore) -> None:
         ],
         "user_consents": [],
         "recommendations": [],
-        "recommendation_legs": [],
-        "recommendation_attachments": [],
+        "messages": [],
         "audit_events": [],
     }
     for name, data in payload.items():

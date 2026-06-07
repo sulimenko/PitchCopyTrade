@@ -55,7 +55,7 @@ def _seed_tbank_pending_checkout(store: FileDataStore) -> None:
                     "strategy_id": None,
                     "author_id": None,
                     "bundle_id": None,
-                    "billing_period": "month",
+                    "duration_days": 30,
                     "price_rub": 4900,
                     "trial_days": 7,
                     "is_active": True,
@@ -107,8 +107,7 @@ def _seed_tbank_pending_checkout(store: FileDataStore) -> None:
             "user_consents": [],
             "audit_events": [],
             "recommendations": [],
-            "recommendation_legs": [],
-            "recommendation_attachments": [],
+            "messages": [],
         }
     )
 

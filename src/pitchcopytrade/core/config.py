@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,16 +21,9 @@ class EnvName:
     TELEGRAM_USE_WEBHOOK = "TELEGRAM_USE_WEBHOOK"
     TELEGRAM_WEBHOOK_SECRET = "TELEGRAM_WEBHOOK_SECRET"
     DATABASE_URL = "DATABASE_URL"
-    ALEMBIC_DATABASE_URL = "ALEMBIC_DATABASE_URL"
     POSTGRES_DB = "POSTGRES_DB"
     POSTGRES_USER = "POSTGRES_USER"
     POSTGRES_PASSWORD = "POSTGRES_PASSWORD"
-    MINIO_ENDPOINT = "MINIO_ENDPOINT"
-    MINIO_PUBLIC_URL = "MINIO_PUBLIC_URL"
-    MINIO_ROOT_USER = "MINIO_ROOT_USER"
-    MINIO_ROOT_PASSWORD = "MINIO_ROOT_PASSWORD"
-    MINIO_BUCKET_UPLOADS = "MINIO_BUCKET_UPLOADS"
-    MINIO_SECURE = "MINIO_SECURE"
     SBP_PROVIDER = "SBP_PROVIDER"
     SBP_STUB_CONFIRMATION_MODE = "SBP_STUB_CONFIRMATION_MODE"
     TINKOFF_TERMINAL_KEY = "TINKOFF_TERMINAL_KEY"
@@ -41,8 +35,30 @@ class EnvName:
     AUTH_SESSION_TTL_SECONDS = "AUTH_SESSION_TTL_SECONDS"
     AUTH_SESSION_COOKIE_NAME = "AUTH_SESSION_COOKIE_NAME"
     APP_STORAGE_ROOT = "APP_STORAGE_ROOT"
+    APP_PREVIEW_ENABLED = "APP_PREVIEW_ENABLED"
     LOG_LEVEL = "LOG_LEVEL"
     LOG_JSON = "LOG_JSON"
+    LOG_FILE = "LOG_FILE"
+    INTERNAL_API_SECRET = "INTERNAL_API_SECRET"
+    REDIS_URL = "REDIS_URL"
+    INSTRUMENT_QUOTE_PROVIDER_ENABLED = "INSTRUMENT_QUOTE_PROVIDER_ENABLED"
+    INSTRUMENT_QUOTE_PROVIDER_BASE_URL = "INSTRUMENT_QUOTE_PROVIDER_BASE_URL"
+    INSTRUMENT_QUOTE_TIMEOUT_SECONDS = "INSTRUMENT_QUOTE_TIMEOUT_SECONDS"
+    INSTRUMENT_QUOTE_CACHE_TTL_SECONDS = "INSTRUMENT_QUOTE_CACHE_TTL_SECONDS"
+    TELEGRAM_WEBHOOK_URL = "TELEGRAM_WEBHOOK_URL"
+    SMTP_HOST = "SMTP_HOST"
+    SMTP_PORT = "SMTP_PORT"
+    SMTP_SSL = "SMTP_SSL"
+    SMTP_USER = "SMTP_USER"
+    SMTP_PASSWORD = "SMTP_PASSWORD"
+    SMTP_FROM = "SMTP_FROM"
+    SMTP_FROM_NAME = "SMTP_FROM_NAME"
+    ADMIN_TELEGRAM_ID = "ADMIN_TELEGRAM_ID"
+    ADMIN_EMAIL = "ADMIN_EMAIL"
+    GOOGLE_CLIENT_ID = "GOOGLE_CLIENT_ID"
+    GOOGLE_CLIENT_SECRET = "GOOGLE_CLIENT_SECRET"
+    YANDEX_CLIENT_ID = "YANDEX_CLIENT_ID"
+    YANDEX_CLIENT_SECRET = "YANDEX_CLIENT_SECRET"
 
 
 def _normalize_secret(value: SecretStr | str) -> str:
@@ -68,6 +84,7 @@ class AppSettings(BaseModel):
     admin_base_url: str
     base_timezone: str
     data_mode: str
+    preview_enabled: bool
 
 
 class TelegramSettings(BaseModel):
@@ -83,21 +100,9 @@ class DatabaseSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     url: str
-    alembic_url: str
     db_name: str
     user: str
     password: SecretStr
-
-
-class MinioSettings(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    endpoint: str
-    public_url: str
-    root_user: str
-    root_password: SecretStr
-    bucket_uploads: str
-    secure: bool
 
 
 class PaymentSettings(BaseModel):
@@ -122,6 +127,7 @@ class LoggingSettings(BaseModel):
 
     level: str
     json_logs: bool
+    file_path: str | None = None
 
 
 class AuthSettings(BaseModel):
@@ -129,6 +135,29 @@ class AuthSettings(BaseModel):
 
     session_ttl_seconds: int
     session_cookie_name: str
+
+
+class NotificationSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    internal_api_secret: SecretStr
+    redis_url: str
+    smtp_host: str
+    smtp_port: int
+    smtp_ssl: bool
+    smtp_user: str
+    smtp_password: SecretStr
+    smtp_from: str
+    smtp_from_name: str
+
+
+class InstrumentQuoteSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider_enabled: bool
+    provider_base_url: str
+    timeout_seconds: float
+    cache_ttl_seconds: int
 
 
 class StorageSettings(BaseModel):
@@ -151,8 +180,8 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", alias=EnvName.APP_HOST)
     app_port: int = Field(default=8000, alias=EnvName.APP_PORT)
     app_secret_key: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.APP_SECRET_KEY)
-    base_url: str = Field(default="http://localhost:8000", alias=EnvName.BASE_URL)
-    admin_base_url: str = Field(default="http://localhost:8000/admin", alias=EnvName.ADMIN_BASE_URL)
+    base_url: str = Field(default="http://127.0.0.1:8000", alias=EnvName.BASE_URL)
+    admin_base_url: str = Field(default="http://127.0.0.1:8000/admin", alias=EnvName.ADMIN_BASE_URL)
     app_data_mode: str = Field(default="db", alias=EnvName.APP_DATA_MODE)
 
     telegram_bot_token: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.TELEGRAM_BOT_TOKEN)
@@ -161,17 +190,9 @@ class Settings(BaseSettings):
     telegram_webhook_secret: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.TELEGRAM_WEBHOOK_SECRET)
 
     database_url: str = Field(default="", alias=EnvName.DATABASE_URL)
-    alembic_database_url: str = Field(default="", alias=EnvName.ALEMBIC_DATABASE_URL)
     postgres_db: str = Field(default="pitchcopytrade", alias=EnvName.POSTGRES_DB)
     postgres_user: str = Field(default="pitchcopytrade", alias=EnvName.POSTGRES_USER)
     postgres_password: SecretStr = Field(default=SecretStr("pitchcopytrade"), alias=EnvName.POSTGRES_PASSWORD)
-
-    minio_endpoint: str = Field(default="minio:9000", alias=EnvName.MINIO_ENDPOINT)
-    minio_public_url: str = Field(default="http://localhost:9000", alias=EnvName.MINIO_PUBLIC_URL)
-    minio_root_user: str = Field(default="minioadmin", alias=EnvName.MINIO_ROOT_USER)
-    minio_root_password: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.MINIO_ROOT_PASSWORD)
-    minio_bucket_uploads: str = Field(default="pitchcopytrade-uploads", alias=EnvName.MINIO_BUCKET_UPLOADS)
-    minio_secure: bool = Field(default=False, alias=EnvName.MINIO_SECURE)
 
     sbp_provider: str = Field(default="stub_manual", alias=EnvName.SBP_PROVIDER)
     sbp_stub_confirmation_mode: str = Field(default="manual", alias=EnvName.SBP_STUB_CONFIRMATION_MODE)
@@ -185,9 +206,37 @@ class Settings(BaseSettings):
     auth_session_ttl_seconds: int = Field(default=60 * 60 * 24, alias=EnvName.AUTH_SESSION_TTL_SECONDS)
     auth_session_cookie_name: str = Field(default="pitchcopytrade_session", alias=EnvName.AUTH_SESSION_COOKIE_NAME)
     app_storage_root: str = Field(default="storage", alias=EnvName.APP_STORAGE_ROOT)
+    app_preview_enabled: bool = Field(default=False, alias=EnvName.APP_PREVIEW_ENABLED)
 
     log_level: str = Field(default="INFO", alias=EnvName.LOG_LEVEL)
     log_json: bool = Field(default=False, alias=EnvName.LOG_JSON)
+    log_file: str | None = Field(default=None, alias=EnvName.LOG_FILE)
+
+    internal_api_secret: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.INTERNAL_API_SECRET)
+    redis_url: str = Field(default="redis://localhost:6379/0", alias=EnvName.REDIS_URL)
+    instrument_quote_provider_enabled: bool = Field(default=False, alias=EnvName.INSTRUMENT_QUOTE_PROVIDER_ENABLED)
+    instrument_quote_provider_base_url: str = Field(
+        default="https://meta.pbull.kz",
+        alias=EnvName.INSTRUMENT_QUOTE_PROVIDER_BASE_URL,
+    )
+    instrument_quote_timeout_seconds: float = Field(default=10.0, alias=EnvName.INSTRUMENT_QUOTE_TIMEOUT_SECONDS)
+    instrument_quote_cache_ttl_seconds: int = Field(default=30, alias=EnvName.INSTRUMENT_QUOTE_CACHE_TTL_SECONDS)
+    telegram_webhook_url: str = Field(default="", alias=EnvName.TELEGRAM_WEBHOOK_URL)
+    smtp_host: str = Field(default="relay.ptfin.kz", alias=EnvName.SMTP_HOST)
+    smtp_port: int = Field(default=465, alias=EnvName.SMTP_PORT)
+    smtp_ssl: bool = Field(default=True, alias=EnvName.SMTP_SSL)
+    smtp_user: str = Field(default="pct@ptfin.ru", alias=EnvName.SMTP_USER)
+    smtp_password: SecretStr = Field(default=SecretStr("__FILL_ME__"), alias=EnvName.SMTP_PASSWORD)
+    smtp_from: str = Field(default="pct@ptfin.ru", alias=EnvName.SMTP_FROM)
+    smtp_from_name: str = Field(default="PitchCopyTrade", alias=EnvName.SMTP_FROM_NAME)
+    admin_telegram_id: int | None = Field(default=None, alias=EnvName.ADMIN_TELEGRAM_ID)
+    admin_email: str | None = Field(default=None, alias=EnvName.ADMIN_EMAIL)
+
+    # X4.2: OAuth configuration (optional, disabled if not set)
+    google_client_id: str | None = Field(default=None, alias=EnvName.GOOGLE_CLIENT_ID)
+    google_client_secret: SecretStr | None = Field(default=None, alias=EnvName.GOOGLE_CLIENT_SECRET)
+    yandex_client_id: str | None = Field(default=None, alias=EnvName.YANDEX_CLIENT_ID)
+    yandex_client_secret: SecretStr | None = Field(default=None, alias=EnvName.YANDEX_CLIENT_SECRET)
 
     @field_validator("app_env")
     @classmethod
@@ -207,14 +256,25 @@ class Settings(BaseSettings):
             raise ValueError(f"APP_DATA_MODE must be one of {sorted(allowed)}")
         return normalized
 
-    @field_validator("base_url", "admin_base_url", "minio_public_url")
+    @field_validator("base_url", "admin_base_url")
     @classmethod
     def validate_http_url(cls, value: str) -> str:
         if not value.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
         return value.rstrip("/")
 
-    @field_validator("database_url", "alembic_database_url")
+    @field_validator("instrument_quote_provider_base_url")
+    @classmethod
+    def validate_quote_provider_base_url(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        parsed = urlsplit(normalized)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError("URL must include scheme and host")
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, value: str, info: ValidationInfo) -> str:
         normalized = value.strip()
@@ -222,14 +282,6 @@ class Settings(BaseSettings):
             return normalized
         if not normalized.startswith("postgresql+asyncpg://"):
             raise ValueError("Database URL must use postgresql+asyncpg://")
-        return normalized
-
-    @field_validator("minio_bucket_uploads")
-    @classmethod
-    def validate_bucket_name(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if len(normalized) < 3:
-            raise ValueError("MINIO_BUCKET_UPLOADS must be at least 3 chars")
         return normalized
 
     @field_validator("log_level")
@@ -241,11 +293,33 @@ class Settings(BaseSettings):
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return normalized
 
+    @field_validator("log_file")
+    @classmethod
+    def validate_log_file(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
     @field_validator("auth_session_ttl_seconds")
     @classmethod
     def validate_session_ttl(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("AUTH_SESSION_TTL_SECONDS must be positive")
+        return value
+
+    @field_validator("instrument_quote_timeout_seconds")
+    @classmethod
+    def validate_quote_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("INSTRUMENT_QUOTE_TIMEOUT_SECONDS must be positive")
+        return value
+
+    @field_validator("instrument_quote_cache_ttl_seconds")
+    @classmethod
+    def validate_quote_cache_ttl(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("INSTRUMENT_QUOTE_CACHE_TTL_SECONDS must be positive")
         return value
 
     @field_validator("app_storage_root")
@@ -255,6 +329,11 @@ class Settings(BaseSettings):
         if not normalized:
             raise ValueError("APP_STORAGE_ROOT must not be empty")
         return normalized
+
+    @field_validator("app_preview_enabled")
+    @classmethod
+    def validate_preview_enabled(cls, value: bool) -> bool:
+        return bool(value)
 
     @field_validator("telegram_webhook_secret")
     @classmethod
@@ -275,6 +354,7 @@ class Settings(BaseSettings):
             admin_base_url=self.admin_base_url,
             base_timezone=self.base_timezone,
             data_mode=self.app_data_mode,
+            preview_enabled=self.app_preview_enabled,
         )
 
     @property
@@ -290,21 +370,9 @@ class Settings(BaseSettings):
     def database(self) -> DatabaseSettings:
         return DatabaseSettings(
             url=self.database_url,
-            alembic_url=self.alembic_database_url,
             db_name=self.postgres_db,
             user=self.postgres_user,
             password=self.postgres_password,
-        )
-
-    @property
-    def minio(self) -> MinioSettings:
-        return MinioSettings(
-            endpoint=self.minio_endpoint,
-            public_url=self.minio_public_url,
-            root_user=self.minio_root_user,
-            root_password=self.minio_root_password,
-            bucket_uploads=self.minio_bucket_uploads,
-            secure=self.minio_secure,
         )
 
     @property
@@ -326,13 +394,37 @@ class Settings(BaseSettings):
 
     @property
     def logging(self) -> LoggingSettings:
-        return LoggingSettings(level=self.log_level, json_logs=self.log_json)
+        return LoggingSettings(level=self.log_level, json_logs=self.log_json, file_path=self.log_file)
 
     @property
     def auth(self) -> AuthSettings:
         return AuthSettings(
             session_ttl_seconds=self.auth_session_ttl_seconds,
             session_cookie_name=self.auth_session_cookie_name,
+        )
+
+    @property
+    def notifications(self) -> NotificationSettings:
+        return NotificationSettings(
+            internal_api_secret=self.internal_api_secret,
+            redis_url=self.redis_url,
+            smtp_host=self.smtp_host,
+            smtp_port=self.smtp_port,
+            smtp_ssl=self.smtp_ssl,
+            smtp_user=self.smtp_user,
+            smtp_password=self.smtp_password,
+            smtp_from=self.smtp_from,
+            smtp_from_name=self.smtp_from_name,
+        )
+
+    @property
+    def instrument_quotes(self) -> InstrumentQuoteSettings:
+        provider_origin = self.instrument_quote_provider_base_url.rstrip("/")
+        return InstrumentQuoteSettings(
+            provider_enabled=self.instrument_quote_provider_enabled,
+            provider_base_url=f"{provider_origin}/api/marketData/forceDataSymbol",
+            timeout_seconds=self.instrument_quote_timeout_seconds,
+            cache_ttl_seconds=self.instrument_quote_cache_ttl_seconds,
         )
 
     @property

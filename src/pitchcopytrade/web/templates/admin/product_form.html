@@ -1,4 +1,5 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
+{% set field_errors = field_errors or {} %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
@@ -14,140 +15,404 @@
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">редактор продукта</div>
-  <h1 style="margin:10px 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:0.96;letter-spacing:-0.05em;">
-    {% if product %}Редактирование продукта{% else %}Новый продукт подписки{% endif %}
-  </h1>
-  <p class="muted" style="max-width:760px;line-height:1.65;margin:16px 0 0;">
-    Один продукт должен ясно отвечать на два вопроса: что именно покупает клиент и на каких условиях он это получает.
-  </p>
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">редактор продукта</div>
+      <h1>{% if product %}Редактирование продукта{% else %}Новый продукт подписки{% endif %}</h1>
+      <p>Компактная форма для scope доступа, цены и статуса. Без отдельного hero-блока над рабочими полями.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      {% if product %}
+      <span class="staff-badge {% if product.is_active %}ok{% else %}danger{% endif %}">{{ "активен" if product.is_active else "выключен" }}</span>
+      <span class="staff-badge">{{ label_product_type(product.product_type) }}</span>
+      {% endif %}
+    </div>
+  </div>
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,0.8fr);gap:18px;margin-top:18px;">
-  <form class="surface" method="post" action="{% if product %}/admin/products/{{ product.id }}{% else %}/admin/products{% endif %}" style="padding:24px;display:grid;gap:18px;">
+<section class="staff-detail-layout">
+  <form class="staff-card staff-form-shell" method="post" action="{% if product %}/admin/products/{{ product.id }}{% else %}/admin/products{% endif %}">
     {% if error %}
-    <div style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
-      {{ error }}
-    </div>
+    <div class="staff-error">{{ error }}</div>
     {% endif %}
+    <div id="client-errors" class="staff-error" hidden></div>
 
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Тип продукта</strong>
-        <select name="product_type" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          {% for item in product_types %}
-          <option value="{{ item.value }}" {% if form_values.product_type == item.value %}selected{% endif %}>{{ item.value }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Период биллинга</strong>
-        <select name="billing_period" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          {% for item in billing_periods %}
-          <option value="{{ item.value }}" {% if form_values.billing_period == item.value %}selected{% endif %}>{{ item.value }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Основное</h2>
+          <p>Определите тип продукта, период и читаемые публичные идентификаторы карточки.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-field {% if field_errors.get('product_type') %}has-error{% endif %}">
+          <span>Тип продукта</span>
+          <select name="product_type" required>
+            {% for item in product_types %}
+            <option value="{{ item.value }}" {% if form_values.product_type == item.value %}selected{% endif %}>{{ label_product_type(item) }}</option>
+            {% endfor %}
+          </select>
+          {% if field_errors.get("product_type") %}
+          <span class="staff-field-error">{{ field_errors.get("product_type") }}</span>
+          {% endif %}
+        </label>
+        <label class="staff-field {% if field_errors.get('duration_days') %}has-error{% endif %}">
+          <span>Период подписки</span>
+          <select name="duration_days" required>
+            <option value="">выберите</option>
+            <option value="30" {% if form_values.duration_days|string == "30" %}selected{% endif %}>30 дней</option>
+            <option value="60" {% if form_values.duration_days|string == "60" %}selected{% endif %}>60 дней</option>
+            <option value="90" {% if form_values.duration_days|string == "90" %}selected{% endif %}>90 дней</option>
+            <option value="180" {% if form_values.duration_days|string == "180" %}selected{% endif %}>180 дней</option>
+            <option value="365" {% if form_values.duration_days|string == "365" %}selected{% endif %}>1 год (365 дней)</option>
+          </select>
+          {% if field_errors.get("duration_days") %}
+          <span class="staff-field-error">{{ field_errors.get("duration_days") }}</span>
+          {% endif %}
+        </label>
+      </div>
+    </section>
 
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Слаг</strong>
-        <input type="text" name="slug" value="{{ form_values.slug }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Название</strong>
-        <input type="text" name="title" value="{{ form_values.title }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Цель доступа</h2>
+          <p>У продукта должен быть ровно один target: стратегия, автор или пакет.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-three">
+        <div data-target="strategy" class="staff-target-field">
+          <label class="staff-field {% if field_errors.get('strategy_id') %}has-error{% endif %}">
+            <span>Стратегия</span>
+            <select name="strategy_id">
+              <option value="">не выбрана</option>
+              {% for item in strategies %}
+              <option
+                value="{{ item.id }}"
+                data-slug="{{ item.slug }}"
+                data-title="{{ item.title }}"
+                data-author="{{ item.author.display_name if item.author else '' }}"
+                {% if form_values.strategy_id == item.id %}selected{% endif %}
+              >{{ item.author.display_name if item.author else '—' }} → {{ item.title }}</option>
+              {% endfor %}
+            </select>
+            {% if field_errors.get("strategy_id") %}
+            <span class="staff-field-error">{{ field_errors.get("strategy_id") }}</span>
+            {% endif %}
+          </label>
+        </div>
+        <div data-target="author" class="staff-target-field">
+          <label class="staff-field {% if field_errors.get('author_id') %}has-error{% endif %}">
+            <span>Автор</span>
+            <select name="author_id">
+              <option value="">не выбран</option>
+              {% for item in authors %}
+              <option
+                value="{{ item.id }}"
+                data-slug="{{ item.slug }}"
+                data-title="{{ item.display_name }}"
+                data-author="{{ item.display_name }}"
+                {% if form_values.author_id == item.id %}selected{% endif %}
+              >{{ item.display_name }}</option>
+              {% endfor %}
+            </select>
+            {% if field_errors.get("author_id") %}
+            <span class="staff-field-error">{{ field_errors.get("author_id") }}</span>
+            {% endif %}
+          </label>
+        </div>
+        <div data-target="bundle" class="staff-target-field">
+          <label class="staff-field {% if field_errors.get('bundle_id') %}has-error{% endif %}">
+            <span>Пакет</span>
+            <select name="bundle_id">
+              <option value="">не выбран</option>
+              {% for item in bundles %}
+              <option
+                value="{{ item.id }}"
+                data-slug="{{ item.slug }}"
+                data-title="{{ item.title }}"
+                data-author=""
+                {% if form_values.bundle_id == item.id %}selected{% endif %}
+              >{{ item.title }}</option>
+              {% endfor %}
+            </select>
+            {% if field_errors.get("bundle_id") %}
+            <span class="staff-field-error">{{ field_errors.get("bundle_id") }}</span>
+            {% endif %}
+          </label>
+        </div>
+      </div>
+    </section>
 
-    <label style="display:grid;gap:8px;">
-      <strong>Описание</strong>
-      <textarea name="description" rows="6" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;resize:vertical;">{{ form_values.description }}</textarea>
-    </label>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Идентификаторы</h2>
+          <p>Код и название генерируются от target и периода, но название можно уточнить вручную.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-field {% if field_errors.get('slug') %}has-error{% endif %}">
+          <span>Код продукта (латиницей)</span>
+          <input
+            type="text"
+            name="slug"
+            value="{{ form_values.slug or '' }}"
+            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+            maxlength="64"
+            required
+            readonly
+            placeholder="top-gun-30d"
+            title="Только строчные латинские буквы, цифры и дефисы"
+          />
+          {% if field_errors.get("slug") %}
+          <span class="staff-field-error">{{ field_errors.get("slug") }}</span>
+          {% endif %}
+        </label>
+        <label class="staff-field {% if field_errors.get('title') %}has-error{% endif %}">
+          <span>Название</span>
+          <input
+            type="text"
+            name="title"
+            value="{{ form_values.title or '' }}"
+            required
+            data-auto-filled="{% if not product and not form_values.title %}true{% else %}false{% endif %}"
+          />
+          {% if field_errors.get("title") %}
+          <span class="staff-field-error">{{ field_errors.get("title") }}</span>
+          {% endif %}
+        </label>
+      </div>
+      <label class="staff-field {% if field_errors.get('description') %}has-error{% endif %}">
+        <span>Описание</span>
+        <textarea name="description" rows="5">{{ form_values.description or '' }}</textarea>
+        {% if field_errors.get("description") %}
+        <span class="staff-field-error">{{ field_errors.get("description") }}</span>
+        {% endif %}
+      </label>
+    </section>
 
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Стратегия</strong>
-        <select name="strategy_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          <option value="">не выбран</option>
-          {% for item in strategies %}
-          <option value="{{ item.id }}" {% if form_values.strategy_id == item.id %}selected{% endif %}>{{ item.title }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Автор</strong>
-        <select name="author_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          <option value="">не выбран</option>
-          {% for item in authors %}
-          <option value="{{ item.id }}" {% if form_values.author_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Пакет</strong>
-        <select name="bundle_id" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;">
-          <option value="">не выбран</option>
-          {% for item in bundles %}
-          <option value="{{ item.id }}" {% if form_values.bundle_id == item.id %}selected{% endif %}>{{ item.title }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Коммерция и доступность</h2>
+          <p>Цена и пробный период должны объяснять следующий шаг клиента без двусмысленности.</p>
+        </div>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-field {% if field_errors.get('price_rub') %}has-error{% endif %}">
+          <span>Цена, руб</span>
+          <input type="number" name="price_rub" min="0" value="{{ form_values.price_rub or '' }}" required />
+          <small class="muted">Введите 0 для бесплатного продукта.</small>
+          {% if field_errors.get("price_rub") %}
+          <span class="staff-field-error">{{ field_errors.get("price_rub") }}</span>
+          {% endif %}
+        </label>
+        <label class="staff-field {% if field_errors.get('trial_days') %}has-error{% endif %}">
+          <span>Пробный период, дней</span>
+          <input type="number" name="trial_days" min="0" value="{{ form_values.trial_days or '' }}" />
+          {% if field_errors.get("trial_days") %}
+          <span class="staff-field-error">{{ field_errors.get("trial_days") }}</span>
+          {% endif %}
+        </label>
+      </div>
+      <div class="staff-form-grid is-two">
+        <label class="staff-form-check">
+          <input type="checkbox" name="is_active" value="1" {% if form_values.is_active %}checked{% endif %} />
+          <span>Продукт активен</span>
+        </label>
+        <label class="staff-form-check">
+          <input type="checkbox" name="autorenew_allowed" value="1" {% if form_values.autorenew_allowed %}checked{% endif %} />
+          <span>Разрешить автопродление</span>
+        </label>
+      </div>
+    </section>
 
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <label style="display:grid;gap:8px;">
-        <strong>Цена, руб</strong>
-        <input type="number" name="price_rub" min="0" value="{{ form_values.price_rub }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-      <label style="display:grid;gap:8px;">
-        <strong>Пробный период, дней</strong>
-        <input type="number" name="trial_days" min="0" value="{{ form_values.trial_days }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
-      </label>
-    </div>
-
-    <label style="display:flex;gap:10px;align-items:center;">
-      <input type="checkbox" name="is_active" value="1" {% if form_values.is_active %}checked{% endif %} />
-      <span><strong>Продукт активен</strong></span>
-    </label>
-    <label style="display:flex;gap:10px;align-items:center;">
-      <input type="checkbox" name="autorenew_allowed" value="1" {% if form_values.autorenew_allowed %}checked{% endif %} />
-      <span><strong>Разрешить автопродление</strong></span>
-    </label>
-
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="action" type="submit">{% if product %}Сохранить изменения{% else %}Создать продукт{% endif %}</button>
-      <a class="action ghost" href="/admin/products">Вернуться к продуктам</a>
-    </div>
+    <section class="staff-form-section">
+      <div class="staff-form-section-head">
+        <div class="staff-form-section-copy">
+          <h2>Действия</h2>
+          <p>Сохранение вернёт карточку в реестр продуктов, где сразу будет виден её scope и коммерческий статус.</p>
+        </div>
+      </div>
+      <div class="staff-inline-actions">
+        <button class="staff-btn is-primary" type="submit">{% if product %}Сохранить продукт{% else %}Создать продукт{% endif %}</button>
+        <a class="staff-btn" href="/admin/products">Вернуться к продуктам</a>
+      </div>
+    </section>
   </form>
 
-  <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">подсказки по тарифу</div>
-    <h2 style="margin:10px 0 14px;font-size:1.45rem;">Правила модели</h2>
-    <div style="display:grid;gap:12px;">
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+  <aside class="staff-card staff-detail-panel">
+    <div class="staff-form-section-copy">
+      <h2>Подсказки по тарифу</h2>
+      <p>Правая колонка держит только operator context: target, коммерцию и критерий готовности к публикации.</p>
+    </div>
+    <div class="staff-info-stack">
+      <div class="staff-info-card">
         <strong>Один target</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Тип продукта определяет ровно одну цель: strategy, author или bundle.</div>
+        <div class="muted">Тип продукта определяет ровно одну цель: strategy, author или bundle.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Прозрачная коммерция</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Цена и пробный период должны быть реальными для продажи, а не тестовыми значениями.</div>
+        <div class="muted">Цена и пробный период должны быть реальными для продажи, а не тестовыми значениями.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <div class="staff-info-card">
         <strong>Активировать только после проверки</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Не включайте активность, пока карточка не привязана к корректному target и не проверена командой.</div>
+        <div class="muted">Не включайте активность, пока карточка не привязана к корректному target и не проверена командой.</div>
       </div>
     </div>
   </aside>
 </section>
 
 <style>
-  @media (max-width: 860px) {
-    section[style*="1.2fr"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(3"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+  .staff-field.has-error input,
+  .staff-field.has-error select,
+  .staff-field.has-error textarea {
+    border-color: rgba(182, 59, 59, 0.55);
+    box-shadow: 0 0 0 1px rgba(182, 59, 59, 0.08);
+  }
+
+  .staff-field-error {
+    color: var(--staff-danger);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+
+  .staff-target-field[hidden] {
+    display: none;
   }
 </style>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const form = document.querySelector(".staff-form-shell");
+    if (!form) return;
+
+    const typeSelect = form.querySelector('select[name="product_type"]');
+    const durationSelect = form.querySelector('select[name="duration_days"]');
+    const slugInput = form.querySelector('input[name="slug"]');
+    const titleInput = form.querySelector('input[name="title"]');
+    const isEdit = {{ "true" if product else "false" }};
+    const targetGroups = {
+      strategy: form.querySelector('[data-target="strategy"]'),
+      author: form.querySelector('[data-target="author"]'),
+      bundle: form.querySelector('[data-target="bundle"]'),
+    };
+
+    function activeTargetSelect() {
+      const group = targetGroups[typeSelect.value];
+      return group ? group.querySelector("select") : null;
+    }
+
+    function updateTargets() {
+      const current = typeSelect.value;
+      Object.entries(targetGroups).forEach(function ([key, element]) {
+        if (!element) return;
+        const shouldShow = key === current;
+        element.hidden = !shouldShow;
+        const select = element.querySelector("select");
+        if (!shouldShow && select) {
+          select.value = "";
+        }
+      });
+    }
+
+    function autofill() {
+      if (isEdit || !slugInput || !durationSelect) return;
+      const select = activeTargetSelect();
+      const option = select ? select.selectedOptions[0] : null;
+      const days = durationSelect.value;
+      if (!option || !option.value || !days) return;
+      const slugBase = option.dataset.slug || "";
+      const titleBase = option.dataset.title || option.textContent.trim();
+      const periodLabel = { "30": "30 дн.", "60": "60 дн.", "90": "90 дн.", "180": "180 дн.", "365": "1 год" }[days] || (days + " дн.");
+      if (slugBase) {
+        slugInput.value = slugBase + "-" + days + "d";
+      }
+      if (!titleInput || titleInput.dataset.autoFilled !== "false") {
+        if (titleInput) {
+          titleInput.value = titleBase + " — " + periodLabel;
+          titleInput.dataset.autoFilled = "true";
+        }
+      }
+    }
+
+    function validateClientSide(event) {
+      const errors = [];
+      const currentType = typeSelect ? typeSelect.value : "";
+      const select = activeTargetSelect();
+      const price = form.querySelector('input[name="price_rub"]');
+
+      if (!currentType) {
+        errors.push("Выберите тип продукта");
+      }
+      if (currentType === "strategy" && !(select && select.value)) {
+        errors.push("Выберите стратегию");
+      }
+      if (currentType === "author" && !(select && select.value)) {
+        errors.push("Выберите автора");
+      }
+      if (currentType === "bundle" && !(select && select.value)) {
+        errors.push("Выберите пакет");
+      }
+      if (!slugInput || !slugInput.value.trim()) {
+        errors.push("Код продукта обязателен");
+      }
+      if (!titleInput || !titleInput.value.trim()) {
+        errors.push("Название обязательно");
+      }
+      if (!durationSelect || !durationSelect.value) {
+        errors.push("Выберите период подписки");
+      }
+      if (!price || price.value === "") {
+        errors.push("Укажите цену");
+      }
+
+      if (errors.length === 0) return;
+
+      event.preventDefault();
+      let errBlock = document.getElementById("client-errors");
+      if (!errBlock) {
+        errBlock = document.createElement("div");
+        errBlock.id = "client-errors";
+        errBlock.className = "staff-error";
+        form.prepend(errBlock);
+      }
+      errBlock.hidden = false;
+      errBlock.innerHTML = "<strong>Исправьте ошибки:</strong><ul>" + errors.map(function (error) {
+        return "<li>" + error + "</li>";
+      }).join("") + "</ul>";
+      errBlock.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    if (titleInput && !titleInput.value.trim()) {
+      titleInput.dataset.autoFilled = "true";
+    }
+    if (titleInput) {
+      titleInput.addEventListener("input", function () {
+        titleInput.dataset.autoFilled = "false";
+      });
+    }
+    if (typeSelect) {
+      typeSelect.addEventListener("change", function () {
+        updateTargets();
+        autofill();
+      });
+    }
+    if (durationSelect) {
+      durationSelect.addEventListener("change", autofill);
+    }
+    Object.values(targetGroups).forEach(function (element) {
+      if (!element) return;
+      const select = element.querySelector("select");
+      if (select) {
+        select.addEventListener("change", autofill);
+      }
+    });
+
+    updateTargets();
+    autofill();
+    form.addEventListener("submit", validateClientSide);
+  });
+</script>
 {% endblock %}

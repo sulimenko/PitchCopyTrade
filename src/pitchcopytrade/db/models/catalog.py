@@ -2,22 +2,29 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Enum as SqlEnum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pitchcopytrade.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from pitchcopytrade.db.models.enums import BillingPeriod, InstrumentType, LeadSourceType, ProductType, RiskLevel, StrategyStatus
+from pitchcopytrade.db.models.enums import (
+    InstrumentType,
+    LeadSourceType,
+    ProductType,
+    RiskLevel,
+    StrategyStatus,
+    sql_enum,
+)
 
 if TYPE_CHECKING:
     from pitchcopytrade.db.models.accounts import AuthorProfile, User
     from pitchcopytrade.db.models.commerce import Payment, Subscription
-    from pitchcopytrade.db.models.content import Recommendation, RecommendationLeg
+    from pitchcopytrade.db.models.content import Message
 
 
 class LeadSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "lead_sources"
 
-    source_type: Mapped[LeadSourceType] = mapped_column(SqlEnum(LeadSourceType, name="lead_source_type"), nullable=False)
+    source_type: Mapped[LeadSourceType] = mapped_column(sql_enum(LeadSourceType, name="lead_source_type"), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     ref_code: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
     utm_source: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -39,13 +46,16 @@ class Instrument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     lot_size: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="RUB")
     instrument_type: Mapped[InstrumentType] = mapped_column(
-        SqlEnum(InstrumentType, name="instrument_type"),
+        sql_enum(InstrumentType, name="instrument_type"),
         default=InstrumentType.EQUITY,
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(default=True)
 
-    recommendation_legs: Mapped[list["RecommendationLeg"]] = relationship(back_populates="instrument")
+    watchlist_authors: Mapped[list["AuthorProfile"]] = relationship(
+        secondary="author_watchlist_instruments",
+        back_populates="watchlist_instruments",
+    )
 
 
 class Strategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -57,9 +67,9 @@ class Strategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     short_description: Mapped[str] = mapped_column(String(500), nullable=False)
     full_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    risk_level: Mapped[RiskLevel] = mapped_column(SqlEnum(RiskLevel, name="risk_level"), nullable=False)
+    risk_level: Mapped[RiskLevel] = mapped_column(sql_enum(RiskLevel, name="risk_level"), nullable=False)
     status: Mapped[StrategyStatus] = mapped_column(
-        SqlEnum(StrategyStatus, name="strategy_status"),
+        sql_enum(StrategyStatus, name="strategy_status"),
         default=StrategyStatus.DRAFT,
         nullable=False,
     )
@@ -69,7 +79,7 @@ class Strategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     author: Mapped["AuthorProfile"] = relationship(back_populates="strategies")
     bundle_memberships: Mapped[list["BundleMember"]] = relationship(back_populates="strategy")
     subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="strategy")
-    recommendations: Mapped[list["Recommendation"]] = relationship(back_populates="strategy")
+    messages: Mapped[list["Message"]] = relationship(back_populates="strategy")
 
 
 class Bundle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -84,6 +94,7 @@ class Bundle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     members: Mapped[list["BundleMember"]] = relationship(back_populates="bundle")
     subscription_products: Mapped[list["SubscriptionProduct"]] = relationship(back_populates="bundle")
+    messages: Mapped[list["Message"]] = relationship(back_populates="bundle")
 
 
 class BundleMember(Base):
@@ -114,14 +125,14 @@ class SubscriptionProduct(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
     )
 
-    product_type: Mapped[ProductType] = mapped_column(SqlEnum(ProductType, name="product_type"), nullable=False)
+    product_type: Mapped[ProductType] = mapped_column(sql_enum(ProductType, name="product_type"), nullable=False)
     slug: Mapped[str] = mapped_column(String(120), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     strategy_id: Mapped[str | None] = mapped_column(ForeignKey("strategies.id", ondelete="SET NULL"), nullable=True)
     author_id: Mapped[str | None] = mapped_column(ForeignKey("author_profiles.id", ondelete="SET NULL"), nullable=True)
     bundle_id: Mapped[str | None] = mapped_column(ForeignKey("bundles.id", ondelete="SET NULL"), nullable=True)
-    billing_period: Mapped[BillingPeriod] = mapped_column(SqlEnum(BillingPeriod, name="billing_period"), nullable=False)
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     price_rub: Mapped[int] = mapped_column(Integer, nullable=False)
     trial_days: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(default=True)

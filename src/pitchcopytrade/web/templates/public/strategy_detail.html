@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "public/_url_helpers.html" import checkout_url, catalog_url, strategy_url %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="{% if miniapp_mode %}/app/catalog{% else %}/catalog{% endif %}">Каталог</a>
+  <a class="action ghost" href="{{ catalog_url(miniapp_mode, preview_mode, entry_marker) }}">Каталог</a>
 </div>
 {% endblock %}
 
@@ -11,55 +12,129 @@
 {% include "app/_miniapp_nav.html" %}
 {% endif %}
 
+{% set first_product = strategy.subscription_products[0] if strategy.subscription_products else none %}
+{% set already_subscribed_to_first_product = first_product and first_product.id in user_active_product_ids %}
+
 <section class="surface" style="padding:30px;">
   <div class="eyebrow">{{ strategy.author.display_name }}</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
-    <div style="max-width:820px;">
-      <h1 style="margin:0;font-size:clamp(2.2rem,4.6vw,4rem);line-height:0.94;letter-spacing:-0.06em;">{{ strategy.title }}</h1>
-      <p class="muted" style="line-height:1.7;margin:16px 0 0;">{{ strategy.short_description }}</p>
+    <!--
+    <div style="max-width:860px;">
+      <p class="muted" style="line-height:1.72;margin:16px 0 0;font-size:1.04rem;">
+        {{ strategy.story.hero_summary if strategy.story else strategy.short_description }}
+      </p>
+    </div>
+    -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <h1 style="margin:0;font-size:clamp(2.3rem,4.8vw,4.2rem);line-height:0.92;letter-spacing:-0.07em;">{{ strategy.title }}</h1>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <span class="pill">{{ strategy.risk_level.value }}</span>
+      <span class="pill">{{ label_risk_level(strategy.risk_level) }}</span>
       {% if strategy.min_capital_rub %}
       <span class="pill">от {{ strategy.min_capital_rub }} руб</span>
       {% endif %}
     </div>
   </div>
-</section>
-
-<section style="display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,0.85fr);gap:18px;margin-top:18px;">
-  <article class="surface" style="padding:24px;">
-    <div class="eyebrow">о стратегии</div>
-    <h2 style="margin:10px 0 14px;font-size:1.55rem;">Описание</h2>
-    <p class="muted" style="line-height:1.75;">{{ strategy.full_description or strategy.short_description }}</p>
-  </article>
-
-  <article class="surface" style="padding:24px;">
-    <div class="eyebrow">доступные планы</div>
-    <h2 style="margin:10px 0 14px;font-size:1.55rem;">Продукты подписки</h2>
-    <div style="display:grid;gap:12px;">
-      {% for product in strategy.subscription_products %}
-      <a class="surface" href="{% if miniapp_mode %}/app/checkout/{{ product.id }}{% else %}/checkout/{{ product.id }}{% endif %}" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
-        <strong>{{ product.title }}</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.6;">{{ product.description or "Описание продукта пока не заполнено" }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
-          <span class="pill">Месяц</span>
-          <span class="pill">{{ product.price_rub }} руб</span>
-          {% if product.trial_days %}
-          <span class="pill">{{ product.trial_days }} дней бесплатно</span>
-          {% endif %}
-        </div>
-      </a>
-      {% else %}
-      <div class="muted">Для этой стратегии пока нет активных продуктов.</div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:22px;">
+    {% if already_subscribed_to_first_product %}
+    <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
+    {% elif first_product %}
+    <a class="action" href="{{ checkout_url(first_product.slug, miniapp_mode, preview_mode, entry_marker) }}">{{ strategy.story.commercial_cta_label if strategy.story else "Подписаться" }}</a>
+    {% endif %}
+    <a class="action" href="#tariffs">Тарифы</a>
+    <!-- <a class="action ghost" href="#faq">FAQ</a> -->
+  </div>
+  {% if already_subscribed_to_first_product %}
+  <div class="muted" style="margin-top:8px;">У вас уже есть активная подписка на эту стратегию.</div>
+  {% endif %}
+  {% if already_subscribed_notice %}
+  <div class="surface" style="padding:14px 18px;margin-top:18px;background:rgba(20, 85, 216, 0.08);box-shadow:none;">
+    <strong>Вы уже подписаны на эту стратегию.</strong>
+  </div>
+  {% endif %}
+  {% if strategy.quotes %}
+  <div class="surface" style="padding:18px;margin-top:22px;background:rgba(255,255,255,0.7);box-shadow:none;">
+    <div class="eyebrow">market snapshot</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+      {% for quote in strategy.quotes %}
+      <span class="pill">{{ quote.ticker }} · {{ quote.last_price_text }}{% if quote.change_text != "—" %} · {{ quote.change_text }}{% endif %}</span>
       {% endfor %}
     </div>
+    <div class="muted" style="margin-top:10px;line-height:1.6;">Цены подтягиваются из live quote-provider и показываются как контролируемый market snapshot.</div>
+  </div>
+  {% endif %}
+</section>
+
+<section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <!-- <div class="eyebrow">thesis</div> -->
+    <h2 style="margin:10px 0 14px;font-size:1.55rem;">Описание</h2>
+    <p class="muted" style="line-height:1.75;">{{ strategy.story.thesis if strategy.story else strategy.short_description }}</p>
   </article>
 </section>
 
-<style>
-  @media (max-width: 900px) {
-    section[style*="1.25fr"] { grid-template-columns: 1fr !important; }
-  }
-</style>
+<section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
+  <article class="surface" style="padding:24px;">
+    <div class="eyebrow">mechanics</div>
+    <h2 style="margin:10px 0 14px;font-size:1.55rem;">Детально</h2>
+    <div class="muted" style="line-height:1.8;white-space:pre-wrap;">{{ strategy.story.mechanics if strategy.story else (strategy.full_description or strategy.short_description) }}</div>
+  </article>
+</section>
+
+{% if first_product %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;">
+  {% if already_subscribed_to_first_product %}
+  <span class="action disabled" aria-disabled="true">Вы уже подписаны</span>
+  {% else %}
+  <a class="action" href="{{ checkout_url(first_product.slug, miniapp_mode, preview_mode, entry_marker) }}">Подписаться</a>
+  {% endif %}
+</div>
+{% if already_subscribed_to_first_product %}
+<div class="muted" style="margin-top:8px;">У вас уже есть активная подписка на эту стратегию.</div>
+{% endif %}
+{% endif %}
+
+<section id="tariffs" class="surface" style="padding:24px;margin-top:18px;">
+  <div class="eyebrow">tariffs</div>
+  <h2 style="margin:10px 0 14px;font-size:1.55rem;">Тарифы</h2>
+  <div style="display:grid;gap:12px;">
+    {% for product in strategy.subscription_products %}
+    {% set product_is_active = product.id in user_active_product_ids %}
+    {% if product_is_active %}
+    <div class="surface" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
+    {% else %}
+    <a class="surface" href="{{ checkout_url(product.slug, miniapp_mode, preview_mode, entry_marker) }}" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
+    {% endif %}
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <strong style="font-size:1.1rem;">{{ product.title }}</strong>
+          {% if product.description %}
+          <div class="muted" style="margin-top:8px;line-height:1.65;">{{ product.description }}</div>
+          {% endif %}
+        </div>
+        {% if product_is_active %}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <span class="pill">Активна</span>
+        </div>
+        {% endif %}
+        <!-- 
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <span class="pill">{{ label_duration_days(product.duration_days) }}</span>
+          <span class="pill">{{ product.price_rub }} руб</span>
+          {% if product.trial_days %}
+          <span class="pill">{{ product.trial_days }} дней trial</span>
+          {% endif %}
+        </div>
+        -->
+      </div>
+    {% if product_is_active %}
+    </div>
+    {% else %}
+    </a>
+    {% endif %}
+    {% else %}
+    <div class="muted">Активных тарифов пока нет.</div>
+    {% endfor %}
+  </div>
+</section>
 {% endblock %}

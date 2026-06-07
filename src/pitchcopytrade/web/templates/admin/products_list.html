@@ -1,70 +1,45 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
+<!--
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/strategies">Стратегии</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Доставка</a>
-  <a class="action ghost" href="/admin/payments">Платежи</a>
-  <a class="action" href="/admin/products/new">Новый продукт</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
+<a class="staff-btn is-primary" href="/admin/products/new">Новый продукт</a>
 {% endblock %}
+-->
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">продукты подписки</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Продукты подписки</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Коммерческий слой над стратегиями, авторами и пакетами: цена, период, пробный доступ и разрешение на автопродление.
-      </p>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">продукты подписки</div>
+      <h1>Продукты подписки</h1>
+      <p>В реестре сразу видны коммерческие условия, scope доступа и базовый статус без отдельного hero-экрана.</p>
     </div>
-    <div class="pill">{{ products|length }} продуктов</div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ products|length }} продуктов</span>
+      <a class="staff-btn is-primary" href="/admin/products/new">Создать продукт</a>
+    </div>
   </div>
-</section>
+  <div class="staff-toolbar">
+    <div class="staff-toolbar-note">Новый продукт должен сразу отвечать на три вопроса: что покупают, на какой срок и какой именно scope доступа выдаётся после оплаты.</div>
+  </div>
+  <div class="staff-grid-shell">
+    <div id="grid-host" class="pct-tabulator"></div>
+  </div>
 
-<section style="display:grid;gap:14px;margin-top:18px;">
-  {% for product in products %}
-  <a class="surface" href="/admin/products/{{ product.id }}/edit" style="padding:22px;display:block;">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="max-width:820px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <strong style="font-size:1.15rem;">{{ product.title }}</strong>
-          <span class="pill">{{ product.product_type.value }}</span>
-          <span class="pill">{{ product.billing_period.value }}</span>
-          {% if product.is_active %}
-          <span class="pill">активен</span>
-          {% endif %}
-          {% if product.autorenew_allowed %}
-          <span class="pill">автопродление</span>
-          {% endif %}
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ product.description or "Описание пока не заполнено" }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">{{ product.slug }}</span>
-          <span class="pill">{{ product.price_rub }} руб</span>
-          <span class="pill">{{ product.trial_days }} дней бесплатно</span>
-          {% if product.strategy %}
-          <span class="pill">{{ product.strategy.title }}</span>
-          {% elif product.author %}
-          <span class="pill">{{ product.author.display_name }}</span>
-          {% elif product.bundle %}
-          <span class="pill">{{ product.bundle.title }}</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="muted">Открыть</div>
-    </div>
-  </a>
-  {% else %}
-  <article class="surface" style="padding:24px;">
-    <strong>Продуктов пока нет</strong>
-    <p class="muted" style="line-height:1.6;margin:10px 0 0;">Создайте первый план подписки для стратегии, автора или bundle.</p>
-  </article>
-  {% endfor %}
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Продукт", field: "product", widthGrow: 1.6 },
+      { title: "Тип", field: "type" },
+      { title: "Период", field: "period" },
+      { title: "Статус", field: "status" },
+      { title: "Цена", field: "price" },
+      { title: "Пробный", field: "trial" },
+      { title: "Область", field: "target" },
+      { title: "Открыть", field: "actions", frozen: true }
+    ],
+    data: {{ products_json | safe }}
+  });
+  </script>
 </section>
 {% endblock %}

@@ -1,22 +1,43 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import logging
+import re
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.api.deps.auth import require_admin
+from pitchcopytrade.api.request_trace import get_entry_marker, get_or_create_journey_id, log_request_trace
+from pitchcopytrade.auth.session import build_staff_invite_link
 from pitchcopytrade.bot.main import create_bot
 from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
-from pitchcopytrade.db.models.enums import BillingPeriod, LegalDocumentType, ProductType, RiskLevel, StrategyStatus
+from pitchcopytrade.db.models.enums import LegalDocumentType, ProductType, RiskLevel, RoleSlug, StrategyStatus
 from pitchcopytrade.db.session import get_optional_db_session
 from pitchcopytrade.services.admin import (
+    AdminAuthorUpdateData,
     ProductFormData,
+    StaffUpdateData,
     apply_manual_discount_to_payment,
+    cancel_subscription_admin,
     confirm_payment_and_activate_subscription,
+    create_admin_author,
+    create_admin_staff_user,
+    get_admin_metrics,
+    get_admin_strategy_for_onepager,
+    grant_staff_role,
+    list_admin_staff,
+    reseed_author_watchlists,
+    set_subscription_autorenew_admin,
+    revoke_staff_role,
+    save_strategy_onepager,
+    toggle_admin_author,
+    StaffCreateData,
     StrategyFormData,
+    update_admin_author_permissions,
     create_product,
     create_strategy,
     get_admin_subscription,
@@ -31,13 +52,17 @@ from pitchcopytrade.services.admin import (
     list_admin_products,
     list_admin_subscriptions,
     list_admin_strategies,
+    resend_staff_invite,
+    set_admin_staff_user_status,
+    update_admin_author,
+    update_admin_staff_user,
     update_product,
     update_strategy,
 )
 from pitchcopytrade.services.delivery_admin import (
     get_admin_delivery_record,
     list_admin_delivery_records,
-    retry_recommendation_delivery,
+    retry_message_delivery,
 )
 from pitchcopytrade.services.legal_admin import (
     LegalDocumentFormData,
@@ -56,10 +81,34 @@ from pitchcopytrade.services.promo_admin import (
     list_admin_promo_codes,
     update_admin_promo_code,
 )
+from pitchcopytrade.billing import ALLOWED_DURATION_DAYS, normalize_duration_days
 from pitchcopytrade.web.templates import templates
+from pitchcopytrade.api.routes._grid_serializers import (
+    serialize_strategies,
+    serialize_authors,
+    serialize_staff,
+    serialize_products,
+    serialize_subscriptions,
+    serialize_payments,
+    serialize_legal,
+    serialize_promos,
+    serialize_delivery,
+    serialize_lead_analytics,
+    serialize_metrics_strategies,
+)
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
+_SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_PROMO_CODE_PATTERN = re.compile(r"[A-Z0-9_-]+")
+
+
+class FormValidationError(Exception):
+    def __init__(self, field_errors: dict[str, str], *, summary: str = "Форма содержит ошибки") -> None:
+        super().__init__(summary)
+        self.field_errors = field_errors
+        self.summary = summary
 
 
 @router.get("", include_in_schema=False)
@@ -73,11 +122,46 @@ async def admin_dashboard(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
-    stats = await get_admin_dashboard_stats(session)
-    strategies = await list_admin_strategies(session)
-    products = await list_admin_products(session)
-    payments = await list_admin_payments(session)
-    subscriptions = await list_admin_subscriptions(session)
+    journey_id = get_or_create_journey_id(request)
+    try:
+        stats = await get_admin_dashboard_stats(session)
+        strategies = await list_admin_strategies(session)
+        products = await list_admin_products(session)
+        payments = await list_admin_payments(session)
+        subscriptions = await list_admin_subscriptions(session)
+    except Exception as exc:
+        log_request_trace(
+            logger,
+            request,
+            stage="admin_dashboard_render_failed",
+            journey_id=journey_id,
+            surface="staff",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            entry_marker=get_entry_marker(request),
+            block_reason="dashboard_failure",
+            block_detail=str(exc),
+        )
+        from types import SimpleNamespace
+
+        stats = SimpleNamespace(authors_total=0, strategies_total=0, strategies_public=0, active_subscriptions=0, messages_live=0)
+        strategies = []
+        products = []
+        payments = []
+        subscriptions = []
+        error = "Не удалось загрузить панель администратора. Повторите попытку и проверьте связанные данные."
+    else:
+        log_request_trace(
+            logger,
+            request,
+            stage="admin_dashboard_render",
+            journey_id=journey_id,
+            surface="staff",
+            auth_user_id=user.id,
+            telegram_user_id=user.telegram_user_id,
+            entry_marker=get_entry_marker(request),
+        )
+        error = None
     return templates.TemplateResponse(
         request,
         "admin/dashboard.html",
@@ -89,6 +173,8 @@ async def admin_dashboard(
             "recent_products": products[:5],
             "recent_payments": payments[:5],
             "recent_subscriptions": subscriptions[:5],
+            "authors_url": "/admin/authors",
+            "error": error,
         },
     )
 
@@ -96,10 +182,15 @@ async def admin_dashboard(
 @router.get("/strategies", response_class=HTMLResponse)
 async def strategy_list_page(
     request: Request,
+    q: str = "",
+    sort_by: str = "title",
+    direction: str = "asc",
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
     strategies = await list_admin_strategies(session)
+    strategies = _filter_admin_strategies(strategies, q=q)
+    strategies = _sort_admin_strategies(strategies, sort_by=sort_by, direction=direction)
     return templates.TemplateResponse(
         request,
         "admin/strategies_list.html",
@@ -107,6 +198,10 @@ async def strategy_list_page(
             "title": "Стратегии",
             "user": user,
             "strategies": strategies,
+            "strategies_json": serialize_strategies(strategies),
+            "q": q,
+            "sort_by": sort_by,
+            "direction": direction,
         },
     )
 
@@ -123,6 +218,7 @@ async def strategy_create_page(
         session=session,
         strategy=None,
         error=None,
+        field_errors=None,
         form_values={},
     )
 
@@ -132,13 +228,13 @@ async def strategy_create_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    author_id: str = Form(...),
-    slug: str = Form(...),
-    title: str = Form(...),
-    short_description: str = Form(...),
+    author_id: str = Form(""),
+    slug: str = Form(""),
+    title: str = Form(""),
+    short_description: str = Form(""),
     full_description: str = Form(""),
-    risk_level: str = Form(...),
-    status_value: str = Form(..., alias="status"),
+    risk_level: str = Form(""),
+    status_value: str = Form("", alias="status"),
     min_capital_rub: str = Form(""),
     is_public: str | None = Form(default=None),
 ) -> Response:
@@ -155,6 +251,27 @@ async def strategy_create_submit(
             is_public=is_public,
         )
         strategy = await create_strategy(session, data)
+    except FormValidationError as exc:
+        return await _render_strategy_form(
+            request=request,
+            user=user,
+            session=session,
+            strategy=None,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "author_id": author_id,
+                "slug": slug,
+                "title": title,
+                "short_description": short_description,
+                "full_description": full_description,
+                "risk_level": risk_level,
+                "status": status_value,
+                "min_capital_rub": min_capital_rub,
+                "is_public": is_public is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_strategy_form(
             request=request,
@@ -162,6 +279,7 @@ async def strategy_create_submit(
             session=session,
             strategy=None,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "author_id": author_id,
                 "slug": slug,
@@ -188,6 +306,7 @@ async def strategy_edit_page(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    strategy_id = _validate_uuid(strategy_id)  # Z6: Validate UUID
     strategy = await get_admin_strategy(session, strategy_id)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
@@ -197,6 +316,7 @@ async def strategy_edit_page(
         session=session,
         strategy=strategy,
         error=None,
+        field_errors=None,
         form_values=_form_values_from_strategy(strategy),
     )
 
@@ -207,16 +327,17 @@ async def strategy_edit_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    author_id: str = Form(...),
-    slug: str = Form(...),
-    title: str = Form(...),
-    short_description: str = Form(...),
+    author_id: str = Form(""),
+    slug: str = Form(""),
+    title: str = Form(""),
+    short_description: str = Form(""),
     full_description: str = Form(""),
-    risk_level: str = Form(...),
-    status_value: str = Form(..., alias="status"),
+    risk_level: str = Form(""),
+    status_value: str = Form("", alias="status"),
     min_capital_rub: str = Form(""),
     is_public: str | None = Form(default=None),
 ) -> Response:
+    strategy_id = _validate_uuid(strategy_id)  # Z6: Validate UUID
     strategy = await get_admin_strategy(session, strategy_id)
     if strategy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
@@ -234,6 +355,27 @@ async def strategy_edit_submit(
             is_public=is_public,
         )
         await update_strategy(session, strategy, data)
+    except FormValidationError as exc:
+        return await _render_strategy_form(
+            request=request,
+            user=user,
+            session=session,
+            strategy=strategy,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "author_id": author_id,
+                "slug": slug,
+                "title": title,
+                "short_description": short_description,
+                "full_description": full_description,
+                "risk_level": risk_level,
+                "status": status_value,
+                "min_capital_rub": min_capital_rub,
+                "is_public": is_public is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_strategy_form(
             request=request,
@@ -241,6 +383,7 @@ async def strategy_edit_submit(
             session=session,
             strategy=strategy,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "author_id": author_id,
                 "slug": slug,
@@ -275,6 +418,7 @@ async def product_list_page(
             "title": "Продукты подписки",
             "user": user,
             "products": products,
+            "products_json": serialize_products(products),
         },
     )
 
@@ -291,6 +435,7 @@ async def product_create_page(
         session=session,
         product=None,
         error=None,
+        field_errors=None,
         form_values={},
     )
 
@@ -314,6 +459,7 @@ async def promo_code_list_page(
             "title": "Промокоды",
             "user": user,
             "promo_codes": promo_codes,
+            "promos_json": serialize_promos(promo_codes),
             "stats": stats,
         },
     )
@@ -331,6 +477,7 @@ async def promo_code_create_page(
         session=session,
         promo_code=None,
         error=None,
+        field_errors=None,
         form_values={},
     )
 
@@ -340,7 +487,7 @@ async def promo_code_create_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    code: str = Form(...),
+    code: str = Form(""),
     description: str = Form(""),
     discount_percent: str = Form(""),
     discount_amount_rub: str = Form(""),
@@ -359,6 +506,25 @@ async def promo_code_create_submit(
             is_active=is_active,
         )
         promo_code = await create_admin_promo_code(session, data)
+    except FormValidationError as exc:
+        return await _render_promo_form(
+            request=request,
+            user=user,
+            session=session,
+            promo_code=None,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "code": code,
+                "description": description,
+                "discount_percent": discount_percent,
+                "discount_amount_rub": discount_amount_rub,
+                "max_redemptions": max_redemptions,
+                "expires_at": expires_at,
+                "is_active": is_active is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_promo_form(
             request=request,
@@ -366,6 +532,7 @@ async def promo_code_create_submit(
             session=session,
             promo_code=None,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "code": code,
                 "description": description,
@@ -387,6 +554,7 @@ async def promo_code_edit_page(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    promo_code_id = _validate_uuid(promo_code_id)  # Z6: Validate UUID
     promo_code = await get_admin_promo_code(session, promo_code_id)
     if promo_code is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found")
@@ -396,6 +564,7 @@ async def promo_code_edit_page(
         session=session,
         promo_code=promo_code,
         error=None,
+        field_errors=None,
         form_values=_form_values_from_promo_code(promo_code),
     )
 
@@ -406,7 +575,7 @@ async def promo_code_edit_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    code: str = Form(...),
+    code: str = Form(""),
     description: str = Form(""),
     discount_percent: str = Form(""),
     discount_amount_rub: str = Form(""),
@@ -414,6 +583,7 @@ async def promo_code_edit_submit(
     expires_at: str = Form(""),
     is_active: str | None = Form(default=None),
 ) -> Response:
+    promo_code_id = _validate_uuid(promo_code_id)  # Z6: Validate UUID
     promo_code = await get_admin_promo_code(session, promo_code_id)
     if promo_code is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found")
@@ -429,6 +599,25 @@ async def promo_code_edit_submit(
             is_active=is_active,
         )
         await update_admin_promo_code(session, promo_code, data)
+    except FormValidationError as exc:
+        return await _render_promo_form(
+            request=request,
+            user=user,
+            session=session,
+            promo_code=promo_code,
+            error=exc.summary,
+            field_errors=exc.field_errors,
+            form_values={
+                "code": code,
+                "description": description,
+                "discount_percent": discount_percent,
+                "discount_amount_rub": discount_amount_rub,
+                "max_redemptions": max_redemptions,
+                "expires_at": expires_at,
+                "is_active": is_active is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     except ValueError as exc:
         return await _render_promo_form(
             request=request,
@@ -436,6 +625,7 @@ async def promo_code_edit_submit(
             session=session,
             promo_code=promo_code,
             error=str(exc),
+            field_errors=None,
             form_values={
                 "code": code,
                 "description": description,
@@ -455,15 +645,15 @@ async def product_create_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    product_type: str = Form(...),
-    slug: str = Form(...),
-    title: str = Form(...),
+    product_type: str = Form(""),
+    slug: str = Form(""),
+    title: str = Form(""),
     description: str = Form(""),
     strategy_id: str = Form(""),
     author_id: str = Form(""),
     bundle_id: str = Form(""),
-    billing_period: str = Form(...),
-    price_rub: str = Form(...),
+    duration_days: str = Form(""),
+    price_rub: str = Form(""),
     trial_days: str = Form("0"),
     is_active: str | None = Form(default=None),
     autorenew_allowed: str | None = Form(default=None),
@@ -477,20 +667,21 @@ async def product_create_submit(
             strategy_id=strategy_id,
             author_id=author_id,
             bundle_id=bundle_id,
-            billing_period=billing_period,
+            duration_days=duration_days,
             price_rub=price_rub,
             trial_days=trial_days,
             is_active=is_active,
             autorenew_allowed=autorenew_allowed,
         )
         product = await create_product(session, data)
-    except ValueError as exc:
+    except FormValidationError as exc:
         return await _render_product_form(
             request=request,
             user=user,
             session=session,
             product=None,
-            error=str(exc),
+            error=exc.summary,
+            field_errors=exc.field_errors,
             form_values={
                 "product_type": product_type,
                 "slug": slug,
@@ -499,7 +690,31 @@ async def product_create_submit(
                 "strategy_id": strategy_id,
                 "author_id": author_id,
                 "bundle_id": bundle_id,
-                "billing_period": billing_period,
+                "duration_days": duration_days,
+                "price_rub": price_rub,
+                "trial_days": trial_days,
+                "is_active": is_active is not None,
+                "autorenew_allowed": autorenew_allowed is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    except ValueError as exc:
+        return await _render_product_form(
+            request=request,
+            user=user,
+            session=session,
+            product=None,
+            error=str(exc),
+            field_errors=None,
+            form_values={
+                "product_type": product_type,
+                "slug": slug,
+                "title": title,
+                "description": description,
+                "strategy_id": strategy_id,
+                "author_id": author_id,
+                "bundle_id": bundle_id,
+                "duration_days": duration_days,
                 "price_rub": price_rub,
                 "trial_days": trial_days,
                 "is_active": is_active is not None,
@@ -517,6 +732,7 @@ async def product_edit_page(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    product_id = _validate_uuid(product_id)  # Z6: Validate UUID
     product = await get_admin_product(session, product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
@@ -526,6 +742,7 @@ async def product_edit_page(
         session=session,
         product=product,
         error=None,
+        field_errors=None,
         form_values=_form_values_from_product(product),
     )
 
@@ -536,19 +753,20 @@ async def product_edit_submit(
     request: Request,
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
-    product_type: str = Form(...),
-    slug: str = Form(...),
-    title: str = Form(...),
+    product_type: str = Form(""),
+    slug: str = Form(""),
+    title: str = Form(""),
     description: str = Form(""),
     strategy_id: str = Form(""),
     author_id: str = Form(""),
     bundle_id: str = Form(""),
-    billing_period: str = Form(...),
-    price_rub: str = Form(...),
+    duration_days: str = Form(""),
+    price_rub: str = Form(""),
     trial_days: str = Form("0"),
     is_active: str | None = Form(default=None),
     autorenew_allowed: str | None = Form(default=None),
 ) -> Response:
+    product_id = _validate_uuid(product_id)  # Z6: Validate UUID
     product = await get_admin_product(session, product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
@@ -562,20 +780,21 @@ async def product_edit_submit(
             strategy_id=strategy_id,
             author_id=author_id,
             bundle_id=bundle_id,
-            billing_period=billing_period,
+            duration_days=duration_days,
             price_rub=price_rub,
             trial_days=trial_days,
             is_active=is_active,
             autorenew_allowed=autorenew_allowed,
         )
         await update_product(session, product, data)
-    except ValueError as exc:
+    except FormValidationError as exc:
         return await _render_product_form(
             request=request,
             user=user,
             session=session,
             product=product,
-            error=str(exc),
+            error=exc.summary,
+            field_errors=exc.field_errors,
             form_values={
                 "product_type": product_type,
                 "slug": slug,
@@ -584,7 +803,31 @@ async def product_edit_submit(
                 "strategy_id": strategy_id,
                 "author_id": author_id,
                 "bundle_id": bundle_id,
-                "billing_period": billing_period,
+                "duration_days": duration_days,
+                "price_rub": price_rub,
+                "trial_days": trial_days,
+                "is_active": is_active is not None,
+                "autorenew_allowed": autorenew_allowed is not None,
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    except ValueError as exc:
+        return await _render_product_form(
+            request=request,
+            user=user,
+            session=session,
+            product=product,
+            error=str(exc),
+            field_errors=None,
+            form_values={
+                "product_type": product_type,
+                "slug": slug,
+                "title": title,
+                "description": description,
+                "strategy_id": strategy_id,
+                "author_id": author_id,
+                "bundle_id": bundle_id,
+                "duration_days": duration_days,
                 "price_rub": price_rub,
                 "trial_days": trial_days,
                 "is_active": is_active is not None,
@@ -610,6 +853,7 @@ async def payment_list_page(
             "title": "Платежи",
             "user": user,
             "payments": payments,
+            "payments_json": serialize_payments(payments),
             "review_stats": review_stats,
         },
     )
@@ -636,6 +880,7 @@ async def subscription_list_page(
             "title": "Подписки",
             "user": user,
             "subscriptions": subscriptions,
+            "subscriptions_json": serialize_subscriptions(subscriptions),
             "query_text": q,
             "stats": stats,
         },
@@ -659,8 +904,63 @@ async def subscription_detail_page(
             "title": "Карточка подписки",
             "user": user,
             "subscription": subscription,
+            "error": None,
         },
     )
+
+
+@router.post("/subscriptions/{subscription_id}/autorenew/disable", response_class=HTMLResponse)
+async def subscription_disable_autorenew_submit(
+    subscription_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    subscription = await get_admin_subscription(session, subscription_id)
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    try:
+        await set_subscription_autorenew_admin(session, subscription, enabled=False)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "admin/subscription_detail.html",
+            {
+                "title": "Карточка подписки",
+                "user": user,
+                "subscription": subscription,
+                "error": str(exc),
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/subscriptions/{subscription.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/subscriptions/{subscription_id}/cancel", response_class=HTMLResponse)
+async def subscription_cancel_submit(
+    subscription_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    subscription = await get_admin_subscription(session, subscription_id)
+    if subscription is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    try:
+        await cancel_subscription_admin(session, subscription)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "admin/subscription_detail.html",
+            {
+                "title": "Карточка подписки",
+                "user": user,
+                "subscription": subscription,
+                "error": str(exc),
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url=f"/admin/subscriptions/{subscription.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/analytics/leads", response_class=HTMLResponse)
@@ -682,6 +982,7 @@ async def lead_analytics_page(
             "title": "Lead source analytics",
             "user": user,
             "rows": rows,
+            "analytics_json": serialize_lead_analytics(rows),
             "stats": stats,
         },
     )
@@ -701,6 +1002,7 @@ async def legal_document_list_page(
             "title": "Юридические документы",
             "user": user,
             "documents": documents,
+            "legal_json": serialize_legal(documents),
         },
     )
 
@@ -764,6 +1066,7 @@ async def legal_document_edit_page(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    document_id = _validate_uuid(document_id)  # Z6: Validate UUID
     document = await get_admin_legal_document(session, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
@@ -788,6 +1091,7 @@ async def legal_document_edit_submit(
     title: str = Form(...),
     content_md: str = Form(...),
 ) -> Response:
+    document_id = _validate_uuid(document_id)  # Z6: Validate UUID
     document = await get_admin_legal_document(session, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
@@ -824,6 +1128,7 @@ async def legal_document_activate_submit(
     user: User = Depends(require_admin),
     session: AsyncSession | None = Depends(get_optional_db_session),
 ) -> Response:
+    document_id = _validate_uuid(document_id)  # Z6: Validate UUID
     document = await get_admin_legal_document(session, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Legal document not found")
@@ -851,6 +1156,7 @@ async def delivery_list_page(
             "title": "Delivery operations",
             "user": user,
             "records": records,
+            "delivery_json": serialize_delivery(records),
             "stats": stats,
         },
     )
@@ -888,7 +1194,7 @@ async def delivery_retry_submit(
     bot = create_bot(get_settings().telegram.bot_token.get_secret_value())
     try:
         try:
-            record = await retry_recommendation_delivery(session, recommendation_id, bot)
+            record = await retry_message_delivery(session, recommendation_id, bot)
         except ValueError as exc:
             current = await get_admin_delivery_record(session, recommendation_id)
             if current is None:
@@ -907,7 +1213,7 @@ async def delivery_retry_submit(
     finally:
         await bot.session.close()
     return RedirectResponse(
-        url=f"/admin/delivery/{record.recommendation.id}",
+        url=f"/admin/delivery/{getattr(record, 'message', None).id if getattr(record, 'message', None) is not None else record.recommendation.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -990,12 +1296,23 @@ async def payment_manual_discount_submit(
     return RedirectResponse(url=f"/admin/payments/{payment.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _validate_uuid(value: str) -> str:
+    """Keep canonical file-mode string ids working.
+
+    Old UUID-only validation broke seeded file-mode ids like `doc-offer` and
+    `product-1`. The repository layer already returns 404 for missing rows, so
+    the route layer should not reject non-UUID identifiers up front.
+    """
+    return value
+
+
 async def _render_strategy_form(
     request: Request,
     user: User,
     session: AsyncSession | None,
     strategy,
     error: str | None,
+    field_errors: dict[str, str] | None,
     form_values: dict[str, object],
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
@@ -1009,6 +1326,7 @@ async def _render_strategy_form(
             "strategy": strategy,
             "authors": authors,
             "error": error,
+            "field_errors": field_errors or {},
             "form_values": form_values,
             "risk_levels": list(RiskLevel),
             "strategy_statuses": list(StrategyStatus),
@@ -1023,6 +1341,7 @@ async def _render_product_form(
     session: AsyncSession | None,
     product,
     error: str | None,
+    field_errors: dict[str, str] | None,
     form_values: dict[str, object],
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
@@ -1040,9 +1359,10 @@ async def _render_product_form(
             "strategies": strategies,
             "bundles": bundles,
             "error": error,
+            "field_errors": field_errors or {},
             "form_values": form_values,
             "product_types": list(ProductType),
-            "billing_periods": list(BillingPeriod),
+            "duration_days_options": ALLOWED_DURATION_DAYS,
         },
         status_code=status_code,
     )
@@ -1080,6 +1400,7 @@ async def _render_promo_form(
     session: AsyncSession | None,
     promo_code,
     error: str | None,
+    field_errors: dict[str, str] | None,
     form_values: dict[str, object],
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
@@ -1093,6 +1414,7 @@ async def _render_promo_form(
             "promo_code": promo_code,
             "promo_codes": promo_codes,
             "error": error,
+            "field_errors": field_errors or {},
             "form_values": form_values,
         },
         status_code=status_code,
@@ -1111,29 +1433,52 @@ def _build_strategy_form_data(
     min_capital_rub: str,
     is_public: str | None,
 ) -> StrategyFormData:
+    errors: dict[str, str] = {}
     if not author_id.strip():
-        raise ValueError("Автор обязателен")
+        errors["author_id"] = "Выберите автора стратегии"
     normalized_slug = slug.strip().lower()
     if not normalized_slug:
-        raise ValueError("Slug обязателен")
+        errors["slug"] = "Укажите код стратегии (латиница, например: top-gun)"
+    elif not _is_valid_slug(normalized_slug):
+        errors["slug"] = "Только строчные латинские буквы, цифры и дефисы"
     if not title.strip():
-        raise ValueError("Название стратегии обязательно")
+        errors["title"] = "Название стратегии обязательно"
     if not short_description.strip():
-        raise ValueError("Короткое описание обязательно")
+        errors["short_description"] = "Короткое описание обязательно"
 
     capital_value = min_capital_rub.strip()
-    parsed_capital = int(capital_value) if capital_value else None
+    try:
+        parsed_capital = int(capital_value) if capital_value else None
+    except ValueError:
+        errors["min_capital_rub"] = "Минимальный капитал должен быть целым числом"
+        parsed_capital = None
+    try:
+        parsed_risk_level = RiskLevel(risk_level)
+    except ValueError:
+        errors["risk_level"] = "Выберите корректный уровень риска"
+        parsed_risk_level = None
+    try:
+        parsed_status = StrategyStatus(status_value)
+    except ValueError:
+        errors["status"] = "Выберите корректный статус стратегии"
+        parsed_status = None
+    if errors:
+        raise FormValidationError(errors)
     return StrategyFormData(
         author_id=author_id.strip(),
         slug=normalized_slug,
         title=title.strip(),
         short_description=short_description.strip(),
         full_description=full_description.strip() or None,
-        risk_level=RiskLevel(risk_level),
-        status=StrategyStatus(status_value),
+        risk_level=parsed_risk_level,
+        status=parsed_status,
         min_capital_rub=parsed_capital,
         is_public=is_public is not None,
     )
+
+
+def _is_valid_slug(value: str) -> bool:
+    return _SLUG_PATTERN.fullmatch(value) is not None
 
 
 def _form_values_from_strategy(strategy) -> dict[str, object]:
@@ -1173,52 +1518,76 @@ def _build_product_form_data(
     strategy_id: str,
     author_id: str,
     bundle_id: str,
-    billing_period: str,
+    duration_days: str,
     price_rub: str,
     trial_days: str,
     is_active: str | None,
     autorenew_allowed: str | None,
 ) -> ProductFormData:
+    errors: dict[str, str] = {}
     normalized_slug = slug.strip().lower()
     if not normalized_slug:
-        raise ValueError("Slug обязателен")
+        errors["slug"] = "Укажите код продукта (латиница, например: momentum-ru-month)"
+    elif not _is_valid_slug(normalized_slug):
+        errors["slug"] = "Только строчные латинские буквы, цифры и дефисы"
     if not title.strip():
-        raise ValueError("Название продукта обязательно")
+        errors["title"] = "Название продукта обязательно"
 
-    parsed_type = ProductType(product_type)
+    try:
+        parsed_type = ProductType(product_type)
+    except ValueError:
+        errors["product_type"] = "Выберите тип продукта"
+        parsed_type = None
+    try:
+        parsed_duration_days = normalize_duration_days(duration_days)
+        if parsed_duration_days is None:
+            errors["duration_days"] = "Выберите корректный период подписки"
+    except ValueError:
+        errors["duration_days"] = "Выберите корректный период подписки"
+        parsed_duration_days = None
     strategy_value = strategy_id.strip() or None
     author_value = author_id.strip() or None
     bundle_value = bundle_id.strip() or None
 
     if parsed_type is ProductType.STRATEGY:
         if strategy_value is None:
-            raise ValueError("Для strategy-продукта нужно выбрать стратегию")
+            errors["strategy_id"] = "Для strategy-продукта нужно выбрать стратегию"
         author_value = None
         bundle_value = None
     elif parsed_type is ProductType.AUTHOR:
         if author_value is None:
-            raise ValueError("Для author-продукта нужно выбрать автора")
+            errors["author_id"] = "Для author-продукта нужно выбрать автора"
         strategy_value = None
         bundle_value = None
-    else:
+    elif parsed_type is ProductType.BUNDLE:
         if bundle_value is None:
-            raise ValueError("Для bundle-продукта нужно выбрать bundle")
+            errors["bundle_id"] = "Для bundle-продукта нужно выбрать bundle"
         strategy_value = None
         author_value = None
 
+    parsed_price: int | None = None
     try:
         parsed_price = int(price_rub.strip())
-    except ValueError as exc:
-        raise ValueError("Цена должна быть целым числом") from exc
+    except ValueError:
+        errors["price_rub"] = "Цена должна быть целым числом"
+    parsed_trial: int | None = None
     try:
         parsed_trial = int((trial_days or "0").strip())
-    except ValueError as exc:
-        raise ValueError("Trial days должен быть целым числом") from exc
+    except ValueError:
+        errors["trial_days"] = "Trial days должен быть целым числом"
 
-    if parsed_price < 0:
-        raise ValueError("Цена не может быть отрицательной")
-    if parsed_trial < 0:
-        raise ValueError("Trial days не может быть отрицательным")
+    if parsed_price is not None and parsed_price < 0:
+        errors["price_rub"] = "Цена не может быть отрицательной"
+    if parsed_trial is not None and parsed_trial < 0:
+        errors["trial_days"] = "Trial days не может быть отрицательным"
+    if errors:
+        raise FormValidationError(errors)
+    if parsed_duration_days is None:
+        raise RuntimeError("unreachable: duration days must be validated before product form assembly")
+    if parsed_price is None:
+        raise RuntimeError("unreachable: price must be validated before product form assembly")
+    if parsed_trial is None:
+        raise RuntimeError("unreachable: trial days must be validated before product form assembly")
 
     return ProductFormData(
         product_type=parsed_type,
@@ -1228,7 +1597,7 @@ def _build_product_form_data(
         strategy_id=strategy_value,
         author_id=author_value,
         bundle_id=bundle_value,
-        billing_period=BillingPeriod(billing_period),
+        duration_days=parsed_duration_days,
         price_rub=parsed_price,
         trial_days=parsed_trial,
         is_active=is_active is not None,
@@ -1246,32 +1615,55 @@ def _build_promo_form_data(
     expires_at: str,
     is_active: str | None,
 ) -> PromoCodeFormData:
+    errors: dict[str, str] = {}
+    form_level_errors: list[str] = []
     normalized_code = code.strip().upper()
     if not normalized_code:
-        raise ValueError("Код промокода обязателен")
+        errors["code"] = "Код промокода обязателен"
+    elif not _PROMO_CODE_PATTERN.fullmatch(normalized_code):
+        errors["code"] = "Только заглавные латинские буквы, цифры, подчёркивания и дефисы"
 
     percent_value = discount_percent.strip()
     amount_value = discount_amount_rub.strip()
     max_value = max_redemptions.strip()
     expires_value = expires_at.strip()
 
-    parsed_percent = int(percent_value) if percent_value else None
-    parsed_amount = int(amount_value) if amount_value else None
-    parsed_max = int(max_value) if max_value else None
-    parsed_expires_at = datetime.fromisoformat(expires_value) if expires_value else None
+    try:
+        parsed_percent = int(percent_value) if percent_value else None
+    except ValueError:
+        errors["discount_percent"] = "Скидка в процентах должна быть целым числом"
+        parsed_percent = None
+    try:
+        parsed_amount = int(amount_value) if amount_value else None
+    except ValueError:
+        errors["discount_amount_rub"] = "Скидка в рублях должна быть целым числом"
+        parsed_amount = None
+    try:
+        parsed_max = int(max_value) if max_value else None
+    except ValueError:
+        errors["max_redemptions"] = "Лимит использований должен быть целым числом"
+        parsed_max = None
+    try:
+        parsed_expires_at = datetime.fromisoformat(expires_value) if expires_value else None
+    except ValueError:
+        errors["expires_at"] = "Укажите корректную дату и время"
+        parsed_expires_at = None
     if parsed_expires_at is not None and parsed_expires_at.tzinfo is None:
         parsed_expires_at = parsed_expires_at.replace(tzinfo=UTC)
 
     if parsed_percent is None and parsed_amount is None:
-        raise ValueError("Нужно указать discount percent или fixed amount")
+        form_level_errors.append("Укажите скидку в процентах ИЛИ фиксированную сумму в рублях")
     if parsed_percent is not None and parsed_amount is not None:
-        raise ValueError("Используйте либо discount percent, либо fixed amount")
+        form_level_errors.append("Используйте либо процент, либо фиксированную сумму, но не оба одновременно")
     if parsed_percent is not None and not (1 <= parsed_percent <= 100):
-        raise ValueError("Discount percent должен быть в диапазоне 1..100")
+        errors["discount_percent"] = "Discount percent должен быть в диапазоне 1..100"
     if parsed_amount is not None and parsed_amount < 0:
-        raise ValueError("Discount amount не может быть отрицательным")
+        errors["discount_amount_rub"] = "Discount amount не может быть отрицательным"
     if parsed_max is not None and parsed_max <= 0:
-        raise ValueError("Лимит использований должен быть больше нуля")
+        errors["max_redemptions"] = "Лимит использований должен быть больше нуля"
+    if errors or form_level_errors:
+        summary = " · ".join(form_level_errors) if form_level_errors else "Форма содержит ошибки"
+        raise FormValidationError(errors, summary=summary)
 
     return PromoCodeFormData(
         code=normalized_code,
@@ -1293,7 +1685,7 @@ def _form_values_from_product(product) -> dict[str, object]:
         "strategy_id": product.strategy_id or "",
         "author_id": product.author_id or "",
         "bundle_id": product.bundle_id or "",
-        "billing_period": product.billing_period.value,
+        "duration_days": product.duration_days,
         "price_rub": product.price_rub,
         "trial_days": product.trial_days,
         "is_active": product.is_active,
@@ -1330,3 +1722,704 @@ def _form_values_from_legal_document(document) -> dict[str, object]:
         "title": document.title,
         "content_md": read_legal_document_markdown(document),
     }
+
+
+@router.get("/authors", response_class=HTMLResponse)
+async def admin_authors_list(
+    request: Request,
+    status_filter: str = "all",
+    q: str = "",
+    sort_by: str = "display_name",
+    direction: str = "asc",
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    return await _render_admin_authors_registry(
+        request=request,
+        user=user,
+        session=session,
+        status_filter=status_filter,
+        q=q,
+        sort_by=sort_by,
+        direction=direction,
+    )
+
+
+@router.post("/authors", response_class=HTMLResponse)
+async def admin_author_create(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    telegram_user_id: str = Form(""),
+) -> Response:
+    try:
+        tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
+        await create_admin_author(
+            session,
+            display_name=display_name.strip(),
+            email=email.strip() or None,
+            telegram_user_id=tg_id,
+        )
+    except ValueError as exc:
+        return await _render_admin_authors_registry(
+            request=request,
+            user=user,
+            session=session,
+            error=str(exc),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/authors/{author_id}/edit", response_class=HTMLResponse)
+async def admin_author_edit(
+    author_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    telegram_user_id: str = Form(""),
+    role_slugs: list[str] | None = Form(default=None),
+    requires_moderation: str | None = Form(default=None),
+    status_value: str = Form("active"),
+) -> Response:
+    try:
+        tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
+        await update_admin_author(
+            session,
+            actor_user_id=user.id,
+            author_id=author_id,
+            data=AdminAuthorUpdateData(
+                display_name=display_name.strip(),
+                email=email.strip() or None,
+                telegram_user_id=tg_id,
+                role_slugs=tuple(RoleSlug(value) for value in (role_slugs or [RoleSlug.AUTHOR.value])),
+                requires_moderation=requires_moderation is not None,
+                is_active=status_value == "active",
+            ),
+        )
+    except ValueError as exc:
+        return await _render_admin_authors_registry(
+            request=request,
+            user=user,
+            session=session,
+            error=str(exc),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/staff", response_class=HTMLResponse)
+async def admin_staff_list(
+    request: Request,
+    role_filter: str = "all",
+    q: str = "",
+    sort_by: str = "display_name",
+    direction: str = "asc",
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    staff = await list_admin_staff(session, role_filter=role_filter)
+    staff = _filter_admin_staff_rows(staff, q=q)
+    staff = _sort_admin_staff_rows(staff, sort_by=sort_by, direction=direction)
+    staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+    return templates.TemplateResponse(
+        request,
+        "admin/staff_list.html",
+        {
+            "title": "Команда",
+            "user": user,
+            "staff": staff_rows,
+            "staff_json": serialize_staff(staff_rows, user.id),
+            "current_user_id": user.id,
+            "role_filter": role_filter,
+            "q": q,
+            "sort_by": sort_by,
+            "direction": direction,
+        },
+    )
+
+
+@router.post("/staff/admins", response_class=HTMLResponse)
+async def admin_staff_create_admin(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    telegram_user_id: str = Form(""),
+) -> Response:
+    try:
+        tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
+        await create_admin_staff_user(
+            session,
+            StaffCreateData(
+                display_name=display_name.strip(),
+                email=email.strip() or None,
+                telegram_user_id=tg_id,
+                role_slugs=(RoleSlug.ADMIN,),
+            ),
+        )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/edit", response_class=HTMLResponse)
+async def admin_staff_edit(
+    target_user_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    telegram_user_id: str = Form(""),
+    role_slugs: list[str] | None = Form(default=None),
+) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
+    try:
+        tg_id = int(telegram_user_id.strip()) if telegram_user_id.strip() else None
+        await update_admin_staff_user(
+            session,
+            actor_user_id=user.id,
+            user_id=target_user_id,
+            data=StaffUpdateData(
+                display_name=display_name.strip(),
+                email=email.strip() or None,
+                telegram_user_id=tg_id,
+                role_slugs=tuple(RoleSlug(value) for value in (role_slugs or [])),
+            ),
+        )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/roles", response_class=HTMLResponse)
+async def admin_staff_grant_role(
+    target_user_id: str,
+    request: Request,
+    role_slug: str = Form(...),
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
+    try:
+        await grant_staff_role(
+            session,
+            actor_user_id=user.id,
+            target_user_id=target_user_id,
+            role_slug=RoleSlug(role_slug),
+        )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/roles/{role_slug}/remove", response_class=HTMLResponse)
+async def admin_staff_revoke_role(
+    target_user_id: str,
+    role_slug: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
+    try:
+        await revoke_staff_role(
+            session,
+            actor_user_id=user.id,
+            target_user_id=target_user_id,
+            role_slug=RoleSlug(role_slug),
+        )
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/activate", response_class=HTMLResponse)
+async def admin_staff_activate(
+    target_user_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
+    try:
+        await set_admin_staff_user_status(session, actor_user_id=user.id, user_id=target_user_id, is_active=True)
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/deactivate", response_class=HTMLResponse)
+async def admin_staff_deactivate(
+    target_user_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
+    try:
+        await set_admin_staff_user_status(session, actor_user_id=user.id, user_id=target_user_id, is_active=False)
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/staff/{target_user_id}/invite/resend", response_class=HTMLResponse)
+async def admin_staff_resend_invite(
+    target_user_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    target_user_id = _validate_uuid(target_user_id)  # Z6: Validate UUID
+    try:
+        await resend_staff_invite(session, user_id=target_user_id)
+    except ValueError as exc:
+        staff = await list_admin_staff(session)
+        staff_rows = [_staff_row(item, current_user_id=user.id) for item in staff]
+        return templates.TemplateResponse(
+            request,
+            "admin/staff_list.html",
+            {
+                "title": "Команда",
+                "user": user,
+                "staff": staff_rows,
+                "error": str(exc),
+                "role_filter": "all",
+                "q": "",
+                "sort_by": "display_name",
+                "direction": "asc",
+            },
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return RedirectResponse(url="/admin/staff", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/authors/{author_id}/permissions", response_class=HTMLResponse)
+async def admin_author_permissions_update(
+    author_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    requires_moderation: str | None = Form(default=None),
+) -> Response:
+    try:
+        await update_admin_author_permissions(
+            session,
+            author_id,
+            requires_moderation=requires_moderation is not None,
+        )
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Автор не найден")
+    return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/authors/reseed-watchlist", response_class=HTMLResponse)
+async def admin_authors_reseed_watchlist(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    updated = await reseed_author_watchlists(session)
+    return RedirectResponse(url=f"/admin/authors?reseed={updated}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/authors/{author_id}/toggle", response_class=HTMLResponse)
+async def admin_author_toggle(
+    author_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    try:
+        await toggle_admin_author(session, author_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Автор не найден")
+    return RedirectResponse(url="/admin/authors", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/onepager/{strategy_id}", response_class=HTMLResponse)
+async def admin_onepager_edit(
+    strategy_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    strategy_id = _validate_uuid(strategy_id)  # Z6: Validate UUID
+    strategy = await get_admin_strategy_for_onepager(session, strategy_id)
+    if strategy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стратегия не найдена")
+    return templates.TemplateResponse(
+        request,
+        "admin/onepager.html",
+        {"title": "One Pager", "user": user, "strategy": strategy},
+    )
+
+
+@router.post("/onepager/{strategy_id}", response_class=HTMLResponse)
+async def admin_onepager_save(
+    strategy_id: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+    html_content: str = Form(""),
+) -> Response:
+    strategy_id = _validate_uuid(strategy_id)  # Z6: Validate UUID
+    try:
+        await save_strategy_onepager(session, strategy_id, html_content)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стратегия не найдена")
+    return RedirectResponse(url=f"/admin/onepager/{strategy_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/metrics", response_class=HTMLResponse)
+async def admin_metrics(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: AsyncSession | None = Depends(get_optional_db_session),
+) -> Response:
+    metrics = await get_admin_metrics(session)
+    return templates.TemplateResponse(
+        request,
+        "admin/metrics.html",
+        {"title": "Метрики", "user": user, "metrics": metrics, "metrics_json": serialize_metrics_strategies(metrics)},
+    )
+
+
+def _author_row(author) -> dict[str, object]:
+    user = getattr(author, "user", None)
+    role_slugs = _safe_role_slugs(user)
+    display_name = (
+        getattr(author, "display_name", None)
+        or getattr(author, "slug", None)
+        or getattr(user, "full_name", None)
+        or getattr(user, "email", None)
+        or getattr(user, "username", None)
+        or getattr(author, "id", None)
+        or "Автор без имени"
+    )
+    email = getattr(user, "email", None) if user is not None else None
+    telegram_user_id = getattr(user, "telegram_user_id", None) if user is not None else None
+    invite_delivery_status = getattr(user, "invite_delivery_status", None) if user is not None else None
+    invite_delivery_error = getattr(user, "invite_delivery_error", None) if user is not None else None
+    invite_delivery_updated_at = getattr(user, "invite_delivery_updated_at", None) if user is not None else None
+    user_id = getattr(user, "id", None) if user is not None else None
+    invite_link = None
+    if user is not None and user_id and telegram_user_id is None:
+        invite_link = build_staff_invite_link(user)
+    known_roles = {"admin", "author", "moderator"}
+    return {
+        "id": getattr(author, "id", ""),
+        "display_name": display_name,
+        "slug": getattr(author, "slug", "") or "",
+        "email": email or "",
+        "telegram_user_id": telegram_user_id,
+        "user_id": user_id,
+        "has_linked_user": user is not None and bool(user_id),
+        "user_warning": None if user is not None else "Связанный staff-аккаунт не найден. нет staff bind.",
+        "is_active": bool(getattr(author, "is_active", False)),
+        "invite_link": invite_link,
+        "invite_delivery_status": invite_delivery_status,
+        "invite_delivery_error": invite_delivery_error,
+        "invite_delivery_updated_at": invite_delivery_updated_at,
+        "requires_moderation": bool(getattr(author, "requires_moderation", False)),
+        "status": "active" if getattr(author, "is_active", False) else "inactive",
+        "roles": role_slugs,
+        "extra_roles": [item for item in role_slugs if item not in known_roles],
+        "has_admin_role": "admin" in role_slugs,
+        "has_author_role": "author" in role_slugs,
+        "has_moderator_role": "moderator" in role_slugs,
+    }
+
+
+def _staff_row(user: User, *, current_user_id: str) -> dict[str, object]:
+    role_order = {"admin": 0, "author": 1, "moderator": 2}
+    role_slugs = sorted((item.slug.value for item in user.roles), key=lambda item: (role_order.get(item, 99), item))
+    invite_link = None
+    if user.telegram_user_id is None:
+        invite_link = build_staff_invite_link(user)
+    status_value = user.status.value if getattr(user, "status", None) is not None else "active"
+    return {
+        "id": user.id,
+        "display_name": user.author_profile.display_name if user.author_profile is not None else (user.full_name or user.email or user.username),
+        "email": user.email,
+        "telegram_user_id": user.telegram_user_id,
+        "status": status_value,
+        "invite_delivery_status": user.invite_delivery_status.value if getattr(user, "invite_delivery_status", None) is not None else None,
+        "invite_delivery_error": getattr(user, "invite_delivery_error", None),
+        "invite_delivery_updated_at": getattr(user, "invite_delivery_updated_at", None),
+        "invite_link": invite_link,
+        "roles": role_slugs,
+        "has_admin_role": "admin" in role_slugs,
+        "has_author_role": "author" in role_slugs,
+        "has_moderator_role": "moderator" in role_slugs,
+        "is_multi_role": len(role_slugs) > 1,
+        "can_grant_admin": "admin" not in role_slugs,
+        "can_grant_author": "author" not in role_slugs,
+        "can_revoke_admin": "admin" in role_slugs,
+        "is_current_user": user.id == current_user_id,
+    }
+
+
+def _filter_admin_author_rows(authors, *, q: str):
+    normalized = q.strip().lower()
+    if not normalized:
+        return authors
+    return [
+        item for item in authors
+        if normalized in " ".join(
+            part.lower()
+            for part in [
+                getattr(item, "display_name", None) or "",
+                getattr(item, "slug", None) or "",
+                getattr(getattr(item, "user", None), "email", None) or "",
+                " ".join(_safe_role_slugs(getattr(item, "user", None))),
+            ]
+            if part
+        )
+    ]
+
+
+def _sort_admin_author_rows(authors, *, sort_by: str, direction: str):
+    reverse = direction == "desc"
+    if sort_by == "status":
+        key = lambda item: "active" if getattr(item, "is_active", False) else "inactive"
+    elif sort_by == "moderation":
+        key = lambda item: "review" if getattr(item, "requires_moderation", False) else "direct"
+    else:
+        key = lambda item: ((getattr(item, "display_name", None) or getattr(item, "slug", None) or getattr(item, "id", None) or "")).lower()
+    return sorted(authors, key=key, reverse=reverse)
+
+
+async def _render_admin_authors_registry(
+    *,
+    request: Request,
+    user: User,
+    session: AsyncSession | None,
+    status_filter: str = "all",
+    q: str = "",
+    sort_by: str = "display_name",
+    direction: str = "asc",
+    error: str | None = None,
+    status_code: int = status.HTTP_200_OK,
+) -> Response:
+    template_error = error
+    try:
+        authors = await list_admin_authors(session, status_filter=status_filter)
+        authors = _filter_admin_author_rows(authors, q=q)
+        authors = _sort_admin_author_rows(authors, sort_by=sort_by, direction=direction)
+        author_rows: list[dict[str, object]] = []
+        skipped_rows = 0
+        for author in authors:
+            try:
+                author_rows.append(_author_row(author))
+            except Exception:
+                skipped_rows += 1
+                logger.exception("admin author row build failed for %s", getattr(author, "id", None))
+        if skipped_rows:
+            warning = f"Часть строк реестра авторов пропущена: {skipped_rows}. Проверьте связанные staff/user данные."
+            template_error = f"{template_error} {warning}".strip() if template_error else warning
+    except Exception:
+        logger.exception("admin authors registry failed")
+        author_rows = []
+        fallback = "Не удалось загрузить реестр авторов. Проверьте связанные staff/user данные и повторите попытку."
+        template_error = f"{template_error} {fallback}".strip() if template_error else fallback
+
+    return templates.TemplateResponse(
+        request,
+        "admin/authors_list.html",
+        {
+            "title": "Авторы",
+            "user": user,
+            "authors": author_rows,
+            "authors_json": serialize_authors(author_rows),
+            "current_user_id": user.id,
+            "error": template_error,
+            "status_filter": status_filter,
+            "q": q,
+            "sort_by": sort_by,
+            "direction": direction,
+        },
+        status_code=status_code,
+    )
+
+
+def _safe_role_slugs(user: User | None) -> list[str]:
+    role_order = {"admin": 0, "author": 1, "moderator": 2}
+    if user is None:
+        return []
+    normalized: list[str] = []
+    for item in getattr(user, "roles", None) or []:
+        slug = getattr(item, "slug", None)
+        value = getattr(slug, "value", slug)
+        if value:
+            normalized.append(str(value))
+    return sorted(set(normalized), key=lambda item: (role_order.get(item, 99), item))
+
+
+def _filter_admin_staff_rows(users, *, q: str):
+    normalized = q.strip().lower()
+    if not normalized:
+        return users
+    return [
+        item for item in users
+        if normalized in " ".join(
+            part.lower()
+            for part in [
+                item.full_name or "",
+                item.email or "",
+                item.username or "",
+                item.author_profile.display_name if item.author_profile is not None else "",
+                " ".join(role.slug.value for role in item.roles),
+            ]
+            if part
+        )
+    ]
+
+
+def _sort_admin_staff_rows(users, *, sort_by: str, direction: str):
+    reverse = direction == "desc"
+    if sort_by == "status":
+        key = lambda item: item.status.value if item.status is not None else "active"
+    elif sort_by == "roles":
+        key = lambda item: ",".join(sorted(role.slug.value for role in item.roles))
+    else:
+        key = lambda item: (item.author_profile.display_name if item.author_profile is not None else (item.full_name or item.email or item.username or "")).lower()
+    return sorted(users, key=key, reverse=reverse)
+
+
+def _filter_admin_strategies(strategies, *, q: str):
+    normalized = q.strip().lower()
+    if not normalized:
+        return strategies
+    return [
+        item
+        for item in strategies
+        if normalized in " ".join(
+            part.lower()
+            for part in [
+                item.title,
+                item.slug,
+                item.short_description or "",
+                item.author.display_name if item.author is not None else "",
+                item.status.value,
+                item.risk_level.value,
+            ]
+            if part
+        )
+    ]
+
+
+def _sort_admin_strategies(strategies, *, sort_by: str, direction: str):
+    reverse = direction == "desc"
+    if sort_by == "status":
+        key = lambda item: item.status.value
+    elif sort_by == "risk":
+        key = lambda item: item.risk_level.value
+    elif sort_by == "author":
+        key = lambda item: item.author.display_name.lower() if item.author is not None else ""
+    else:
+        key = lambda item: item.title.lower()
+    return sorted(strategies, key=key, reverse=reverse)

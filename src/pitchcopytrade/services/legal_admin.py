@@ -106,6 +106,8 @@ async def update_admin_legal_document(
     storage: LocalFilesystemStorage | None = None,
     store: FileDataStore | None = None,
 ) -> LegalDocument:
+    if document.is_active:
+        raise ValueError("Активную версию документа нельзя редактировать. Создайте новую версию.")
     document.document_type = data.document_type
     document.version = data.version
     document.title = data.title

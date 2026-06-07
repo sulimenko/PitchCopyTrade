@@ -113,10 +113,12 @@ def test_record_user_consent_and_bind_to_payment() -> None:
     )
     bind_consents_to_payment(consents=[consent], payment=payment)
 
-    assert consent in user.consents
-    assert consent in document.consents
-    assert consent.payment is payment
-    assert consent in payment.consents
+    assert consent.user_id == user.id
+    assert consent.document_id == document.id
+    assert consent.payment_id == payment.id
+    assert user.consents == []
+    assert document.consents == []
+    assert payment.consents == []
 
 
 def test_ensure_required_consents_before_payment_fails_when_missing() -> None:
@@ -135,8 +137,9 @@ def test_ensure_required_consents_before_payment_accepts_matching_consents() -> 
     offer = _make_active_document(LegalDocumentType.OFFER, "v2")
     privacy = _make_active_document(LegalDocumentType.PRIVACY_POLICY, "v1")
 
-    record_user_consent(user=user, document=offer, source="checkout")
-    record_user_consent(user=user, document=privacy, source="checkout")
+    offer_consent = record_user_consent(user=user, document=offer, source="checkout")
+    privacy_consent = record_user_consent(user=user, document=privacy, source="checkout")
+    user.consents = [offer_consent, privacy_consent]
 
     ensure_required_consents_before_payment(user=user, required_documents=[offer, privacy])
 

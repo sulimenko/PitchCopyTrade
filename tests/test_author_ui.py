@@ -1,53 +1,37 @@
 from __future__ import annotations
 
-from datetime import datetime
-from types import SimpleNamespace
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
 from pitchcopytrade.api.deps.auth import require_author
+from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.api.main import create_app
-from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
+from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import Instrument, Strategy
-from pitchcopytrade.db.models.content import Recommendation
-from pitchcopytrade.db.models.content import RecommendationAttachment
-from pitchcopytrade.db.models.enums import (
-    InstrumentType,
-    RecommendationKind,
-    RecommendationStatus,
-    RiskLevel,
-    RoleSlug,
-    StrategyStatus,
-)
-from pitchcopytrade.db.session import get_db_session
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import InstrumentType, MessageStatus, RiskLevel, StrategyStatus
 
 
-class FakeAsyncSession:
-    async def execute(self, query):
-        raise AssertionError("This suite expects monkeypatched service calls")
+class FakeAuthorRepository:
+    async def list_active_instruments(self):
+        return []
 
 
 def _make_author_user() -> User:
-    user = User(
-        id="author-user-1",
-        username="author1",
-        email="author@example.com",
-        full_name="Author One",
-        timezone="Europe/Moscow",
-    )
-    user.roles = [Role(slug=RoleSlug.AUTHOR, title="Author")]
-    user.author_profile = AuthorProfile(
+    author = User(id="author-user-1", username="author1", full_name="Alpha Desk", timezone="Europe/Moscow")
+    author.author_profile = AuthorProfile(
         id="author-1",
-        user_id=user.id,
-        display_name="Author One",
-        slug="author-one",
+        user_id="author-user-1",
+        display_name="Alpha Desk",
+        slug="alpha-desk",
         is_active=True,
     )
-    return user
+    return author
 
 
 def _make_strategy() -> Strategy:
-    return Strategy(
+    strategy = Strategy(
         id="strategy-1",
         author_id="author-1",
         slug="momentum-ru",
@@ -59,28 +43,109 @@ def _make_strategy() -> Strategy:
         min_capital_rub=150000,
         is_public=True,
     )
+    strategy.author = _make_author_user().author_profile
+    return strategy
 
 
-def _make_recommendation() -> Recommendation:
-    recommendation = Recommendation(
-        id="rec-1",
-        strategy_id="strategy-1",
+def _make_message() -> Message:
+    strategy = _make_strategy()
+    message = Message(
+        id="msg-1",
         author_id="author-1",
-        kind=RecommendationKind.NEW_IDEA,
-        status=RecommendationStatus.DRAFT,
+        strategy_id=strategy.id,
+        kind="idea",
+        type="mixed",
+        status="published",
+        moderation="direct",
         title="Покупка SBER",
-        summary="Краткий комментарий",
+        comment="Сильный спрос",
+        deliver=["strategy"],
+        channel=["telegram", "miniapp"],
+        text={"body": "<p>Сильный спрос</p>", "plain": "Сильный спрос"},
+        documents=[],
+        deals=[],
+        created=datetime(2026, 3, 12, tzinfo=timezone.utc),
+        updated=datetime(2026, 3, 12, tzinfo=timezone.utc),
     )
-    recommendation.strategy = _make_strategy()
-    recommendation.legs = []
-    recommendation.attachments = []
-    recommendation.scheduled_for = None
-    recommendation.published_at = None
-    return recommendation
+    message.strategy = strategy
+    return message
 
 
-def _make_instrument() -> Instrument:
-    return Instrument(
+def _build_client(user: User) -> TestClient:
+    app = create_app()
+
+    async def override_author():
+      return user
+
+    async def override_repository():
+      yield FakeAuthorRepository()
+
+    app.dependency_overrides[require_author] = override_author
+    app.dependency_overrides[get_author_repository] = override_repository
+    return TestClient(app)
+
+
+def test_author_dashboard_renders_message_cards(monkeypatch) -> None:
+    user = _make_author_user()
+    message = _make_message()
+    strategy = message.strategy
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    call_args: list[tuple[int, bool]] = []
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_workspace_stats", lambda _repository, _author: _async_return(type("Stats", (), {
+        "strategies_total": 1,
+        "messages_total": 1,
+        "draft_messages": 0,
+        "live_messages": 1,
+    })()))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([message]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_watchlist", lambda _repository, _author: _async_return([instrument]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.list_active_instruments",
+        lambda _repository: _async_return([instrument]),
+    )
+
+    async def fake_build_instrument_payloads(items, allow_live_fetch=True):
+        call_args.append((len(items), allow_live_fetch))
+        return [
+            {"id": item.id, "ticker": item.ticker, "name": item.name, "board": item.board, "currency": item.currency}
+            for item in items
+        ]
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.build_instrument_payloads", fake_build_instrument_payloads)
+
+    with _build_client(user) as client:
+        response = client.get("/author/dashboard")
+
+        assert response.status_code == 200
+        assert "Последние сообщения" in response.text
+        assert "Покупка SBER" in response.text
+        assert "Сообщения" in response.text
+        assert 'id="composer-dock"' in response.text
+        assert 'data-composer-dock-toggle' in response.text
+        assert "author-editor-composer" in response.text
+        assert "dashboard-message-modal" not in response.text
+        assert "message_modal_url" not in response.text
+        assert call_args == [(1, False)]
+        assert 'fetch("/api/instruments"' in response.text
+        assert "window.PCTAuthorInstrumentState" in response.text
+
+
+def test_author_dashboard_avoids_live_quote_provider(monkeypatch) -> None:
+    user = _make_author_user()
+    message = _make_message()
+    strategy = message.strategy
+    instrument = Instrument(
         id="instrument-1",
         ticker="SBER",
         name="Sberbank",
@@ -91,309 +156,384 @@ def _make_instrument() -> Instrument:
         is_active=True,
     )
 
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_workspace_stats", lambda _repository, _author: _async_return(type("Stats", (), {
+        "strategies_total": 1,
+        "messages_total": 1,
+        "draft_messages": 0,
+        "live_messages": 1,
+    })()))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([message]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_watchlist", lambda _repository, _author: _async_return([instrument]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([instrument]))
 
-def _build_client(author_user: User) -> TestClient:
-    app = create_app()
+    def fail_on_live_fetch(**_kwargs):
+        raise AssertionError("live quote provider should not be called on author dashboard")
 
-    async def override_db_session():
-        yield FakeAsyncSession()
+    monkeypatch.setattr("pitchcopytrade.services.instruments.httpx.AsyncClient", fail_on_live_fetch)
 
-    async def override_author():
-        return author_user
-
-    app.dependency_overrides[get_db_session] = override_db_session
-    app.dependency_overrides[require_author] = override_author
-    return TestClient(app)
-
-
-def test_author_dashboard_renders(monkeypatch) -> None:
-    author_user = _make_author_user()
-    strategy = _make_strategy()
-    recommendation = _make_recommendation()
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.author.get_author_workspace_stats",
-        lambda _session, _author: _async_return(
-            SimpleNamespace(
-                strategies_total=1,
-                recommendations_total=3,
-                draft_recommendations=2,
-                live_recommendations=1,
-            )
-        ),
-    )
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.author.list_author_recommendations",
-        lambda _session, _author: _async_return([recommendation]),
-    )
-
-    with _build_client(author_user) as client:
+    with _build_client(user) as client:
         response = client.get("/author/dashboard")
 
         assert response.status_code == 200
-        assert "Author One" in response.text
-        assert "Momentum RU" in response.text
-        assert "Покупка SBER" in response.text
+        assert "Последние сообщения" in response.text
+        assert "author-editor-composer" in response.text
+        assert 'fetch("/api/instruments"' in response.text
+        assert "window.PCTAuthorInstrumentState" in response.text
 
 
-def test_author_recommendation_list_renders(monkeypatch) -> None:
-    author_user = _make_author_user()
-    recommendation = _make_recommendation()
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.author.list_author_recommendations",
-        lambda _session, _author: _async_return([recommendation]),
+def test_author_editor_is_message_centric(monkeypatch) -> None:
+    user = _make_author_user()
+    strategy = _make_strategy()
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
     )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([instrument]))
 
-    with _build_client(author_user) as client:
-        response = client.get("/author/recommendations")
+    with _build_client(user) as client:
+        response = client.get("/author/messages/new")
 
         assert response.status_code == 200
-        assert "Рекомендации автора" in response.text
-        assert "Покупка SBER" in response.text
+        assert "Новое сообщение" in response.text
+        assert "История сообщений" in response.text
+        assert "Сделка" in response.text
+        assert 'id="composer-dock"' in response.text
+        assert 'data-composer-default-open="1"' in response.text
+        assert 'id="block-text"' in response.text
+        assert 'id="block-documents"' in response.text
+        assert 'id="block-deal"' in response.text
+        assert 'id="block-history"' in response.text
+        assert "author-preview-telegram" in response.text
+        assert "message_render_contract" not in response.text
+        assert "История сообщений и composer вынесены в dock" in response.text
+        assert "Новое сообщение" in response.text
+        assert 'data-message-title-hidden' in response.text
+        assert 'name="summary"' not in response.text
+        assert 'name="thesis"' not in response.text
+        assert 'name="market_context"' not in response.text
+        assert "remove_attachment_ids\" value=\"\"" not in response.text
+        assert "Заметка для модерации" not in response.text
+        assert "Предпросмотр и отправка" not in response.text
+        assert "publishing" not in response.text
+        assert 'type="submit" name="publish_block"' not in response.text
+        assert "author-picker-modal" not in response.text
+        assert "instrument-autocomplete" in response.text
+        assert "structuredPrice && !String(structuredPrice.value || \"\").trim() && item.last_price != null" in response.text
+        assert "Отправить сообщение" in response.text
+        assert "Buy / Sell" not in response.text
+        assert 'type="radio"' in response.text
+        assert 'name="structured_side"' in response.text
+        assert 'value="buy"' in response.text
+        assert 'value="sell"' in response.text
+        assert 'id="side-buy"' in response.text
+        assert 'id="side-sell"' in response.text
+        assert 'for="side-buy" class="side-toggle-label is-buy"' in response.text
+        assert 'for="side-sell" class="side-toggle-label is-sell"' in response.text
+        assert "side-toggle-option" not in response.text
+        assert response.text.count('class="deal-row"') >= 5
+        assert 'id="author-history-grid" class="pct-tabulator"' in response.text
+        assert "author-history-table" not in response.text
+        assert "new Tabulator(" in response.text
+        assert 'maxHeight: "400px"' in response.text
+        assert 'height: historyData.length > 0 ? "300px" : undefined' not in response.text
+        assert "name=\"structured_tp\"" in response.text
+        assert "name=\"structured_sl\"" in response.text
+        assert 'title: "Превью"' in response.text
+        assert "min-width: 140px" not in response.text
+        assert "align-self: flex-start" not in response.text
+        assert 'width: 100%;' in response.text
+        assert "rows=\"14\"" in response.text
+        assert "rows=\"2\"" in response.text
+        assert "composer-dock-frame" not in response.text
+        assert 'data-preview-modal' in response.text
+        assert 'data-preview-body' in response.text
+        assert 'data-confirm-submit' in response.text
+        assert "showModal()" in response.text
+        assert "author-preview-telegram" in response.text
+        assert 'placeholder="Ticker или symbol"' in response.text
+        assert 'Ticker или название' not in response.text
+        assert 'const complete = Boolean((instrumentId || instrumentLabel) && price != null && quantity != null && side);' in response.text
+        assert 'instrumentInput.classList.toggle("is-invalid", invalid && !state.instrumentLabel && !state.instrumentId)' in response.text
+        assert "PREVIEW_DIVIDER" in response.text
+        assert "PREVIEW_KIND_ICONS" in response.text
+        assert 'fetch("/api/instruments"' in response.text
+        assert "window.PCTAuthorInstrumentState" in response.text
 
 
-def test_author_recommendation_create_page_renders(monkeypatch) -> None:
-    author_user = _make_author_user()
-    strategy = _make_strategy()
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([_make_instrument()]))
-
-    with _build_client(author_user) as client:
-        response = client.get("/author/recommendations/new")
-
-        assert response.status_code == 200
-        assert "Новая рекомендация" in response.text
-        assert "Momentum RU" in response.text
-        assert "+ Добавить бумагу" in response.text
-        assert "Обязательная бумага для публикации" in response.text
-
-
-def test_author_recommendation_create_redirects_to_edit(monkeypatch) -> None:
-    author_user = _make_author_user()
-    strategy = _make_strategy()
-    recommendation = _make_recommendation()
-    instrument = _make_instrument()
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.author.create_author_recommendation",
-        lambda _session, _author, _data, uploaded_by_user_id=None: _async_return(recommendation),
+def test_author_message_create_returns_422_on_missing_strategy(monkeypatch) -> None:
+    user = _make_author_user()
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="GAZP",
+        name="Gazprom",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
     )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([instrument]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([{"id": item.id, "ticker": item.ticker, "name": item.name} for item in items]),
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([]))
 
-    with _build_client(author_user) as client:
+    with _build_client(user) as client:
         response = client.post(
-            "/author/recommendations",
+            "/author/messages",
             data={
-                "strategy_id": "strategy-1",
-                "kind": "new_idea",
-                "status": "draft",
-                "title": "Покупка SBER",
-                "summary": "Кратко",
-                "thesis": "Тезис",
-                "market_context": "Контекст",
-                "leg_7_instrument_id": "instrument-1",
-                "leg_7_side": "buy",
-                "leg_7_entry_from": "101.5",
-                "leg_7_stop_loss": "99.9",
-                "leg_7_take_profit_1": "106.2",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 303
-        assert response.headers["location"] == "/author/recommendations/rec-1/edit"
-
-
-def test_author_recommendation_create_validation_error(monkeypatch) -> None:
-    author_user = _make_author_user()
-    strategy = _make_strategy()
-    instrument = _make_instrument()
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
-
-    with _build_client(author_user) as client:
-        response = client.post(
-            "/author/recommendations",
-            data={
-                "strategy_id": "unknown",
-                "kind": "new_idea",
-                "status": "draft",
-                "title": "Покупка SBER",
-                "summary": "Кратко",
-                "thesis": "Тезис",
-                "market_context": "Контекст",
+                "strategy_id": "",
+                "message_type": "deal",
+                "structured_instrument_id": instrument.id,
+                "structured_instrument_query": instrument.ticker,
+                "structured_instrument_ticker": instrument.ticker,
+                "structured_instrument_name": instrument.name,
+                "structured_side": "buy",
+                "structured_price": "120",
+                "structured_quantity": "100",
+                "structured_tp": "130",
+                "structured_sl": "110",
+                "structured_note": "Проверка",
+                "embedded": "1",
             },
         )
 
         assert response.status_code == 422
         assert "Выберите стратегию автора" in response.text
+        assert 'value="GAZP"' in response.text
+        assert 'value="Gazprom"' in response.text
+        assert 'value="120"' in response.text
+        assert 'value="100"' in response.text
+        assert 'value="130"' in response.text
+        assert 'value="110"' in response.text
+        assert 'Проверка' in response.text
 
 
-def test_author_recommendation_create_requires_at_least_one_leg(monkeypatch) -> None:
-    author_user = _make_author_user()
+def test_author_message_create_accepts_manual_structured_symbol_without_local_id(monkeypatch) -> None:
+    user = _make_author_user()
     strategy = _make_strategy()
-    instrument = _make_instrument()
+    imported_instrument = Instrument(
+        id="instrument-imported",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    captured: dict[str, object] = {}
 
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.get_or_import_instrument_by_symbol",
+        lambda _repository, symbol: _async_return(imported_instrument if symbol == "SBER" else None),
+    )
 
-    with _build_client(author_user) as client:
+    async def fake_create_author_recommendation(repository, author, data, uploaded_by_user_id=None):
+        captured["repository"] = repository
+        captured["author"] = author
+        captured["data"] = data
+        captured["uploaded_by_user_id"] = uploaded_by_user_id
+        return Message(
+            id="msg-new",
+            author_id=author.id,
+            strategy_id=data.strategy_id,
+            kind=data.kind.value,
+            type=data.message_type.value,
+            status=data.status.value,
+            moderation=data.moderation.value,
+            title="SBER · BUY",
+            deliver=data.deliver,
+            channel=data.channel,
+            text={"body": "<p>Deal</p>", "plain": "Deal"},
+            documents=[],
+            deals=[],
+        )
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.create_author_recommendation", fake_create_author_recommendation)
+
+    with _build_client(user) as client:
         response = client.post(
-            "/author/recommendations",
+            "/author/messages",
             data={
-                "strategy_id": "strategy-1",
-                "kind": "new_idea",
+                "strategy_id": strategy.id,
+                "kind": "idea",
                 "status": "draft",
-                "title": "Покупка SBER",
-                "summary": "Кратко",
-                "thesis": "Тезис",
-                "market_context": "Контекст",
-            },
-        )
-
-        assert response.status_code == 422
-        assert "Добавьте минимум одну бумагу" in response.text
-
-
-def test_author_recommendation_edit_page_renders(monkeypatch) -> None:
-    author_user = _make_author_user()
-    strategy = _make_strategy()
-    recommendation = _make_recommendation()
-    instrument = _make_instrument()
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", lambda _session, _author, _id: _async_return(recommendation))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
-
-    with _build_client(author_user) as client:
-        response = client.get("/author/recommendations/rec-1/edit")
-
-        assert response.status_code == 200
-        assert "Редактирование рекомендации" in response.text
-        assert "Покупка SBER" in response.text
-
-
-def test_author_recommendation_preview_renders_subscriber_view(monkeypatch) -> None:
-    author_user = _make_author_user()
-    recommendation = _make_recommendation()
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", lambda _session, _author, _id: _async_return(recommendation))
-
-    with _build_client(author_user) as client:
-        response = client.get("/author/recommendations/rec-1/preview")
-
-        assert response.status_code == 200
-        assert "предпросмотр автора" in response.text
-        assert "Покупка SBER" in response.text
-
-
-def test_author_recommendation_edit_submit_redirects(monkeypatch) -> None:
-    author_user = _make_author_user()
-    strategy = _make_strategy()
-    recommendation = _make_recommendation()
-    instrument = _make_instrument()
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", lambda _session, _author, _id: _async_return(recommendation))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
-    recommendation.attachments = [
-        RecommendationAttachment(
-            id="att-1",
-            recommendation_id="rec-1",
-            bucket_name="blob",
-            object_key="recommendations/rec-1/file.pdf",
-            original_filename="idea.pdf",
-            content_type="application/pdf",
-            size_bytes=123,
-        )
-    ]
-    called = {}
-
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.author.remove_recommendation_attachments",
-        lambda _session, _recommendation, attachment_ids: _async_return(called.setdefault("attachment_ids", attachment_ids)),
-    )
-    monkeypatch.setattr(
-        "pitchcopytrade.api.routes.author.update_author_recommendation",
-        lambda _session, _recommendation, _data, uploaded_by_user_id=None: _async_return(
-            called.setdefault("status", _data.status.value) or recommendation
-        ),
-    )
-
-    with _build_client(author_user) as client:
-        response = client.post(
-            "/author/recommendations/rec-1",
-            data={
-                "strategy_id": "strategy-1",
-                "kind": "update",
-                "status": "review",
-                "title": "Покупка SBER",
-                "summary": "Кратко",
-                "thesis": "Тезис",
-                "market_context": "Контекст",
-                "scheduled_for": datetime(2026, 3, 12, 12, 30).strftime("%Y-%m-%dT%H:%M"),
-                "workflow_action": "publish_now",
-                "remove_attachment_ids": "att-1",
-                "leg_0_instrument_id": "instrument-1",
-                "leg_0_side": "buy",
-                "leg_0_entry_from": "101.5",
-                "leg_0_stop_loss": "99.9",
-                "leg_0_take_profit_1": "106.2",
+                "title": "",
+                "message_type": "deal",
+                "structured_instrument_id": "",
+                "structured_instrument_query": "SBER",
+                "structured_side": "buy",
+                "structured_price": "120",
+                "structured_quantity": "100",
+                "structured_note": "Проверка exact lookup",
+                "embedded": "1",
             },
             follow_redirects=False,
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/author/recommendations/rec-1/edit"
-        assert called["status"] == "published"
-        assert called["attachment_ids"] == ["att-1"]
+        assert response.headers["location"] == "/author/messages/msg-new/edit"
+        assert captured["uploaded_by_user_id"] == user.id
+        data = captured["data"]
+        assert data.structured_instrument_id == imported_instrument.id
+        assert data.structured_instrument_ticker == imported_instrument.ticker
+        assert data.structured_side == "buy"
+        assert data.structured_price is not None
+        assert data.structured_quantity is not None
 
 
-def test_author_recommendation_create_requires_datetime_for_scheduled(monkeypatch) -> None:
-    author_user = _make_author_user()
+def test_author_message_list_omits_inline_form(monkeypatch) -> None:
+    user = _make_author_user()
+    message = _make_message()
+    strategy = message.strategy
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([message]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([]),
+    )
+
+    with _build_client(user) as client:
+        response = client.get("/author/messages")
+
+        assert response.status_code == 200
+        assert "Сообщения автора" in response.text
+        assert "inline-recommendation-form" not in response.text
+        assert "Новое сообщение" in response.text
+        assert 'id="composer-dock"' in response.text
+        assert "author-editor-composer" in response.text
+        assert "composer-dock-frame" not in response.text
+
+
+def test_author_draft_message_edit_flow(monkeypatch) -> None:
+    user = _make_author_user()
     strategy = _make_strategy()
-    instrument = _make_instrument()
+    draft_message = _make_message()
+    draft_message.status = MessageStatus.DRAFT.value
+    draft_message.title = "Черновик SBER"
+    draft_message.text = {"body": "<p>Старый текст</p>", "plain": "Старый текст"}
+    draft_message.strategy = strategy
 
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_by_user", _author_return(author_user.author_profile))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _session, _author: _async_return([strategy]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _session: _async_return([instrument]))
-    monkeypatch.setattr("pitchcopytrade.api.routes.author.normalize_attachment_uploads", lambda _files: _async_return([]))
+    async def fake_list_messages(_repository, _author):
+        return [draft_message]
 
-    with _build_client(author_user) as client:
-        response = client.post(
-            "/author/recommendations",
-            data={
-                "strategy_id": "strategy-1",
-                "kind": "new_idea",
-                "status": "scheduled",
-                "title": "Покупка SBER",
-            },
-        )
+    async def fake_get_message(_repository, _author, _message_id):
+        assert _message_id == draft_message.id
+        return draft_message
 
-        assert response.status_code == 422
-        assert "planned datetime" in response.text
+    async def fake_list_strategies(_repository, _author):
+        return [strategy]
+
+    async def fake_list_instruments(_repository):
+        return []
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", fake_list_messages)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", fake_get_message)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", fake_list_strategies)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", fake_list_instruments)
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([]),
+    )
+
+    with _build_client(user) as client:
+        response = client.get(f"/author/messages/{draft_message.id}/edit")
+
+        assert response.status_code == 200
+        assert "Редактирование сообщения" in response.text
+        assert 'action="/author/messages/' in response.text
+        assert draft_message.title in response.text
+        assert 'data-composer-default-open="1"' in response.text
+        assert 'name="message_text"' in response.text
+        assert "Доставка" in response.text
+        assert "Каналы" not in response.text
 
 
-def _author_return(author):
-    return lambda _session, _user: _async_return(author)
+def test_author_message_edit_dock_has_new_reset_link(monkeypatch) -> None:
+    user = _make_author_user()
+    strategy = _make_strategy()
+    draft_message = _make_message()
+    draft_message.status = MessageStatus.DRAFT.value
+    draft_message.strategy = strategy
+
+    async def fake_get_message(_repository, _author, _message_id):
+        assert _message_id == draft_message.id
+        return draft_message
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", fake_get_message)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([draft_message]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([]),
+    )
+
+    with _build_client(user) as client:
+        response = client.get(f"/author/messages/{draft_message.id}/edit")
+
+        assert response.status_code == 200
+        assert "+ Новое" in response.text
+        assert 'href="/author/messages"' in response.text
+        assert "composer-dock-mode is-edit" in response.text
+
+
+def test_author_document_message_edit_preserves_existing_documents(monkeypatch) -> None:
+    user = _make_author_user()
+    strategy = _make_strategy()
+    document_message = _make_message()
+    document_message.status = MessageStatus.DRAFT.value
+    document_message.type = "document"
+    document_message.text = {"body": "", "plain": "", "title": "Idea PDF"}
+    document_message.documents = [
+        {
+            "id": "doc-1",
+            "name": "idea.pdf",
+            "title": "idea.pdf",
+            "type": "application/pdf",
+            "size": 8,
+            "storage": "local",
+            "key": "messages/msg-1/idea.pdf",
+            "hash": "deadbeef",
+        }
+    ]
+    document_message.strategy = strategy
+
+    async def fake_get_message(_repository, _author, _message_id):
+        assert _message_id == document_message.id
+        return document_message
+
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.get_author_recommendation", fake_get_message)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", lambda _repository, _author: _async_return([document_message]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", lambda _repository, _author: _async_return([strategy]))
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", lambda _repository: _async_return([]))
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.build_instrument_payloads",
+        lambda items, allow_live_fetch=True: _async_return([]),
+    )
+
+    with _build_client(user) as client:
+        response = client.get(f"/author/messages/{document_message.id}/edit")
+
+        assert response.status_code == 200
+        assert 'value="document"' in response.text
+        assert "1 файлов" in response.text
+        assert "idea.pdf" in response.text
+        assert "document_caption" in response.text
 
 
 async def _async_return(value):

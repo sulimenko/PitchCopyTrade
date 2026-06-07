@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ title }}</title>
+    <style>
+      :root {
+        --staff-bg: #edf1f5;
+        --staff-surface: #ffffff;
+        --staff-surface-soft: #f7f9fb;
+        --staff-line: #d7dee7;
+        --staff-line-strong: #bcc7d4;
+        --staff-ink: #18212b;
+        --staff-muted: #667487;
+        --staff-accent: #224a7a;
+        --staff-danger: #b63b3b;
+        --staff-shadow: 0 14px 34px rgba(17, 27, 42, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--staff-ink);
+        background:
+          radial-gradient(circle at top right, rgba(34, 74, 122, 0.06), transparent 24%),
+          linear-gradient(180deg, #eef2f6 0%, #e8edf3 100%);
+      }
+      a { color: inherit; text-decoration: none; }
+      button, input, select, textarea { font: inherit; }
+      .embedded-shell { padding: 12px; }
+      .embedded-content { max-width: 1180px; margin: 0 auto; }
+      .surface {
+        border: 1px solid var(--staff-line);
+        background: var(--staff-surface);
+        border-radius: 14px;
+        box-shadow: var(--staff-shadow);
+      }
+      .action,
+      .ghost,
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+      .action,
+      .ghost {
+        min-height: 30px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--staff-line-strong);
+        background: var(--staff-surface);
+        color: var(--staff-ink);
+        cursor: pointer;
+      }
+      .ghost { background: transparent; }
+      .action:not(.ghost) {
+        background: var(--staff-accent);
+        border-color: var(--staff-accent);
+        color: #fff;
+      }
+      .pill {
+        min-height: 22px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #edf2f7;
+        color: #334155;
+        font-size: 0.74rem;
+        white-space: nowrap;
+      }
+      .muted { color: var(--staff-muted); }
+      .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.72rem;
+        color: var(--staff-muted);
+      }
+    </style>
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body class="embedded-shell">
+    {% block topbar_actions %}{% endblock %}
+    <main class="embedded-content">
+      {% block content %}{% endblock %}
+    </main>
+    {% block extra_scripts %}{% endblock %}
+  </body>
+</html>

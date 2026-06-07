@@ -1,0 +1,15 @@
+[
+  {
+    "id": "promo-welcome",
+    "code": "WELCOME10",
+    "description": "Welcome promo for local testing",
+    "discount_percent": 10,
+    "discount_amount_rub": null,
+    "max_redemptions": 100,
+    "current_redemptions": 4,
+    "expires_at": "2026-04-30T00:00:00+00:00",
+    "is_active": true,
+    "created_at": "2026-03-11T00:00:00+00:00",
+    "updated_at": "2026-03-11T00:00:00+00:00"
+  }
+]

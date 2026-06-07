@@ -6,7 +6,7 @@ from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.enums import BillingPeriod, PaymentProvider, PaymentStatus, SubscriptionStatus
+from pitchcopytrade.db.models.enums import PaymentProvider, PaymentStatus, SubscriptionStatus
 from pitchcopytrade.payments.tbank import TBankAcquiringClient
 from pitchcopytrade.repositories.contracts import AccessRepository, PublicRepository
 from pitchcopytrade.services.payment_sync import apply_tbank_state_to_payment, extract_provider_payment_id
@@ -24,7 +24,7 @@ class SubscriberStatusSnapshot:
     active_subscriptions: list[Subscription]
     payments: list[Payment]
     pending_payments: list[Payment]
-    visible_recommendation_titles: list[str]
+    visible_message_titles: list[str]
 
 
 @dataclass(slots=True, frozen=True)
@@ -116,7 +116,7 @@ async def get_subscriber_status_snapshot(
         active_subscriptions=active_subscriptions,
         payments=payments,
         pending_payments=pending_payments,
-        visible_recommendation_titles=visible_titles,
+        visible_message_titles=visible_titles,
     )
 
 
@@ -139,13 +139,6 @@ SUBSCRIPTION_STATUS_LABELS = {
     SubscriptionStatus.BLOCKED: "Заблокирована",
 }
 
-BILLING_PERIOD_LABELS = {
-    BillingPeriod.MONTH: "Месяц",
-    BillingPeriod.QUARTER: "Квартал",
-    BillingPeriod.YEAR: "Год",
-}
-
-
 def payment_status_label(status: PaymentStatus) -> str:
     return PAYMENT_STATUS_LABELS.get(status, status.value)
 
@@ -154,15 +147,9 @@ def subscription_status_label(status: SubscriptionStatus) -> str:
     return SUBSCRIPTION_STATUS_LABELS.get(status, status.value)
 
 
-def billing_period_label(period: BillingPeriod | None) -> str:
-    if period is None:
-        return "Период не указан"
-    return BILLING_PERIOD_LABELS.get(period, period.value)
-
-
 def payment_result_message(payment: Payment) -> str:
     if payment.status is PaymentStatus.PAID:
-        return "Оплата подтверждена. Доступ к рекомендациям уже активирован или будет активирован в ближайший момент."
+        return "Оплата подтверждена. Доступ к публикациям уже активирован или будет активирован в ближайший момент."
     if payment.status is PaymentStatus.PENDING:
         return "Платеж еще обрабатывается. Вы можете открыть оплату, обновить статус или дождаться автоматической синхронизации."
     if payment.status is PaymentStatus.FAILED:
@@ -194,13 +181,13 @@ def payment_history(payment: Payment) -> list[PaymentHistoryEntry]:
 
 
 def subscription_renewal_history(snapshot: SubscriberStatusSnapshot, subscription: Subscription) -> list[Subscription]:
-    product_id = subscription.product_id
+    product_id = subscription.product.id
     if product_id is None:
         return []
     return [
         item
         for item in snapshot.subscriptions
-        if item.product_id == product_id and item.id != subscription.id
+        if item.product.id == product_id and item.id != subscription.id
     ]
 
 
@@ -490,8 +477,10 @@ async def cancel_subscription(
 def _build_profile_from_user(user: User):
     from pitchcopytrade.services.public import TelegramSubscriberProfile
 
+    if user.telegram_user_id is None:
+        raise ValueError("Telegram ID не найден. Пожалуйста, откройте Mini App заново.")
     return TelegramSubscriberProfile(
-        telegram_user_id=user.telegram_user_id or 0,
+        telegram_user_id=user.telegram_user_id,
         username=user.username,
         first_name=None,
         last_name=None,

@@ -1,25 +1,30 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
+from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
+from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import SubscriptionProduct
-from pitchcopytrade.db.models.commerce import LegalDocument
-from pitchcopytrade.db.models.enums import (
-    BillingPeriod,
-    LegalDocumentType,
-    PaymentProvider,
-    PaymentStatus,
-    ProductType,
-    SubscriptionStatus,
-)
+from pitchcopytrade.db.models.commerce import LegalDocument, Subscription
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import LegalDocumentType, PaymentProvider, PaymentStatus, ProductType, RiskLevel, StrategyStatus, SubscriptionStatus
+from pitchcopytrade.db.models.enums import UserStatus
 from pitchcopytrade.services.public import (
+    AlreadySubscribedError,
     CheckoutRequest,
     TelegramSubscriberProfile,
     create_stub_checkout,
     create_telegram_stub_checkout,
+    upsert_telegram_subscriber,
 )
+from pitchcopytrade.db.models.catalog import Strategy
+from pitchcopytrade.repositories.file_graph import FileDatasetGraph
+from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.notifications import deliver_message_notifications_file
 
 
 class FakeSession:
@@ -27,6 +32,8 @@ class FakeSession:
         self.documents = documents
         self.user = None
         self.added = []
+        self.refreshed = []
+        self.active_subscription = None
 
     async def list_active_checkout_documents(self):
         return self.documents
@@ -41,16 +48,111 @@ class FakeSession:
             return self.user
         return None
 
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str):
+        if (
+            self.active_subscription is not None
+            and self.active_subscription.user_id == user_id
+            and self.active_subscription.product_id == product_id
+            and self.active_subscription.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
+        ):
+            return self.active_subscription
+        return None
+
+    async def list_active_product_ids_for_user(self, user_id: str):
+        if (
+            self.active_subscription is not None
+            and self.active_subscription.user_id == user_id
+            and self.active_subscription.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)
+        ):
+            return {self.active_subscription.product_id}
+        return set()
+
     def add(self, entity):
         self.added.append(entity)
         if entity.__class__.__name__ == "User":
             self.user = entity
+        if getattr(entity, "id", None) is None:
+            if entity.__class__.__name__ == "User":
+                entity.id = "user-1"
+            elif entity.__class__.__name__ == "Payment":
+                entity.id = "payment-1"
+            elif entity.__class__.__name__ == "Subscription":
+                entity.id = "subscription-1"
+            elif entity.__class__.__name__ == "UserConsent":
+                entity.id = f"consent-{len([item for item in self.added if item.__class__.__name__ == 'UserConsent'])}"
 
     async def commit(self):
         return None
 
+    async def flush(self):
+        for entity in self.added:
+            if getattr(entity, "id", None) is None:
+                if entity.__class__.__name__ == "User":
+                    entity.id = "user-1"
+                elif entity.__class__.__name__ == "Payment":
+                    entity.id = "payment-1"
+                elif entity.__class__.__name__ == "Subscription":
+                    entity.id = "subscription-1"
+                elif entity.__class__.__name__ == "UserConsent":
+                    entity.id = f"consent-{len([item for item in self.added if item.__class__.__name__ == 'UserConsent'])}"
+
     async def refresh(self, entity):
+        self.refreshed.append(entity)
         return None
+
+
+class FakeMergeRepository:
+    def __init__(self, existing_user: User | None = None) -> None:
+        self.existing_user = existing_user
+        self.added = []
+
+    async def get_user_by_telegram_id(self, telegram_user_id: int):
+        if self.existing_user is not None and self.existing_user.telegram_user_id == telegram_user_id:
+            return self.existing_user
+        return None
+
+    async def find_user_by_email(self, email: str):
+        if self.existing_user is not None and self.existing_user.email == email:
+            return self.existing_user
+        return None
+
+    def add(self, entity):
+        self.added.append(entity)
+
+
+class ConcurrentUpsertRepository:
+    def __init__(self, existing_user: User) -> None:
+        self.existing_user = existing_user
+        self.added = []
+        self.rollback_called = False
+        self.flush_called = False
+        self.lookup_calls = 0
+
+    async def get_user_by_telegram_id(self, telegram_user_id: int):
+        self.lookup_calls += 1
+        if self.lookup_calls == 1:
+            return None
+        if self.existing_user.telegram_user_id == telegram_user_id:
+            return self.existing_user
+        return None
+
+    async def find_user_by_email(self, email: str):
+        return None
+
+    def add(self, entity):
+        self.added.append(entity)
+
+    async def flush(self):
+        self.flush_called = True
+        if self.added:
+            raise IntegrityError(
+                "INSERT INTO users ...",
+                {"telegram_user_id": getattr(self.added[-1], "telegram_user_id", None)},
+                Exception('duplicate key value violates unique constraint "uq_users_telegram_user_id"'),
+            )
+
+    async def rollback(self):
+        self.rollback_called = True
 
 
 def _make_documents() -> list[LegalDocument]:
@@ -81,7 +183,7 @@ def _make_product() -> SubscriptionProduct:
         strategy_id="strategy-1",
         author_id=None,
         bundle_id=None,
-        billing_period=BillingPeriod.MONTH,
+        duration_days=30,
         price_rub=4900,
         trial_days=7,
         is_active=True,
@@ -93,7 +195,7 @@ def _make_product() -> SubscriptionProduct:
 
 
 @pytest.mark.asyncio
-async def test_create_stub_checkout_sets_minimal_user_and_pending_entities() -> None:
+async def test_create_stub_checkout_auto_confirms_stub_manual_entities() -> None:
     session = FakeSession(_make_documents())
     product = _make_product()
 
@@ -112,9 +214,71 @@ async def test_create_stub_checkout_sets_minimal_user_and_pending_entities() -> 
 
     assert result.user.email == "lead@example.com"
     assert result.user.password_hash is None
-    assert result.payment.status == PaymentStatus.PENDING
-    assert result.subscription.status == SubscriptionStatus.PENDING
+    assert result.payment is not None
+    assert result.payment.status == PaymentStatus.PAID
+    assert result.payment.confirmed_at is not None
+    assert result.subscription.status == SubscriptionStatus.ACTIVE
     assert result.subscription.is_trial is True
+    assert len(result.required_documents) == 1
+    assert result.required_documents[0].document_type is LegalDocumentType.DISCLAIMER
+    assert product in session.refreshed
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 1
+    assert result.payment.consents == []
+
+
+@pytest.mark.asyncio
+async def test_create_stub_checkout_links_telegram_user_id_when_provided() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+
+    result = await create_stub_checkout(
+        session,
+        product=product,
+        request=CheckoutRequest(
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            accepted_document_ids=[item.id for item in session.documents],
+            lead_source_name="ads",
+            telegram_user_id=12345,
+        ),
+        now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+
+    assert result.user.telegram_user_id == 12345
+    assert len(result.required_documents) == 1
+    assert result.required_documents[0].document_type is LegalDocumentType.DISCLAIMER
+    assert product in session.refreshed
+
+
+@pytest.mark.asyncio
+async def test_create_stub_checkout_preserves_existing_telegram_user_id() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+    session.user = User(
+        id="user-1",
+        email="lead@example.com",
+        telegram_user_id=777001,
+        full_name="Lead User",
+        timezone="Europe/Moscow",
+    )
+
+    result = await create_stub_checkout(
+        session,
+        product=product,
+        request=CheckoutRequest(
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            accepted_document_ids=[item.id for item in session.documents],
+            lead_source_name="ads",
+            telegram_user_id=12345,
+        ),
+        now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+
+    assert result.user.telegram_user_id == 777001
+    assert product in session.refreshed
 
 
 @pytest.mark.asyncio
@@ -140,8 +304,392 @@ async def test_create_telegram_stub_checkout_uses_telegram_identity_minimum() ->
     assert result.user.telegram_user_id == 12345
     assert result.user.username == "leaduser"
     assert result.user.email is None
-    assert result.payment.status == PaymentStatus.PENDING
-    assert result.subscription.status == SubscriptionStatus.PENDING
+    assert result.payment is not None
+    assert result.payment.status == PaymentStatus.PAID
+    assert result.subscription.status == SubscriptionStatus.ACTIVE
+    assert len(result.required_documents) == 1
+    assert result.required_documents[0].document_type is LegalDocumentType.DISCLAIMER
+    assert product in session.refreshed
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 1
+    assert result.payment.consents == []
+
+
+@pytest.mark.asyncio
+async def test_create_stub_checkout_rejects_missing_disclaimer() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+
+    with pytest.raises(ValueError, match="дисклеймер"):
+        await create_stub_checkout(
+            session,
+            product=product,
+            request=CheckoutRequest(
+                full_name="Lead User",
+                email="lead@example.com",
+                timezone_name="Europe/Moscow",
+                accepted_document_ids=[],
+                lead_source_name="ads",
+            ),
+            now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_telegram_stub_checkout_fails_loudly_if_user_loses_telegram_identity(monkeypatch) -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+
+    monkeypatch.setattr(
+        "pitchcopytrade.services.public.upsert_telegram_subscriber",
+        lambda _repository, _profile: _user_without_telegram(),
+    )
+
+    with pytest.raises(ValueError, match="Telegram ID не найден"):
+        await create_telegram_stub_checkout(
+            session,
+            product=product,
+            profile=TelegramSubscriberProfile(
+                telegram_user_id=12345,
+                username="leaduser",
+                first_name="Lead",
+                last_name="User",
+                timezone_name="Europe/Moscow",
+                lead_source_name="telegram_bot",
+            ),
+            accepted_document_ids=[document.id for document in _make_documents()],
+            now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_telegram_stub_checkout_rejects_duplicate_active_subscription() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+    session.user = User(
+        id="user-1",
+        telegram_user_id=12345,
+        username="leaduser",
+        full_name="Lead User",
+        timezone="Europe/Moscow",
+    )
+    session.active_subscription = Subscription(
+        id="subscription-existing",
+        user_id="user-1",
+        product_id=product.id,
+        payment_id=None,
+        status=SubscriptionStatus.ACTIVE,
+        autorenew_enabled=True,
+        is_trial=False,
+        manual_discount_rub=0,
+        start_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        end_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(AlreadySubscribedError, match="Вы уже подписаны"):
+        await create_telegram_stub_checkout(
+            session,
+            product=product,
+            profile=TelegramSubscriberProfile(
+                telegram_user_id=12345,
+                username="leaduser",
+                first_name="Lead",
+                last_name="User",
+                timezone_name="Europe/Moscow",
+                lead_source_name="telegram_bot",
+            ),
+            accepted_document_ids=[document.id for document in _make_documents()],
+            now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+        )
+
+    assert not any(item.__class__.__name__ == "Subscription" for item in session.added)
+    assert not any(item.__class__.__name__ == "Payment" for item in session.added)
+
+
+async def _user_without_telegram() -> User:
+    return User(
+        id="user-1",
+        email="lead@example.com",
+        telegram_user_id=None,
+        full_name="Lead User",
+        timezone="Europe/Moscow",
+    )
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_links_existing_user_by_email(caplog) -> None:
+    existing_user = User(
+        id="user-1",
+        email="lead@example.com",
+        telegram_user_id=None,
+        full_name="Lead User",
+        timezone="Europe/Moscow",
+    )
+    repository = FakeMergeRepository(existing_user)
+
+    with caplog.at_level("INFO"):
+        user = await upsert_telegram_subscriber(
+            repository,
+            TelegramSubscriberProfile(
+                telegram_user_id=12345,
+                username="leaduser",
+                first_name="Lead",
+                last_name="User",
+                full_name="Lead User",
+                email="lead@example.com",
+                timezone_name="Europe/Moscow",
+                lead_source_name="telegram_bot",
+            ),
+        )
+
+    assert user is existing_user
+    assert user.telegram_user_id == 12345
+    assert user.username == "leaduser"
+    assert "Linked telegram_user_id=12345 to existing user user-1 (email=lead@example.com)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_activates_invited_user_by_telegram_id() -> None:
+    existing_user = User(
+        id="user-1",
+        email=None,
+        telegram_user_id=12345,
+        status=UserStatus.INVITED,
+        username="existing",
+        full_name="Existing User",
+        timezone="Europe/Moscow",
+    )
+    repository = FakeMergeRepository(existing_user)
+
+    user = await upsert_telegram_subscriber(
+        repository,
+        TelegramSubscriberProfile(
+            telegram_user_id=12345,
+            username="leaduser",
+            first_name="Lead",
+            last_name="User",
+            full_name="Lead User",
+            email=None,
+            timezone_name="Europe/Moscow",
+            lead_source_name="telegram_bot",
+        ),
+    )
+
+    assert user is existing_user
+    assert user.status == UserStatus.ACTIVE
+    assert user.username == "leaduser"
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_activates_invited_user_by_email_link() -> None:
+    existing_user = User(
+        id="user-1",
+        email="lead@example.com",
+        telegram_user_id=None,
+        status=UserStatus.INVITED,
+        username="existing",
+        full_name="Existing User",
+        timezone="Europe/Moscow",
+    )
+    repository = FakeMergeRepository(existing_user)
+
+    user = await upsert_telegram_subscriber(
+        repository,
+        TelegramSubscriberProfile(
+            telegram_user_id=12345,
+            username="leaduser",
+            first_name="Lead",
+            last_name="User",
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            lead_source_name="telegram_bot",
+        ),
+    )
+
+    assert user is existing_user
+    assert user.status == UserStatus.ACTIVE
+    assert user.telegram_user_id == 12345
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_retries_on_concurrent_insert(caplog) -> None:
+    existing_user = User(
+        id="user-1",
+        email=None,
+        telegram_user_id=12345,
+        username=None,
+        full_name="Existing User",
+        timezone="Europe/Moscow",
+    )
+    repository = ConcurrentUpsertRepository(existing_user)
+
+    with caplog.at_level("WARNING"):
+        user = await upsert_telegram_subscriber(
+            repository,
+            TelegramSubscriberProfile(
+                telegram_user_id=12345,
+                username="leaduser",
+                first_name="Lead",
+                last_name="User",
+                full_name="Lead User",
+                email=None,
+                timezone_name="Europe/Moscow",
+                lead_source_name="telegram_bot",
+            ),
+        )
+
+    assert repository.flush_called is True
+    assert repository.rollback_called is True
+    assert user is existing_user
+    assert user.username == "leaduser"
+    assert user.full_name == "Lead User"
+    assert user.timezone == "Europe/Moscow"
+    assert "Race condition: telegram_user_id=12345 was inserted concurrently, retrying lookup" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_telegram_subscriber_returns_existing_user_without_email() -> None:
+    existing_user = User(
+        id="user-1",
+        email=None,
+        telegram_user_id=98765,
+        username="existing",
+        full_name="Existing User",
+        timezone="Europe/Moscow",
+    )
+    repository = FakeMergeRepository()
+    repository.existing_user = existing_user
+
+    user = await upsert_telegram_subscriber(
+        repository,
+        TelegramSubscriberProfile(
+            telegram_user_id=98765,
+            username="leaduser",
+            first_name="Lead",
+            last_name="User",
+            full_name="Lead User",
+            email=None,
+            timezone_name="Europe/Moscow",
+            lead_source_name="telegram_bot",
+        ),
+    )
+
+    assert user is existing_user
+    assert user.username == "leaduser"
+    assert user.full_name == "Lead User"
+
+
+def test_upsert_telegram_subscriber_has_no_unreachable_insert_tail() -> None:
+    source = inspect.getsource(upsert_telegram_subscriber)
+
+    assert 'if user is None:\n        user.username = profile.username' not in source
+
+
+@pytest.mark.asyncio
+async def test_telegram_checkout_recipient_selection_reaches_active_subscriber(tmp_path, monkeypatch) -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+    author_user = User(id="author-user-1", full_name="Alpha Desk", status=UserStatus.ACTIVE, timezone="Europe/Moscow")
+    author = AuthorProfile(id="author-1", user_id="author-user-1", display_name="Alpha Desk", slug="alpha-desk", is_active=True)
+    author.user = author_user
+    strategy = Strategy(
+        id="strategy-1",
+        author_id="author-1",
+        slug="momentum-ru",
+        title="Momentum RU",
+        short_description="desc",
+        full_description="full",
+        risk_level=RiskLevel.MEDIUM,
+        status=StrategyStatus.PUBLISHED,
+        min_capital_rub=150000,
+        is_public=True,
+    )
+    strategy.author = author
+    product.strategy = strategy
+    strategy.subscription_products = [product]
+
+    result = await create_telegram_stub_checkout(
+        session,
+        product=product,
+        profile=TelegramSubscriberProfile(
+            telegram_user_id=12345,
+            username="leaduser",
+            first_name="Lead",
+            last_name="User",
+            timezone_name="Europe/Moscow",
+            lead_source_name="telegram_bot",
+        ),
+        accepted_document_ids=[document.id for document in _make_documents()],
+        now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+
+    store = FileDataStore(root_dir=tmp_path / "runtime", seed_dir=tmp_path / "runtime")
+    graph = FileDatasetGraph.load(store)
+    result.subscription.user = result.user
+    result.subscription.product = product
+    result.user.subscriptions = [result.subscription]
+    product.subscriptions = [result.subscription]
+    message = Message(
+        id="message-1",
+        strategy_id=strategy.id,
+        author_id=author.id,
+        kind="idea",
+        status="published",
+        type="mixed",
+        title="Покупка SBER",
+        text={"body": "Сильный спрос", "plain": "Сильный спрос"},
+        documents=[],
+        deals=[],
+        deliver=["strategy"],
+        published=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+    message.strategy = strategy
+    message.author = author
+
+    for entity in (author_user, result.user, author, strategy, product, result.subscription, message):
+        graph.add(entity)
+
+    fake_bot = type(
+        "FakeBot",
+        (),
+        {
+            "send_message": AsyncMock(),
+            "session": type("FakeSession", (), {"close": AsyncMock()})(),
+        },
+    )()
+    fake_sender = AsyncMock()
+    monkeypatch.setattr("pitchcopytrade.services.notifications.send_smtp_email", fake_sender)
+
+    await deliver_message_notifications_file(graph, store, message, fake_bot, trigger="checkout_publish")
+
+    fake_bot.send_message.assert_awaited_once()
+    assert fake_bot.send_message.await_args.args[0] == 12345
+    fake_sender.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_stub_checkout_skips_payment_for_free_product() -> None:
+    session = FakeSession(_make_documents())
+    product = _make_product()
+    product.price_rub = 0
+
+    result = await create_stub_checkout(
+        session,
+        product=product,
+        request=CheckoutRequest(
+            full_name="Lead User",
+            email="lead@example.com",
+            timezone_name="Europe/Moscow",
+            accepted_document_ids=[item.id for item in session.documents],
+            lead_source_name="ads",
+        ),
+        now=datetime(2026, 3, 11, tzinfo=timezone.utc),
+    )
+
+    assert result.payment is None
+    assert result.subscription.status == SubscriptionStatus.ACTIVE
+    assert product in session.refreshed
+    assert sum(1 for item in session.added if item.__class__.__name__ == "UserConsent") == 1
 
 
 @pytest.mark.asyncio
@@ -201,6 +749,8 @@ async def test_create_stub_checkout_uses_tbank_provider_when_enabled(monkeypatch
         now=datetime(2026, 3, 11, tzinfo=timezone.utc),
     )
 
+    assert result.payment is not None
     assert result.payment.provider == PaymentProvider.TBANK
     assert result.payment_url == "https://pay.tbank.ru/qr/777"
     assert result.payment.provider_payload["provider_payment_id"] == "777"
+    assert product in session.refreshed

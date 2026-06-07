@@ -1,703 +1,437 @@
-# PitchCopyTrade Task Pack
-
-Дата: 2026-03-12  
-Режим: current implementation status + migration roadmap to local storage and file mode
-
-Current review checkpoint:
-- `2026-03-12`
-- full regression suite: `165 passed`
-- no critical findings
-- current focus shifts from baseline delivery to product hardening and subscriber UX depth
-
-Process rule:
-- after each completed implementation step, run review first;
-- only after review update all current description files:
-  - [README.md](/Users/alexey/site/PitchCopyTrade/README.md)
-  - [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
-  - [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
-  - [review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
-
-Статусы:
-- `[done]`
-- `[partial]`
-- `[refactor]`
-- `[todo]`
-
-## 1. Что уже сделано
-
-### 1. Foundation infrastructure `[done]`
-- project skeleton
-- `api`, `bot`, `worker`
-- Docker baseline
-- `.env.example`
-
-### 2. Config and runtime `[done]`
-- typed settings
-- runtime bootstrap
-- base logging
-- fail-fast env
-
-### 3. Database foundation `[done]`
-- domain models
-- enums
-- constraints
-- ORM relationships
-
-### 4. Alembic foundation `[done]`
-- Alembic env
-- initial migration
-- migration smoke path
-
-### 5. FastAPI baseline `[done]`
-- health
-- ready
-- meta
-- lifespan
-
-### 6. Bot baseline `[done]`
-- aiogram app
-- dispatcher
-- `/start`
-
-### 7. Worker baseline `[done]`
-- worker loop
-- job registry
-
-### 8. Storage baseline `[done]`
-- attachment storage wrapper exists
-- upload/download/delete/stat contract exists
-
-### 9. Auth foundation `[done]`
-- password hashing
-- session token
-- role mapping
-
-### 10. Compliance foundation `[done]`
-- legal docs model
-- consent-before-payment logic
-
-### 11. Staff web baseline `[done]`
-- auth UI for staff
-- admin dashboard
-- strategy CRUD
-- subscription product CRUD
-- payment review / confirm / activation
-
-### 12. Author workspace baseline `[done]`
-- author dashboard
-- recommendation CRUD
-- own-strategy scoping
-- preview
-- structured legs
-- attachments
-
-### 12.1 Author editor responsive refactor `[done]`
-Сделано:
-- `author/recommendation_form.html` переведен на responsive class-based layout без inline-grid drift
-- первая бумага всегда присутствует и обязательна
-- остальные бумаги добавляются через `+ Добавить бумагу`
-- нельзя удалить последнюю оставшуюся бумагу
-- parser form data больше не зависит от fixed ceiling
-- validation требует минимум одну заполненную бумагу с корректным инструментом и направлением
-- dynamic row ids восстанавливаются в форме после validation error
-
-Acceptance:
-- поля не наезжают друг на друга на обычном desktop width и на tablet/mobile
-- author может добавить больше 5 бумаг без изменения backend contract
-- при ошибке валидации все динамически добавленные legs восстанавливаются в форме
-- business rule `минимум 1 бумага` enforced server-side
-
-### 13. Subscriber commerce baseline `[done]`
-- public catalog
-- strategy detail
-- checkout `stub/manual`
-- Telegram subscriber baseline
-- Telegram-auth fallback for `/app/*`
-- ACL delivery in web and bot
-
-### 13.1 Telegram-only subscriber reset `[done]`
-- subscriber bot commands reduced to `/start` and `/help`
-- Mini App became the main client surface for catalog, status, payments and feed
-- subscriber-facing web pages removed `Вход` and legacy `/web` guidance
-- checkout no longer asks client for manual timezone or lead source
-- Mini App context is preserved across catalog, strategy and checkout pages
-
-### 14. Recommendation lifecycle baseline `[done]`
-- moderation queue
-- moderation history baseline
-- scheduled publish baseline
-- delivery notifications baseline
-
-## 2. Что исследование признало transitional
-
-### 15. Remote storage as primary model `[refactor]`
-Текущее состояние:
-- attachment flow ориентирован на `MinIO`
-- `docker-compose.yml` больше не делает `minio` обязательным runtime service
-- metadata по-прежнему bucket/object oriented
-
-Новая цель:
-- primary storage = локальная файловая система
-- `MinIO` максимум optional compatibility backend
-
-### 16. DB-only runtime `[refactor]`
-Текущее состояние:
-- `db` mode по-прежнему поддержан
-- `file` mode уже работает для test contour
-- remaining проблема не в отсутствии file mode, а в неполной parity
-
-Новая цель:
-- `db` mode через `PostgreSQL`
-- `file` mode без БД для тестирования
-
-### 17. Current web fallback surfaces `[partial]`
-Сделано:
-- subscriber web fallback уже зависит от Telegram-auth path
-
-Нужно:
-- не углублять fallback как primary path
-- перевести его на storage/file-mode parity
-
-## 3. Новый обязательный migration track
-
-### 18. Local filesystem storage foundation `[done]`
-Сделано:
-- общий storage contract
-- `LocalFilesystemStorage`
-- `APP_STORAGE_ROOT`
-- default runtime blob root `storage/runtime/blob`
-- local storage tests
-- attachment download path understands `storage_provider=local_fs`
-- author/document flows already use local filesystem path in file mode
-
-Acceptance:
-- attachments можно сохранять и читать без `MinIO`
-- local path становится canonical metadata source
-
-### 19. Runtime switch for persistence `[done]`
-Сделано:
-- введен `APP_DATA_MODE=db|file`
-- введен `APP_STORAGE_ROOT`
-- runtime metadata now exposes data mode and storage root
-- `file` mode не требует `DATABASE_URL`, `ALEMBIC_DATABASE_URL` и `MINIO_ROOT_PASSWORD` на уровне config/runtime
-- DB engine создается только в `db` mode
-
-Acceptance:
-- приложение стартует в двух режимах без правки application code
-
-### 20. Repository abstraction `[partial]`
-Сделано:
-- repository package introduced
-- `SqlAlchemyAuthorRepository`
-- `SqlAlchemyAccessRepository`
-- `FileAuthorRepository`
-- `FileAccessRepository`
-- `FilePublicRepository`
-- `FileAuthRepository`
-- `FileDataStore`
-- `FileDatasetGraph`
-- repository deps for FastAPI
-- author service layer detached from direct `AsyncSession` usage
-- ACL/feed service layer detached from direct `AsyncSession` usage
-- `author`, `ACL/feed`, `public`, `auth` and verified admin smoke paths now switch to file repositories in `APP_DATA_MODE=file`
-
-Сделать:
-- вынести critical persistence operations в repositories
-- подготовить dual implementation:
-  - DB repositories
-  - file repositories
-
-Минимальный scope:
-- users / roles
-- authors
-- strategies
-- products
-- legal docs / consents
-- payments / subscriptions
-- recommendations / legs / attachments
-
-Acceptance:
-- service layer не зависит напрямую от `AsyncSession`
-
-### 21. File repositories for demo path `[partial]`
-Сделано:
-- JSON-backed file datasets under `storage/runtime/json` with bootstrap from `storage/seed/json`
-- file repositories for minimal demo scope:
-  - users
-  - roles
-  - authors
-  - strategies
-  - products
-  - legal docs
-  - payments
-  - subscriptions
-  - recommendations
-  - recommendation legs
-  - recommendation attachments
-- hydration graph into ORM-like domain objects
-- author create/edit persistence can now save recommendations, legs and attachments without DB
-- ACL/feed can now read user entitlements and recommendations without DB
-- committed demo seed datasets in `storage/seed/json`
-- committed demo blob attachment in `storage/seed/blob`
-- `staff auth`, `admin dashboard` and `author dashboard` verified in `file` mode
-- `Telegram checkout -> admin confirm -> Telegram feed` verified in `file` mode on fresh temp storage root
-
-Сделать:
-- safe write hardening and concurrent-write strategy
-- expand file repo coverage to moderation flows
-- add seed/bootstrap generator and real file-mode execution path for complete local demo
-
-Acceptance:
-- можно пройти demo flow без PostgreSQL
-
-### 22. Local attachment and legal files `[partial]`
-Сделано:
-- local attachment backend exists
-- local attachment download branch exists
-- author uploads по умолчанию в `storage/runtime/blob`
-- subscriber downloads из `storage/runtime/blob`
-- legal documents now support `source_path`
-- public legal page renders markdown from local storage path
-- seed legal markdown files committed under `storage/seed/blob/legal`
-
-Сделать:
-- убрать transitional dependency from remaining MinIO-only paths
-
-Acceptance:
-- `MinIO` не нужен для локального smoke-test
-
-### 23. File-mode seed data `[done]`
-Сделано:
-- seeded staff accounts
-- seeded subscriber account
-- seeded strategies
-- seeded products for `strategy / author / bundle`
-- seeded legal docs
-- seeded payment/subscription demo records
-- seeded recommendations for feed demo
-- seeded local attachment blob
-- runtime bootstrap copies seed into local ignored runtime tree
-
-Acceptance:
-- локальный запуск больше не требует ручного наполнения через БД для demo read-path
-- file repositories имеют committed demo dataset в репозитории
-- локальные изменения тестировщика уходят в ignored runtime tree, а не в tracked seed
-
-### 24. File-mode payment/subscription demo `[done]`
-Сделано:
-- file-backed checkout artifacts
-- manual payment confirm path
-- activation path
-- verified path:
-  - `Telegram /start -> Mini App`
-  - `Mini App checkout`
-  - `payment pending`
-  - `admin confirm`
-  - `subscriber /app/feed` sees recommendation after activation
-
-Acceptance:
-- subscriber flow можно проверить локально end-to-end
-
-### 24.1 File-mode process startup `[done]`
-Сделано:
-- `api` cold-start smoke in `APP_DATA_MODE=file`
-- `bot` cold-start smoke in `APP_DATA_MODE=file`
-- real Telegram API smoke for test bot `Avt09_Bot`
-- `worker` cold-start smoke in `APP_DATA_MODE=file`
-- public catalog/legal flow works without PostgreSQL
-- bot shop handlers work with file repository path
-- worker scheduled publish runner has file-mode branch
-- seeded author login and author dashboard work in file mode
-- verified e2e on fresh temp storage root:
-  - `admin` login -> dashboard
-  - `author` login -> dashboard
-  - `Telegram checkout -> confirm -> feed`
-
-Acceptance:
-- `api + bot + worker` можно поднимать без PostgreSQL и без MinIO
-- локальный smoke path опирается на committed seed + ignored runtime tree
-- test bot token from `.env` подтвержден реальным `getMe` check
-
-## 4. Что уже реализовано и должно сохраниться в refactor
-
-### 25. Telegram-first subscriber model `[partial]`
-Сделано:
-- subscriber path moved to Telegram-first baseline
-- no subscriber password-first requirement
-- Telegram-auth fallback exists
-
-Нужно сохранить:
-- primary identity = `telegram_user_id`
-- minimum necessary data policy
-
-### 26. Staff auth and workspaces `[partial]`
-Сделано:
-- admin/author/moderator web auth
-- admin dashboard
-- author workspace
-- moderation queue
-
-Нужно сохранить:
-- staff flows должны работать и в `db`, и в `file` mode
-
-### 27. ACL and payment lifecycle `[partial]`
-Сделано:
-- checkout -> payment pending -> confirm -> subscription activation
-- ACL gating in web and bot
-
-Нужно сохранить:
-- одинаковое поведение в `db` и `file` mode
-
-### 28. Recommendation lifecycle `[partial]`
-Сделано:
-- recommendation CRUD
-- moderation
-- publish/schedule
-- notifications baseline
-
-Нужно сохранить:
-- scheduled publish
-- attachment rendering
-- scope and ACL guarantees
-
-## 5. Самый быстрый путь к локальному тестированию
-
-### 29. Fast-track order `[done]`
-Делать строго так:
-1. local storage adapter
-2. runtime switch `APP_DATA_MODE`
-3. file repositories for minimal scope
-4. seed data for file mode
-5. local attachment serving
-6. run `api + bot + worker` in file mode
-7. connect test bot and run Telegram smoke-test
-8. open local staff web and author cabinet
-
-### 30. Fast-track acceptance `[done]`
-Считать быстрый путь завершенным, когда:
-- сайт открывается локально;
-- admin login работает локально;
-- author login работает локально;
-- test bot отвечает и показывает каталог;
-- можно оформить `stub/manual` checkout;
-- можно подтвердить платеж и увидеть доступ к feed;
-- все это проходит без PostgreSQL и без `MinIO`.
-
-## 6. После этого остаются продуктовые задачи
-
-### 31. Telegram UX depth `[partial]`
-Сделано:
-- Telegram-only command surface:
-  - `/start`
-  - `/help`
-- reply keyboard reduced to Mini App + help
-- Mini App entry baseline
-- deployed `https` host now allows Telegram `Mini App` button in real bot flow
-- subscriber navigation moved into Mini App sections:
-  - каталог
-  - подписки
-  - оплаты
-  - лента
-  - помощь
-- web fallback now redirects to `/verify/telegram` instead of raw unauthorized response
-- timezone is auto-detected from client/browser
-- lead source attribution is automatic
-
-Не сделано:
-- full WebApp auth bridge
-- richer in-app actions beyond current Mini App pages
-
-### 32. Legal admin UI `[done]`
-- document CRUD
-- version publish UI
-- active version management
-
-### 33. Promo/discount lifecycle `[done baseline]`
-Сделано:
-- admin promo registry
-- promo create/edit UI
-- checkout promo apply path
-- payment-linked redemption counters
-- manual discounts
-- richer Telegram promo UX inside retry/renew flows
-- expiry/cancel flows
-
-Acceptance:
-- admin can apply a manual discount before confirming a mutable payment
-- subscriber can reuse or replace a promo code inside Mini App retry/renew flows
-- expired payments and subscriptions transition without manual DB edits
-
-### 34. Delivery admin UX `[done]`
-- notification queue
-- retry/dedup
-- delivery audit visibility
-- metrics still remain as hardening, not as baseline blocker
-
-### 35. Moderation analytics/SLA `[partial]`
-Сделано:
-- queue filters by query and status
-- overdue review visibility
-- approve/rework/reject counters
-- resolution latency metric on queue and detail
-
-Сделать:
-- richer timeline slicing
-- moderator workload breakdown
-- export/reporting
-
-### 36. Lead source analytics `[partial]`
-Сделано:
-- normalized lead source attribution on checkout
-- file/db compatible source lookup and creation
-- admin lead source analytics report
-
-Сделать:
-- richer campaign breakdown
-- time-range filtering
-- conversion slices by source
-
-### 37. Worker hardening `[partial]`
-Сделано:
-- per-job fault tolerance in worker loop
-- per-job duration logging
-- notification retries baseline
-
-Сделать:
-- broader lifecycle jobs
-- stronger metrics/export path
-
-## 8. Следующий этап после test-launch
-
-### 38. Deployment hardening `[done]`
-Сделано:
-- canonical server deploy path documented
-- dedicated docker server compose committed in repo
-- host `nginx` reverse proxy config committed in repo
-- committed deploy bundle inside repo:
-  - `deploy/docker-compose.server.yml`
-  - `deploy/nginx/pct.test.ptfin.ru.conf`
-  - `deploy/env.server.example`
-  - `deploy/README.md`
-  - `doc/guide.pdf`
-- canonical server root `/var/www/pct`
-- secret runtime file `.env.server`
-- update/restart procedure documented
-
-Сделано:
-- first server prototype validated on target host
-- `admin` login validated on deployed host
-- Telegram bot polling validated on deployed host
-- `https` enabled for `pct.test.ptfin.ru`
-
-Acceptance:
-- test version можно поднимать на одной выделенной машине без ручного старта процессов
-
-### 39. Compose cleanup `[done]`
-- `postgres` and `minio` live behind optional compose profiles
-- `api` and `worker` no longer hard depend on MinIO in file mode
-- real server path is separated from dev-only assumptions
-
-Acceptance:
-- file-mode compose path не требует MinIO по умолчанию
-
-### 40. Full file-mode parity `[partial]`
-- notifications persistence edges
-- publishing edge cases
-- remaining auth/session fallback paths
-
-Acceptance:
-- all critical test-version contours behave одинаково в `db` и `file`
-
-### 41. Legal admin UI hardening `[done]`
-- local markdown editor
-- version activation
-- active document management
-
-Acceptance:
-- legal docs можно править без ручного редактирования файлов на сервере
-
-### 42. Telegram UX phase `[done]`
-Сделано:
-- conditional WebApp button behavior for `http` vs `https` environments
-- subscriber bot surface reduced to `/start` and `/help`
-- legacy subscriber bot handlers physically removed from the codebase
-- Telegram verification page for web fallback
-- safe local `next` redirect in `/tg-auth`
-- `/app/status` as web fallback landing page after Telegram verification
-- Mini App automatic auth bridge through `/tg-webapp/auth`
-- `/miniapp` became the canonical Telegram bootstrap entry
-- canonical subscriber workspace now lives at:
-  - `/app/catalog`
-  - `/app/status`
-  - `/app/subscriptions`
-  - `/app/payments`
-  - `/app/feed`
-  - `/app/help`
-- Mini App catalog/workspace shows subscriber overview when Telegram auth cookie already exists
-- Mini App checkout now uses Telegram-linked identity and accepted legal docs
-- public site and Mini App subscriber routes are split into separate canonical surfaces without `surface=miniapp` compatibility mode
-
-Acceptance:
-- subscriber flow больше не зависит от legacy bot command interaction
-- Mini App is the canonical subscriber UI instead of a web/catalog overlay
-
-### 43. Mini App self-service detail/actions `[done]`
-Сделано:
-- subscriber payment detail page
-- subscriber subscription detail page
-- `pending` payment cancellation from Mini App
-- autorenew toggle from Mini App
-- Russian status labels for payment and subscription lifecycle
-
-Acceptance:
-- subscriber can inspect payment/subscription state without staff help
-- subscriber can cancel a pending payment request from Mini App
-- subscriber can manage autorenew inside Mini App
-- Mini App does not expose raw English enum values for payment/subscription lifecycle
-
-### 44. Mini App payment recovery and renewal `[done]`
-Сделано:
-- payment refresh action for provider-driven `pending` payments
-- payment retry flow for `failed / expired / cancelled`
-- subscription renewal flow from Mini App
-- redirect from retry/renew into the newly created payment detail page
-
-Acceptance:
-- subscriber can recover an unfinished payment scenario without staff help
-- subscriber can start renewal from the current subscription card
-- recovery flow stays inside Mini App and remains Telegram-linked
-
-### 45. Mini App payment messaging/history and reminders `[done]`
-Сделано:
-- payment result messaging inside payment detail page
-- provider state history rendering inside payment detail page
-- renewal history rendering inside subscription detail page
-- worker-driven subscriber reminders:
-  - pending payment reminder
-  - expiring subscription reminder
-- reminder dedup through audit events
-
-Acceptance:
-- subscriber sees a clear next step on payment detail page
-- subscriber can inspect payment history and renewal history inside Mini App
-- worker reminders do not repeat endlessly on each tick for the same payment/subscription
-### 46. Reminder center, notification preferences and timeline `[done]`
-Сделано:
-- страница центра напоминаний в Mini App
-- настройки напоминаний подписчика по оплатам и подпискам
-- единая страница событий по оплатам и подпискам
-- отправка напоминаний теперь учитывает сохраненные настройки подписчика
-
-Acceptance:
-- subscriber can review reminder history inside Mini App
-- subscriber can enable/disable reminder categories without staff help
-- Mini App exposes a unified event timeline for payments and subscriptions
-### 47. Full WebApp auth bridge and richer Mini App actions `[done]`
-Сделано:
-- полный WebApp auth bridge для всех Mini App страниц
-- action cards на статус-экране
-- inline действия в списках оплат и подписок
-- промокод в retry/renew flows
-- отмена подписки из subscriber card
-- staff-side manual discount для `pending` `stub_manual` платежей
-- worker expiry/cancel lifecycle для платежей и подписок
-
-Acceptance:
-- subscriber can open any Mini App page and stay inside Telegram-backed auth contour
-- subscriber can restore failed payment flow, renew access and stop a subscription without leaving Mini App
-- mutable payment discounts do not require direct DB edits
-- due payment/subscription lifecycle changes happen automatically in worker
-### 48. Release and review discipline `[todo]`
-- clean runtime checklist
-- technical review checklist
-- product smoke checklist
-- docs sync checklist
-
-Acceptance:
-- каждый новый этап проходит одинаковый `clean -> review -> docs -> deploy` контур
-
-## 9. Что делать дальше до business-complete state
-
-### 49. HTTPS enablement `[done]`
-- certificate issued for `pct.test.ptfin.ru`
-- deployed `BASE_URL` switched to `https`
-- Telegram WebApp prerequisites validated on deployed host
-
-Acceptance:
-- deployed host serves app over `https`
-- bot can safely expose `Mini App` button
-
-### 50. Real SBP payments `[partial]`
-Сделано:
-- provider-aware checkout service
-- `T-Bank` SBP adapter foundation
-- `stub/manual` kept as operator fallback
-- provider payment id is persisted in checkout records
-- worker `payment_expiry_sync` polls pending `T-Bank` payments through `GetState`
-- confirmed provider state auto-activates linked subscriptions
-- terminal failed provider state auto-cancels pending subscriptions
-- sync writes `worker.payment_state_sync` audit events
-- runtime dependency `httpx` moved to main project dependencies because live payment code imports it outside test-only scope
-- `T-Bank` callback endpoint exists at `/payments/tbank/notify`
-- callback token is validated before payment state update
-- callback path writes `payment.webhook_sync` audit events
-
-Сделать:
-- production credential rollout on target host
-- callback rollout hardening on target host
-
-Acceptance:
-- user can pay in RUB via real SBP flow
-- payment confirmation does not rely only on manual admin action
-
-### 51. Admin subscription registry `[done]`
-- full list of subscriptions
-- start/end dates
-- payment status
-- search by user / strategy / author
-- access scope visibility
-
-Acceptance:
-- admin can answer who is subscribed to what and until when
-
-### 52. Author publish UX hardening `[done]`
-- better multi-leg recommendation editor
-- attachment replace/delete flow
-- clearer draft/review/publish path
-
-Acceptance:
-- author can publish complex recommendation sets without manual operator help
-
-### 53. Legal and compliance operations `[done]`
-- legal docs admin UI
-- version activation
-- consent visibility in admin surfaces
-
-Acceptance:
-- legal lifecycle no longer requires manual file edits in runtime operations
-
-### 54. Delivery operations `[done]`
-- notification queue
-- retry / dedup visibility
-- delivery audit visibility for support
-
-Acceptance:
-- support/admin can understand whether recommendation delivery succeeded
-
-### 52. Final persistence hardening `[todo]`
-- finish remaining file-mode parity
-- compose cleanup `[done]`
-- backup/restore workflow for `storage/`
-
-Acceptance:
-- deployed prototype can be operated and recovered predictably
-
-## 7. Правила, которые нельзя ломать
-- subscriber path остается `Telegram-first`
-- `admin`, `author`, `moderator` остаются отдельным staff contour
-- pending payment не дает доступ
-- entitlement rules одинаковы в web и bot
-- новые шаги не должны усиливать remote storage dependency
-- новые шаги не должны делать БД обязательной для базового локального тестирования
-### Server deploy note
-- host nginx canonical upstream must be `127.0.0.1:8110`
+# PitchCopyTrade — Active Tasks
+> Обновлено: 2026-04-21
+
+Закрытые задачи этого цикла. Архив закрытых блоков — в `doc/changelog.md`.
+Активных задач в текущем цикле не осталось; финальный review-pass 2026-04-21 не открыл новых блоков.
+
+## Правила
+
+- ID: `T-NNN`, сквозная нумерация, не сбрасывается
+- Статусы: `[ ]` не начато / `[~]` в работе / `[x]` завершено / `[!]` заблокировано
+- Один блок = одна итерация worker → review
+- Каждая задача: файлы, поведение до/после, критерии приёмки
+- Runtime priority: `APP_DATA_MODE=db`
+
+---
+
+## Блок 1 — Security & DB cleanup
+
+### T-001 Open redirect через `requested_next` [SEC, HIGH]
+
+- [x] Валидировать `requested_next` в `_verify_redirect_url()` (`src/pitchcopytrade/api/routes/app.py`)
+- Ограничить до внутренних путей, начинающихся с `/app/`
+- Если путь не начинается с `/app/` → заменить на `/app/catalog`
+- Убрать `safe='/'` из `quote()` — использовать `safe=''`
+
+### T-002 File upload: magic bytes validation [SEC, MEDIUM]
+
+- [x] В `normalize_attachment_uploads()` (`src/pitchcopytrade/services/author.py`)
+- Добавить проверку file signature (magic bytes) помимо content-type header
+- PDF: `%PDF` (первые 4 байта), JPEG: `\xff\xd8\xff` (первые 3 байта)
+- Если magic bytes не совпадают — `ValueError("Файл не является допустимым PDF или JPG.")`
+
+### T-003 FK-индексы в deploy/schema.sql [DB, HIGH]
+
+- [x] Добавить `CREATE INDEX` на все FK-колонки в `deploy/schema.sql`
+- Приоритетные: `payments.user_id`, `subscriptions.user_id`, `subscriptions.product_id`, `user_consents.user_id`
+- Формат: `CREATE INDEX IF NOT EXISTS ix_{table}_{column} ON {table}({column});`
+
+### T-004 Messages table: FK constraints [DB, HIGH]
+
+- [x] Добавить `REFERENCES` constraints в `deploy/schema.sql` для таблицы `messages`
+- Колонки: `author` → `author_profiles(id)`, `user_id` → `users(id)`, `moderator_id` → `users(id)`, `strategy_id` → `strategies(id)`, `bundle_id` → `bundles(id)`
+
+### T-005 Оптимизация `get_public_product_by_slug` [DB, MEDIUM]
+
+- [x] В `src/pitchcopytrade/repositories/public.py` метод `get_public_product_by_slug`
+- Убрать рекурсивный вызов `get_public_product_by_ref` после загрузки product
+- Сделать один запрос с полным набором `selectinload`/`joinedload`
+
+### T-006 `list_user_reminder_events`: SQL фильтрация [DB, MEDIUM]
+
+- [x] В `src/pitchcopytrade/repositories/access.py` метод `list_user_reminder_events`
+- Перенести фильтрацию `user_id` из Python в SQL WHERE clause
+- Использовать JSON-оператор PostgreSQL: `.where(AuditEvent.payload["user_id"].astext == user_id)`
+
+### T-007 Signature hash validation cleanup [AUTH, LOW]
+
+- [x] В `src/pitchcopytrade/auth/telegram_webapp.py` функция `validate_telegram_webapp_init_data`
+- Упростить: signature в основном пути, без signature как fallback
+- Добавить тесты обоих путей
+
+---
+
+## Блок 2 — Production regressions: staff auth, author composer, bot delivery
+
+### T-008 Yandex OAuth: убрать dead repository call и нормализовать error UX [AUTH, HIGH]
+
+- [x] Исправить `src/pitchcopytrade/api/routes/auth.py` в `yandex_oauth_callback`
+- До исправления:
+  - callback вызывает `repository.save_user(user)`, которого нет в `SqlAlchemyAuthRepository`;
+  - valid OAuth-поток падает с `AttributeError`;
+  - пользователю показывается сырой backend exception `OAuth error: 'SqlAlchemyAuthRepository' object has no attribute 'save_user'`
+- Что сделать:
+  - заменить dead call на существующий persistence contract репозитория;
+  - не добавлять в репозиторий искусственный `save_user()` только ради этой ветки;
+  - использовать тот же update path, что уже применяется в Google callback и обычном staff login;
+  - user-facing ошибка должна быть общей и безопасной, без имён Python-классов и traceback-фрагментов;
+  - техническая причина должна оставаться только в логе.
+- Файлы:
+  - `src/pitchcopytrade/api/routes/auth.py`
+  - `src/pitchcopytrade/repositories/auth.py`
+  - `tests/*auth*`, `tests/*oauth*`
+- Не делать:
+  - не размазывать новый метод по всем репозиториям без необходимости;
+  - не менять business semantics invite flow;
+  - не скрывать ошибку полным silent redirect.
+- Acceptance:
+  - staff invite + Yandex OAuth с валидным email больше не падает с `AttributeError`;
+  - статус staff user при необходимости становится `active`;
+  - в UI нет текста вида `SqlAlchemyAuthRepository`;
+  - добавлены тесты на успешный Yandex callback и на безопасный error message.
+
+### T-009 Staff canonical redirect: после любого staff auth уходить на role dashboard, не на `/workspace` [STAFF, HIGH]
+
+- [x] Убрать legacy `/workspace` как primary destination после успешного staff auth
+- До исправления:
+  - OAuth staff-пользователь после входа попадает в legacy shell `/workspace`;
+  - это расходится с текущим staff contract и с уже существующим `_resolve_role_redirect(...)`;
+  - у автора вместо нормальной рабочей поверхности показывается временный экран `Author workspace`.
+- Что сделать:
+  - для `password login`, `Google OAuth`, `Yandex OAuth`, `Telegram invite bind` использовать один и тот же canonical redirect contract;
+  - после успешного входа:
+    - `admin` -> `/admin/dashboard`
+    - `author` -> `/author/dashboard`
+    - `moderator` -> `/moderation/queue`
+  - роль и cookies должны ставиться через один общий helper, без копипасты cookie logic;
+  - `/workspace` оставить только как legacy compatibility route:
+    - либо мгновенный redirect на canonical home;
+    - либо debug-only shell, который больше не используется в auth flows.
+- Файлы:
+  - `src/pitchcopytrade/api/routes/auth.py`
+  - при необходимости `src/pitchcopytrade/web/templates/auth/app_home.html`
+  - tests на staff login / OAuth redirect
+- Проверить отдельно:
+  - `switch_staff_mode` не должен возвращать пользователя на legacy shell;
+  - `invite_token_priority` не должен ломаться;
+  - существующий admin/author dashboard routing не должен деградировать.
+- Acceptance:
+  - после успешного Google/Yandex/password/invite staff auth автор попадает на `/author/dashboard`;
+  - `/workspace` не фигурирует в качестве primary redirect target ни в одном success path;
+  - добавлены regression tests на redirect target.
+
+### T-010 Structured message: если инструмента нет в `instruments`, импортировать его через `meta.pbull.kz` по точному `symbol` во время submit [AUTHOR, HIGH]
+
+- [x] Backend exact-import path и submit/preview contract восстановлены для ручного точного ticker
+- Актуальный business contract:
+  - structured deal не должен публиковаться по "сырым" введённым символам без локальной записи в `instruments`;
+  - если нужного инструмента нет в локальной таблице `instruments`, backend должен попытаться найти его через уже используемый quote provider endpoint `https://meta.pbull.kz/api/marketData/forceDataSymbol?symbol=...`;
+  - этот endpoint ищет по полному совпадению `symbol`, а не по like-search;
+  - import должен выполняться только для тех инструментов, которые автор реально использовал при создании structured message и нажал submit;
+  - импортированный инструмент становится общим для всех авторов, потому что пишется в общую таблицу `instruments`.
+- До исправления:
+  - composer требует `selected_instrument` из локального списка инструментов;
+  - если тикера нет в локальном каталоге, backend отвечает ошибкой `Для structured message нужны инструмент, цена и количество.`;
+  - `_search_external_instruments_stub()` всегда возвращает пусто;
+  - нет path "на submit не нашли local instrument -> exact lookup в provider -> upsert в `instruments` -> продолжили обычную валидацию".
+- Фактическая текущая проблема после частичной реализации:
+  - backend exact-import path уже существует, но author composer всё ещё блокирует submit/preview, если у пользователя нет локального `structured_instrument_id`;
+  - в текущем UI новый symbol нельзя "выбрать", потому что autocomplete знает только локальные инструменты;
+  - если автор руками вводит новый ticker, frontend считает structured block незавершённым и не даёт дойти до backend submit/import path;
+  - в результате задача закрыта преждевременно: импорт на submit технически есть, но до него нельзя дойти из реального UI.
+- Важное уточнение по логике:
+  - исходная формулировка "по like из введённых символов" конфликтует с текущим provider contract;
+  - при использовании только `forceDataSymbol?symbol=...` worker не должен пытаться строить внешний autocomplete по частичной строке;
+  - в рамках этой задачи external search = exact lookup по итоговому значению input на submit;
+  - если позже появится отдельный provider endpoint для like-search, это должна быть новая задача, а не скрытое расширение `T-010`.
+- Что сделать:
+  - на submit structured message обработать `structured_instrument_query`;
+  - если `structured_instrument_id` уже передан и валиден локально:
+    - поведение остаётся как сейчас;
+  - если `structured_instrument_id` пустой, но `structured_instrument_query` заполнен:
+    - нормализовать query как ticker/symbol;
+    - попробовать найти локальную запись по `ticker`;
+    - если локально не найдено, сделать backend-запрос в текущий provider endpoint по точному `symbol`;
+    - если provider вернул корректный payload для этого `symbol`, создать или переиспользовать локальную запись `Instrument`;
+    - после этого продолжить стандартную валидацию уже через локальный `structured_instrument_id`.
+- Что дополнительно исправить в UI/preview contract:
+  - structured block не должен требовать локальный `structured_instrument_id` как единственный признак "complete", если автор ввёл новый точный ticker вручную;
+  - preview modal и pre-submit validation должны разрешать submit при условиях:
+    - указан `structured_instrument_query`;
+    - указаны цена и количество;
+    - выбрана сторона buy/sell;
+  - если query соответствует уже существующему локальному инструменту, UI может продолжать проставлять `structured_instrument_id` как сейчас;
+  - если query не выбран из локального popup, submit всё равно должен уйти на backend, где exact lookup/import решит дальнейшую судьбу symbol;
+  - placeholder/copy поля не должны обещать поиск по названию, если runtime contract поддерживает только точный ticker/symbol для нового инструмента.
+- Правила import/upsert:
+  - не создавать запись в `instruments` на каждый ввод символа;
+  - import только при реальном submit structured message;
+  - uniqueness = `ticker`, потому что текущая БД уже держит `UniqueConstraint("ticker")`;
+  - перед insert всегда делать lookup по `ticker`, чтобы не плодить дубликаты;
+  - если инструмент уже импортирован ранее, повторно не вставлять, а переиспользовать существующую запись;
+  - импортированная запись должна создаваться как глобальная, доступная всем авторам.
+- Какие поля брать из provider response для `Instrument`:
+  - `ticker`:
+    - приоритет `short_name`
+    - fallback `symbol`
+  - `name`:
+    - приоритет `description`
+    - fallback `original_name`
+    - fallback `short_name`
+  - `board`:
+    - приоритет `listed_exchange`
+    - fallback `source`
+    - fallback `levelI.source`
+  - `currency`:
+    - приоритет `currency_code`
+    - fallback `currency`
+    - fallback `"USD"`/`"RUB"` не выдумывать, если в payload ничего нет;
+    - если поля пустые, использовать безопасный runtime fallback, совместимый с моделью;
+  - `instrument_type`:
+    - так как в enum сейчас есть только `equity`, импортировать как `InstrumentType.EQUITY`;
+  - `lot_size`:
+    - в sample provider response поле не найдено;
+    - чтобы insert не падал, зафиксировать controlled fallback `lot_size = 1`;
+    - этот fallback должен быть явно прокомментирован в коде как временный provider compatibility rule;
+  - `is_active = True`.
+- Валидация structured message после изменения:
+  - обязательные поля:
+    - локальный `structured_instrument_id` или успешно импортированный instrument на submit;
+    - цена;
+    - количество;
+    - buy/sell уже выбран always-on toggle;
+  - простой текст в `structured_instrument_query` остаётся только входом для import attempt;
+  - если exact lookup в provider ничего не вернул, нужна controlled validation error:
+    - что инструмент не найден по точному тикеру;
+    - что нужно указать корректный `symbol`.
+- Потенциальные ошибки в логике, которые worker должен не пропустить:
+  - нельзя оставлять в задаче обещание like-search, если текущий endpoint умеет только full match;
+  - нельзя делать insert по keypress или blur;
+  - нельзя импортировать без обязательных полей модели `Instrument`;
+  - `lot_size` обязателен в ORM, а provider его не даёт в sample response, поэтому fallback должен быть зафиксирован явно;
+  - uniqueness по `ticker` технически может конфликтовать между площадками, но до отдельного redesign это нужно принять как текущее ограничение, согласованное с БД.
+- Файлы:
+  - `src/pitchcopytrade/api/routes/author.py`
+  - `src/pitchcopytrade/services/author.py`
+  - `src/pitchcopytrade/services/instruments.py`
+  - `src/pitchcopytrade/repositories/*`, если нужен явный upsert/import path
+  - `src/pitchcopytrade/web/templates/author/_composer_form.html`
+  - tests на local lookup / provider import / duplicate import / validation / preview-submit
+- Не делать:
+  - не строить внешний like-search поверх endpoint, который его не поддерживает;
+  - не делать browser-to-meta прямой вызов;
+  - не создавать transient structured deal без локальной записи в `instruments`;
+  - не делать insert в `instruments` до фактического submit сообщения.
+- Acceptance:
+  - если инструмент есть локально, форма работает как сейчас;
+  - если локально инструмента нет, backend на submit делает exact lookup по `symbol`;
+  - при успешном lookup создаётся или переиспользуется запись в `instruments`;
+  - запись содержит валидные для текущей модели поля, включая `lot_size`;
+  - после import сообщение успешно создаётся и публикуется;
+  - frontend preview/submit не блокирует автора только потому, что новый symbol ещё не имеет локального `structured_instrument_id`;
+  - если provider ничего не нашёл, пользователь получает controlled validation error;
+  - добавлены тесты на:
+    - local instrument path;
+    - provider import path;
+    - duplicate import path;
+    - validation path для несуществующего точного `symbol`;
+    - UI/pre-submit path для ручного ввода нового точного ticker.
+
+### T-011 Telegram attachments: отправлять реальный media/document payload, а не только имя файла в тексте [DELIVERY, HIGH]
+
+- [x] Реализовать delivery contract для вложений в Telegram notifications
+- До исправления:
+  - author attachments сохраняются в storage, но notification path отправляет в Telegram только текст;
+  - в рендере остаются лишь `📎 имя файла` или link placeholder;
+  - screenshot/JPEG не отображается в боте как изображение;
+  - PDF не отправляется как document.
+- Что сделать:
+  - выделить transport/helper для Telegram delivery message + attachments;
+  - логика отправки:
+    - сначала основной текст сообщения;
+    - затем каждое вложение из `message.documents`;
+    - `image/jpeg` -> `send_photo`
+    - `application/pdf` -> `send_document`
+  - payload брать по storage key / object key из storage backend, не требовать заранее публичный URL;
+  - attachment send failure не должен теряться:
+    - если хоть одно вложение не доставлено, Telegram delivery считать неуспешной;
+    - существующий fallback email path должен отработать по текущему policy;
+  - text-only сообщения не должны менять поведение;
+  - если в проекте остаётся второй broadcast/send path, его нельзя оставлять текстовым дубликатом для той же предметной области: либо перевести на shared helper, либо явно вывести из активного runtime path.
+- Файлы:
+  - `src/pitchcopytrade/services/notifications.py`
+  - `src/pitchcopytrade/services/message_rendering.py`
+  - `src/pitchcopytrade/services/author.py`
+  - при необходимости `src/pitchcopytrade/bot/main.py`
+  - tests на notification transport
+- Проверить:
+  - JPEG из author composer приходит в Telegram как фото;
+  - PDF приходит как документ;
+  - mixed message (`text + deal + attachments`) не теряет текстовую часть;
+  - logs не раздуваются сырой binary диагностикой.
+- Acceptance:
+  - screenshot/JPEG реально отображается в Telegram;
+  - PDF доставляется как attachment;
+  - при telegram media failure включается fallback email;
+  - добавлены тесты/моки на успешную и частично неуспешную отправку.
+
+### T-012 Bot catalog entry: сделать постоянную Telegram menu button для каталога [BOT, MEDIUM]
+
+- [x] Убрать зависимость основного Mini App entry от scroll position chat history
+- До исправления:
+  - `Открыть каталог` живёт только как inline button в ответе на `/start`;
+  - при потоке сигналов и новых сообщениях пользователь теряет быстрый вход в Mini App;
+  - это расходится с идеей одного постоянного entry point в каталог.
+- Что сделать:
+  - на bot startup настроить Telegram `MenuButtonWebApp` с переходом в каталог;
+  - inline `/start`-кнопку оставить как fallback и onboarding hint, но не как единственную точку входа;
+  - если `BASE_URL` не HTTPS или Telegram API не позволяет поставить menu button:
+    - не падать всем ботом;
+    - писать короткий warning в лог;
+  - help/start copy обновить так, чтобы они не обещали только старый inline-сценарий.
+- Файлы:
+  - `src/pitchcopytrade/bot/main.py`
+  - `src/pitchcopytrade/bot/handlers/start.py`
+  - при необходимости docs / tests
+- Acceptance:
+  - после старта бота у пользователя есть постоянная menu button на каталог;
+  - `/start` всё ещё работает;
+  - сбой установки menu button не валит polling/webhook runtime;
+  - если локально нет HTTPS, поведение деградирует контролируемо.
+
+---
+
+## Блок 3 — OAuth hardening follow-up
+
+### T-013 Google OAuth: убрать утечку сырого backend exception в login UI [AUTH, MEDIUM]
+
+- [x] Синхронизировать Google OAuth error UX с уже исправленным Yandex flow
+- До исправления:
+  - в `src/pitchcopytrade/api/routes/auth.py` ветка `except` у `google_oauth_callback` рендерит в шаблон логина строку вида `OAuth error: {str(exc)[:100]}`;
+  - пользователю показываются технические детали runtime, provider-ошибок или внутренних исключений;
+  - это расходится с контрактом `T-008`, где user-facing ошибка должна быть общей и безопасной, а техническая причина оставаться только в логе.
+- Что сделать:
+  - в `google_oauth_callback` заменить сырой `error=f"OAuth error: {str(exc)[:100]}"` на безопасное человекочитаемое сообщение того же уровня, что уже используется в `yandex_oauth_callback`;
+  - не скрывать сам факт ошибки: пользователь должен понять, что вход через Google не завершился;
+  - сохранить `logger.exception("Google OAuth error")`, чтобы полная техническая причина осталась в логах;
+  - не менять success path, state validation, redirect contract и cookie logic;
+  - привести тексты Google и Yandex OAuth к одному UX-подходу:
+    - безопасное сообщение в UI;
+    - техническая детализация только в логах.
+- Файлы:
+  - `src/pitchcopytrade/api/routes/auth.py`
+  - `tests/test_auth_ui.py`
+  - при необходимости docs (`doc/review.md`)
+- Не делать:
+  - не добавлять новый repository API;
+  - не менять redirect target после успешного входа;
+  - не убирать `logger.exception`;
+  - не делать silent redirect без сообщения об ошибке.
+- Проверки:
+  - вручную: сломанный Google OAuth flow не показывает `RuntimeError`, имя класса, traceback-фрагменты, provider response text;
+  - regression: успешный Google OAuth flow по-прежнему уводит staff на canonical dashboard;
+  - regression: Yandex OAuth поведение не меняется.
+- Acceptance:
+  - при ошибке Google OAuth login page показывает только безопасное сообщение без backend деталей;
+  - в HTML нет `OAuth error:`, `RuntimeError`, имён repository-классов и фрагментов Python exception text;
+  - success path Google OAuth остаётся рабочим;
+  - добавлены tests на:
+    - безопасный Google OAuth error message;
+    - отсутствие утечки exception text;
+    - сохранение canonical redirect на успешном callback.
+
+---
+
+## Блок 4 — Subscriber auth recovery from bot/start
+
+### T-014 Subscriber Mini App entry: из бота нельзя открывать защищённый `/app/catalog` до Telegram bootstrap auth [SUBSCRIBER, HIGH]
+
+- [x] Перевести bot/menu entry для клиента на bootstrap route, который умеет обменять `Telegram.WebApp.initData` на auth cookie до перехода в каталог
+- Текущая проблема:
+  - сейчас bot `/start` keyboard и Telegram menu button открывают `web_app` URL на `/app/catalog`;
+  - `/app/catalog` — уже защищённый subscriber route и он ожидает существующий Telegram fallback cookie/session;
+  - для нового клиента это даёт loop: пользователь открывает Mini App, cookie ещё нет, route уводит на recovery/verify surface, а кнопки дальше не завершают авторизацию;
+  - по факту входной путь идёт мимо bootstrap-страницы, которая умеет отправить `initData` в `/tg-webapp/auth`.
+- Что сделать:
+  - primary bot/web_app entry для subscriber path должен открывать не защищённый `/app/catalog`, а canonical bootstrap route;
+  - bootstrap route обязан:
+    - если subscriber уже авторизован или Telegram cookie уже есть, сразу уводить на `/app/catalog`;
+    - принимать открытие внутри Telegram WebApp;
+    - читать `Telegram.WebApp.initData`;
+    - POST-ить `init_data` в `/tg-webapp/auth`;
+    - только после успешного server-side bind/cookie setup уводить на `/app/catalog`;
+  - использовать уже существующий bootstrap route, если он покрывает этот contract;
+  - если текущих bootstrap routes два (`/app` и `/miniapp`), выбрать один canonical subscriber entry и убрать двусмысленность в bot/start/menu flows;
+  - `Каталог` остаётся целевым экраном после auth, но не должен быть первым URL из бота для нового пользователя без cookie.
+  - важно: Telegram menu button и `/start` web_app link должны вести в один и тот же canonical bootstrap route; условие "если доступен каталог -> открыть каталог, иначе -> bootstrap" должно решаться внутри route, а не разными URL в кнопках.
+- Файлы:
+  - `src/pitchcopytrade/bot/handlers/start.py`
+  - `src/pitchcopytrade/bot/main.py`
+  - `src/pitchcopytrade/api/routes/auth.py`
+  - `src/pitchcopytrade/api/routes/public.py`
+  - `src/pitchcopytrade/web/templates/app/miniapp_entry.html`
+  - tests: `tests/test_bot_baseline.py`, `tests/test_auth_ui.py`
+- Важное уточнение по test contract:
+  - текущие tests всё ещё ожидают старый URL `/app/catalog`;
+  - при реальном закрытии задачи нужно обновить assertions в bot/auth tests, иначе regression suite будет закреплять старое поведение.
+- Не делать:
+  - не оставлять primary entry на `/app/catalog` для first-time subscriber auth;
+  - не плодить несколько равноправных bootstrap URLs без явного canonical contract;
+  - не завязывать решение на уже существующем cookie как обязательном условии старта.
+- Проверить:
+  - новый пользователь из Telegram бота проходит путь `/start -> web_app -> tg-webapp/auth -> /app/catalog`;
+  - повторный пользователь с cookie всё ещё быстро попадает в каталог;
+  - existing staff `/login` и invite flows не затрагиваются.
+- Acceptance:
+  - bot `/start` и menu button ведут в canonical bootstrap route;
+  - если auth уже есть, bootstrap route сразу открывает `/app/catalog`;
+  - если auth нет, bootstrap route запускает subscriber auth flow с `initData` или показывает recovery CTA;
+  - после успешного bind пользователь попадает в `/app/catalog`;
+  - добавлены regression tests на bot keyboard/menu button URL и на first-time subscriber bootstrap flow.
+
+### T-015 Recovery CTA: вместо dead-end `Открыть бота` нужен явный deep-link на `/start payload`, а не попытка «отправить /start из сайта» [SUBSCRIBER, HIGH]
+
+- [x] Исправить recovery UX для неавторизованных клиентов на `/verify/telegram` и fallback surfaces
+- Ограничение Telegram, которое worker обязан учитывать:
+  - обычная HTML-кнопка на сайте не может тихо отправить команду `/start` в Telegram-бота от имени пользователя;
+  - сайт не может программно «нажать /start» в чате;
+  - разрешённые варианты:
+    - deep link `https://t.me/<bot_username>?start=<payload>` — пользователь открывает бота, а bot получает `/start <payload>`;
+    - `web_app` button / menu button, если пользователь уже находится в Telegram и открывает Mini App;
+    - внутри уже открытого WebApp возможны собственные client-side calls, но это не эквивалент команде `/start`.
+- Текущая проблема:
+  - recovery pages показывают generic CTA `Открыть бота`;
+  - generic `https://t.me/<bot_username>` не гарантирует повторный `/start`, пользователь просто попадает в чат/историю и остаётся без следующего шага;
+  - из-за этого кнопки на verify/entry surfaces выглядят «ни к чему не приводят».
+- Что сделать:
+  - заменить generic CTA `Открыть бота` на явный recovery/start CTA:
+    - primary label = `Начать авторизацию в Telegram`;
+    - URL должен быть deep link с payload, а не просто `https://t.me/<bot_username>`;
+  - добавить обработку соответствующего `/start payload` в `handle_start`;
+  - bot по этому payload должен отправлять пользователю понятный следующий шаг:
+    - свежую `web_app` кнопку на canonical bootstrap route;
+    - короткий текст без двусмысленности;
+  - recovery surfaces (`/verify/telegram`, `app/miniapp_entry.html`, при необходимости `public/miniapp_bootstrap.html`) должны использовать этот же deep-link contract;
+  - copy на recovery surfaces должна прямо объяснять: сначала открыть бота по кнопке, затем нажать кнопку запуска Mini App / авторизации.
+- Файлы:
+  - `src/pitchcopytrade/bot/handlers/start.py`
+  - `src/pitchcopytrade/web/templates/public/telegram_verify.html`
+  - `src/pitchcopytrade/web/templates/app/miniapp_entry.html`
+  - `src/pitchcopytrade/web/templates/public/miniapp_bootstrap.html`
+  - tests: `tests/test_bot_baseline.py`, `tests/test_auth_ui.py`
+- Важное уточнение по test contract:
+  - `tests/test_auth_ui.py` сейчас ещё ожидает generic `Открыть бота` на verify surface;
+  - при закрытии задачи test suite должен быть переведён на новый deep-link/start-payload contract.
+- Не делать:
+  - не обещать literal «кнопку, отправляющую /start из сайта»;
+  - не оставлять generic `https://t.me/<bot_username>` как единственный recovery CTA;
+  - не строить recovery UX вокруг того, что пользователь сам догадается вручную ввести `/start`.
+- Важное UX-решение:
+  - Telegram menu button нельзя надёжно делать условной по browser auth state;
+  - если нужен универсальный label, лучше использовать нейтральное `Открыть Mini App` или `Начать`, а условный recovery CTA показывать уже на HTML recovery surfaces;
+  - worker не должен пытаться делать menu button «если не авторизован → Start, иначе → Каталог» без отдельного per-user bot state contract.
+- Acceptance:
+  - неавторизованный клиент на `/verify/telegram` и bootstrap fallback видит primary CTA `Начать авторизацию в Telegram` на deep link `/start <payload>`, а не просто `Открыть бота`;
+  - bot обрабатывает этот payload и присылает понятную кнопку для запуска авторизации;
+  - recovery путь больше не зависит от ручного ввода `/start`;
+  - добавлены tests на deep-link generation и на `/start payload` handler.

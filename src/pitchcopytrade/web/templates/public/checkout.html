@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% from "public/_url_helpers.html" import catalog_url, strategy_url %}
 
 {% block topbar_actions %}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
   {% if product.strategy %}
-  <a class="action ghost" href="{% if miniapp_mode %}/app/strategies/{{ product.strategy.slug }}{% else %}/catalog/strategies/{{ product.strategy.slug }}{% endif %}">К стратегии</a>
+  <a class="action ghost" href="{{ strategy_url(product.strategy.slug, miniapp_mode, preview_mode, entry_marker) }}">К стратегии</a>
   {% endif %}
-  <a class="action ghost" href="{% if miniapp_mode %}/app/catalog{% else %}/catalog{% endif %}">Каталог</a>
+  <a class="action ghost" href="{{ catalog_url(miniapp_mode, preview_mode, entry_marker) }}">Каталог</a>
 </div>
 {% endblock %}
 
@@ -20,28 +21,35 @@
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4.2vw,3.6rem);line-height:0.95;letter-spacing:-0.06em;">{{ product.title }}</h1>
       <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
-        {% if miniapp_mode %}
-        Подписка оформляется по текущему Telegram-профилю. Дополнительный клиентский вход не нужен.
-        {% else %}
-        Подписка оформляется без отдельного клиентского входа. Если вы открыли страницу из Telegram Mini App, профиль будет связан автоматически.
-        {% endif %}
+        Сервис предоставляется бесплатно
       </p>
+
+      <!-- 
+      <p class="muted" style="max-width:760px;line-height:1.7;margin:16px 0 0;">
+        {% if miniapp_mode %}
+        Подписка оформляется по вашему Telegram-профилю, без отдельного входа.
+        {% else %}
+        Подписка оформляется без отдельного входа. Если страница открыта из Telegram Mini App, профиль свяжется автоматически.
+        {% endif %}
+      </p> 
+      -->
     </div>
+    <!-- 
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <span class="pill">Месяц</span>
-      <span class="pill">{{ product.price_rub }} руб</span>
       {% if product.trial_days %}
       <span class="pill">{{ product.trial_days }} дней бесплатно</span>
       {% endif %}
-    </div>
+    </div> 
+    -->
   </div>
 </section>
 
-<section style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,0.9fr);gap:18px;margin-top:18px;">
-  <form class="surface" method="post" style="padding:24px;display:grid;gap:18px;">
+<section style="display:grid;grid-template-columns:1fr;gap:18px;margin-top:18px;">
+  <form id="checkout-form" class="surface" method="post" style="padding:24px;display:grid;gap:18px;">
     {% if not checkout_ready %}
     <div style="padding:14px 16px;border-radius:18px;background:rgba(20,85,216,0.08);color:var(--blue-700);border:1px solid rgba(20,85,216,0.18);">
-      Checkout пока не готов: в системе должен быть опубликован полный комплект обязательных документов.
+      Checkout пока не готов: в системе должен быть опубликован дисклеймер.
     </div>
     {% endif %}
     {% if error %}
@@ -51,31 +59,35 @@
     {% endif %}
     <input type="hidden" name="timezone_name" id="timezone_name" value="{{ form_values.timezone_name }}" />
     <input type="hidden" name="lead_source_name" value="{{ form_values.lead_source_name }}" />
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+    <input type="hidden" name="entry_id" value="{{ form_values.entry_id or '' }}" />
+    <input type="hidden" name="entry_surface" value="{{ form_values.entry_surface or '' }}" />
+    <div style="display:grid;grid-template-columns:1fr;gap:14px;">
       <label style="display:grid;gap:8px;">
-        <strong>Имя, если хотите оставить</strong>
+        <strong>Ваше имя</strong>
         <input type="text" name="full_name" value="{{ form_values.full_name }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
       <label style="display:grid;gap:8px;">
-        <strong>Email, если хотите оставить</strong>
+        <strong>Ваш email</strong>
         <input type="email" name="email" value="{{ form_values.email }}" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;" />
       </label>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+    <!-- 
+    <div style="display:grid;grid-template-columns:1fr;gap:14px;">
       <label style="display:grid;gap:8px;">
         <strong>Промокод, если есть</strong>
         <input type="text" name="promo_code_value" value="{{ form_values.promo_code_value or '' }}" placeholder="WELCOME10" style="padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;text-transform:uppercase;" />
       </label>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>Что определится автоматически</strong>
+        <strong>Заполнится автоматически</strong>
         <div class="muted" style="margin-top:8px;line-height:1.6;">
-          Часовой пояс берем из устройства, источник обращения фиксируем автоматически.
+          Часовой пояс берется из устройства, а источник обращения подставляется автоматически.
         </div>
       </div>
     </div>
+    -->
     <div style="display:grid;gap:12px;">
-      <strong>Обязательные документы</strong>
-      {% for document in documents %}
+      <strong>Документ</strong>
+      {% for document in documents if document.document_type.value == "disclaimer" %}
       <label style="display:flex;gap:12px;align-items:flex-start;">
         <input
           type="checkbox"
@@ -85,50 +97,49 @@
         />
         <span>
           <strong><a href="/legal/{{ document.id }}" style="color:inherit;text-decoration:none;border-bottom:1px solid rgba(20,85,216,0.22);">{{ document.title }}</a></strong>
-          <span class="muted" style="display:block;margin-top:6px;">{{ document.document_type.value }} / {{ document.version }}</span>
+          <span class="muted" style="display:block;margin-top:6px;">{{ label_legal_document_type(document.document_type) }} / {{ document.version }}</span>
         </span>
       </label>
       {% endfor %}
+      <div class="muted" style="line-height:1.6;">Остальные юридические документы опубликованы отдельно и не требуют подтверждения на этом экране.</div>
+    </div>
+    <div id="checkout-client-error" hidden style="padding:14px 16px;border-radius:18px;background:rgba(191,23,54,0.08);color:var(--red-600);border:1px solid rgba(191,23,54,0.18);">
+      Подтвердите дисклеймер перед отправкой формы.
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Создать заявку на оплату</button>
-      <a class="action ghost" href="{% if miniapp_mode %}/app/catalog{% else %}/catalog{% endif %}">Вернуться в каталог</a>
+      <button id="checkout-submit-button" class="action" type="submit" {% if not checkout_ready %}disabled style="opacity:0.55;cursor:not-allowed;"{% endif %}>Подписаться</button>
+      <a class="action ghost" href="{{ catalog_url(miniapp_mode, preview_mode, entry_marker) }}">Вернуться в каталог</a>
     </div>
   </form>
 
   <aside class="surface" style="padding:24px;">
-    <div class="eyebrow">что произойдет дальше</div>
-    <h2 style="margin:10px 0 14px;font-size:1.5rem;">Что произойдет дальше</h2>
+    <div class="eyebrow">что вы получите</div>
+    <h2 style="margin:10px 0 14px;font-size:1.5rem;">После оформления</h2>
     <div style="display:grid;gap:12px;">
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>1. Создадим payment</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Статус будет `pending`, провайдер `{{ payment_provider }}`, а reference сгенерируется автоматически.</div>
+        <strong>Рекомендации в Telegram</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Сигналы и аналитика по стратегии приходят прямо в бот, сразу после оформления.</div>
       </div>
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>2. Создадим subscription</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Подписка создается сразу в статусе `pending` и связывается с выбранным продуктом.</div>
+        <strong>Доступ через Mini App</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Каталог, статус подписки и история - всё внутри Telegram, без отдельного пароля.</div>
       </div>
+      <!--
       <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>3. Сохраним consents</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Принятые документы фиксируются и привязываются к payment.</div>
+        <strong>Отмена в любой момент</strong>
+        <div class="muted" style="margin-top:8px;line-height:1.55;">Подписку можно остановить в разделе «Подписки» внутри Mini App.</div>
       </div>
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
-        <strong>4. Mini App остается основным каналом</strong>
-        <div class="muted" style="margin-top:8px;line-height:1.55;">Каталог, статусы, оплата и лента доступны без отдельного клиентского пароля, через Telegram-профиль.</div>
-      </div>
+      -->
     </div>
   </aside>
 </section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="1.1fr"] { grid-template-columns: 1fr !important; }
-    div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 <script>
   (function () {
+    const form = document.getElementById("checkout-form");
+    const submitButton = document.getElementById("checkout-submit-button");
     const timezoneInput = document.getElementById("timezone_name");
+    const clientError = document.getElementById("checkout-client-error");
+    const acceptedDocumentCheckboxes = Array.from(document.querySelectorAll('input[name="accepted_document_ids"]'));
     if (!timezoneInput) {
       return;
     }
@@ -147,6 +158,52 @@
       }
     } catch (error) {
       console.error(error);
+    }
+
+    acceptedDocumentCheckboxes.forEach((checkbox) => {
+      checkbox.addEventListener("change", function () {
+        if (clientError) {
+          clientError.hidden = true;
+        }
+      });
+    });
+
+    if (form) {
+      form.addEventListener("submit", async function (event) {
+        if (form.dataset.pctNativeSubmit === "1") {
+          return;
+        }
+        if (acceptedDocumentCheckboxes.length > 0 && !acceptedDocumentCheckboxes.every((checkbox) => checkbox.checked)) {
+          event.preventDefault();
+          if (clientError) {
+            clientError.hidden = false;
+          }
+          return;
+        }
+        event.preventDefault();
+        if (submitButton) {
+          submitButton.disabled = true;
+        }
+        try {
+          const response = await fetch(form.action || window.location.href, {
+            method: "POST",
+            body: new FormData(form),
+            credentials: "same-origin"
+          });
+          const html = await response.text();
+          document.open();
+          document.write(html);
+          document.close();
+        } catch (error) {
+          console.error("Checkout fetch submit failed", error);
+          form.dataset.pctNativeSubmit = "1";
+          form.submit();
+        } finally {
+          if (submitButton) {
+            submitButton.disabled = false;
+          }
+        }
+      });
     }
   })();
 </script>

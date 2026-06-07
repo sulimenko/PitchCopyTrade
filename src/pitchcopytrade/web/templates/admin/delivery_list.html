@@ -1,85 +1,63 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/subscriptions">Подписки</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">операции доставки</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Очередь доставки и повторов</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Оператор видит опубликованные рекомендации, историю notification delivery и может инициировать повторную отправку.
-      </p>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">операции доставки</div>
+      <h1>Очередь доставки и повторов</h1>
+      <p>Сразу видно публикацию, последние события и объём доставок. Карточка открывается только для аудита и ручного retry.</p>
     </div>
-    <div class="pill">{{ records|length }} записей</div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ records|length }} записей</span>
+      <span class="staff-page-note">Повтор запускает Telegram delivery без ручной правки очереди.</span>
+    </div>
+  </div>
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">опубликовано</div>
+      <strong>{{ stats.published }}</strong>
+      <div class="staff-metric-note">идей в delivery scope</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">с доставкой</div>
+      <strong>{{ stats.delivered }}</strong>
+      <div class="staff-metric-note">уже дошли до получателей</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">попытки</div>
+      <strong>{{ stats.attempts }}</strong>
+      <div class="staff-metric-note">всех delivery событий</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">получатели</div>
+      <strong>{{ stats.recipients }}</strong>
+      <div class="staff-metric-note">совокупный delivery охват</div>
+    </article>
+  </div>
+  <div class="staff-grid-shell">
+    <div class="staff-grid-shell">
+      <div id="grid-host" class="pct-tabulator"></div>
+    </div>
+
+    <script>
+    PCTTabulator.create("grid-host", {
+      columns: [
+        { title: "Публикация", field: "publication", widthGrow: 1.6 },
+        { title: "Стратегия", field: "strategy" },
+        { title: "Автор", field: "author" },
+        { title: "Статус", field: "status" },
+        { title: "Попытки", field: "attempts" },
+        { title: "Доставлено", field: "delivered" },
+        { title: "Последнее", field: "last_event" },
+        { title: "Действия", field: "actions", frozen: true }
+      ],
+      data: {{ delivery_json | safe }}
+    });
+    </script>
   </div>
 </section>
-
-<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px;">
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">опубликовано</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.published }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">с доставкой</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.delivered }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">попытки</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.attempts }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">получатели</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.recipients }}</div>
-  </article>
-</section>
-
-<section style="display:grid;gap:14px;margin-top:18px;">
-  {% for record in records %}
-  <a class="surface" href="/admin/delivery/{{ record.recommendation.id }}" style="padding:22px;display:block;">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="max-width:820px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <strong style="font-size:1.15rem;">{{ record.recommendation.title or record.recommendation.strategy.title }}</strong>
-          <span class="pill">{{ record.recommendation.status.value }}</span>
-          <span class="pill">{{ record.delivery_attempts }} попыток</span>
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ record.recommendation.strategy.title }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">доставлено: {{ record.delivered_recipients }}</span>
-          {% if record.latest_delivery_event %}
-          <span class="pill">{{ record.latest_delivery_event.created_at }}</span>
-          <span class="pill">{{ record.latest_delivery_event.payload.trigger if record.latest_delivery_event.payload else "publish" }}</span>
-          {% else %}
-          <span class="pill">доставки еще не было</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="muted">Открыть</div>
-    </div>
-  </a>
-  {% else %}
-  <article class="surface" style="padding:24px;">
-    <strong>Пока нет опубликованных рекомендаций</strong>
-    <p class="muted" style="line-height:1.6;margin:10px 0 0;">После публикации или scheduled publish карточки доставки появятся здесь автоматически.</p>
-  </article>
-  {% endfor %}
-</section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  }
-  @media (max-width: 640px) {
-    section[style*="repeat(4"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

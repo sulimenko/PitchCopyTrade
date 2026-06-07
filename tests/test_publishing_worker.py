@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from pitchcopytrade.db.models.content import Recommendation
-from pitchcopytrade.db.models.enums import RecommendationKind, RecommendationStatus
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import MessageKind, MessageStatus
 from pitchcopytrade.services.publishing import publish_due_recommendations
 
 
@@ -42,21 +42,24 @@ class FakeSession:
 
 @pytest.mark.asyncio
 async def test_publish_due_recommendations_updates_status_and_audit() -> None:
-    recommendation = Recommendation(
+    recommendation = Message(
         id="rec-1",
         strategy_id="strategy-1",
         author_id="author-1",
-        kind=RecommendationKind.NEW_IDEA,
-        status=RecommendationStatus.SCHEDULED,
-        scheduled_for=datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc),
+        kind=MessageKind.IDEA.value,
+        status=MessageStatus.SCHEDULED.value,
+        schedule=datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc),
+        thread="rec-1",
+        type="mixed",
+        moderation="required",
     )
     session = FakeSession([recommendation])
 
     published = await publish_due_recommendations(session, now=datetime(2026, 3, 11, 13, 0, tzinfo=timezone.utc))
 
     assert len(published) == 1
-    assert recommendation.status == RecommendationStatus.PUBLISHED
-    assert recommendation.scheduled_for is None
-    assert recommendation.published_at == datetime(2026, 3, 11, 13, 0, tzinfo=timezone.utc)
+    assert recommendation.status == MessageStatus.PUBLISHED.value
+    assert recommendation.schedule is None
+    assert recommendation.published == datetime(2026, 3, 11, 13, 0, tzinfo=timezone.utc)
     assert session.committed is True
     assert session.added

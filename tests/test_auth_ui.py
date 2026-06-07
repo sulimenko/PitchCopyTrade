@@ -3,41 +3,68 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import sys
 from datetime import datetime, timezone
+from types import ModuleType
 from urllib.parse import urlencode
 
 from fastapi.testclient import TestClient
+import pytest
 
 from pitchcopytrade.api.deps.repositories import get_public_repository
 from pitchcopytrade.api.deps.repositories import get_auth_repository
+from pitchcopytrade.api.deps.repositories import get_author_repository
 from pitchcopytrade.api.main import create_app
 from pitchcopytrade.auth.passwords import hash_password
+from pitchcopytrade.auth.staff_mode import resolve_staff_mode
+from pitchcopytrade.auth.staff_mode import get_staff_mode_cookie_name
 from pitchcopytrade.auth.session import (
+    build_staff_invite_token,
     build_session_cookie_value,
+    build_telegram_fallback_cookie_value,
     build_telegram_login_link_token,
     get_telegram_fallback_cookie_name,
 )
-from pitchcopytrade.core.config import reset_settings_cache
-from pitchcopytrade.db.models.accounts import Role, User
-from pitchcopytrade.db.models.enums import RoleSlug
+from pitchcopytrade.core.config import get_settings, reset_settings_cache
+from pitchcopytrade.db.models.accounts import AuthorProfile, Role, User
+from pitchcopytrade.db.models.catalog import Instrument, Strategy
+from pitchcopytrade.db.models.enums import InstrumentType, RoleSlug, RiskLevel, StrategyStatus, UserStatus
+from pitchcopytrade.db.models.enums import InviteDeliveryStatus
 
 
 class FakeAuthRepository:
     def __init__(self) -> None:
         self.users_by_identity: dict[str, User] = {}
         self.users_by_id: dict[str, User] = {}
+        self.users_by_telegram_id: dict[int, User] = {}
 
     async def get_user_by_identity(self, identity: str) -> User | None:
         return self.users_by_identity.get(identity)
 
+    async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None:
+        return self.users_by_telegram_id.get(telegram_user_id)
+
     async def get_user_by_id(self, user_id: str) -> User | None:
         return self.users_by_id.get(user_id)
+
+    async def delete(self, entity: object) -> None:
+        if isinstance(entity, User):
+            self.users_by_id.pop(entity.id, None)
+            if entity.telegram_user_id is not None and self.users_by_telegram_id.get(entity.telegram_user_id) is entity:
+                self.users_by_telegram_id.pop(entity.telegram_user_id, None)
+            for key, value in list(self.users_by_identity.items()):
+                if value is entity:
+                    self.users_by_identity.pop(key, None)
+
+    async def commit(self) -> None:
+        return None
 
 
 class FakePublicRepository:
     def __init__(self) -> None:
         self.user_by_telegram_id: dict[int, User] = {}
         self.added: list[object] = []
+        self.active_product_ids: set[str] = set()
 
     async def list_public_strategies(self):
         return []
@@ -60,6 +87,12 @@ class FakePublicRepository:
     async def get_user_by_telegram_id(self, telegram_user_id: int):
         return self.user_by_telegram_id.get(telegram_user_id)
 
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str):
+        return None
+
+    async def list_active_product_ids_for_user(self, user_id: str):
+        return set(self.active_product_ids)
+
     def add(self, entity: object) -> None:
         self.added.append(entity)
         if isinstance(entity, User) and entity.telegram_user_id is not None:
@@ -68,7 +101,23 @@ class FakePublicRepository:
     async def commit(self) -> None:
         return None
 
+    async def flush(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
     async def refresh(self, entity: object) -> None:
+        return None
+
+
+class FakeAuthorRepository:
+    def __init__(self, user: User) -> None:
+        self.user = user
+
+    async def get_author_by_user_id(self, user_id: str) -> AuthorProfile | None:
+        if user_id == self.user.id:
+            return self.user.author_profile
         return None
 
 
@@ -80,6 +129,7 @@ def _make_user() -> User:
         full_name="Alex",
         password_hash=hash_password("test-pass"),
         timezone="Europe/Moscow",
+        status=UserStatus.ACTIVE,
     )
     user.roles = [Role(slug=RoleSlug.AUTHOR, title="Author")]
     return user
@@ -91,13 +141,27 @@ def _make_admin_user() -> User:
     return user
 
 
+def _make_dual_role_user() -> User:
+    user = _make_user()
+    user.roles = [
+        Role(slug=RoleSlug.ADMIN, title="Admin"),
+        Role(slug=RoleSlug.AUTHOR, title="Author"),
+    ]
+    user.author_profile = AuthorProfile(id="author-1", user_id=user.id, display_name="Alex", slug="alex")
+    return user
+
+
 def _make_moderator_user() -> User:
     user = _make_user()
     user.roles = [Role(slug=RoleSlug.MODERATOR, title="Moderator")]
     return user
 
 
-def _build_client(repository: FakeAuthRepository, public_repository: FakePublicRepository | None = None) -> TestClient:
+def _build_client(
+    repository: FakeAuthRepository,
+    public_repository: FakePublicRepository | None = None,
+    author_repository: FakeAuthorRepository | None = None,
+) -> TestClient:
     app = create_app()
 
     async def override_auth_repository():
@@ -106,8 +170,12 @@ def _build_client(repository: FakeAuthRepository, public_repository: FakePublicR
     async def override_public_repository():
         return public_repository or FakePublicRepository()
 
+    async def override_author_repository():
+        return author_repository
+
     app.dependency_overrides[get_auth_repository] = override_auth_repository
     app.dependency_overrides[get_public_repository] = override_public_repository
+    app.dependency_overrides[get_author_repository] = override_author_repository
     return TestClient(app)
 
 
@@ -117,7 +185,25 @@ def test_login_page_renders() -> None:
         response = client.get("/login")
 
         assert response.status_code == 200
-        assert "Войти" in response.text
+        assert "PitchCopyTrade" in response.text
+        assert "Логин или email" in response.text
+        assert "Клиентам входить через Telegram-бота" in response.text
+        assert "Основной вход для сотрудников: через Telegram." in response.text
+        assert "/auth/telegram/callback" in response.text
+
+
+def test_login_page_renders_staff_invite_state() -> None:
+    repository = FakeAuthRepository()
+    with _build_client(repository) as client:
+        response = client.get("/login?invite_token=test-token")
+
+        assert response.status_code == 200
+        assert "Приглашение сотрудника активно" in response.text
+        assert "Один шаг через Telegram" in response.text
+        assert "Открыть приглашение" in response.text
+        assert "Скопировать приглашение" in response.text
+        assert "Проверить приглашение в Telegram" in response.text
+        assert "Логин или email" not in response.text
 
 
 def test_login_submit_sets_session_cookie() -> None:
@@ -138,6 +224,59 @@ def test_login_submit_sets_session_cookie() -> None:
         assert "pitchcopytrade_session=" in response.headers["set-cookie"]
 
 
+def test_telegram_widget_callback_accepts_extra_query_fields() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    repository.users_by_telegram_id[user.telegram_user_id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": str(user.telegram_user_id),
+            "first_name": "Alex",
+            "username": "alex_author",
+            "photo_url": "https://t.me/i/userpic/320/demo.jpg",
+            "auth_date": str(auth_date),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted(params.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+
+
+def test_telegram_widget_callback_rejects_invited_user_without_invite_token() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    user.status = UserStatus.INVITED
+    repository.users_by_telegram_id[user.telegram_user_id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": str(user.telegram_user_id),
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted(params.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params)
+
+        assert response.status_code == 401
+        assert "не найден среди сотрудников" in response.text
+
+
+def _make_author_user_with_telegram_id(*, telegram_user_id: int) -> User:
+    user = _make_user()
+    user.telegram_user_id = telegram_user_id
+    return user
+
+
 def test_login_page_redirects_authenticated_admin_to_dashboard() -> None:
     repository = FakeAuthRepository()
     user = _make_admin_user()
@@ -149,6 +288,34 @@ def test_login_page_redirects_authenticated_admin_to_dashboard() -> None:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/admin/dashboard"
+
+
+def test_login_page_keeps_invite_context_over_existing_staff_session() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/login?invite_token=test-token", follow_redirects=False)
+
+        assert response.status_code == 200
+        assert "Приглашение сотрудника активно" in response.text
+        assert "Открыть приглашение" in response.text
+
+
+def test_login_page_keeps_invite_context_over_existing_telegram_cookie() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set(get_telegram_fallback_cookie_name(), build_telegram_fallback_cookie_value(user))
+        response = client.get("/login?invite_token=test-token", follow_redirects=False)
+
+        assert response.status_code == 200
+        assert "Приглашение сотрудника активно" in response.text
+        assert "Открыть приглашение" in response.text
 
 
 def test_login_submit_rejects_invalid_credentials() -> None:
@@ -163,13 +330,190 @@ def test_login_submit_rejects_invalid_credentials() -> None:
         assert "Неверный логин или пароль" in response.text
 
 
+def test_login_submit_rejects_invited_staff_user() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_identity[user.username] = user
+
+    with _build_client(repository) as client:
+        response = client.post("/login", data={"identity": "alex", "password": "test-pass"})
+
+        assert response.status_code == 403
+        assert "ещё не активирован" in response.text
+
+
+def test_workspace_route_redirects_to_canonical_dashboard() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/workspace", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+
+
+def test_yandex_oauth_callback_redirects_to_canonical_dashboard(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("YANDEX_CLIENT_ID", "yandex-client-id")
+    monkeypatch.setenv("YANDEX_CLIENT_SECRET", "yandex-client-secret")
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_identity["staff@example.com"] = user
+
+    class FakeOAuthClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        async def fetch_token(self, url: str, code: str | None = None):
+            return {"access_token": "token-123"}
+
+    class FakeHTTPResponse:
+        def json(self):
+            return {"default_email": "staff@example.com"}
+
+    class FakeHTTPClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers: dict[str, str] | None = None):
+            return FakeHTTPResponse()
+
+    authlib_module = ModuleType("authlib")
+    integrations_module = ModuleType("authlib.integrations")
+    httpx_client_module = ModuleType("authlib.integrations.httpx_client")
+    httpx_client_module.AsyncOAuth2Client = FakeOAuthClient
+    integrations_module.httpx_client = httpx_client_module
+    authlib_module.integrations = integrations_module
+    monkeypatch.setitem(sys.modules, "authlib", authlib_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations", integrations_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations.httpx_client", httpx_client_module)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kwargs: FakeHTTPClient())
+
+    with _build_client(repository) as client:
+        client.cookies.set("oauth_state", "state-123")
+        response = client.get("/auth/yandex/callback?code=code-123&state=state-123", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        assert user.status == UserStatus.ACTIVE
+
+
+def test_yandex_oauth_callback_shows_safe_error_message(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("YANDEX_CLIENT_ID", "yandex-client-id")
+    monkeypatch.setenv("YANDEX_CLIENT_SECRET", "yandex-client-secret")
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_identity["staff@example.com"] = user
+
+    class FakeOAuthClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        async def fetch_token(self, url: str, code: str | None = None):
+            raise RuntimeError("boom")
+
+    authlib_module = ModuleType("authlib")
+    integrations_module = ModuleType("authlib.integrations")
+    httpx_client_module = ModuleType("authlib.integrations.httpx_client")
+    httpx_client_module.AsyncOAuth2Client = FakeOAuthClient
+    integrations_module.httpx_client = httpx_client_module
+    authlib_module.integrations = integrations_module
+    monkeypatch.setitem(sys.modules, "authlib", authlib_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations", integrations_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations.httpx_client", httpx_client_module)
+
+    with _build_client(repository) as client:
+        client.cookies.set("oauth_state", "state-123")
+        response = client.get("/auth/yandex/callback?code=code-123&state=state-123")
+
+        assert response.status_code == 200
+        assert "Не удалось завершить вход через Yandex OAuth" in response.text
+        assert "RuntimeError" not in response.text
+        assert "boom" not in response.text
+
+
+def test_google_oauth_callback_shows_safe_error_message(monkeypatch) -> None:
+    reset_settings_cache()
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client-id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-client-secret")
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_identity["staff@example.com"] = user
+
+    class FakeOAuthClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        async def fetch_token(self, url: str, code: str | None = None):
+            raise RuntimeError("boom")
+
+    class FakeHTTPResponse:
+        def json(self):
+            return {"email": "staff@example.com"}
+
+    class FakeHTTPClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url: str, headers: dict[str, str] | None = None):
+            return FakeHTTPResponse()
+
+    authlib_module = ModuleType("authlib")
+    integrations_module = ModuleType("authlib.integrations")
+    httpx_client_module = ModuleType("authlib.integrations.httpx_client")
+    httpx_client_module.AsyncOAuth2Client = FakeOAuthClient
+    integrations_module.httpx_client = httpx_client_module
+    authlib_module.integrations = integrations_module
+    monkeypatch.setitem(sys.modules, "authlib", authlib_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations", integrations_module)
+    monkeypatch.setitem(sys.modules, "authlib.integrations.httpx_client", httpx_client_module)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kwargs: FakeHTTPClient())
+
+    with _build_client(repository) as client:
+        client.cookies.set("oauth_state", "state-123")
+        response = client.get("/auth/google/callback?code=code-123&state=state-123")
+
+        assert response.status_code == 200
+        assert "Не удалось завершить вход через Google OAuth" in response.text
+        assert "RuntimeError" not in response.text
+        assert "boom" not in response.text
+    reset_settings_cache()
+
+
 def test_app_requires_session_cookie() -> None:
     repository = FakeAuthRepository()
     with _build_client(repository) as client:
         response = client.get("/app", follow_redirects=False)
 
+        assert response.status_code == 200
+        assert "Запустите Mini App из бота" in response.text
+        assert "Начать авторизацию в Telegram" in response.text
+        assert "start=verify_telegram" in response.text
+
+
+def test_app_redirects_tg_fallback_user_to_catalog() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set(get_telegram_fallback_cookie_name(), build_telegram_fallback_cookie_value(user))
+        response = client.get("/app", follow_redirects=False)
+
         assert response.status_code == 303
-        assert response.headers["location"] == "/login"
+        assert response.headers["location"] == "/app/catalog"
 
 
 def test_app_home_renders_for_valid_session() -> None:
@@ -198,6 +542,346 @@ def test_app_redirects_admin_to_dashboard() -> None:
         assert response.headers["location"] == "/admin/dashboard"
 
 
+def test_login_page_does_not_loop_for_authenticated_non_staff_user() -> None:
+    repository = FakeAuthRepository()
+    user = User(
+        id="subscriber-session",
+        username="subscriber",
+        email="subscriber@example.com",
+        password_hash=hash_password("test-pass"),
+        status=UserStatus.ACTIVE,
+    )
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.get("/login", follow_redirects=False)
+
+        assert response.status_code == 200
+        assert "Логин или email" in response.text
+
+
+def test_telegram_invite_token_binds_author_account() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "777001",
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        assert user.telegram_user_id == 777001
+        assert "SameSite=lax" in response.headers["set-cookie"]
+
+
+def test_telegram_invite_token_logs_compact_trace(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_id[user.id] = user
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.auth.logger.info",
+        lambda message, *args, **kwargs: messages.append(message % args),
+    )
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "777001",
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert any("staff_callback_entry trace" in message for message in messages)
+        assert any("staff_bind_ok trace" in message for message in messages)
+        assert any("staff_cookie trace" in message for message in messages)
+        assert any("redirect_target=/author/dashboard" in message for message in messages)
+
+
+def test_telegram_invite_token_binds_prefilled_author_account() -> None:
+    repository = FakeAuthRepository()
+    user = _make_author_user_with_telegram_id(telegram_user_id=777001)
+    user.status = UserStatus.INVITED
+    repository.users_by_id[user.id] = user
+    repository.users_by_telegram_id[user.telegram_user_id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "777001",
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        assert user.status == UserStatus.ACTIVE
+
+
+def test_telegram_invite_token_binds_admin_account() -> None:
+    repository = FakeAuthRepository()
+    user = _make_admin_user()
+    user.status = UserStatus.INVITED
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "888002",
+            "first_name": "Ops",
+            "username": "ops_admin",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/dashboard"
+        assert user.telegram_user_id == 888002
+        assert user.status == UserStatus.ACTIVE
+
+
+def test_telegram_invite_token_rejects_stale_token_after_version_bump() -> None:
+    repository = FakeAuthRepository()
+    user = _make_admin_user()
+    user.status = UserStatus.INVITED
+    stale_token = build_staff_invite_token(user)
+    user.invite_token_version = 2
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "888002",
+            "first_name": "Ops",
+            "username": "ops_admin",
+            "auth_date": str(auth_date),
+            "invite_token": stale_token,
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 409
+        assert "Приглашение недействительно или устарело." in response.text
+        assert user.status == UserStatus.INVITED
+
+
+def test_telegram_invite_token_merges_existing_subscriber_identity() -> None:
+    repository = FakeAuthRepository()
+    invited_user = _make_admin_user()
+    invited_user.id = "staff-1"
+    invited_user.status = UserStatus.INVITED
+    invited_user.email = "staff@example.com"
+    invited_user.full_name = "Staff Admin"
+    invited_user.timezone = "Asia/Almaty"
+    invited_user.invite_token_version = 4
+    invited_user.invite_delivery_status = InviteDeliveryStatus.SENT
+    invited_user.invite_delivery_error = "SMTP timeout"
+    invited_user.invite_delivery_updated_at = datetime(2026, 3, 21, tzinfo=timezone.utc)
+    repository.users_by_id[invited_user.id] = invited_user
+
+    existing_user = _make_user()
+    existing_user.id = "staff-2"
+    existing_user.telegram_user_id = 777001
+    existing_user.email = "lead@example.com"
+    existing_user.full_name = "Lead User"
+    existing_user.timezone = "Europe/Moscow"
+    repository.users_by_telegram_id[existing_user.telegram_user_id] = existing_user
+
+    with _build_client(repository) as client:
+        auth_date = int(datetime.now(timezone.utc).timestamp())
+        params = {
+            "id": "777001",
+            "first_name": "Alex",
+            "username": "alex_author",
+            "auth_date": str(auth_date),
+            "invite_token": build_staff_invite_token(invited_user),
+        }
+        data_check = "\n".join(f"{key}={value}" for key, value in sorted({k: v for k, v in params.items() if k != "invite_token"}.items()))
+        secret = hashlib.sha256(get_settings().telegram.bot_token.get_secret_value().encode()).digest()
+        params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+
+        response = client.get("/auth/telegram/callback", params=params, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/dashboard"
+        assert existing_user.telegram_user_id == 777001
+        assert existing_user.status == UserStatus.ACTIVE
+        assert existing_user.email == "staff@example.com"
+        assert existing_user.full_name == "Staff Admin"
+        assert existing_user.timezone == "Asia/Almaty"
+        assert existing_user.invite_token_version == 4
+        assert existing_user.invite_delivery_status == InviteDeliveryStatus.SENT
+        assert existing_user.invite_delivery_error == "SMTP timeout"
+        assert existing_user.invite_delivery_updated_at == datetime(2026, 3, 21, tzinfo=timezone.utc)
+        assert any(role.slug == RoleSlug.ADMIN for role in existing_user.roles)
+        assert invited_user.id not in repository.users_by_id
+        assert invited_user.telegram_user_id not in repository.users_by_telegram_id
+
+
+def test_dual_role_login_defaults_to_admin_mode() -> None:
+    repository = FakeAuthRepository()
+    user = _make_dual_role_user()
+    repository.users_by_identity[user.username] = user
+
+    with _build_client(repository) as client:
+        response = client.post("/login", data={"identity": "alex", "password": "test-pass"}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/dashboard"
+        assert "pitchcopytrade_session_staff_mode=admin" in response.headers["set-cookie"]
+
+
+def test_dual_role_can_switch_to_author_mode() -> None:
+    repository = FakeAuthRepository()
+    user = _make_dual_role_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.post("/auth/mode", data={"mode": "author", "next": "/admin/authors"}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        assert "pitchcopytrade_session_staff_mode=author" in response.headers["set-cookie"]
+
+
+def test_dual_role_can_switch_to_author_mode_and_render_dashboard(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    user = _make_dual_role_user()
+    repository.users_by_id[user.id] = user
+    author_repository = FakeAuthorRepository(user)
+    instrument = Instrument(
+        id="instrument-1",
+        ticker="SBER",
+        name="Sberbank",
+        board="TQBR",
+        lot_size=10,
+        currency="RUB",
+        instrument_type=InstrumentType.EQUITY,
+        is_active=True,
+    )
+    strategy = Strategy(
+        id="strategy-1",
+        author_id=user.author_profile.id,
+        slug="momentum-ru",
+        title="Momentum RU",
+        short_description="desc",
+        full_description="full",
+        risk_level=RiskLevel.MEDIUM,
+        status=StrategyStatus.PUBLISHED,
+        min_capital_rub=150000,
+        is_public=True,
+    )
+    async def fake_stats(_repository, _author):
+        return type("Stats", (), {
+            "strategies_total": 1,
+            "messages_total": 0,
+            "draft_messages": 0,
+            "live_messages": 0,
+        })()
+
+    async def fake_strategies(_repository, _author):
+        return [strategy]
+
+    async def fake_recommendations(_repository, _author):
+        return []
+
+    async def fake_watchlist(_repository, _author):
+        return [instrument]
+
+    async def fake_instruments(_repository):
+        return [instrument]
+
+    monkeypatch.setattr(
+        "pitchcopytrade.api.routes.author.get_author_workspace_stats",
+        fake_stats,
+    )
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_strategies", fake_strategies)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_recommendations", fake_recommendations)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_author_watchlist", fake_watchlist)
+    monkeypatch.setattr("pitchcopytrade.api.routes.author.list_active_instruments", fake_instruments)
+
+    def fail_on_live_fetch(**_kwargs):
+        raise AssertionError("live quote provider should not be called during author dashboard render")
+
+    monkeypatch.setattr("pitchcopytrade.services.instruments.httpx.AsyncClient", fail_on_live_fetch)
+
+    with _build_client(repository, author_repository=author_repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        response = client.post("/auth/mode", data={"mode": "author", "next": "/admin/authors"}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/author/dashboard"
+        client.cookies.set(get_staff_mode_cookie_name(), "author")
+
+        dashboard = client.get("/author/dashboard")
+        assert dashboard.status_code == 200
+        assert "Авторский кабинет" in dashboard.text or "Последние сообщения" in dashboard.text
+
+
+def test_dual_role_can_switch_back_to_admin_mode() -> None:
+    repository = FakeAuthRepository()
+    user = _make_dual_role_user()
+    repository.users_by_id[user.id] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set("pitchcopytrade_session", build_session_cookie_value(user))
+        client.cookies.set("pitchcopytrade_session_staff_mode", "author")
+        response = client.post("/auth/mode", data={"mode": "admin", "next": "/author/recommendations"}, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/dashboard"
+        assert "pitchcopytrade_session_staff_mode=admin" in response.headers["set-cookie"]
+
+
+def test_dual_role_mode_resolution_defaults_to_admin() -> None:
+    user = _make_dual_role_user()
+    assert resolve_staff_mode(user, None) == "admin"
+
+
+def test_dual_role_mode_resolution_accepts_author() -> None:
+    user = _make_dual_role_user()
+    assert resolve_staff_mode(user, "author") == "author"
+
+
 def test_login_page_redirects_moderator_to_queue() -> None:
     repository = FakeAuthRepository()
     user = _make_moderator_user()
@@ -224,7 +908,7 @@ def test_tg_auth_sets_session_cookie_and_redirects_to_feed() -> None:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/app/status"
+        assert response.headers["location"] == "/app/catalog"
         assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
 
 
@@ -254,20 +938,60 @@ def test_workspace_session_does_not_open_subscriber_feed() -> None:
         response = client.get("/app/feed", follow_redirects=False)
 
         assert response.status_code == 303
-        assert response.headers["location"].startswith("/verify/telegram?next=/app/feed")
+        assert response.headers["location"].startswith("/verify/telegram?next=/app/catalog&requested_next=/app/feed")
+
+
+def test_app_home_renders_bootstrap_page() -> None:
+    repository = FakeAuthRepository()
+
+    with _build_client(repository) as client:
+        response = client.get("/app")
+
+        assert response.status_code == 200
+        assert "Запустите Mini App из бота" in response.text
+        assert "Начать авторизацию в Telegram" in response.text
+
+
+def test_app_home_redirects_to_catalog_with_telegram_cookie() -> None:
+    repository = FakeAuthRepository()
+    user = _make_user()
+    user.telegram_user_id = 12345
+    repository.users_by_id[user.id] = user
+    repository.users_by_telegram_id[12345] = user
+
+    with _build_client(repository) as client:
+        client.cookies.set(get_telegram_fallback_cookie_name(), build_telegram_fallback_cookie_value(user))
+        response = client.get("/app", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/catalog"
 
 
 def test_verify_telegram_page_renders() -> None:
     repository = FakeAuthRepository()
 
     with _build_client(repository) as client:
-        response = client.get("/verify/telegram?next=/app/feed")
+        response = client.get("/verify/telegram?requested_next=/app/help")
 
         assert response.status_code == 200
-        assert "Подтвердите доступ через Telegram" in response.text
-        assert "Mini App автоматически подтвердит" in response.text
-        assert "Открыть бота" in response.text
-        assert "Открыть экран запуска Mini App" in response.text
+        assert "Подтверждение через" in response.text
+        assert "Похоже, Telegram-профиль еще не подтвержден" in response.text
+        assert "Начать авторизацию в Telegram" in response.text
+        assert "start=verify_telegram" in response.text
+        assert "/app/catalog" in response.text
+        assert "requested_next" not in response.text
+        assert "/app/help" not in response.text
+        assert "Вернуться к запуску" in response.text
+
+
+def test_legacy_help_entry_redirects_to_canonical_app_entry() -> None:
+    repository = FakeAuthRepository()
+
+    with _build_client(repository) as client:
+        response = client.get("/app/help", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app?entry=legacy_help"
 
 
 def test_tg_webapp_auth_sets_cookie_and_returns_redirect(monkeypatch) -> None:
@@ -296,6 +1020,146 @@ def test_tg_webapp_auth_sets_cookie_and_returns_redirect(monkeypatch) -> None:
         assert response.status_code == 200
         assert response.json()["redirect_url"] == "/app/status"
         assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
+    assert "pct_journey_id=" in response.headers["set-cookie"]
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_redirects_to_canonical_catalog(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    public_repository = FakePublicRepository()
+    auth_date = int(datetime.now(timezone.utc).timestamp())
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository, public_repository) as client:
+        response = client.post(
+            "/tg-webapp/auth",
+            data={"init_data": init_data, "next": "/app/catalog"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["redirect_url"] == "/app/catalog"
+        assert f"{get_telegram_fallback_cookie_name()}=" in response.headers["set-cookie"]
+        assert "pct_journey_id=" in response.headers["set-cookie"]
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_rejects_empty_init_data(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": "", "next": "/app/catalog"})
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "empty_init_data"
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_rejects_invalid_hash(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    auth_date = int(datetime.now(timezone.utc).timestamp())
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+    init_data = init_data.replace("hash=", "hash=deadbeef")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": init_data, "next": "/app/catalog"})
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "invalid_hash"
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_logs_safe_metadata_on_invalid_hash(monkeypatch, capsys) -> None:
+    repository = FakeAuthRepository()
+    auth_date = int(datetime.now(timezone.utc).timestamp())
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+    init_data = f"{init_data}&signature=test-signature"
+    init_data = init_data.replace("hash=", "hash=deadbeef")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": init_data, "next": "/app/catalog"})
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "invalid_hash"
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_rejects_expired_init_data(monkeypatch) -> None:
+    repository = FakeAuthRepository()
+    auth_date = int((datetime.now(timezone.utc).timestamp()) - 4000)
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": init_data, "next": "/app/catalog"})
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "expired_init_data"
+    reset_settings_cache()
+
+
+def test_tg_webapp_auth_logs_success(monkeypatch, capsys) -> None:
+    repository = FakeAuthRepository()
+    public_repository = FakePublicRepository()
+    auth_date = int(datetime.now(timezone.utc).timestamp())
+    init_data = _build_webapp_init_data(
+        bot_token="test-bot-token",
+        auth_date=auth_date,
+        user_payload={
+            "id": 12345,
+            "username": "leaduser",
+            "first_name": "Lead",
+            "last_name": "User",
+        },
+    )
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    reset_settings_cache()
+    with _build_client(repository, public_repository) as client:
+        response = client.post("/tg-webapp/auth", data={"init_data": init_data, "next": "/app/catalog"})
+
+        assert response.status_code == 200
+        assert response.json()["redirect_url"] == "/app/catalog"
     reset_settings_cache()
 
 

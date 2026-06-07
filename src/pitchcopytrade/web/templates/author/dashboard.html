@@ -1,102 +1,135 @@
-{% extends "base.html" %}
+{% extends "author/author_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action" href="/author/recommendations/new">Новая рекомендация</a>
-  <a class="action ghost" href="/author/recommendations">Все рекомендации</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
+<button class="staff-btn is-primary" type="button" data-composer-dock-toggle>Новое сообщение</button>
 {% endblock %}
 
 {% block content %}
 <section class="surface" style="padding:28px;">
-  <div class="eyebrow">author workspace</div>
+  <div class="eyebrow">рабочая зона автора</div>
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
     <div>
       <h1 style="margin:0;font-size:clamp(2rem,4vw,3.4rem);line-height:0.96;letter-spacing:-0.05em;">{{ author.display_name }}</h1>
       <p class="muted" style="margin:16px 0 0;max-width:760px;line-height:1.65;">
-        Рабочая зона автора: свои стратегии, поток рекомендаций, черновики и контекст публикации.
+        Рабочая зона автора: стратегии, поток сообщений, черновики и контекст публикации.
       </p>
     </div>
-    <div class="pill">{{ recommendations|length }} recent items</div>
+    <div class="pill">{{ recommendations|length }} последних сообщений</div>
   </div>
 </section>
 
 <section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:18px;">
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">strategies</div>
+    <div class="eyebrow">стратегии</div>
     <div style="font-size:2rem;margin-top:8px;">{{ stats.strategies_total }}</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">recommendations</div>
-    <div style="font-size:2rem;margin-top:8px;">{{ stats.recommendations_total }}</div>
+    <div class="eyebrow">сообщения</div>
+    <div style="font-size:2rem;margin-top:8px;">{{ stats.messages_total }}</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">drafts</div>
-    <div style="font-size:2rem;margin-top:8px;">{{ stats.draft_recommendations }}</div>
+    <div class="eyebrow">черновики</div>
+    <div style="font-size:2rem;margin-top:8px;">{{ stats.draft_messages }}</div>
   </article>
   <article class="surface" style="padding:20px;">
-    <div class="eyebrow">live</div>
-    <div style="font-size:2rem;margin-top:8px;">{{ stats.live_recommendations }}</div>
+    <div class="eyebrow">активные</div>
+    <div style="font-size:2rem;margin-top:8px;">{{ stats.live_messages }}</div>
   </article>
 </section>
 
 <section style="display:grid;grid-template-columns:minmax(300px,0.8fr) minmax(0,1.2fr);gap:18px;margin-top:18px;">
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">strategies</div>
+    <div class="eyebrow">стратегии</div>
     <h2 style="margin:10px 0 14px;">Ваши стратегии</h2>
     <div style="display:grid;gap:12px;">
       {% for strategy in strategies %}
-      <div class="surface" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;">
+      <a class="surface" href="/author/strategies/{{ strategy.id }}/edit" style="padding:16px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
           <div>
             <strong>{{ strategy.title }}</strong>
             <div class="muted" style="margin-top:6px;">{{ strategy.slug }}</div>
           </div>
-          <span class="pill">{{ strategy.status.value }}</span>
+          <span class="pill">{{ label_strategy_status(strategy.status) }}</span>
         </div>
-      </div>
+      </a>
       {% else %}
-      <div class="muted">Стратегии еще не созданы администратором.</div>
+      <div class="muted">Стратегий пока нет. Создайте первую карточку в author-mode.</div>
       {% endfor %}
     </div>
   </article>
 
   <article class="surface" style="padding:24px;">
-    <div class="eyebrow">recommendations</div>
+    <div class="eyebrow">сообщения</div>
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-      <h2 style="margin:10px 0 14px;">Последние рекомендации</h2>
-      <a class="action ghost" href="/author/recommendations">Открыть все</a>
+      <h2 style="margin:10px 0 14px;">Последние сообщения</h2>
+      <a class="action ghost" href="/author/messages">Открыть все</a>
     </div>
     <div style="display:grid;gap:12px;">
-      {% for recommendation in recommendations %}
-      <a class="surface" href="/author/recommendations/{{ recommendation.id }}/edit" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
+      {% for message in recommendations %}
+      <a class="surface" href="/author/messages/{{ message.id }}/edit" style="padding:18px;border-radius:20px;background:var(--surface-strong);box-shadow:none;display:block;">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
           <div>
-            <strong>{{ recommendation.title or recommendation.strategy.title }}</strong>
-            <div class="muted" style="margin-top:8px;">{{ recommendation.strategy.title }}</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+              <small class="muted">{{ (message.updated or message.created).strftime("%d.%m.%Y") if message.updated or message.created else "—" }}</small>
+              {% if message.type %}
+              <span class="pill">{{ message.type }}</span>
+              {% endif %}
+              {% if message.deliver %}
+              <span class="pill">{{ message.deliver|join(", ") }}</span>
+              {% endif %}
+            </div>
+            <strong>{{ message.title or message.strategy.title }}</strong>
+            {% if message.text and message.text.body %}
+            <div class="muted" style="margin-top:10px;line-height:1.6;">{{ message.text.body | safe }}</div>
+            {% elif message.comment %}
+            <div class="muted" style="margin-top:10px;line-height:1.6;">{{ message.comment }}</div>
+            {% elif message.deals %}
+            <div class="muted" style="margin-top:10px;line-height:1.6;">{{ message.deals[0].ticker or message.deals[0].instrument or message.deals[0].instrument_id }} · {{ message.deals[0].side }}</div>
+            {% else %}
+            <div class="muted" style="margin-top:10px;line-height:1.6;">Сообщение без текста</div>
+            {% endif %}
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <span class="pill">{{ recommendation.kind.value }}</span>
-            <span class="pill">{{ recommendation.status.value }}</span>
+            <span class="pill">{{ label_message_kind(message.kind) }}</span>
+            <span class="pill">{{ label_message_status(message.status) }}</span>
           </div>
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.6;">
-          {{ recommendation.summary or recommendation.thesis or "Текст рекомендации пока не заполнен" }}
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
-          <span class="pill">{{ recommendation.legs|length }} legs</span>
-          <span class="pill">{{ recommendation.attachments|length }} attachments</span>
-          {% if recommendation.scheduled_for %}
-          <span class="pill">scheduled {{ recommendation.scheduled_for }}</span>
-          {% endif %}
         </div>
       </a>
       {% else %}
-      <div class="muted">Рекомендаций пока нет. Создайте первую публикацию.</div>
+      <div class="muted">Сообщений пока нет. Создайте первую публикацию.</div>
       {% endfor %}
     </div>
   </article>
+</section>
+
+<section class="surface author-watchlist-shell">
+  <div class="eyebrow">список наблюдения автора</div>
+  <div class="author-watchlist-head">
+    <div>
+      <h2 style="margin:10px 0 8px;">Наблюдение за бумагами</h2>
+      <p class="muted" style="margin:0;max-width:760px;line-height:1.6;">
+        Список наблюдения автора предзаполняется базовым набором бумаг. Поле справа фильтрует текущий список, а когда
+        совпадений становится мало, показывает варианты для добавления.
+      </p>
+    </div>
+    <div class="author-watchlist-search-shell">
+      <label class="author-watchlist-search">
+        <span class="author-watchlist-search-label">Поиск и добавление</span>
+        <input
+          id="watchlist-search-input"
+          type="text"
+          placeholder="Например: SBER или Сбер"
+          autocomplete="off"
+        />
+      </label>
+      <div id="watchlist-suggestions" class="author-watchlist-suggestions" hidden></div>
+    </div>
+  </div>
+
+  <div class="author-watchlist-table-shell">
+    <div id="watchlist-grid" class="author-watchlist-grid"></div>
+    <div id="watchlist-empty" class="muted author-watchlist-empty" hidden>Совпадений не найдено.</div>
+  </div>
 </section>
 
 <style>
@@ -107,5 +140,341 @@
   @media (max-width: 640px) {
     section[style*="repeat(4"] { grid-template-columns: 1fr !important; }
   }
+
+  .author-watchlist-shell {
+    margin-top: 18px;
+    padding: 24px;
+    display: grid;
+    gap: 18px;
+  }
+
+  .author-watchlist-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .author-watchlist-search-shell {
+    position: relative;
+    width: min(100%, 420px);
+  }
+
+  .author-watchlist-search {
+    display: grid;
+    gap: 8px;
+  }
+
+  .author-watchlist-search-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--ink-700);
+  }
+
+  .author-watchlist-search input {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: white;
+    font: inherit;
+  }
+
+  .author-watchlist-suggestions {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 18px 42px rgba(11, 33, 91, 0.12);
+  }
+  .author-watchlist-suggestions[hidden] {
+    display: none !important;
+  }
+
+  .author-watchlist-suggestion {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: white;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+  }
+
+  .author-watchlist-suggestion small {
+    color: var(--muted);
+  }
+
+  .author-watchlist-grid {
+    min-height: 320px;
+  }
+
+  .author-watchlist-empty {
+    padding: 14px 0 4px;
+  }
 </style>
+
+<script>
+  (function () {
+    const searchInput = document.getElementById("watchlist-search-input");
+    const suggestionsBox = document.getElementById("watchlist-suggestions");
+    const gridHost = document.getElementById("watchlist-grid");
+    const emptyState = document.getElementById("watchlist-empty");
+
+    if (!searchInput || !suggestionsBox || !gridHost || !emptyState) {
+      return;
+    }
+
+    let watchlist = {{ watchlist_items | tojson }};
+    let currentSuggestions = [];
+    let gridApi = null;
+
+    const instrumentState = window.PCTAuthorInstrumentState || {
+      items: watchlist.slice(),
+      listeners: [],
+      refreshPromise: null,
+    };
+    window.PCTAuthorInstrumentState = instrumentState;
+    if (!Array.isArray(instrumentState.listeners)) {
+      instrumentState.listeners = [];
+    }
+    if (!Array.isArray(instrumentState.items) || !instrumentState.items.length) {
+      instrumentState.items = watchlist.slice();
+    }
+
+    function instrumentKey(item) {
+      if (!item) return "";
+      return String(item.id || item.ticker || "").trim();
+    }
+
+    function mergeWatchlistQuotes(items) {
+      const byId = new Map();
+      items.forEach(function (item) {
+        const key = instrumentKey(item);
+        if (key) {
+          byId.set(key, item);
+        }
+      });
+      watchlist = watchlist.map(function (item) {
+        const refreshed = byId.get(instrumentKey(item));
+        if (!refreshed) {
+          return item;
+        }
+        return Object.assign({}, item, refreshed, {
+          quote_last_price_text: refreshed.quote_last_price_text || refreshed.last_price_text || item.quote_last_price_text || "—",
+          quote_change_text: refreshed.quote_change_text || item.quote_change_text || "—",
+          quote: refreshed.quote || item.quote,
+        });
+      });
+    }
+
+    function refreshAuthorInstruments() {
+      if (instrumentState.refreshPromise) {
+        return instrumentState.refreshPromise;
+      }
+      if (typeof fetch !== "function") {
+        return Promise.resolve(watchlist);
+      }
+      instrumentState.refreshPromise = fetch("/api/instruments", {
+        headers: {
+          Accept: "application/json",
+        },
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            return [];
+          }
+          return response.json();
+        })
+        .then(function (payload) {
+          if (Array.isArray(payload)) {
+            instrumentState.items = payload.slice();
+            mergeWatchlistQuotes(payload);
+            updateWatchlistView(searchInput.value || "");
+            instrumentState.listeners.forEach(function (callback) {
+              try {
+                callback(instrumentState.items.slice());
+              } catch (_error) {
+                // Keep refresh non-blocking even if one subscriber fails.
+              }
+            });
+          }
+          return instrumentState.items.slice();
+        })
+        .catch(function () {
+          return instrumentState.items.slice();
+        })
+        .finally(function () {
+          instrumentState.refreshPromise = null;
+        });
+      return instrumentState.refreshPromise;
+    }
+
+    instrumentState.refresh = refreshAuthorInstruments;
+    instrumentState.subscribe = function (callback) {
+      if (typeof callback === "function") {
+        instrumentState.listeners.push(callback);
+      }
+    };
+    instrumentState.subscribe(function (items) {
+      instrumentState.items = Array.isArray(items) ? items.slice() : instrumentState.items;
+      mergeWatchlistQuotes(instrumentState.items);
+      renderGrid(filterWatchlist(searchInput.value || ""));
+      updateWatchlistView(searchInput.value || "");
+    });
+
+    function htmlCellRenderer(params) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = params.value || "";
+      return wrapper;
+    }
+
+    function mapWatchlistRows(items) {
+      return items.map(function (item) {
+        return {
+          ticker: item.ticker,
+          name: item.name,
+          board: item.board,
+          currency: item.currency || "RUB",
+          quote_last_price_text: item.quote_last_price_text || "—",
+          quote_change_text: item.quote_change_text || "—",
+          actions: '<button type="button" class="ghost" data-watchlist-remove="' + item.id + '">Удалить</button>',
+        };
+      });
+    }
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function renderGrid(items) {
+      if (!gridApi && window.PCTAgGrid && window.PCTAgGrid.available) {
+        gridApi = window.PCTAgGrid.createGrid(gridHost, {
+          columnDefs: [
+            { headerName: "Тикер", field: "ticker", minWidth: 120, flex: 1, sortable: true, filter: true },
+            { headerName: "Название", field: "name", minWidth: 220, flex: 1.6, sortable: true, filter: true },
+            { headerName: "Режим", field: "board", minWidth: 120, flex: 1, sortable: true, filter: true },
+            { headerName: "Валюта", field: "currency", minWidth: 110, flex: 0.8, sortable: true, filter: true },
+            { headerName: "Цена", field: "quote_last_price_text", minWidth: 120, flex: 0.9, sortable: true, filter: true },
+            { headerName: "Изм.", field: "quote_change_text", minWidth: 120, flex: 0.9, sortable: true, filter: true },
+            {
+              headerName: "Действия",
+              field: "actions",
+              minWidth: 140,
+              flex: 0.8,
+              pinned: "right",
+              sortable: false,
+              filter: false,
+              cellRenderer: htmlCellRenderer
+            }
+          ],
+          rowData: mapWatchlistRows(items),
+          defaultColDef: {
+            resizable: true,
+            suppressHeaderMenuButton: true
+          },
+          animateRows: false,
+          domLayout: "autoHeight",
+          enableCellTextSelection: true
+        });
+      } else if (gridApi) {
+        gridApi.setGridOption("rowData", mapWatchlistRows(items));
+      }
+      if (gridApi) {
+        gridApi.setGridOption("quickFilterText", searchInput.value || "");
+      }
+      emptyState.hidden = items.length !== 0;
+      gridHost.hidden = items.length === 0;
+    }
+
+    function filterWatchlist(query) {
+      const normalized = normalize(query);
+      if (!normalized) {
+        return watchlist.slice();
+      }
+      return watchlist.filter(function (item) {
+        const haystack = [item.ticker, item.name, item.board].join(" ").toLowerCase();
+        return haystack.includes(normalized);
+      });
+    }
+
+    function hideSuggestions() {
+      suggestionsBox.hidden = true;
+      suggestionsBox.innerHTML = "";
+      currentSuggestions = [];
+    }
+
+    function renderSuggestions(items) {
+      currentSuggestions = items;
+      if (!items.length) {
+        hideSuggestions();
+        return;
+      }
+      suggestionsBox.innerHTML = "";
+      items.forEach(function (item) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "author-watchlist-suggestion";
+        button.dataset.instrumentId = item.id;
+        button.innerHTML = `
+          <span>
+            <strong>${item.ticker}</strong> · ${item.name}
+            <br />
+            <small>${item.board}${item.source === "external_stub" ? " · внешний поиск (stub)" : ""}</small>
+          </span>
+          <span class="pill">Добавить</span>
+        `;
+        suggestionsBox.appendChild(button);
+      });
+      suggestionsBox.hidden = false;
+    }
+
+    function updateWatchlistView(query) {
+      const filtered = filterWatchlist(query);
+      renderGrid(filtered);
+      const candidateQuery = normalize(query);
+      const suggestions = watchlist.filter(function (item) {
+        const haystack = [item.ticker, item.name, item.board].join(" ").toLowerCase();
+        return candidateQuery && !haystack.includes(candidateQuery);
+      }).slice(0, 4);
+      if (candidateQuery && suggestions.length) {
+        renderSuggestions(suggestions);
+      } else {
+        hideSuggestions();
+      }
+    }
+
+    if (gridHost) {
+      renderGrid(watchlist);
+    }
+    if (searchInput) {
+      searchInput.addEventListener("input", function (event) {
+        updateWatchlistView(event.target.value);
+      });
+    }
+
+    updateWatchlistView(searchInput.value || "");
+    window.requestAnimationFrame(function () {
+      refreshAuthorInstruments();
+    });
+  })();
+</script>
+{% endblock %}
+
+{% block composer_dock %}
+{% set composer_default_open = False %}
+{% include "author/_composer_dock.html" %}
 {% endblock %}

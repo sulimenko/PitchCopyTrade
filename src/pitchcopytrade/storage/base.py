@@ -6,7 +6,6 @@ from typing import BinaryIO, Protocol
 
 @dataclass(frozen=True)
 class StorageObject:
-    bucket_name: str
     object_key: str
     content_type: str
     size_bytes: int
@@ -17,7 +16,6 @@ class StorageObject:
 
 class StorageBackend(Protocol):
     provider_name: str
-    bucket_name: str
 
     def bootstrap(self) -> None: ...
 

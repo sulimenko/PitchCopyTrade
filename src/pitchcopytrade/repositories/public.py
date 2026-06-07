@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -7,10 +9,15 @@ from sqlalchemy.orm import selectinload
 from pitchcopytrade.db.models.accounts import AuthorProfile, User
 from pitchcopytrade.db.models.catalog import LeadSource, Strategy, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import LegalDocument, Payment, PromoCode, Subscription, UserConsent
-from pitchcopytrade.db.models.enums import LegalDocumentType, StrategyStatus
+from pitchcopytrade.db.models.enums import LegalDocumentType, StrategyStatus, SubscriptionStatus
 from pitchcopytrade.repositories.contracts import PublicRepository
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+
+ACTIVE_SUBSCRIPTION_STATUSES = (
+    SubscriptionStatus.ACTIVE,
+    SubscriptionStatus.TRIAL,
+)
 
 
 class SqlAlchemyPublicRepository(PublicRepository):
@@ -52,6 +59,19 @@ class SqlAlchemyPublicRepository(PublicRepository):
             strategy.subscription_products = [product for product in strategy.subscription_products if product.is_active]
         return strategy
 
+    async def get_public_product_by_ref(self, product_ref: str) -> SubscriptionProduct | None:
+        normalized = (product_ref or "").strip()
+        if not normalized:
+            return None
+        product = await self.get_public_product_by_slug(normalized)
+        if product is not None:
+            return product
+        try:
+            UUID(normalized)
+        except ValueError:
+            return None
+        return await self.get_public_product(normalized)
+
     async def get_public_product(self, product_id: str) -> SubscriptionProduct | None:
         query = (
             select(SubscriptionProduct)
@@ -85,7 +105,12 @@ class SqlAlchemyPublicRepository(PublicRepository):
         product = result.scalar_one_or_none()
         if product is None:
             return None
-        return await self.get_public_product(product.id)
+        if (
+            product.strategy is not None
+            and (not product.strategy.is_public or product.strategy.status is not StrategyStatus.PUBLISHED)
+        ):
+            return None
+        return product
 
     async def list_active_checkout_documents(self) -> list[LegalDocument]:
         query = (
@@ -134,6 +159,7 @@ class SqlAlchemyPublicRepository(PublicRepository):
                 selectinload(User.consents),
                 selectinload(User.payments).selectinload(Payment.product),
                 selectinload(User.subscriptions).selectinload(Subscription.product),
+                selectinload(User.subscriptions).selectinload(Subscription.applied_promo_code),
                 selectinload(User.subscriptions).selectinload(Subscription.payment),
             )
             .where(User.telegram_user_id == telegram_user_id)
@@ -153,8 +179,35 @@ class SqlAlchemyPublicRepository(PublicRepository):
             return None
         return next((item for item in user.subscriptions if item.id == subscription_id), None)
 
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str) -> Subscription | None:
+        query = (
+            select(Subscription)
+            .where(
+                Subscription.user_id == user_id,
+                Subscription.product_id == product_id,
+                Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def list_active_product_ids_for_user(self, user_id: str) -> set[str]:
+        query = select(Subscription.product_id).where(
+            Subscription.user_id == user_id,
+            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
+        )
+        result = await self.session.execute(query)
+        return set(result.scalars().all())
+
     def add(self, entity: object) -> None:
         self.session.add(entity)
+
+    async def flush(self) -> None:
+        await self.session.flush()
+
+    async def rollback(self) -> None:
+        await self.session.rollback()
 
     async def commit(self) -> None:
         await self.session.commit()
@@ -207,6 +260,15 @@ class FilePublicRepository(PublicRepository):
             return None
         return await self.get_public_product(product.id)
 
+    async def get_public_product_by_ref(self, product_ref: str) -> SubscriptionProduct | None:
+        normalized = (product_ref or "").strip()
+        if not normalized:
+            return None
+        product = await self.get_public_product_by_slug(normalized)
+        if product is not None:
+            return product
+        return await self.get_public_product(normalized)
+
     async def list_active_checkout_documents(self) -> list[LegalDocument]:
         by_type: dict[LegalDocumentType, LegalDocument] = {}
         for document in sorted(
@@ -251,8 +313,31 @@ class FilePublicRepository(PublicRepository):
             return None
         return next((item for item in user.subscriptions if item.id == subscription_id), None)
 
+    async def get_active_subscription_for_product(self, user_id: str, product_id: str) -> Subscription | None:
+        return next(
+            (
+                item
+                for item in self.graph.subscriptions.values()
+                if item.user_id == user_id and item.product_id == product_id and item.status in ACTIVE_SUBSCRIPTION_STATUSES
+            ),
+            None,
+        )
+
+    async def list_active_product_ids_for_user(self, user_id: str) -> set[str]:
+        return {
+            item.product_id
+            for item in self.graph.subscriptions.values()
+            if item.user_id == user_id and item.status in ACTIVE_SUBSCRIPTION_STATUSES
+        }
+
     def add(self, entity: object) -> None:
         self.graph.add(entity)
+
+    async def flush(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
 
     async def commit(self) -> None:
         self.graph.save(self.store)

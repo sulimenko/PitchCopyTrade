@@ -1,0 +1,63 @@
+{% extends "author/author_base.html" %}
+
+{% block parent_href %}/author/dashboard{% endblock %}
+{% block breadcrumbs %}Автор / Стратегии{% endblock %}
+{% block page_title %}Стратегии автора{% endblock %}
+
+{% block topbar_actions %}
+<a class="staff-btn is-primary" href="/author/strategies/new">Новая стратегия</a>
+{% endblock %}
+
+{% block composer_dock %}
+{% set composer_default_open = False %}
+{% include "author/_composer_dock.html" %}
+{% endblock %}
+
+{% block content %}
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">стратегии автора</div>
+      <h1>Стратегии автора</h1>
+      <!-- <p>{{ author.display_name }}. В реестре сразу видны slug, риск, статус и порог капитала без открытия редактора.</p> -->
+    </div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ strategies|length }} строк</span>
+      <span class="staff-page-note">Новая стратегия откроет короткую форму и вернёт в реестр после сохранения.</span>
+    </div>
+  </div>
+  
+  <!--
+  <div class="staff-toolbar">
+    <form method="get" action="/author/strategies" class="staff-form-row">
+      <label class="staff-field">
+        <span>Фильтр</span>
+        <input type="text" name="q" value="{{ q }}" placeholder="Название, slug, описание" />
+      </label>
+      <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+      <input type="hidden" name="direction" value="{{ direction }}" />
+      <button class="staff-btn" type="submit">Применить</button>
+    </form>
+    <div class="staff-toolbar-note">Черновики можно редактировать, опубликованные и архивные строки остаются только для чтения.</div>
+  </div>
+  -->
+  
+  <div class="staff-grid-shell">
+    <div id="grid-host" class="pct-tabulator"></div>
+  </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Стратегия", field: "title", widthGrow: 1.6 },
+      { title: "Описание", field: "description" },
+      { title: "Риск", field: "risk" },
+      { title: "Статус", field: "status" },
+      { title: "Мин. капитал", field: "min_capital" },
+      { title: "Открыть", field: "actions", frozen: true }
+    ],
+    data: {{ strategies_json | safe }}
+  });
+  </script>
+</section>
+{% endblock %}

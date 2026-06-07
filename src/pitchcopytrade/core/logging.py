@@ -26,11 +26,18 @@ def configure_logging(settings: LoggingSettings) -> None:
     level = getattr(logging, settings.level, logging.INFO)
     root_logger.setLevel(level)
 
-    handler = logging.StreamHandler(sys.stdout)
-    if settings.json_logs:
-        handler.setFormatter(JsonLogFormatter())
-    else:
-        handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
-
     root_logger.handlers.clear()
-    root_logger.addHandler(handler)
+
+    if settings.json_logs:
+        formatter: logging.Formatter = JsonLogFormatter()
+    else:
+        formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    root_logger.addHandler(stdout_handler)
+
+    if settings.file_path:
+        file_handler = logging.FileHandler(settings.file_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)

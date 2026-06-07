@@ -1,0 +1,177 @@
+{% extends "staff_base.html" %}
+
+{% block parent_href %}/admin/dashboard{% endblock %}
+{% block breadcrumbs %}Админ / Авторы / Реестр{% endblock %}
+{% block page_title %}Авторы{% endblock %}
+
+{% block topbar_actions %}
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="staff-error">{{ error }}</div>
+{% endif %}
+{% if request.query_params.get("reseed") %}
+<div class="staff-card" style="padding:12px 14px;">Список наблюдения пересобран для {{ request.query_params.get("reseed") }} авторов.</div>
+{% endif %}
+
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div>
+      <div class="eyebrow">реестр авторов</div>
+      <h1>Авторы</h1>
+      <p>Реестр авторов переведен на компактный CRUD-контракт: приглашение, политика модерации и статус отображаются в одной grid-поверхности.</p>
+    </div>
+    <div class="staff-inline-actions">
+      <form method="post" action="/admin/authors/reseed-watchlist">
+        <button type="submit" class="ghost">Пересобрать watchlist</button>
+      </form>
+      <span class="staff-badge">{{ authors|length }} строк</span>
+    </div>
+  </div>
+  <div class="staff-toolbar">
+    <form method="post" action="/admin/authors" class="staff-form-row">
+      <label class="staff-field">
+        <span>Имя</span>
+        <input name="display_name" required />
+      </label>
+      <label class="staff-field">
+        <span>Почта</span>
+        <input name="email" type="email" required />
+      </label>
+      <details class="staff-field" style="min-width:220px;">
+        <summary class="ghost" style="list-style:none;cursor:pointer;">Расширенные поля</summary>
+        <div style="margin-top:8px;">
+          <span>Telegram ID</span>
+          <input name="telegram_user_id" type="number" />
+        </div>
+      </details>
+      <button type="submit" class="staff-btn is-primary">Создать</button>
+    </form>
+    <form method="get" action="/admin/authors" class="staff-form-row">
+      <label class="staff-field">
+        <span>Поиск</span>
+        <input type="text" name="q" value="{{ q }}" placeholder="Имя, slug, email" />
+      </label>
+      <label class="staff-field">
+        <span>Статус</span>
+        <select name="status_filter" onchange="this.form.submit()">
+          <option value="all" {% if status_filter == "all" %}selected{% endif %}>все</option>
+          <option value="active" {% if status_filter == "active" %}selected{% endif %}>активные</option>
+          <option value="inactive" {% if status_filter == "inactive" %}selected{% endif %}>отключенные</option>
+        </select>
+      </label>
+      <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+      <input type="hidden" name="direction" value="{{ direction }}" />
+      <button class="staff-btn" type="submit">Применить</button>
+    </form>
+  </div>
+  <div class="staff-grid-shell">
+    <div id="grid-host" class="pct-tabulator"></div>
+    {% if not authors %}
+    <div class="muted" style="margin-top:12px;">Нет авторов.</div>
+    {% endif %}
+  </div>
+
+  <!-- Dialogs for editing authors -->
+  {% for author in authors %}
+  {% if author.has_linked_user %}
+  <dialog id="author-edit-{{ author.id }}" class="staff-dialog">
+    <form method="dialog" class="staff-dialog-backdrop">
+      <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
+    </form>
+    <form method="post" action="/admin/authors/{{ author.id }}/edit" class="staff-drawer">
+      <div class="staff-drawer-head">
+        <div>
+          <div class="eyebrow">редактирование автора</div>
+          <strong>{{ author.display_name }}</strong>
+        </div>
+        <button type="button" class="ghost" data-close-staff-dialog>Закрыть</button>
+      </div>
+      <div class="staff-drawer-body">
+        <label class="staff-field">
+          <span>Имя</span>
+          <input name="display_name" value="{{ author.display_name }}" required />
+        </label>
+        <label class="staff-field">
+          <span>Почта</span>
+          <input name="email" type="email" value="{{ author.email or '' }}" required />
+        </label>
+        <label class="staff-field">
+          <span>Telegram ID</span>
+          <input name="telegram_user_id" type="number" value="{{ author.telegram_user_id or '' }}" />
+        </label>
+        <div class="staff-field">
+          <span>Роли</span>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="admin" {% if author.has_admin_role %}checked{% endif %} /> <span>Администратор</span></label>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="author" {% if author.has_author_role %}checked{% endif %} /> <span>Автор</span></label>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="moderator" {% if author.has_moderator_role %}checked{% endif %} /> <span>Модератор</span></label>
+          {% if author.extra_roles %}
+          <div class="muted">Дополнительные роли: {{ author.extra_roles | join(", ") }}</div>
+          {% endif %}
+        </div>
+        <label class="staff-inline-actions">
+          <input type="checkbox" name="requires_moderation" {% if author.requires_moderation %}checked{% endif %} />
+          <span>Требует модерации</span>
+        </label>
+        <label class="staff-field">
+          <span>Статус</span>
+          <select name="status_value">
+            <option value="active" {% if author.status == "active" %}selected{% endif %}>Активен</option>
+            <option value="inactive" {% if author.status == "inactive" %}selected{% endif %}>Неактивен</option>
+          </select>
+        </label>
+      </div>
+      <div class="staff-drawer-actions">
+        <button type="submit" class="staff-btn is-primary">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+  {% endif %}
+  {% endfor %}
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Имя", field: "name", widthGrow: 1.6 },
+      { title: "Почта", field: "email" },
+      { title: "Telegram ID", field: "telegram_id" },
+      { title: "Модерация", field: "moderation" },
+      { title: "Статус", field: "status" },
+      { title: "Приглашение", field: "invite" },
+      { title: "Действия", field: "actions", frozen: true }
+    ],
+    data: {{ authors_json | safe }}
+  });
+  </script>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.querySelectorAll("[data-open-staff-dialog]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var dialog = document.getElementById(button.getAttribute("data-open-staff-dialog"));
+      if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+    });
+  });
+  document.querySelectorAll("[data-close-staff-dialog]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var dialog = button.closest("dialog");
+      if (dialog) dialog.close();
+    });
+  });
+  document.addEventListener("click", async function (event) {
+    const button = event.target.closest("[data-copy-text]");
+    if (!button) return;
+    const text = button.getAttribute("data-copy-text") || "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Скопировано";
+    } catch (_error) {
+      button.textContent = "Не удалось";
+    }
+  });
+</script>
+{% endblock %}

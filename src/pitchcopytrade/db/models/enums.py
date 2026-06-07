@@ -1,5 +1,7 @@
 from enum import Enum
 
+from sqlalchemy import Enum as SqlEnum
+
 
 class RoleSlug(str, Enum):
     ADMIN = "admin"
@@ -10,7 +12,13 @@ class RoleSlug(str, Enum):
 class UserStatus(str, Enum):
     INVITED = "invited"
     ACTIVE = "active"
-    BLOCKED = "blocked"
+    INACTIVE = "inactive"
+
+
+class InviteDeliveryStatus(str, Enum):
+    SENT = "sent"
+    FAILED = "failed"
+    RESENT = "resent"
 
 
 class LeadSourceType(str, Enum):
@@ -39,12 +47,6 @@ class ProductType(str, Enum):
     BUNDLE = "bundle"
 
 
-class BillingPeriod(str, Enum):
-    MONTH = "month"
-    QUARTER = "quarter"
-    YEAR = "year"
-
-
 class PaymentProvider(str, Enum):
     STUB_MANUAL = "stub_manual"
     TBANK = "tbank"
@@ -69,22 +71,46 @@ class SubscriptionStatus(str, Enum):
     BLOCKED = "blocked"
 
 
-class RecommendationKind(str, Enum):
-    NEW_IDEA = "new_idea"
+class MessageKind(str, Enum):
+    IDEA = "idea"
     UPDATE = "update"
     CLOSE = "close"
     CANCEL = "cancel"
+    NOTE = "note"
 
 
-class RecommendationStatus(str, Enum):
+class MessageType(str, Enum):
+    TEXT = "text"
+    DOCUMENT = "document"
+    DEAL = "deal"
+    MIXED = "mixed"
+
+
+class MessageStatus(str, Enum):
     DRAFT = "draft"
     REVIEW = "review"
     APPROVED = "approved"
     SCHEDULED = "scheduled"
     PUBLISHED = "published"
-    CLOSED = "closed"
-    CANCELLED = "cancelled"
     ARCHIVED = "archived"
+    FAILED = "failed"
+
+
+class MessageModeration(str, Enum):
+    REQUIRED = "required"
+    DIRECT = "direct"
+
+
+class MessageDeliver(str, Enum):
+    STRATEGY = "strategy"
+    AUTHOR = "author"
+    BUNDLE = "bundle"
+
+
+class MessageChannel(str, Enum):
+    TELEGRAM = "telegram"
+    MINIAPP = "miniapp"
+    WEB = "web"
 
 
 class TradeSide(str, Enum):
@@ -101,3 +127,15 @@ class LegalDocumentType(str, Enum):
 
 class InstrumentType(str, Enum):
     EQUITY = "equity"
+
+
+def enum_values(enum_cls: type[Enum]) -> list[str]:
+    return [str(item.value) for item in enum_cls]
+
+
+def sql_enum(enum_cls: type[Enum], *, name: str) -> SqlEnum:
+    return SqlEnum(
+        enum_cls,
+        name=name,
+        values_callable=enum_values,
+    )

@@ -4,6 +4,7 @@
 
 {% block content %}
 {% include "app/_miniapp_nav.html" %}
+{% set miniapp_root = "/preview/app" if preview_mode else "/app" %}
 
 <section class="surface" style="padding:28px;">
   <div class="eyebrow">подписка</div>
@@ -16,17 +17,17 @@
 <section class="surface" style="padding:24px;margin-top:18px;">
   <div style="display:grid;gap:12px;">
     <div><strong>Статус:</strong> <span class="muted">{{ subscription_status_label(subscription.status) }}</span></div>
-    <div><strong>Период:</strong> <span class="muted">{{ billing_period_label(subscription.product.billing_period if subscription.product else None) }}</span></div>
+    <div><strong>Период:</strong> <span class="muted">{{ label_duration_days(subscription.product.duration_days if subscription.product else None) }}</span></div>
     <div><strong>Начало:</strong> <span class="muted">{{ subscription.start_at or "не указано" }}</span></div>
     <div><strong>Окончание:</strong> <span class="muted">{{ subscription.end_at or "не указано" }}</span></div>
     <div><strong>Пробный период:</strong> <span class="muted">{{ "да" if subscription.is_trial else "нет" }}</span></div>
-    <div><strong>Автопродление:</strong> <span class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</span></div>
-    <div><strong>Промокод:</strong> <span class="muted">{{ subscription.applied_promo_code.code if subscription.applied_promo_code else "не применялся" }}</span></div>
-    <div><strong>Ручная скидка:</strong> <span class="muted">{{ subscription.manual_discount_rub }} руб</span></div>
+    <!-- <div><strong>Автопродление:</strong> <span class="muted">{{ "включено" if subscription.autorenew_enabled else "выключено" }}</span></div> -->
+    <!-- <div><strong>Промокод:</strong> <span class="muted">{{ subscription.applied_promo_code.code if subscription.applied_promo_code else "не применялся" }}</span></div> -->
+    <!-- <div><strong>Ручная скидка:</strong> <span class="muted">{{ subscription.manual_discount_rub }} руб</span></div> -->
   </div>
 
   {% if subscription.status.value not in ["cancelled", "blocked"] %}
-  <form method="post" action="/app/subscriptions/{{ subscription.id }}/autorenew" style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;">
+  <form method="post" action="{{ miniapp_root }}/subscriptions/{{ subscription.id }}/autorenew" style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;">
     {% if subscription.autorenew_enabled %}
     <input type="hidden" name="enabled" value="0" />
     <button class="action ghost" type="submit">Выключить автопродление</button>
@@ -38,14 +39,16 @@
   {% endif %}
 
   {% if subscription.product %}
-  <form method="post" action="/app/subscriptions/{{ subscription.id }}/renew" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+  <form method="post" action="{{ miniapp_root }}/subscriptions/{{ subscription.id }}/renew" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+    <!--
     <input type="text" name="promo_code_value" placeholder="Новый промокод" style="padding:10px 12px;border-radius:999px;border:1px solid var(--line);font:inherit;width:180px;" />
     <button class="action" type="submit">Продлить подписку</button>
-    <a class="action ghost" href="/app/subscriptions">Назад к подпискам</a>
+    -->
+    <a class="action ghost" href="{{ miniapp_root }}/subscriptions">Назад к подпискам</a>
   </form>
   {% endif %}
   {% if subscription.status.value in ["active", "trial", "pending"] %}
-  <form method="post" action="/app/subscriptions/{{ subscription.id }}/cancel" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
+  <form method="post" action="{{ miniapp_root }}/subscriptions/{{ subscription.id }}/cancel" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
     <button class="action ghost" type="submit">Отменить подписку</button>
   </form>
   {% endif %}

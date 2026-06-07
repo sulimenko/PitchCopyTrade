@@ -78,17 +78,13 @@ def record_user_consent(
         raise ComplianceError("Consent can only be recorded for active legal documents")
 
     consent = UserConsent(
-        user=user,
-        document=document,
-        payment=payment,
+        user_id=user.id,
+        document_id=document.id,
+        payment_id=payment.id if payment is not None else None,
         accepted_at=accepted_at or utcnow(),
         source=source,
         ip_address=ip_address,
     )
-    user.consents.append(consent)
-    document.consents.append(consent)
-    if payment is not None:
-        payment.consents.append(consent)
     return consent
 
 
@@ -113,7 +109,4 @@ def ensure_required_consents_before_payment(
 
 def bind_consents_to_payment(*, consents: list[UserConsent], payment: Payment) -> None:
     for consent in consents:
-        consent.payment = payment
         consent.payment_id = payment.id
-        if consent not in payment.consents:
-            payment.consents.append(consent)

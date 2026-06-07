@@ -1,0 +1,49 @@
+{% extends "author/author_base.html" %}
+
+{% block parent_href %}/author/dashboard{% endblock %}
+{% block breadcrumbs %}Автор / Сообщения{% endblock %}
+{% block page_title %}Сообщения автора{% endblock %}
+
+{% block topbar_actions %}
+<button class="staff-btn is-primary" type="button" data-composer-dock-toggle>Новое сообщение</button>
+{% endblock %}
+
+{% block content %}
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">реестр сообщений</div>
+      <h1>Сообщения автора</h1>
+      <p>Здесь видны стратегия, тип сообщения, канал доставки, статус и последнее обновление без перехода в карточку.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ recommendations|length }} строк</span>
+    </div>
+  </div>
+  <div class="staff-grid-shell">
+    <div id="grid-host" class="pct-tabulator"></div>
+  </div>
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Сообщение", field: "message", widthGrow: 1.8, headerFilter: "input" },
+      { title: "Стратегия", field: "strategy", headerFilter: "input" },
+      { title: "Тип", field: "type", headerFilter: "input" },
+      { title: "Доставка", field: "deliver", headerFilter: "input" },
+      { title: "Контент", field: "content", headerFilter: "input" },
+      { title: "Статус", field: "status", headerFilter: "select", headerFilterParams: { values: { "": "все", "draft": "Черновик", "review": "На модерации", "scheduled": "Запланировано", "published": "Опубликовано" } } },
+      { title: "Обновлено", field: "updated", headerFilter: "input" },
+      { title: "Открыть", field: "actions", frozen: true }
+    ],
+    data: {{ recommendations_json | safe }}
+  });
+  </script>
+
+</section>
+{% endblock %}
+
+{% block composer_dock %}
+{% set composer_default_open = False %}
+{% include "author/_composer_dock.html" %}
+{% endblock %}

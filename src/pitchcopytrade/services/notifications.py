@@ -5,18 +5,24 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_, select
+from aiogram.types import BufferedInputFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from pitchcopytrade.core.config import get_settings
 from pitchcopytrade.db.models.accounts import User
 from pitchcopytrade.db.models.audit import AuditEvent
 from pitchcopytrade.db.models.catalog import BundleMember, SubscriptionProduct
 from pitchcopytrade.db.models.commerce import Payment, Subscription
-from pitchcopytrade.db.models.content import Recommendation
-from pitchcopytrade.db.models.enums import PaymentStatus, SubscriptionStatus
+from pitchcopytrade.db.models.content import Message
+from pitchcopytrade.db.models.enums import MessageDeliver, MessageStatus, PaymentStatus, SubscriptionStatus
+from pitchcopytrade.db.models.notification_log import NotificationChannelEnum, NotificationLog
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.storage.local import LocalFilesystemStorage
+from pitchcopytrade.services.email_transport import send_smtp_email
+from pitchcopytrade.services.message_rendering import render_message_email_text, render_message_notification_text
 
 
 logger = logging.getLogger(__name__)
@@ -32,136 +38,160 @@ class ReminderStats:
     skipped: int = 0
 
 
-async def list_recommendation_recipient_telegram_ids(
+@dataclass(slots=True, frozen=True)
+class RecipientSelectionDiagnostics:
+    active_subscriptions: int
+    telegram_bound_active_subscriptions: int
+    matching_active_subscriptions: int
+    reason: str
+
+
+@dataclass(slots=True, frozen=True)
+class MessageRecipient:
+    user_id: str
+    telegram_user_id: int | None
+    email: str | None
+
+
+async def list_message_recipient_telegram_ids(
     session: AsyncSession,
-    recommendation: Recommendation,
+    message: Message,
 ) -> list[int]:
+    recipients, _diagnostics = await _collect_message_recipients_db(session, message)
+    return [item.telegram_user_id for item in recipients if item.telegram_user_id is not None]
+
+
+async def _bundle_strategy_ids_for_message(session: AsyncSession, message: Message) -> set[str]:
+    if message.strategy_id is None:
+        return set()
+    query = select(BundleMember.bundle_id).where(BundleMember.strategy_id == message.strategy_id)
+    result = await session.execute(query)
+    bundle_ids = [item for item in result.scalars().all() if item is not None]
+    if not bundle_ids:
+        return set()
+    bundle_result = await session.execute(select(BundleMember.strategy_id).where(BundleMember.bundle_id.in_(bundle_ids)))
+    return {item for item in bundle_result.scalars().all() if item is not None}
+
+
+def _subscription_matches_message(
+    message: Message,
+    *,
+    product: SubscriptionProduct,
+    bundle_strategy_ids: set[str],
+) -> bool:
+    deliver = {str(item).strip() for item in (message.deliver or []) if str(item).strip()}
+    if not deliver:
+        return False
+    if MessageDeliver.STRATEGY.value in deliver and product.strategy_id == message.strategy_id:
+        return True
+    if MessageDeliver.AUTHOR.value in deliver and product.author_id == message.author_id:
+        return True
+    if MessageDeliver.BUNDLE.value in deliver and product.bundle_id is not None and message.strategy_id in bundle_strategy_ids:
+        return True
+    return False
+
+
+def build_message_notification_text(message: Message) -> str:
+    return render_message_notification_text(message)
+
+
+def build_message_email_text(message: Message) -> str:
+    return render_message_email_text(message)
+
+
+def _message_title(message: Message) -> str:
+    if message.title:
+        return message.title
+    if message.strategy is not None and message.strategy.title:
+        return message.strategy.title
+    return "Публикация"
+
+
+async def get_message_for_notification(
+    session: AsyncSession,
+    message_id: str,
+) -> Message | None:
     query = (
-        select(User.telegram_user_id)
-        .join(Subscription, Subscription.user_id == User.id)
-        .join(SubscriptionProduct, Subscription.product_id == SubscriptionProduct.id)
-        .where(
-            User.telegram_user_id.is_not(None),
-            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
-            or_(
-                SubscriptionProduct.strategy_id == recommendation.strategy_id,
-                SubscriptionProduct.author_id == recommendation.author_id,
-                SubscriptionProduct.bundle_id.in_(
-                    select(BundleMember.bundle_id).where(BundleMember.strategy_id == recommendation.strategy_id)
-                ),
-            ),
+        select(Message)
+        .options(
+            selectinload(Message.strategy),
+            selectinload(Message.author),
+            selectinload(Message.bundle),
+            selectinload(Message.user),
+            selectinload(Message.moderator),
         )
-        .distinct()
+        .where(Message.id == message_id)
     )
     result = await session.execute(query)
-    return [int(item) for item in result.scalars().all() if item is not None]
+    return result.scalar_one_or_none()
 
 
-def build_recommendation_notification_text(recommendation: Recommendation) -> str:
-    title = recommendation.title or recommendation.strategy.title
-    lines = [
-        "Новая публикация по вашей подписке",
-        f"{title}",
-        f"Стратегия: {recommendation.strategy.title}",
-        f"Тип: {recommendation.kind.value}",
-    ]
-    if recommendation.summary:
-        lines.append(recommendation.summary)
-    if recommendation.legs:
-        first_leg = recommendation.legs[0]
-        instrument = first_leg.instrument.ticker if first_leg.instrument else "инструмент"
-        lines.append(
-            f"Leg: {instrument} {first_leg.side.value if first_leg.side else 'n/a'} "
-            f"{first_leg.entry_from or 'n/a'}"
-        )
-    if recommendation.attachments:
-        lines.append(f"Вложений: {len(recommendation.attachments)}")
-    return "\n".join(lines)
-
-
-async def deliver_recommendation_notifications(
+async def deliver_message_notifications_by_id(
     session: AsyncSession,
-    recommendation: Recommendation,
+    message_id: str,
     notifier,
     *,
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
-) -> list[int]:
-    recipients = await list_recommendation_recipient_telegram_ids(session, recommendation)
-    text = build_recommendation_notification_text(recommendation)
-    delivered: list[int] = []
-    for chat_id in recipients:
-        if await _send_with_retry(notifier.send_message, chat_id, text, attempts=attempts):
-            delivered.append(chat_id)
-
-    session.add(
-        AuditEvent(
-            actor_user_id=None,
-            entity_type="recommendation",
-            entity_id=recommendation.id,
-            action="notification.delivery",
-            payload={
-                "recipient_count": len(delivered),
-                "attempted_count": len(recipients),
-                "failed_count": len(recipients) - len(delivered),
-                "trigger": trigger,
-                "attempts": attempts,
-            },
-        )
+    attachment_storage: LocalFilesystemStorage | None = None,
+) -> list[int] | None:
+    message = await get_message_for_notification(session, message_id)
+    if message is None:
+        return None
+    return await deliver_message_notifications(
+        session,
+        message,
+        notifier,
+        trigger=trigger,
+        attempts=attempts,
+        attachment_storage=attachment_storage,
     )
-    await session.commit()
-    return delivered
 
 
-async def deliver_recommendation_notifications_file(
+async def deliver_message_notifications(
+    session: AsyncSession,
+    message: Message,
+    notifier,
+    *,
+    trigger: str = "publish",
+    attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
+    attachment_storage: LocalFilesystemStorage | None = None,
+) -> list[int]:
+    recipients, diagnostics = await _collect_message_recipients_db(session, message)
+    return await _deliver_message_notifications_db(
+        session,
+        message,
+        notifier,
+        recipients,
+        diagnostics,
+        trigger=trigger,
+        attempts=attempts,
+        attachment_storage=attachment_storage,
+    )
+
+
+async def deliver_message_notifications_file(
     graph: FileDatasetGraph,
     store: FileDataStore,
-    recommendation: Recommendation,
+    message: Message,
     notifier,
     *,
     trigger: str = "publish",
     attempts: int = DEFAULT_NOTIFICATION_ATTEMPTS,
+    attachment_storage: LocalFilesystemStorage | None = None,
 ) -> list[int]:
-    recipients = {
-        subscription.user.telegram_user_id
-        for subscription in graph.subscriptions.values()
-        if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES
-        and subscription.user.telegram_user_id is not None
-        and (
-            subscription.product.strategy_id == recommendation.strategy_id
-            or subscription.product.author_id == recommendation.author_id
-            or (
-                subscription.product.bundle_id is not None
-                and any(
-                    member.bundle_id == subscription.product.bundle_id and member.strategy_id == recommendation.strategy_id
-                    for member in graph.bundle_members
-                )
-            )
-        )
-    }
-    text = build_recommendation_notification_text(recommendation)
-    delivered: list[int] = []
-    for chat_id in sorted(int(item) for item in recipients if item is not None):
-        if await _send_with_retry(notifier.send_message, chat_id, text, attempts=attempts):
-            delivered.append(chat_id)
-
-    graph.add(
-        AuditEvent(
-            actor_user_id=None,
-            entity_type="recommendation",
-            entity_id=recommendation.id,
-            action="notification.delivery",
-            payload={
-                "recipient_count": len(delivered),
-                "attempted_count": len(recipients),
-                "failed_count": len(recipients) - len(delivered),
-                "trigger": trigger,
-                "attempts": attempts,
-            },
-        )
+    recipients, diagnostics = _collect_message_recipients_file(graph, message)
+    return await _deliver_message_notifications_file(
+        graph,
+        store,
+        message,
+        notifier,
+        recipients,
+        diagnostics,
+        trigger=trigger,
+        attempts=attempts,
+        attachment_storage=attachment_storage,
     )
-    graph.save(store)
-    return delivered
 
 
 async def _send_with_retry(
@@ -179,12 +209,320 @@ async def _send_with_retry(
             return True
         except Exception:
             logger.exception(
-                "Failed to deliver recommendation notification to chat_id=%s attempt=%s/%s",
+                "Failed to deliver message notification to chat_id=%s attempt=%s/%s",
                 chat_id,
                 attempt,
                 attempts,
             )
     return False
+
+
+async def _deliver_message_notifications_db(
+    session: AsyncSession,
+    message: Message,
+    notifier,
+    recipients: list[MessageRecipient],
+    diagnostics: RecipientSelectionDiagnostics,
+    *,
+    trigger: str,
+    attempts: int,
+    attachment_storage: LocalFilesystemStorage | None,
+) -> list[int]:
+    return await _deliver_message_notifications_runtime(
+        message=message,
+        recipients=recipients,
+        diagnostics=diagnostics,
+        telegram_client=notifier,
+        send_email_subject=f"Новая публикация: {_message_title(message)}",
+        send_email_body=build_message_email_text(message),
+        admin_email=get_settings().admin_email,
+        attempts=attempts,
+        trigger=trigger,
+        append_notification_log=lambda log: session.add(log),
+        append_audit_event=lambda event: session.add(event),
+        finalize=session.commit,
+        attachment_storage=attachment_storage,
+    )
+
+
+async def _deliver_message_notifications_file(
+    graph: FileDatasetGraph,
+    store: FileDataStore,
+    message: Message,
+    notifier,
+    recipients: list[MessageRecipient],
+    diagnostics: RecipientSelectionDiagnostics,
+    *,
+    trigger: str,
+    attempts: int,
+    attachment_storage: LocalFilesystemStorage | None,
+) -> list[int]:
+    return await _deliver_message_notifications_runtime(
+        message=message,
+        recipients=recipients,
+        diagnostics=diagnostics,
+        telegram_client=notifier,
+        send_email_subject=f"Новая публикация: {_message_title(message)}",
+        send_email_body=build_message_email_text(message),
+        admin_email=get_settings().admin_email,
+        attempts=attempts,
+        trigger=trigger,
+        append_notification_log=lambda log: graph.add(log),
+        append_audit_event=lambda event: graph.add(event),
+        finalize=lambda: graph.save(store),
+        attachment_storage=attachment_storage,
+    )
+
+
+async def _deliver_message_notifications_runtime(
+    *,
+    message: Message,
+    recipients: list[MessageRecipient],
+    diagnostics: RecipientSelectionDiagnostics,
+    telegram_client,
+    send_email_subject: str,
+    send_email_body: str,
+    admin_email: str | None,
+    attempts: int,
+    trigger: str,
+    append_notification_log: Callable[[NotificationLog], None],
+    append_audit_event: Callable[[AuditEvent], None],
+    finalize: Callable[[], Awaitable[None] | None],
+    attachment_storage: LocalFilesystemStorage | None,
+) -> list[int]:
+    logger.info(
+        "Message delivery for %s: recipients=%d active=%d tg_bound=%d matching=%d",
+        message.id,
+        len(recipients),
+        diagnostics.active_subscriptions,
+        diagnostics.telegram_bound_active_subscriptions,
+        diagnostics.matching_active_subscriptions,
+    )
+    if not recipients:
+        logger.warning(
+            (
+                "No recipients for message %s (strategy=%s): %s; "
+                "active_subscriptions=%d; telegram_bound_active_subscriptions=%d; matching_active_subscriptions=%d"
+            ),
+            message.id,
+            message.strategy_id,
+            diagnostics.reason,
+            diagnostics.active_subscriptions,
+            diagnostics.telegram_bound_active_subscriptions,
+            diagnostics.matching_active_subscriptions,
+        )
+
+    telegram_text = build_message_notification_text(message)
+    runtime_attachment_storage = attachment_storage or LocalFilesystemStorage()
+    delivered_telegram_ids: list[int] = []
+    telegram_success_count = 0
+    email_success_count = 0
+    telegram_failure_count = 0
+    email_failure_count = 0
+    fallback_email_attempted = 0
+    missing_telegram_id_count = 0
+    missing_email_count = 0
+    telegram_transport_failure_count = 0
+    smtp_not_configured_count = 0
+    smtp_transport_failure_count = 0
+    admin_copy_sent = False
+
+    for recipient in recipients:
+        telegram_sent = False
+        telegram_error_detail: str | None = None
+        if recipient.telegram_user_id is not None:
+            logger.info(
+                "Message delivery primary telegram attempt: message=%s user_id=%s telegram_user_id=%s",
+                message.id,
+                recipient.user_id,
+                recipient.telegram_user_id,
+            )
+            telegram_sent = await _send_with_retry(
+                telegram_client.send_message,
+                recipient.telegram_user_id,
+                telegram_text,
+                attempts=attempts,
+            )
+            if telegram_sent:
+                attachments_sent = await _send_message_attachments(
+                    telegram_client,
+                    recipient.telegram_user_id,
+                    message,
+                    runtime_attachment_storage,
+                )
+                if not attachments_sent:
+                    telegram_sent = False
+                    telegram_failure_count += 1
+                    telegram_transport_failure_count += 1
+                    telegram_error_detail = "telegram attachment delivery failure"
+                else:
+                    telegram_success_count += 1
+                    delivered_telegram_ids.append(recipient.telegram_user_id)
+            else:
+                telegram_failure_count += 1
+                telegram_transport_failure_count += 1
+                telegram_error_detail = "telegram transport failure"
+        else:
+            telegram_failure_count += 1
+            missing_telegram_id_count += 1
+            telegram_error_detail = "no telegram_user_id"
+
+        append_notification_log(
+            NotificationLog(
+                message_id=message.id,
+                user_id=recipient.user_id,
+                channel=NotificationChannelEnum.TELEGRAM,
+                sent_at=datetime.now(timezone.utc) if telegram_sent else None,
+                success=telegram_sent,
+                error_detail=telegram_error_detail,
+            )
+        )
+
+        if telegram_sent:
+            continue
+
+        if recipient.email is None:
+            logger.warning(
+                "Message delivery fallback skipped: message=%s user_id=%s reason=no email",
+                message.id,
+                recipient.user_id,
+            )
+            email_failure_count += 1
+            missing_email_count += 1
+            append_notification_log(
+                NotificationLog(
+                    message_id=message.id,
+                    user_id=recipient.user_id,
+                    channel=NotificationChannelEnum.EMAIL,
+                    sent_at=None,
+                    success=False,
+                    error_detail="email not set",
+                )
+            )
+            continue
+
+        fallback_email_attempted += 1
+        logger.info(
+            "Message delivery fallback email attempt: message=%s user_id=%s email=%s admin_copy=%s",
+            message.id,
+            recipient.user_id,
+            recipient.email,
+            bool(admin_email),
+        )
+        email_sent, email_error = await send_smtp_email(
+            to_email=recipient.email,
+            subject=send_email_subject,
+            body=send_email_body,
+            bcc_emails=(admin_email,) if admin_email else (),
+        )
+        admin_copy_sent = admin_copy_sent or (email_sent and bool(admin_email))
+        if email_sent:
+            email_success_count += 1
+        else:
+            email_failure_count += 1
+            if email_error == "smtp is not configured":
+                smtp_not_configured_count += 1
+            else:
+                smtp_transport_failure_count += 1
+        append_notification_log(
+            NotificationLog(
+                message_id=message.id,
+                user_id=recipient.user_id,
+                channel=NotificationChannelEnum.EMAIL,
+                sent_at=datetime.now(timezone.utc) if email_sent else None,
+                success=email_sent,
+                error_detail=email_error,
+            )
+        )
+
+    append_audit_event(
+        AuditEvent(
+            actor_user_id=None,
+            entity_type="message",
+            entity_id=message.id,
+            action="notification.delivery",
+            payload={
+                "recipient_count": telegram_success_count + email_success_count,
+                "attempted_count": len(recipients),
+                "telegram_success_count": telegram_success_count,
+                "telegram_failure_count": telegram_failure_count,
+                "email_attempted_count": fallback_email_attempted,
+                "email_success_count": email_success_count,
+                "email_failure_count": email_failure_count,
+                "missing_telegram_id_count": missing_telegram_id_count,
+                "missing_email_count": missing_email_count,
+                "telegram_transport_failure_count": telegram_transport_failure_count,
+                "smtp_not_configured_count": smtp_not_configured_count,
+                "smtp_transport_failure_count": smtp_transport_failure_count,
+                "trigger": trigger,
+                "attempts": attempts,
+                "primary_channel": "telegram",
+                "fallback_channel": "email",
+                "admin_copy_sent": admin_copy_sent,
+                "admin_email_configured": bool(admin_email),
+            },
+        )
+    )
+    result = finalize()
+    if hasattr(result, "__await__"):
+        await result
+    return delivered_telegram_ids
+
+
+async def _send_message_attachments(
+    telegram_client,
+    chat_id: int,
+    message: Message,
+    attachment_storage: LocalFilesystemStorage,
+) -> bool:
+    documents = list(message.documents or [])
+    if not documents:
+        return True
+
+    attachment_storage.bootstrap()
+    for document in documents:
+        content_type = str(document.get("content_type") or document.get("type") or "").strip().lower()
+        object_key = str(document.get("key") or document.get("object_key") or "").strip()
+        if not object_key:
+            logger.warning("Skipping message attachment without storage key: message=%s document=%s", message.id, document.get("id"))
+            return False
+        if content_type not in {"image/jpeg", "application/pdf"}:
+            logger.warning(
+                "Skipping unsupported Telegram attachment type: message=%s object_key=%s content_type=%s",
+                message.id,
+                object_key,
+                content_type or "unknown",
+            )
+            return False
+
+        filename = str(document.get("name") or document.get("title") or document.get("original_filename") or object_key.rsplit("/", 1)[-1]).strip() or "attachment"
+        try:
+            payload = attachment_storage.download_bytes(object_key)
+        except Exception as exc:
+            logger.warning(
+                "Failed to load attachment for Telegram delivery: message=%s object_key=%s error=%s",
+                message.id,
+                object_key,
+                exc,
+            )
+            return False
+
+        input_file = BufferedInputFile(payload, filename=filename)
+        try:
+            if content_type == "image/jpeg":
+                await telegram_client.send_photo(chat_id=chat_id, photo=input_file)
+            else:
+                await telegram_client.send_document(chat_id=chat_id, document=input_file)
+        except Exception as exc:
+            logger.warning(
+                "Failed to deliver Telegram attachment: message=%s object_key=%s content_type=%s error=%s",
+                message.id,
+                object_key,
+                content_type,
+                exc,
+            )
+            return False
+    return True
 
 
 async def deliver_subscriber_reminders(
@@ -467,6 +805,122 @@ def _build_payment_reminder_text(payment: Payment) -> str:
         f"Срок заявки: {payment.expires_at}\n"
         "Откройте Mini App, обновите статус или завершите оплату до истечения срока."
     )
+
+
+async def _collect_message_recipients_db(
+    session: AsyncSession,
+    message: Message,
+) -> tuple[list[MessageRecipient], RecipientSelectionDiagnostics]:
+    bundle_strategy_ids = await _bundle_strategy_ids_for_message(session, message)
+    query = (
+        select(Subscription, SubscriptionProduct, User.telegram_user_id)
+        .options(selectinload(Subscription.user))
+        .join(User, Subscription.user_id == User.id)
+        .join(SubscriptionProduct, Subscription.product_id == SubscriptionProduct.id)
+        .where(Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES))
+    )
+    result = await session.execute(query)
+    recipients: dict[str, MessageRecipient] = {}
+    active_subscriptions = 0
+    telegram_bound_active_subscriptions = 0
+    matching_active_subscriptions = 0
+    for subscription, product, telegram_user_id in result.all():
+        active_subscriptions += 1
+        if telegram_user_id is not None:
+            telegram_bound_active_subscriptions += 1
+        if _subscription_matches_message(message, product=product, bundle_strategy_ids=bundle_strategy_ids):
+            matching_active_subscriptions += 1
+            user = subscription.user
+            if user is not None:
+                recipients.setdefault(
+                    user.id,
+                    MessageRecipient(
+                        user_id=user.id,
+                        telegram_user_id=int(telegram_user_id) if telegram_user_id is not None else None,
+                        email=user.email,
+                    ),
+                )
+    diagnostics = RecipientSelectionDiagnostics(
+        active_subscriptions=active_subscriptions,
+        telegram_bound_active_subscriptions=telegram_bound_active_subscriptions,
+        matching_active_subscriptions=matching_active_subscriptions,
+        reason=_recipient_selection_reason(
+            active_subscriptions=active_subscriptions,
+            telegram_bound_active_subscriptions=telegram_bound_active_subscriptions,
+            matching_active_subscriptions=matching_active_subscriptions,
+        ),
+    )
+    return sorted(recipients.values(), key=lambda item: (item.telegram_user_id or 0, item.user_id)), diagnostics
+
+
+def _collect_message_recipients_file(
+    graph: FileDatasetGraph,
+    message: Message,
+) -> tuple[list[MessageRecipient], RecipientSelectionDiagnostics]:
+    bundle_ids = {
+        subscription.product.bundle_id
+        for subscription in graph.subscriptions.values()
+        if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES
+        and subscription.product is not None
+        and subscription.product.bundle_id is not None
+    }
+    bundle_strategy_ids = {
+        member.strategy_id
+        for member in graph.bundle_members
+        if member.bundle_id in bundle_ids
+    }
+    recipients: dict[str, MessageRecipient] = {}
+    active_subscriptions = 0
+    telegram_bound_active_subscriptions = 0
+    matching_active_subscriptions = 0
+    for subscription in graph.subscriptions.values():
+        if subscription.status not in ACTIVE_SUBSCRIPTION_STATUSES:
+            continue
+        active_subscriptions += 1
+        if subscription.product is None:
+            continue
+        if subscription.user.telegram_user_id is not None:
+            telegram_bound_active_subscriptions += 1
+        if _subscription_matches_message(
+            message,
+            product=subscription.product,
+            bundle_strategy_ids=bundle_strategy_ids,
+        ):
+            matching_active_subscriptions += 1
+            recipients.setdefault(
+                subscription.user.id,
+                MessageRecipient(
+                    user_id=subscription.user.id,
+                    telegram_user_id=int(subscription.user.telegram_user_id) if subscription.user.telegram_user_id is not None else None,
+                    email=subscription.user.email,
+                ),
+            )
+    diagnostics = RecipientSelectionDiagnostics(
+        active_subscriptions=active_subscriptions,
+        telegram_bound_active_subscriptions=telegram_bound_active_subscriptions,
+        matching_active_subscriptions=matching_active_subscriptions,
+        reason=_recipient_selection_reason(
+            active_subscriptions=active_subscriptions,
+            telegram_bound_active_subscriptions=telegram_bound_active_subscriptions,
+            matching_active_subscriptions=matching_active_subscriptions,
+        ),
+    )
+    return sorted(recipients.values(), key=lambda item: (item.telegram_user_id or 0, item.user_id)), diagnostics
+
+
+def _recipient_selection_reason(
+    *,
+    active_subscriptions: int,
+    telegram_bound_active_subscriptions: int,
+    matching_active_subscriptions: int,
+) -> str:
+    if active_subscriptions == 0:
+        return "no active subscriptions"
+    if telegram_bound_active_subscriptions == 0:
+        return "active subscriptions exist but none have telegram_user_id"
+    if matching_active_subscriptions == 0:
+        return "active subscriptions exist but do not match message audience"
+    return "recipient selection returned zero recipients unexpectedly"
 
 
 def _build_reminder_event(

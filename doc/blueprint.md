@@ -1,582 +1,401 @@
-# PitchCopyTrade Blueprint
+# PitchCopyTrade — Blueprint
+> Обновлено: 2026-04-21
+> Статус: canonical current contract for MVP clean-up
 
-Дата: 2026-03-12  
-Статус: research-based current state + target migration architecture
+## 1. Политика документа
 
-Review snapshot:
-- full project review on `2026-03-12`
-- no critical findings discovered
-- full regression suite passed: `165 passed`
+Этот файл описывает только:
+- текущее состояние продукта;
+- целевой контракт ближайшего цикла;
+- правила, обязательные для следующих изменений.
 
-## 1. Назначение
-Этот документ фиксирует:
-- что уже реально реализовано в проекте;
-- какие ограничения найдены в текущей persistence architecture;
-- к какой схеме теперь нужно прийти;
-- какой migration path нужен, чтобы быстро получить локальный тестовый контур.
+Исторические блоки, закрытые фазы и старые решения сюда не переносятся. Их архивом считается git history.
 
-## 1.1 Обязательный delivery process
-Для каждого завершенного implementation step действует правило:
-- сначала выполнить review результата;
-- затем обновить все актуальные description files проекта.
-- если пользователь дал общее разрешение на последовательное выполнение задач, следующий согласованный step запускать без ожидания дополнительного подтверждения, пока не будет достигнут естественный blocker.
-- все следующие задачи выполнять крупными блоками без сохранения backward compatibility, если новый canonical contour уже согласован.
-- legacy layers, shim-ы и временные переходные пути нужно удалять, а не поддерживать бесконечно.
+## 1.1 Documentation Strategy
 
-Актуальные description files:
-- [README.md](/Users/alexey/site/PitchCopyTrade/README.md)
-- [blueprint.md](/Users/alexey/site/PitchCopyTrade/doc/blueprint.md)
-- [task.md](/Users/alexey/site/PitchCopyTrade/doc/task.md)
-- [review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md)
+Источник истины — `CLAUDE.md` (роли, процесс, архитектура) + файлы в `doc/`.
 
-## 2. Продуктовый контур
+| Файл | Назначение | Загружается автоматически? |
+|---|---|---|
+| `CLAUDE.md` | Роли, процесс, архитектурные правила | Да (каждый запрос) |
+| `doc/blueprint.md` | Product contracts, UI contracts | Нет — по запросу |
+| `doc/task.md` | Только ОТКРЫТЫЕ задачи (блоки для worker) | Нет — по запросу |
+| `doc/review.md` | Gate + открытые findings + заключения | Нет — по запросу |
+| `doc/README.md` | Runbook, локальный запуск | Нет — по запросу |
+| `doc/changelog.md` | Архив закрытых задач и заключений | Нет — только ретроспектива |
 
-### 2.1 Subscriber model
-Canonical subscriber model остается:
-- `Telegram-first`;
-- основной канал взаимодействия: `Telegram bot`;
-- bot command surface intentionally reduced to `/start` and `/help`;
-- legacy subscriber bot handlers and command-only flows must be removed, not preserved behind compatibility shims;
-- вся клиентская навигация должна жить внутри `Mini App`;
-- web для подписчика допустим только как:
-  - публичная витрина;
-  - legal pages;
-  - Telegram-authenticated fallback;
-  - `Telegram WebApp / Mini App` на `https`-стенде.
+Правила ротации (см. также `CLAUDE.md` → Правила task.md):
+- >30 задач `[x]`/`[!]` в task.md, или файл >400 строк, или крупный цикл завершён → архивировать в `changelog.md`
+- Архивная строка: `T-NNN | название | [x] | дата | краткий итог`
+- В `task.md` остаются только `[ ]`, `[~]` и правила
+- `MEMORY.md` (Claude auto-memory) используется только для user preferences и feedback, НЕ для проектного контекста
 
-### 2.2 Staff model
-`admin`, `author`, `moderator` остаются в web-контуре:
-- вход через `login/password`;
-- отдельный auth contour от subscriber.
+## 2. Текущее состояние
 
-## 3. Что уже реально есть в коде
+### 2.1 Поверхности продукта
 
-### 3.1 Infrastructure baseline
-Есть:
-- `api`, `bot`, `worker`
-- typed config
-- health/ready/meta endpoints
-- Docker baseline
-- `.env.example`
-- runtime switch baseline:
-  - `APP_DATA_MODE=db|file`
-  - `APP_STORAGE_ROOT=storage`
-- repository layer baseline for selected contours
-- cold-start file-mode smoke path for `api + bot + worker`
+В проекте есть пять рабочих контуров:
+- `public web` на `/catalog`, `/catalog/strategies/{slug}`, `/checkout/{product_ref}`;
+- `miniapp web` на `/app/*`;
+- `staff admin` на `/admin/*`;
+- `staff author` на `/author/*`;
+- `bot` и `worker` как отдельные runtime-сервисы.
 
-### 3.2 Domain baseline
-Есть:
-- users / roles / author_profiles
-- strategies / bundles / subscription_products
-- payments / subscriptions / promo_codes
-- recommendations / legs / attachments
-- legal_documents / user_consents
-- lead_sources
-- audit_events
+### 2.2 Технологический контур
 
-### 3.3 Staff surfaces
-Есть:
-- staff auth
-- admin dashboard
-- strategy CRUD
-- product CRUD
-- payment queue and confirm flow
-- admin subscription registry
-- legal docs admin UI
-- delivery admin UI with retry history
-- author workspace
-- author publish workflow hardening
-- recommendation CRUD
-- preview
-- moderation queue
-- moderation history baseline
-- moderation routes and actions now work in `db` and `file` modes
-- author editor refactor completed:
-  - recommendation editor uses responsive CSS classes instead of fixed inline grids;
-  - first paper is always present and enforced server-side;
-  - extra papers are added through `+` without a UI-side ceiling;
-  - form parser accepts dynamic non-sequential row ids and restores them after validation errors.
+- backend: `FastAPI` + `Jinja2`;
+- bot: `aiogram`;
+- worker: polling loop;
+- storage modes:
+  - `db` как основной product-critical режим;
+  - `file` как вторичный local preview / compatibility smoke режим.
 
-### 3.4 Subscriber surfaces
-Есть:
-- public catalog
-- web fallback checkout baseline
-- Telegram bot commands:
-  - `/start`
-  - `/help`
-- Mini App sections:
-  - каталог
-  - мои подписки
-  - лента
-  - оплаты
-  - помощь
-- Telegram verification page for web fallback
-- redirect from protected `/app/*` surfaces to Telegram verification flow
-- safe local `next` redirect support in `/tg-auth`
-- `/app/status` as subscriber landing page in web fallback
-- Mini App automatic auth bridge via verified Telegram `initData`
-- `/miniapp` is the canonical Telegram bootstrap entry
-- `/app/catalog`, `/app/subscriptions`, `/app/payments`, `/app/help`, `/app/feed` form a single subscriber workspace
-- Mini App workspace is subscriber-aware when Telegram fallback cookie already exists
-- Mini App checkout binds payment/subscription creation to the current Telegram identity
-- Mini App self-service includes:
-  - subscription detail page
-  - payment detail page
-  - pending payment cancellation
-  - subscription cancellation from the subscriber card
-  - autorenew toggle
-  - Russian labels for payment/subscription statuses and billing period
-  - payment status refresh for provider-driven pending payments
-  - payment retry for terminal failed/expired/cancelled states
-  - subscription renewal flow that creates a new Telegram-linked checkout
-  - promo code re-entry during retry and renewal
-  - payment result messaging
-  - payment state history rendering
-  - renewal history rendering
-  - worker-driven reminders for expiring subscriptions and pending payments
-  - центр напоминаний внутри Mini App
-  - настройки напоминаний подписчика
-  - единая лента событий по оплатам и подпискам
-- full WebApp auth bridge:
-  - every Mini App page may silently refresh Telegram-backed subscriber session via validated `initData`
-  - no separate subscriber login or explicit fallback entry should be required inside Telegram
-- manual discounts are staff-driven and apply only to mutable `pending` `stub_manual` payments; live provider amounts must be changed before checkout creation
-- lifecycle automation:
-  - due `pending` payments expire automatically
-  - linked `pending` subscriptions cancel automatically on payment expiry
-  - due `active/trial` subscriptions expire automatically
-- provider-aware checkout service with `tbank` SBP adapter and `stub_manual` fallback
-- worker-based pending `T-Bank` payment sync with automatic subscription activation on confirmed provider state
-- `T-Bank` callback endpoint for provider-driven payment updates
-- `httpx` is a runtime dependency because payment provider code imports it in live API and worker paths
-- Telegram-auth fallback cookie for `/app/*`
-- ACL-gated web feed and bot feed
-- validated test bot token smoke via Telegram API `getMe`
-- `https` host can expose Mini App safely
-- canonical server deploy upstream for host nginx is `127.0.0.1:8110`
-- timezone should be auto-detected from Telegram WebApp / browser when available, fallback `Europe/Moscow`
-- lead source should be derived automatically, not entered by client manually
-- strategy base demo price is `499 руб`; period labels should render as `Месяц`, trial labels as `7 дней бесплатно`
-- required checkout documents should render with full Russian names:
-  - `Предупреждение о рисках`
-  - `Публичная оферта`
-  - `Политика конфиденциальности`
-  - `Согласие на оплату`
-- subscriber should manage current payment/subscription state from Mini App without a staff-side manual detour
+### 2.3 Важные факты для текущего цикла
 
-### 3.5 Recommendation lifecycle baseline
-Есть:
-- structured legs
-- attachments
-- publish / schedule baseline
-- worker-based scheduled publish baseline
-- delivery notifications baseline
-- local filesystem storage backend baseline with `APP_STORAGE_ROOT=storage`
-- runtime writes target `storage/runtime/*`
-- committed seed target `storage/seed/*`
-- attachments local-first by canonical `local_fs`
-- legal documents local-first via `source_path` under `storage/*/blob/legal`
-- worker `payment_expiry_sync` now resolves pending `T-Bank` payments in both `db` and `file` modes
+- основной runtime priority для product-critical сценариев = `APP_DATA_MODE=db`;
+- `file`-mode остается вторичным compatibility/preview/smoke режимом;
+- локальный запуск без Docker возможен, но не заменяет production-like проверку на PostgreSQL schema path;
+- для старта `api` обязательны `APP_SECRET_KEY` и `INTERNAL_API_SECRET`;
+- `file`-mode читает состояние из `storage/runtime/*`, а не напрямую из `storage/seed/*`;
+- `storage/runtime/*` считается изменяемым runtime-слоем и перед воспроизводимыми проверками должен сбрасываться;
+- Mini App first screen contract = `/app/catalog`, help contract = `/app/help`;
+- subscriber first-time entry из бота не должен открывать защищённый `/app/catalog` напрямую; сначала нужен bootstrap route, который обменивает `Telegram.WebApp.initData` на server-side auth cookie и только потом ведёт в каталог;
+- Telegram menu button и bot `/start` web_app entry по текущему контракту должны вести в один canonical bootstrap route; route сам решает: если auth уже доступен, сразу открыть `/app/catalog`, если нет — показать recovery/auth flow;
+- canonical staff auth success destination = role-specific dashboard, а не legacy `/workspace`;
+- author/public/subscriber contour перешел на message-centric модель `messages`;
+- author structured deal contract должен поддерживать exact-lookup import нового инструмента через текущий provider endpoint с последующей materialize-записью в `instruments`;
+- Telegram delivery для author messages с attachments должна отправлять реальные media/document payloads, а не только имя файла в тексте;
+- quote provider подключается backend-адаптером и не должен блокировать SSR;
+- обычная HTML-кнопка на сайте не может программно отправить `/start` в Telegram-бота; recovery path должен использовать Telegram deep link `?start=<payload>` или `web_app` button, а не generic `https://t.me/<bot>`;
+- внутри docs больше нельзя писать "все закрыто" без сверки с [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).
 
-### 3.5.1 Author editor target refactor
-Canonical editor contract should become:
-- recommendation must contain at least one structured leg;
-- first leg is always rendered and required;
-- additional legs are created dynamically via `+ Добавить бумагу`;
-- author may remove any optional leg, but cannot remove the last remaining leg;
-- form parser must discover submitted leg indexes dynamically instead of iterating a fixed range;
-- persisted recommendations may contain any practical number of legs; UI ceiling must not be encoded as a business rule;
-- CSS/layout must use explicit classes and responsive containers instead of large inline `grid-template-columns: repeat(...)` blocks that currently drift visually.
+## 3. Цель текущего цикла
 
-Refactor scope:
-- template:
-  - move leg rows into reusable component block;
-  - add client-side row template and `add/remove` controls;
-  - split row header, field groups and note fields into stable responsive subgrids;
-- route/controller:
-  - accept dynamic leg indexes from form submission;
-  - preserve dynamic rows on validation error;
-- service layer:
-  - replace fixed editor ceiling parsing;
-  - enforce `>= 1` leg with valid instrument and direction;
-  - keep recommendation validation at service level, not only in browser JS.
+Текущий цикл не про расширение сущностей. Он про чистку MVP subscriber contour:
+- сделать Mini App понятным и быстрым;
+- перенести первый экран на витрину стратегий;
+- вынести помощь в отдельный `/help` сценарий;
+- усилить описание стратегий как продающий и объясняющий экран;
+- подключить real-time market data по тикерам;
+- убрать основные product/runtime сбои вокруг подписки, оплаты и навигации.
 
-### 3.6 Repository layer baseline
-Есть:
-- `SqlAlchemyAuthorRepository`
-- `SqlAlchemyAccessRepository`
-- `FileAuthorRepository`
-- `FileAccessRepository`
-- `FilePublicRepository`
-- `FileAuthRepository`
-- `FileDataStore`
-- `FileDatasetGraph`
-- FastAPI deps for repository wiring
-- author services no longer talk to `AsyncSession` directly
-- ACL/feed services no longer talk to `AsyncSession` directly
-- `author` and `ACL/feed` deps can switch to file repositories in `APP_DATA_MODE=file`
-- real demo seed pack under `storage/seed/json`
-- real demo blob attachment under `storage/seed/blob`
+После последнего review критичный открытый scope не должен трактоваться как новый продуктовый redesign. Это короткий stabilization pass: staff OAuth/redirect, author structured ticker fallback, Telegram media delivery и постоянный bot entry в каталог.
 
-Пока еще не переведены:
-- notifications
-- publishing
-- часть auth/session fallback paths outside verified smoke contour
+## 4. Canonical subscriber contract
 
-## 4. Что показало исследование текущего состояния
+### 4.1 Стартовый сценарий Mini App
 
-### 4.1 Current DB coupling
-Сейчас проект уже не является жестко `PostgreSQL-only`, но parity еще не полная:
-- `file` mode допускает runtime без DB DSN;
-- DB engine создается только при `APP_DATA_MODE=db`;
-- ключевой test contour уже идет без БД;
-- часть контуров все еще имеет `SQLAlchemy-first` ветки и требует дальнейшего выравнивания.
+Основной вход клиента:
+1. пользователь открывает Mini App из Telegram;
+2. Mini App подтверждает профиль по Telegram;
+3. первым экраном открывается витрина стратегий на `/app/catalog`;
+4. помощь открывается отдельным экраном `/app/help`;
+5. дальнейшая навигация остается внутри одного webview.
 
-### 4.2 Current storage coupling
-Сейчас storage layer уже частично выровнен под local-first, но transitional следы остались:
-- storage adapter `MinioStorage` все еще существует;
-- compose все еще включает `minio` как штатный сервис;
-- часть metadata shape и deploy assumptions еще bucket/object-key oriented;
-- при этом file-mode attachments и legal docs уже работают через local filesystem path.
+Не является целевым поведением:
+- старт с `/app/status` как основного entry point;
+- повторный онбординг на первом экране;
+- bot-команды, которые создают новый message-thread вместо перехода в существующий in-app сценарий;
+- помощь в виде еще одного текстового bot message без перехода в UI.
 
-Уточнение по текущему состоянию:
-- local filesystem storage backend уже добавлен в код;
-- его runtime root идет из `APP_STORAGE_ROOT` и по умолчанию использует `storage/runtime/blob`;
-- route download уже поддерживает `storage_provider=local_fs`;
-- author upload path уже переключен на local filesystem по умолчанию;
-- legal rendering уже умеет читать local markdown source files по `source_path`.
+### 4.2 Навигация в одной вкладке / одном webview
 
-### 4.3 Что это означает practically
-На сегодня проект:
-- можно развивать как продуктовый baseline;
-- можно запускать с внешним PostgreSQL и текущим storage stack;
-- можно быстро и честно тестировать test contour без БД;
-- нельзя считать всю persistence migration завершенной, потому что parity еще не полная.
-
-## 5. Новая целевая persistence architecture
-
-### 5.1 Главный принцип
-Удаленный storage больше не должен быть primary model.
-
-Primary persistence target:
-- документы, вложения и служебные файлы хранятся локально;
-- runtime должен поддерживать работу без БД для тестирования;
-- один и тот же product behavior должен быть доступен и в `db` mode, и в `file` mode.
-
-### 5.2 Canonical storage root
-Единый корень:
-- `storage/`
-- `APP_STORAGE_ROOT` должен указывать именно на этот корень, где вместе живут `seed/` и `runtime/`
-
-Целевое разбиение:
-- `storage/seed/blob/`
-  - committed demo attachments
-  - committed demo legal source files
-- `storage/seed/json/`
-  - committed demo datasets
-  - baseline file-mode bootstrap data
-- `storage/runtime/blob/`
-  - вложения рекомендаций
-  - изображения
-  - PDF
-  - локальные runtime binary payload
-- `storage/runtime/json/`
-  - file repositories для сущностей
-  - локальный mutable state тестировщика
-- `storage/parquet/`
-  - audit exports
-  - analytics datasets
-  - delivery logs / aggregates
-- `storage/runtime/`
-  - временные файлы
-  - локальные очереди
-  - техничeские state-файлы
-
-### 5.3 Blob vs structured data rule
-Использование должно быть таким:
-- бинарные payload и документы: `blob`
-- операционные сущности и справочники: `json`
-- append-heavy, аналитические и экспортные наборы: `parquet`
-
-`Parquet` не обязателен для самого первого шага.
-Для быстрого локального тестирования сначала достаточно:
-- `blob`
-- `json`
-
-Дополнение:
-- recommendation attachments должны читаться и писаться в local filesystem path;
-- legal markdown source files должны жить в local filesystem path и быть доступны для public/legal rendering.
-
-## 6. Canonical runtime modes
-
-### 6.1 `db` mode
-Используется когда локальная или внешняя БД доступна.
-
-Правила:
-- `PostgreSQL` хранит операционные сущности;
-- вложения и документы все равно хранятся локально в `storage/runtime/blob`;
-- `MinIO` не должен быть обязательным;
-- DSN приходит через `.env`.
-
-### 6.2 `file` mode
-Используется для локального тестирования и demo без БД.
-
-Правила:
-- БД не требуется;
-- config/runtime не требуют `DATABASE_URL` и `ALEMBIC_DATABASE_URL`;
-- сущности читаются и пишутся через файловые repositories;
-- attachments и legal files хранятся локально;
-- поведение app/bot/worker остается максимально близким к `db` mode;
-- режим должен позволить прогнать основной сценарий на одной машине.
-- в репозитории уже должен лежать demo seed pack, чтобы mode был runnable без ручного наполнения;
-- runtime state тестировщика не должен коммититься.
-
-Текущее подтверждение:
-- `api` стартует и отдает `catalog`, `legal`, `staff login`;
-- `bot` стартует на уровне runtime bootstrap и dispatcher assembly;
-- test bot token resolves against Telegram API and returns expected bot identity;
-- `worker` выполняет `run_worker_once()` без PostgreSQL и без MinIO.
-- на свежем temp storage-root с copied seed подтвержден e2e:
-  - `admin` login -> dashboard;
-  - `author` login -> dashboard;
-  - `Telegram checkout -> payment pending`;
-  - `admin confirm -> subscription activation`;
-  - `Telegram feed -> visible recommendation`.
-- первый server prototype тоже подтвержден:
-  - host nginx on target server;
-  - dockerized `api + bot + worker`;
-  - `admin` login works on deployed host;
-  - Telegram bot polling works on deployed host.
-
-### 6.3 Demo seed baseline
-Текущий baseline теперь включает:
-- seeded `roles`, `users`, `authors`
-- seeded `lead_sources`, `instruments`
-- seeded `strategies`, `bundles`, `products`
-- seeded `legal_documents`
-- seeded `payments`, `subscriptions`, `user_consents`
-- seeded `recommendations`, `recommendation_legs`, `recommendation_attachments`
-- seeded local blob file for attachment download smoke-test
+Canonical rule:
+- Mini App должен ощущаться как одно приложение, а не как набор внешних ссылок.
 
 Это означает:
-- file-mode уже имеет входной demo dataset;
-- локальный smoke path может опираться не только на тестовые фабрики, но и на реальные файлы в `storage/seed/*`, которые bootstrapятся в `storage/runtime/*`.
+- из бота открывается один основной web_app entry;
+- у бота должна быть постоянная menu button на каталог; inline `/start`-кнопка считается fallback, а не единственным входом;
+- для нового неавторизованного пользователя этот entry обязан идти через bootstrap auth surface, а не в защищённый каталог напрямую;
+- далее пользователь ходит по внутренним маршрутам приложения;
+- `/help` и витрина открываются внутри того же webview;
+- повторные bot-команды не должны быть обязательным способом навигации;
+- если нужен возврат, используется browser/webview history внутри приложения, а не новое сообщение в чате.
 
-## 7. Canonical file-mode scope
-Минимальный file-mode scope, без которого режим бесполезен:
-- staff users and roles
-- authors
-- strategies
-- subscription products
-- legal documents and consents
-- subscribers by `telegram_user_id`
-- payments
-- subscriptions
-- recommendations
-- recommendation legs
-- recommendation attachments
-- lead sources baseline
+Recovery contract:
+- если Telegram cookie ещё не выставлен, user-facing recovery surfaces должны показывать primary CTA на deep link `/start payload`, а не generic `Открыть бота`;
+- primary label recovery CTA = `Начать авторизацию в Telegram`;
+- bot по recovery payload должен присылать свежую web_app-кнопку на bootstrap route;
+- worker не должен пытаться реализовать «кнопку на сайте, которая сама отправляет `/start`» — это вне возможностей обычной web surface.
 
-Допустимая первая версия:
-- без полной транзакционности уровня PostgreSQL;
-- но без нарушения ACL, payment states и ownership scope.
+### 4.3 Mini App menu contract
 
-## 8. Что нужно переиспользовать, а не выкидывать
-Новая схема не отменяет уже сделанное.
+Постоянное верхнее меню Mini App должно быть небольшим и предсказуемым.
 
-Нужно сохранить:
-- Telegram-first subscriber contour
-- staff auth contour
-- admin dashboard
-- author workspace
-- moderation queue
-- payment/subscription lifecycle
-- ACL logic
-- scheduled publish flow
-- notifications baseline
+Primary tabs:
+- `Каталог`
+- `Подписки`
+- `История`
 
-Нужно переделать только слой persistence и storage integration, а не продуктовую модель целиком.
+Правила:
+- эти три пункта присутствуют всегда на subscriber-facing Mini App surfaces;
+- один из них всегда является активным;
+- `Статус`, `Помощь`, `Оплаты`, `Напоминания` не должны жить в primary menu;
+- они могут оставаться secondary screens или локальными page actions.
+- бизнесово неготовые пункты не удаляются из кода насовсем;
+- до отдельного product go-ahead они должны быть спрятаны в шаблонах через комментарии или equivalent dormant markup, чтобы worker не терял будущие точки возврата.
 
-## 9. Transitional areas
+Контекстный пункт:
+- `К стратегии` не является постоянным primary-tab;
+- он показывается только в strategy-detail контексте;
+- на checkout и других transaction/detail screens переход к стратегии должен быть локальным page action, а не постоянным пунктом меню.
+- если checkout открыт из продукта, локальный CTA назад к `К стратегии` должен оставаться видимым и вести на связанный strategy detail route.
 
-### 9.1 MinIO
-С этого момента `MinIO` считается transitional.
+Маршрутизация активного состояния:
+- `/app/catalog` -> активен `Каталог`
+- `/app/strategies/{slug}` -> активен `К стратегии`, при этом `Каталог`, `Подписки`, `История` остаются видимыми
+- `/app/checkout/{product_ref}` -> активен ближайший product-flow контекст без появления отдельного active-tab; возврат к стратегии остается локальным CTA
+- `/app/subscriptions` и `/app/subscriptions/{id}` -> активны `Подписки`
+- `/app/timeline` и `/app/messages/{id}` -> активна `История`
+- `/app/payments*` -> не добавляют новый primary-tab; относятся к lifecycle `Подписки`
 
-Допустимо:
-- временно сохранить adapter как secondary backend;
-- использовать его только пока не внедрен local filesystem backend.
+Preview contract:
+- preview routes обязаны рендериться без дополнительных сущностей вроде `product`, если их не требует сам экран;
+- navigation partial не должен падать, если текущий screen context не содержит `product`.
 
-Недопустимо:
-- углублять проект в `MinIO-only` path;
-- считать `MinIO` canonical storage model.
+### 4.4 Temporary legal-doc visibility contract
 
-### 9.2 Local filesystem backend
-На текущем этапе уже существует baseline:
-- общий storage contract;
-- `LocalFilesystemStorage`;
-- конфиг `APP_STORAGE_ROOT`;
-- совместимость attachment download route с `local_fs`.
+До отдельного business sign-off user-facing legal/checkout contract intentionally сокращен.
 
-Но это еще не final state:
-- author uploads по умолчанию уже переведены на local backend;
-- legal docs уже вынесены в локальный storage flow;
-- compose/runtime пока не очищены от MinIO-first assumptions.
+Текущий временный режим:
+- в клиентском checkout и связанных public/Mini App surfaces показывается только `Дисклеймер`;
+- остальные документы (`offer`, `privacy`, `payment consent` и т.п.) пока не удаляются из проекта как сущности;
+- они должны быть временно спрятаны из пользовательского UI, предпочтительно через комментарии / dormant markup, а не через destructive removal.
 
-### 9.3 DB-only repositories
-С этого момента `DB-only` runtime считается transitional.
+Это означает:
+- legal data model и backend support можно сохранять;
+- user-facing copy, buttons и checkbox-список не должны обещать документы, которые бизнес пока не готов открыть;
+- скрытые документы нельзя silently pre-check-ить или auto-submit-ить как уже принятые;
+- набор реально принимаемых consent-ов должен совпадать с набором документов, которые пользователь реально видит и подтверждает;
+- возврат полного document pack позже должен идти отдельным documented pass, а не случайным partial unhide.
 
-Допустимо:
-- продолжать использовать `SQLAlchemy` path до завершения refactor.
+## 5. Canonical contract для витрины и страницы стратегии
 
-Недопустимо:
-- добавлять новую критическую функциональность только через DB path без плана file-mode parity.
+### 5.1 Главная страница Mini App
 
-## 10. Целевой storage contract
+Главная страница Mini App = витрина стратегий.
 
-### 10.1 Attachment contract
-Attachment model должен уметь хранить:
-- logical owner entity
-- local relative path
-- content type
-- size
-- original filename
-- checksum
-- created_at
+Она должна отвечать на три вопроса еще до первого scroll:
+- какие стратегии доступны;
+- чем они различаются;
+- куда нажать, чтобы увидеть детали и тарифы.
 
-Bucket/object-key не должны считаться обязательными полями целевого дизайна.
+Первый экран витрины должен содержать:
+- ясный заголовок без техничного онбординга;
+- компактный trust/context layer:
+  - автор;
+  - риск;
+  - горизонт;
+  - минимальный капитал;
+  - доступные тарифы или стартовая цена;
+- один основной CTA на карточке;
+- вторичный CTA только если он не конкурирует с главным действием.
 
-### 10.2 Repository contract
-Каждый важный доменный контур должен идти через repository abstraction:
-- `db repository`
-- `file repository`
+### 5.2 Страница стратегии
 
-Service layer не должен знать, где лежат данные:
-- в PostgreSQL;
-- в JSON files.
+Текущий дизайн strategy detail упрощен. Для текущего цикла canonical contract такой:
 
-Текущее состояние:
-- contract уже начал внедряться;
-- author, access, public, auth и admin smoke contour уже имеют repository-based file-mode path;
-- file repositories уже реализованы для минимального demo dataset scope:
-  - users
-  - roles
-  - authors
-  - strategies
-  - products
-  - legal docs
-  - payments
-  - subscriptions
-  - recommendations
-  - legs
-- attachments
-- остальные контуры пока еще требуют миграции.
+1. Hero block:
+- название стратегии;
+- автор;
+- риск;
+- минимальный капитал;
+- основной CTA на подписку;
+- secondary CTA только на `Тарифы`.
 
-### 10.3 Runtime selection
-Runtime switch уже введен:
-- `APP_DATA_MODE=db`
-- `APP_DATA_MODE=file`
+2. Market snapshot block:
+- опциональный quote-strip;
+- это supporting context, а не главный продающий экран.
 
-Storage root уже введен:
-- `APP_STORAGE_ROOT=storage`
+3. Short description block:
+- короткое объяснение идеи стратегии;
+- текущий UI label = `Короткое описание`.
 
-Что еще нужно:
-- довести полный service/repository wiring до parity во всех remaining contours;
-- убрать старые deploy assumptions, которые тянут compose к `MinIO` even for file mode.
+4. Description / mechanics block:
+- раскрытие механики простым языком;
+- текущий UI label = `Описание`.
 
-## 11. Критерии готовности новой схемы
+5. Tariffs block:
+- список тарифов и CTA на checkout;
+- это обязательный коммерческий блок текущего дизайна.
 
-### 11.1 Local storage done
-Будет считаться готовым, когда:
-- author uploads по умолчанию идут в локальную файловую систему;
-- subscriber downloads идут из локальной файловой системы;
-- legal docs хранятся локально;
-- проект не требует `MinIO` для локального запуска.
+6. Legal visibility:
+- на пользовательском экране сейчас visible only `Дисклеймер`;
+- остальные legal documents не считаются обязательными для текущего дизайна, пока не будет отдельного business-ready решения.
 
-### 11.2 File mode done
-Test-launch baseline уже достигнут, но full parity будет считаться готовой, когда:
-- можно поднять `api + bot + worker` без PostgreSQL;
-- есть seed data для admin/author/catalog/product/demo recommendations;
-- можно пройти Telegram subscriber flow до feed;
-- можно открыть staff web и author workspace локально;
-- checkout `stub/manual` и activation можно проверить без ручной правки файлов.
+Для текущего pass-а не являются обязательными на самой strategy detail:
+- отдельный `FAQ` section;
+- отдельный `market scope` section;
+- отдельный `risk` section;
+- отдельные audience-блоки `кому подходит / кому не подходит`.
+- отдельный user-facing pack из нескольких legal documents.
 
-## 12. Быстрый путь к локальному тестированию
-Чтобы максимально быстро прийти к живому тесту, migration надо делать в таком порядке:
-1. local filesystem storage backend
-2. runtime config for `db|file`
-3. repository abstraction
-4. file repositories для минимального demo scope
-5. local seed/bootstrap data
-6. run instructions for `api + bot + worker` in file mode
-7. only after that deeper UX and analytics tasks
+Если эти блоки возвращаются позже, это должен быть отдельный documented design change, а не случайный partial rollback шаблона.
 
-## 13. Что еще нужно реализовать после persistence refactor
-- richer Telegram checkout UX
-- promo/discount lifecycle `[partial]`
-- richer notification granularity and advanced in-app action composition
-- delivery retry/metrics hardening
-- moderation analytics/SLA UX `[partial]`
-- queue filters, overdue SLA and resolution latency are already in place
-- attachment lifecycle UX hardening
-- lead source analytics `[partial]`
-- normalized checkout attribution and admin source report already exist
-- worker retries and observability
+### 5.3 Материалы-референсы
 
-## 14. Архитектурное правило на ближайшие шаги
-Новые изменения нужно оценивать так:
-- ускоряют ли они переход к local storage и file mode;
-- сохраняют ли Telegram-first subscriber model;
-- не создают ли новый hard dependency на remote storage;
-- не делают ли DB обязательной для базового локального тестирования.
+`Straddle.pdf` и приложенные Figma-screen'ы считаются reference materials, а не эталоном.
 
-## 15. Следующий этап после test-launch
-Task list для запуска тестовой версии закрыт. Следующий этап уже не про foundation, а про operational hardening.
+Из них допустимо брать:
+- четкую структуру "идея -> механизм -> риск -> сценарии";
+- сильный one-thesis hero;
+- ясную визуальную иерархию;
+- ощущение продукта, а не набора форм.
 
-Приоритеты:
-1. payment completion
-  - keep `stub/manual` as operator fallback
-  - harden callback rollout on deployed host
-   - keep manual operator fallback
-2. remaining persistence hardening
-   - full file-mode parity for remaining contours
-   - backup/restore discipline
-3. operational reliability
-   - worker retries baseline already added
-   - deepen observability and support tooling
-4. product analytics and monetization
-   - promo/discount lifecycle `[partial]`
-   - admin registry, checkout apply path and redemption counters are already in place
-   - lead source analytics `[partial]`
-   - normalized attribution and admin report are already in place
-   - moderation analytics/SLA UX `[partial]`
-   - queue filters and SLA latency metrics are already in place
-5. Telegram customer experience
-   - richer status/checkout self-service
-   - broader Mini App surfaces
-   - deeper verification and handoff UX
+Нельзя слепо переносить:
+- слайдовый формат презентации;
+- длинные серые текстовые простыни;
+- дублирующиеся CTA;
+- QR-only платежный сценарий как основной mobile flow;
+- макет как есть без адаптации к Mini App и browser preview.
 
-## 16. Canonical clean -> review -> deploy flow
-Каждый следующий этап нужно вести по одной схеме:
-1. clean runtime state
-   - очищать только `storage/runtime/*`
-   - не трогать committed `storage/seed/*`
-2. run technical review
-   - `compileall`
-   - `pytest`
-3. run product smoke
-   - `admin login`
-   - `author login`
-   - `Telegram checkout -> confirm -> feed`
-4. update description files
-   - `README.md`
-   - `doc/blueprint.md`
-   - `doc/task.md`
-   - `doc/review.md`
-5. only after that move to local/server deploy
+### 5.4 Контентный контракт для strategy detail
 
-Deployment note:
-- текущий production-like deploy path должен опираться не на dev `docker-compose`, а на отдельный server compose profile/file;
-- server nginx config должен тоже поставляться из репозитория как готовый template;
-- deploy bundle должен быть доступен сразу после `git clone`, без ручного сочинения compose/nginx/env templates на сервере;
-- один bot token должен обслуживаться только одним polling instance одновременно.
-- Telegram `Mini App` / `WebApp` кнопки допустимы только при `https` base URL; на `http`-стенде bot должен работать без них.
+Для текущего дизайна минимальный содержательный набор такой:
+- `hero_summary` или fallback `short_description`
+- `holding_period_note`
+- `risk_rule`
+- `thesis`
+- `mechanics`
+
+Поддерживаемые, но не обязательные в текущем рендере поля:
+- `market_scope`
+- `entry_logic`
+- `instrument_examples`
+- `who_is_it_for`
+- `who_is_it_not_for`
+- `faq_items`
+
+Правило текущего цикла:
+- tests и product contract должны проверять только те narrative blocks, которые реально считаются canonical для текущего дизайна;
+- если UI intentionally упрощен, тесты обязаны быть пересобраны под этот contract, а не держать старые названия секций.
+
+### 5.5 Structured deal authoring contract
+
+Structured deal в author composer не должен зависеть только от локального master-catalog.
+
+Canonical contract:
+- автор может указать локальный инструмент из autocomplete;
+- если нужного инструмента нет в каталоге, composer может принять точный ticker/symbol в input;
+- на submit backend делает exact lookup через текущий provider endpoint;
+- если provider подтверждает инструмент, backend создаёт или переиспользует локальную запись в `instruments`;
+- только после materialize/import появляется валидный `structured_instrument_id`, и дальше форма работает как обычный локальный instrument flow;
+- минимально обязательные поля для structured deal:
+  - локальный `structured_instrument_id`
+  - цена
+  - количество
+- buy/sell считается always-selected UI control и не требует отдельного product workaround;
+- отсутствие live quote не должно блокировать сохранение и публикацию;
+- но отсутствие materialized local instrument не считается допустимым submit state;
+- текущий provider contract для этого flow = full match по `symbol`, не like-search;
+- preview, email и Telegram delivery должны отображать imported instrument единообразно, без `None`, raw JSON и пустых placeholder-ов.
+
+## 6. Visual identity contract
+
+Текущий ручной pass ввел новый visual mark `D / DESK`.
+
+Для следующего implementation pass нужно соблюдать правило:
+- если `D / DESK` принимается как новый UI brand mark, он должен быть нормализован во всех top-level shells;
+- нельзя оставлять mixed branding вида `D / DESK` в `base.html`, но `PC / PitchCopyTrade` в `staff_base.html`, `login.html` и preview surfaces.
+
+При этом:
+- visual brand slots можно менять независимо от внутренних технических имен;
+- юридические/system identifiers не должны переименовываться стихийно вместе с декоративным brand mark.
+
+## 7. Straddle как reference-стратегия
+
+Тема `Straddle` задает полезный пример для PitchCopyTrade:
+- стратегия продается не тикером, а механизмом заработка;
+- ключевая ценность формулируется как доступ к рыночному сценарию;
+- ограничение риска должно быть объяснено отдельно от обещания доходности.
+
+Для карточки/деталей стратегии этого типа целевой narrative:
+1. когда стратегия уместна;
+2. на чем именно она пытается заработать;
+3. чем ограничен риск;
+4. как инвестор получает идеи и какие действия от него ожидаются.
+
+В MVP это должно быть изложено на русском, короткими блоками, без презентационного мусора и без ощущения "PDF вставили в web".
+
+## 8. Real-time market data contract
+
+### 8.1 Источник
+
+Canonical source для real-time quote data:
+- provider origin задается через `INSTRUMENT_QUOTE_PROVIDER_BASE_URL`;
+- в `.env` должен передаваться только origin, например `https://meta.pbull.kz` или internal-network `http://meta-api-1:8000`;
+- code-owned endpoint path: `/api/marketData/forceDataSymbol`;
+- итоговый request: `{origin}/api/marketData/forceDataSymbol?symbol={ticker}`.
+
+Пример структуры подтвержден файлом `NVTK.json`.
+
+### 8.2 Нормализованный backend contract
+
+Backend не должен прокидывать ответ поставщика в шаблон как есть.
+
+Нужен нормализованный слой с полями уровня продукта:
+- `symbol`;
+- `display_name`;
+- `last_price`;
+- `currency`;
+- `change_abs`;
+- `change_pct`;
+- `open_price`;
+- `high_price`;
+- `low_price`;
+- `prev_close_price`;
+- `volume`;
+- `updated_at`.
+
+### 8.3 Правила интеграции
+
+- источником тикера считается локальный `Instrument.ticker`;
+- provider-adapter живет на backend, не в шаблонах;
+- сетевой сбой или пустой ответ не должен валить страницу стратегии или форму рекомендации;
+- UI должен уметь показать controlled fallback:
+  - нет данных;
+  - данные устарели;
+  - источник временно недоступен;
+- нужен короткий cache TTL, чтобы не бить внешний API на каждый рендер страницы.
+
+## 9. Надежность checkout и подписок
+
+### 9.1 Canonical expectation
+
+Нажатие `Создать заявку на оплату` должно:
+- одинаково работать в desktop browser, mobile browser и Telegram Mini App;
+- либо создавать `payment + subscription` и отдавать ожидаемый следующий экран;
+- либо возвращать controlled business error без `500`.
+
+### 9.2 Недопустимые состояния
+
+Недопустимы:
+- кнопка не делает ничего на desktop, но работает на mobile;
+- `Internal Server Error` при оформлении подписки;
+- созданный `payment` без ожидаемого subscriber-facing follow-up;
+- "успех" без фактически созданной подписки;
+- raw JSON parse error после staff login redirect.
+
+## 10. Локальный preview contract для исследования
+
+Для локальной работы без Docker основной product-critical режим = `db`.
+
+`file` остается быстрым вспомогательным режимом для preview/smoke и верстки, но не является главным критерием готовности.
+
+Локальный контур должен поддерживать:
+- публичные GET/POST;
+- browser preview public views;
+- browser preview Mini App views через demo subscriber link;
+- быстрый reset runtime данных.
+
+Для Mini App важно различать:
+- `browser preview` для верстки и быстрого редактирования;
+- `real Telegram WebApp check` для финальной валидации initData, webview-поведения и deeplink-сценариев.
+
+## 11. Что не входит в текущий цикл
+
+В текущий цикл не входят:
+- новый большой staff redesign;
+- расширение CRM-like сущностей;
+- новая авторизация для subscriber вне Telegram как primary path;
+- рефакторинг ради рефакторинга без влияния на MVP subscriber flow.

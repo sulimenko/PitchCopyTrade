@@ -1,113 +1,78 @@
-{% extends "base.html" %}
+{% extends "staff_base.html" %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-  <a class="action ghost" href="/admin/dashboard">Сводка</a>
-  <a class="action ghost" href="/admin/strategies">Стратегии</a>
-  <a class="action ghost" href="/admin/products">Продукты</a>
-  <a class="action ghost" href="/admin/payments">Платежи</a>
-  <a class="action ghost" href="/admin/legal">Документы</a>
-  <a class="action ghost" href="/admin/delivery">Доставка</a>
-  <a class="action ghost" href="/logout">Выйти</a>
-</div>
 {% endblock %}
 
 {% block content %}
-<section class="surface" style="padding:28px;">
-  <div class="eyebrow">subscription registry</div>
-  <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
-    <div>
-      <h1 style="margin:0;font-size:clamp(2rem,4vw,3.2rem);line-height:0.98;letter-spacing:-0.05em;">Подписки и доступ</h1>
-      <p class="muted" style="margin:14px 0 0;max-width:760px;line-height:1.65;">
-        Операционный реестр подписок: кто подписан, на какой scope, до какой даты и в каком состоянии находится платеж.
-      </p>
+<section class="staff-card staff-section-stack">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">реестр подписок</div>
+      <h1>Подписки и доступ</h1>
+      <p>Сразу видны клиент, продукт, статус, период, scope и связь с оплатой без открытия detail-карточки.</p>
     </div>
-    <div class="pill">{{ subscriptions|length }} subscription</div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ subscriptions|length }} подписок</span>
+      <span class="staff-page-note">Поиск сразу отфильтрует клиента, стратегию, автора или продукт.</span>
+    </div>
   </div>
-</section>
+  <div class="staff-toolbar">
+    <form method="get" action="/admin/subscriptions" class="staff-form-row" style="flex: 1 1 460px;">
+      <label class="staff-field" style="min-width:320px;flex:1 1 320px;">
+        <span>Поиск</span>
+        <input
+          type="text"
+          name="q"
+          value="{{ query_text }}"
+          placeholder="Клиент, стратегия, автор или продукт"
+        />
+      </label>
+      <button class="staff-btn is-primary" type="submit">Найти подписки</button>
+      {% if query_text %}
+      <a class="staff-btn" href="/admin/subscriptions">Сбросить</a>
+      {% endif %}
+    </form>
+    <div class="staff-toolbar-note">Поиск оставляет оператора в том же реестре: откройте нужную строку только когда нужно действие, а не для базового контекста.</div>
+  </div>
+  <div class="staff-metric-grid">
+    <article class="staff-metric-card">
+      <div class="eyebrow">активные</div>
+      <strong>{{ stats.active }}</strong>
+      <div class="staff-metric-note">подписки с доступом</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">пробные</div>
+      <strong>{{ stats.trial }}</strong>
+      <div class="staff-metric-note">триал ещё идёт</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">в ожидании</div>
+      <strong>{{ stats.pending }}</strong>
+      <div class="staff-metric-note">ждут подтверждения</div>
+    </article>
+    <article class="staff-metric-card">
+      <div class="eyebrow">с оплатой</div>
+      <strong>{{ stats.paid }}</strong>
+      <div class="staff-metric-note">есть связанный paid payment</div>
+    </article>
+  </div>
+  <div class="staff-grid-shell">
+    <div id="grid-host" class="pct-tabulator"></div>
+  </div>
 
-<section class="surface" style="padding:20px 24px;margin-top:18px;">
-  <form method="get" action="/admin/subscriptions" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-    <input
-      type="text"
-      name="q"
-      value="{{ query_text }}"
-      placeholder="Поиск по клиенту, стратегии, автору или продукту"
-      style="flex:1 1 340px;padding:14px 16px;border-radius:18px;border:1px solid var(--line);font:inherit;background:#fff;"
-    />
-    <button class="action" type="submit">Искать</button>
-    {% if query_text %}
-    <a class="action ghost" href="/admin/subscriptions">Сбросить</a>
-    {% endif %}
-  </form>
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Клиент", field: "client", widthGrow: 1.6 },
+      { title: "Продукт", field: "product" },
+      { title: "Статус", field: "status" },
+      { title: "Период", field: "period" },
+      { title: "Область", field: "target" },
+      { title: "Источник", field: "source" },
+      { title: "Действия", field: "actions", frozen: true }
+    ],
+    data: {{ subscriptions_json | safe }}
+  });
+  </script>
 </section>
-
-<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px;">
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">active</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.active }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">trial</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.trial }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">pending</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.pending }}</div>
-  </article>
-  <article class="surface" style="padding:20px;">
-    <div class="eyebrow">paid links</div>
-    <div style="font-size:2rem;font-weight:800;margin-top:10px;">{{ stats.paid }}</div>
-  </article>
-</section>
-
-<section style="display:grid;gap:14px;margin-top:18px;">
-  {% for subscription in subscriptions %}
-  <a class="surface" href="/admin/subscriptions/{{ subscription.id }}" style="padding:22px;display:block;">
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      <div style="max-width:860px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <strong style="font-size:1.15rem;">{{ subscription.user.full_name or subscription.user.email or subscription.user.id }}</strong>
-          <span class="pill">{{ subscription.status.value }}</span>
-          {% if subscription.payment %}
-          <span class="pill">{{ subscription.payment.status.value }}</span>
-          {% endif %}
-          {% if subscription.is_trial %}
-          <span class="pill">trial</span>
-          {% endif %}
-        </div>
-        <div class="muted" style="margin-top:10px;line-height:1.65;">{{ subscription.product.title }}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-          <span class="pill">{{ subscription.start_at }} -> {{ subscription.end_at }}</span>
-          {% if subscription.product.strategy %}
-          <span class="pill">strategy: {{ subscription.product.strategy.title }}</span>
-          {% elif subscription.product.author %}
-          <span class="pill">author: {{ subscription.product.author.display_name }}</span>
-          {% elif subscription.product.bundle %}
-          <span class="pill">bundle: {{ subscription.product.bundle.title }}</span>
-          {% endif %}
-          {% if subscription.lead_source %}
-          <span class="pill">{{ subscription.lead_source.name }}</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="muted">Открыть</div>
-    </div>
-  </a>
-  {% else %}
-  <article class="surface" style="padding:24px;">
-    <strong>Подписок пока нет</strong>
-    <p class="muted" style="line-height:1.6;margin:10px 0 0;">После checkout и admin confirm активные и pending подписки появятся здесь автоматически.</p>
-  </article>
-  {% endfor %}
-</section>
-
-<style>
-  @media (max-width: 900px) {
-    section[style*="repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  }
-  @media (max-width: 640px) {
-    section[style*="repeat(4"] { grid-template-columns: 1fr !important; }
-  }
-</style>
 {% endblock %}

@@ -1,0 +1,187 @@
+{% extends "author/author_base.html" %}
+
+{% block parent_href %}/author/messages{% endblock %}
+{% block breadcrumbs %}Автор / Сообщения{% endblock %}
+{% block page_title %}{{ compose_title or (recommendation.title if recommendation else "Новое сообщение") }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="author-editor-topbar">
+  <a class="action ghost" href="/author/messages">Сообщения</a>
+  <a class="action ghost" href="/author/dashboard">Сводка</a>
+  <a class="action ghost" href="/logout">Выйти</a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% set history = history_messages if history_messages is defined else (recommendations if recommendations is defined else []) %}
+{% set current = composer_recommendation if composer_recommendation is defined else (recommendation if recommendation is defined else None) %}
+{% set page_title = (compose_title if compose_title is defined else None) or ("Редактирование сообщения" if current else "Новое сообщение") %}
+
+<section class="surface author-editor-hero">
+  <div class="author-editor-hero-row">
+    <div>
+      <div class="eyebrow">composer</div>
+      <h1>{{ page_title }}</h1>
+      <!-- <p class="muted">История сообщений и composer вынесены в dock внутри рабочей области автора.</p> -->
+    </div>
+    <div class="author-editor-hero-actions">
+      <span class="pill">{{ history|length }} сообщений</span>
+      {% if current %}
+      <span class="pill">{{ label_message_kind(current.kind) }}</span>
+      <span class="pill">{{ label_message_status(current.status) }}</span>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{% if error %}
+<section class="author-editor-error">{{ error }}</section>
+{% endif %}
+
+<section class="surface author-editor-history" id="block-history">
+  <div class="author-editor-section-head">
+    <div>
+      <div class="eyebrow">history</div>
+      <h2>Таблица сообщений</h2>
+      <p class="muted">Компактный журнал сообщений для быстрой навигации и редактирования.</p>
+    </div>
+    <div class="pill">{{ history|length }} строк</div>
+  </div>
+
+  <div class="author-history-grid-wrap">
+    <div id="author-history-grid" class="pct-tabulator"></div>
+  </div>
+</section>
+
+<style>
+  .author-editor-hero {
+    padding: 12px 16px;
+  }
+
+  .author-editor-hero-row,
+  .author-editor-section-head {
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .author-editor-hero h1 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+
+  .author-editor-hero p {
+    margin: 8px 0 0;
+    line-height: 1.5;
+  }
+
+  .author-editor-hero-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .author-editor-error {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(194, 24, 91, 0.08);
+    color: #8a1241;
+  }
+
+  .author-editor-history {
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+    max-height: min(50vh, 500px);
+    overflow: auto;
+  }
+
+  .author-history-grid-wrap {
+    overflow: auto;
+  }
+
+  #author-history-grid.pct-tabulator {
+    min-height: 80px;
+  }
+
+  #author-history-grid .tabulator-placeholder {
+    padding: 24px 12px;
+    background: transparent;
+    color: var(--staff-muted);
+    font-size: 0.85rem;
+  }
+
+  #author-history-grid .tabulator-placeholder span {
+    color: inherit;
+  }
+
+  #author-history-grid .tabulator-header .tabulator-col-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  #author-history-grid .tabulator-row .tabulator-cell {
+    font-size: 0.82rem;
+    padding: 4px 8px;
+  }
+
+  #author-history-grid .author-history-message-preview {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>
+
+<script>
+  (function () {
+    const historyGridEl = document.getElementById("author-history-grid");
+    if (!historyGridEl || typeof Tabulator === "undefined") return;
+    const historyData = {{ history_json | tojson }};
+    historyGridEl.classList.add("pct-tabulator");
+    new Tabulator("#author-history-grid", {
+      data: historyData,
+      layout: "fitColumns",
+      maxHeight: "400px",
+      placeholder: "Пока сообщений нет.",
+      columns: [
+        { title: "Дата", field: "date", width: 140, sorter: "string" },
+        { title: "Тип", field: "type", width: 80 },
+        {
+          title: "Превью",
+          field: "preview",
+          widthGrow: 3,
+          tooltip: function (_e, cell) {
+            return cell.getRow().getData().preview_full;
+          },
+          formatter: function (cell) {
+            return `<div class="author-history-message-preview" title="${String(cell.getRow().getData().preview_full || cell.getValue() || "").replace(/"/g, "&quot;")}">${String(cell.getValue() || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`;
+          },
+        },
+        { title: "Стратегия", field: "strategy", width: 140 },
+        { title: "Статус", field: "status", width: 110 },
+        { title: "Доставка", field: "channels", width: 100 },
+        {
+          title: "Действия",
+          field: "edit_url",
+          width: 100,
+          formatter: function (cell) {
+            const url = cell.getValue();
+            return url ? `<a class="action ghost" href="${String(url).replace(/"/g, "&quot;")}">Открыть</a>` : "";
+          },
+          headerSort: false,
+        },
+      ],
+    });
+  })();
+</script>
+{% endblock %}
+
+{% block composer_dock %}
+{% set composer_default_open = True %}
+{% include "author/_composer_dock.html" %}
+{% endblock %}

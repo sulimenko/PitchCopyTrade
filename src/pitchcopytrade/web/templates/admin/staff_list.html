@@ -1,0 +1,187 @@
+{% extends "staff_base.html" %}
+
+{% macro status_badge(status) -%}
+  {% if status == "active" %}
+  <span class="staff-badge ok">{{ label_user_status(status) }}</span>
+  {% elif status == "inactive" %}
+  <span class="staff-badge danger">{{ label_user_status(status) }}</span>
+  {% else %}
+  <span class="staff-badge warn">{{ label_user_status(status) }}</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro delivery_badge(state) -%}
+  {% if state == "sent" %}
+  <span class="staff-badge ok">{{ label_invite_delivery_status(state) }}</span>
+  {% elif state == "resent" %}
+  <span class="staff-badge ok">{{ label_invite_delivery_status(state) }}</span>
+  {% elif state == "failed" %}
+  <span class="staff-badge danger">{{ label_invite_delivery_status(state) }}</span>
+  {% else %}
+  <span class="staff-badge">—</span>
+  {% endif %}
+{%- endmacro %}
+
+{% block parent_href %}/admin/dashboard{% endblock %}
+{% block breadcrumbs %}Админ / Команда{% endblock %}
+{% block page_title %}Команда и роли{% endblock %}
+
+{% block topbar_actions %}
+<a href="/admin/dashboard" class="ghost">Дашборд</a>
+<a href="/admin/authors" class="ghost">Авторы</a>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="staff-error">{{ error }}</div>
+{% endif %}
+
+<section class="staff-card">
+  <div class="staff-page-head">
+    <div class="staff-page-head-copy">
+      <div class="eyebrow">онбординг команды</div>
+      <h1>Команда и роли</h1>
+      <p>В реестре сразу видны роли, статус приглашения и operator actions без отдельного intro-экрана.</p>
+    </div>
+    <div class="staff-page-head-actions">
+      <span class="staff-badge">{{ staff|length }} строк</span>
+      <span class="staff-badge">{% if role_filter == "all" %}все роли{% elif role_filter == "admin" %}администратор{% elif role_filter == "author" %}автор{% elif role_filter == "moderator" %}модератор{% elif role_filter == "multi-role" %}несколько ролей{% else %}{{ role_filter }}{% endif %}</span>
+      {% if role_filter == 'multi-role' %}<span class="staff-badge">несколько ролей</span>{% endif %}
+    </div>
+  </div>
+  <div class="staff-toolbar">
+    <form method="post" action="/admin/staff/admins" class="staff-form-row">
+      <label class="staff-field">
+        <span>Имя</span>
+        <input name="display_name" required />
+      </label>
+      <label class="staff-field">
+        <span>Почта</span>
+        <input name="email" type="email" required />
+      </label>
+      <label class="staff-field">
+        <span>Роли</span>
+        <select name="role_slug" disabled>
+          <option>администратор</option>
+        </select>
+      </label>
+      <details class="staff-field" style="min-width:220px;">
+        <summary class="ghost" style="list-style:none;cursor:pointer;">Расширенные поля</summary>
+        <div style="margin-top:8px;">
+          <span>Telegram ID</span>
+          <input name="telegram_user_id" type="number" />
+        </div>
+      </details>
+      <button type="submit" class="staff-btn is-primary">Создать администратора</button>
+    </form>
+    <form method="get" action="/admin/staff" class="staff-form-row">
+      <label class="staff-field">
+        <span>Поиск</span>
+        <input type="text" name="q" value="{{ q }}" placeholder="Имя, почта, роль" />
+      </label>
+      <label class="staff-field">
+        <span>Роль</span>
+        <select name="role_filter" onchange="this.form.submit()">
+          {% for option in ["all", "admin", "author", "moderator", "multi-role"] %}
+          <option value="{{ option }}" {% if role_filter == option %}selected{% endif %}>
+            {% if option == "all" %}все{% elif option == "admin" %}администратор{% elif option == "author" %}автор{% elif option == "moderator" %}модератор{% elif option == "multi-role" %}несколько ролей{% else %}{{ option }}{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <input type="hidden" name="sort_by" value="{{ sort_by }}" />
+      <input type="hidden" name="direction" value="{{ direction }}" />
+      <button class="staff-btn" type="submit">Применить</button>
+    </form>
+    <div class="staff-toolbar-note">Создание сразу выпускает приглашение. Telegram ID остаётся необязательным расширенным полем до bind.</div>
+  </div>
+  <div class="staff-grid-shell">
+    <div id="grid-host" class="pct-tabulator"></div>
+  </div>
+
+  <!-- Dialogs for editing staff -->
+  {% for item in staff %}
+  <dialog id="staff-edit-{{ item.id }}" class="staff-dialog">
+    <form method="dialog" class="staff-dialog-backdrop">
+      <button type="submit" class="staff-dialog-close-zone" aria-label="Закрыть"></button>
+    </form>
+    <form method="post" action="/admin/staff/{{ item.id }}/edit" class="staff-drawer">
+      <div class="staff-drawer-head">
+        <div>
+          <div class="eyebrow">редактирование сотрудника</div>
+          <strong>{{ item.display_name }}</strong>
+        </div>
+        <button type="button" class="ghost" data-close-staff-dialog>Закрыть</button>
+      </div>
+      <div class="staff-drawer-body">
+        <label class="staff-field">
+          <span>Имя</span>
+          <input name="display_name" value="{{ item.display_name }}" required />
+        </label>
+        <label class="staff-field">
+          <span>Почта</span>
+          <input name="email" type="email" value="{{ item.email or '' }}" required />
+        </label>
+        <label class="staff-field">
+          <span>Telegram ID</span>
+          <input name="telegram_user_id" type="number" value="{{ item.telegram_user_id or '' }}" />
+        </label>
+        <div class="staff-field">
+          <span>Роли</span>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="admin" {% if item.has_admin_role %}checked{% endif %} /> <span>Администратор</span></label>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="author" {% if item.has_author_role %}checked{% endif %} /> <span>Автор</span></label>
+          <label class="staff-inline-actions"><input type="checkbox" name="role_slugs" value="moderator" {% if item.has_moderator_role %}checked{% endif %} /> <span>Модератор</span></label>
+        </div>
+      </div>
+      <div class="staff-drawer-actions">
+        <button type="submit" class="staff-btn is-primary">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+  {% endfor %}
+
+  <script>
+  PCTTabulator.create("grid-host", {
+    columns: [
+      { title: "Сотрудник", field: "name", widthGrow: 1.6 },
+      { title: "Роли", field: "roles" },
+      { title: "Статус", field: "status" },
+      { title: "Приглашение", field: "invite" },
+      { title: "Telegram ID", field: "telegram_id" },
+      { title: "Действия", field: "actions", frozen: true }
+    ],
+    data: {{ staff_json | safe }}
+  });
+  </script>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // P4.1: Use event delegation for staff dialog opening
+  document.addEventListener("click", function (event) {
+    var btn = event.target.closest("[data-open-staff-dialog]");
+    if (!btn) return;
+    var dialog = document.getElementById(btn.getAttribute("data-open-staff-dialog"));
+    if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+  });
+  document.querySelectorAll("[data-close-staff-dialog]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var dialog = button.closest("dialog");
+      if (dialog) dialog.close();
+    });
+  });
+  document.addEventListener("click", async function (event) {
+    const button = event.target.closest("[data-copy-text]");
+    if (!button) return;
+    const text = button.getAttribute("data-copy-text") || "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Скопировано";
+    } catch (_error) {
+      button.textContent = "Не удалось";
+    }
+  });
+</script>
+{% endblock %}

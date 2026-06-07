@@ -38,6 +38,7 @@ dist/
 *.egg-info/
 .coverage
 htmlcov/
+.claude/
 
 # Local runtime artifacts
 postgres_data/
@@ -47,6 +48,11 @@ storage/runtime/
 
 # Documentation source artifacts
 doc/*
+!doc/README.md
 !doc/blueprint.md
 !doc/task.md
 !doc/review.md
+!doc/instruments_stub.json
+
+# Logs
+api.log

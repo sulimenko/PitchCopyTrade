@@ -4,11 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pitchcopytrade.db.models.commerce import PromoCode
 from pitchcopytrade.repositories.file_graph import FileDatasetGraph
 from pitchcopytrade.repositories.file_store import FileDataStore
+from pitchcopytrade.services.admin_lookups import get_promo_code_by_code
 
 
 @dataclass(slots=True)
@@ -62,8 +64,9 @@ async def create_admin_promo_code(
     *,
     store: FileDataStore | None = None,
 ) -> PromoCode:
+    normalized_code = data.code.strip().upper()
     promo = PromoCode(
-        code=data.code,
+        code=normalized_code,
         description=data.description,
         discount_percent=data.discount_percent,
         discount_amount_rub=data.discount_amount_rub,
@@ -79,13 +82,17 @@ async def create_admin_promo_code(
         graph.save(runtime_store)
         return graph.promo_codes[promo.id]
 
-    existing = await _find_same_code(session, data.code)
+    existing = await get_promo_code_by_code(session, normalized_code)
     if existing is not None:
-        raise ValueError("Промокод с таким кодом уже существует")
-    session.add(promo)
-    await session.commit()
-    await session.refresh(promo)
-    return promo
+        raise ValueError(f"Промокод «{normalized_code}» уже существует. Выберите другой код.")
+    try:
+        session.add(promo)
+        await session.commit()
+        await session.refresh(promo)
+        return promo
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ValueError(f"Промокод «{normalized_code}» уже существует. Выберите другой код.") from exc
 
 
 async def update_admin_promo_code(
@@ -95,7 +102,8 @@ async def update_admin_promo_code(
     *,
     store: FileDataStore | None = None,
 ) -> PromoCode:
-    promo.code = data.code
+    normalized_code = data.code.strip().upper()
+    promo.code = normalized_code
     promo.description = data.description
     promo.discount_percent = data.discount_percent
     promo.discount_amount_rub = data.discount_amount_rub
@@ -119,20 +127,19 @@ async def update_admin_promo_code(
         graph.save(runtime_store)
         return persisted
 
-    existing = await _find_same_code(session, data.code)
+    existing = await get_promo_code_by_code(session, normalized_code)
     if existing is not None and existing.id != promo.id:
-        raise ValueError("Промокод с таким кодом уже существует")
-    await session.commit()
-    await session.refresh(promo)
-    return promo
+        raise ValueError(f"Промокод «{normalized_code}» уже существует. Выберите другой код.")
+    try:
+        await session.commit()
+        await session.refresh(promo)
+        return promo
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ValueError(f"Промокод «{normalized_code}» уже существует. Выберите другой код.") from exc
 
 
 def _ensure_promo_code_is_unique(items, target: PromoCode) -> None:
-    for item in items:
-        if item.code.upper() == target.code.upper():
-            raise ValueError("Промокод с таким кодом уже существует")
-
-
-async def _find_same_code(session: AsyncSession, code: str) -> PromoCode | None:
-    result = await session.execute(select(PromoCode).where(PromoCode.code == code))
-    return result.scalar_one_or_none()
+    normalized_target = target.code.strip().upper()
+    if any(item.code.strip().upper() == normalized_target for item in items if item.id != target.id):
+        raise ValueError(f"Промокод «{normalized_target}» уже существует. Выберите другой код.")
