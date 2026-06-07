@@ -52,7 +52,23 @@ doc/*
 !doc/blueprint.md
 !doc/task.md
 !doc/review.md
+!doc/changelog.md
 !doc/instruments_stub.json
+!doc/ai/
+!doc/ai/**
+!doc/tasks/
+!doc/tasks/**
+
+doc/ai/runs/**
+doc/ai/context/**
+doc/ai/review/**
+
+# AI Pipeline local artifacts
+diff.patch
+diff-stat.txt
+CHATGPT_REVIEW_REQUEST.md
+commits.txt
+status.txt
 
 # Logs
 api.log

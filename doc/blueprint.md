@@ -1,401 +1,74 @@
 # PitchCopyTrade — Blueprint
-> Обновлено: 2026-04-21
-> Статус: canonical current contract for MVP clean-up
-
-## 1. Политика документа
-
-Этот файл описывает только:
-- текущее состояние продукта;
-- целевой контракт ближайшего цикла;
-- правила, обязательные для следующих изменений.
-
-Исторические блоки, закрытые фазы и старые решения сюда не переносятся. Их архивом считается git history.
-
-## 1.1 Documentation Strategy
-
-Источник истины — `CLAUDE.md` (роли, процесс, архитектура) + файлы в `doc/`.
-
-| Файл | Назначение | Загружается автоматически? |
-|---|---|---|
-| `CLAUDE.md` | Роли, процесс, архитектурные правила | Да (каждый запрос) |
-| `doc/blueprint.md` | Product contracts, UI contracts | Нет — по запросу |
-| `doc/task.md` | Только ОТКРЫТЫЕ задачи (блоки для worker) | Нет — по запросу |
-| `doc/review.md` | Gate + открытые findings + заключения | Нет — по запросу |
-| `doc/README.md` | Runbook, локальный запуск | Нет — по запросу |
-| `doc/changelog.md` | Архив закрытых задач и заключений | Нет — только ретроспектива |
-
-Правила ротации (см. также `CLAUDE.md` → Правила task.md):
-- >30 задач `[x]`/`[!]` в task.md, или файл >400 строк, или крупный цикл завершён → архивировать в `changelog.md`
-- Архивная строка: `T-NNN | название | [x] | дата | краткий итог`
-- В `task.md` остаются только `[ ]`, `[~]` и правила
-- `MEMORY.md` (Claude auto-memory) используется только для user preferences и feedback, НЕ для проектного контекста
-
-## 2. Текущее состояние
-
-### 2.1 Поверхности продукта
-
-В проекте есть пять рабочих контуров:
-- `public web` на `/catalog`, `/catalog/strategies/{slug}`, `/checkout/{product_ref}`;
-- `miniapp web` на `/app/*`;
-- `staff admin` на `/admin/*`;
-- `staff author` на `/author/*`;
-- `bot` и `worker` как отдельные runtime-сервисы.
-
-### 2.2 Технологический контур
-
-- backend: `FastAPI` + `Jinja2`;
-- bot: `aiogram`;
-- worker: polling loop;
-- storage modes:
-  - `db` как основной product-critical режим;
-  - `file` как вторичный local preview / compatibility smoke режим.
-
-### 2.3 Важные факты для текущего цикла
-
-- основной runtime priority для product-critical сценариев = `APP_DATA_MODE=db`;
-- `file`-mode остается вторичным compatibility/preview/smoke режимом;
-- локальный запуск без Docker возможен, но не заменяет production-like проверку на PostgreSQL schema path;
-- для старта `api` обязательны `APP_SECRET_KEY` и `INTERNAL_API_SECRET`;
-- `file`-mode читает состояние из `storage/runtime/*`, а не напрямую из `storage/seed/*`;
-- `storage/runtime/*` считается изменяемым runtime-слоем и перед воспроизводимыми проверками должен сбрасываться;
-- Mini App first screen contract = `/app/catalog`, help contract = `/app/help`;
-- subscriber first-time entry из бота не должен открывать защищённый `/app/catalog` напрямую; сначала нужен bootstrap route, который обменивает `Telegram.WebApp.initData` на server-side auth cookie и только потом ведёт в каталог;
-- Telegram menu button и bot `/start` web_app entry по текущему контракту должны вести в один canonical bootstrap route; route сам решает: если auth уже доступен, сразу открыть `/app/catalog`, если нет — показать recovery/auth flow;
-- canonical staff auth success destination = role-specific dashboard, а не legacy `/workspace`;
-- author/public/subscriber contour перешел на message-centric модель `messages`;
-- author structured deal contract должен поддерживать exact-lookup import нового инструмента через текущий provider endpoint с последующей materialize-записью в `instruments`;
-- Telegram delivery для author messages с attachments должна отправлять реальные media/document payloads, а не только имя файла в тексте;
-- quote provider подключается backend-адаптером и не должен блокировать SSR;
-- обычная HTML-кнопка на сайте не может программно отправить `/start` в Telegram-бота; recovery path должен использовать Telegram deep link `?start=<payload>` или `web_app` button, а не generic `https://t.me/<bot>`;
-- внутри docs больше нельзя писать "все закрыто" без сверки с [doc/review.md](/Users/alexey/site/PitchCopyTrade/doc/review.md).
-
-## 3. Цель текущего цикла
-
-Текущий цикл не про расширение сущностей. Он про чистку MVP subscriber contour:
-- сделать Mini App понятным и быстрым;
-- перенести первый экран на витрину стратегий;
-- вынести помощь в отдельный `/help` сценарий;
-- усилить описание стратегий как продающий и объясняющий экран;
-- подключить real-time market data по тикерам;
-- убрать основные product/runtime сбои вокруг подписки, оплаты и навигации.
-
-После последнего review критичный открытый scope не должен трактоваться как новый продуктовый redesign. Это короткий stabilization pass: staff OAuth/redirect, author structured ticker fallback, Telegram media delivery и постоянный bot entry в каталог.
-
-## 4. Canonical subscriber contract
-
-### 4.1 Стартовый сценарий Mini App
-
-Основной вход клиента:
-1. пользователь открывает Mini App из Telegram;
-2. Mini App подтверждает профиль по Telegram;
-3. первым экраном открывается витрина стратегий на `/app/catalog`;
-4. помощь открывается отдельным экраном `/app/help`;
-5. дальнейшая навигация остается внутри одного webview.
-
-Не является целевым поведением:
-- старт с `/app/status` как основного entry point;
-- повторный онбординг на первом экране;
-- bot-команды, которые создают новый message-thread вместо перехода в существующий in-app сценарий;
-- помощь в виде еще одного текстового bot message без перехода в UI.
-
-### 4.2 Навигация в одной вкладке / одном webview
-
-Canonical rule:
-- Mini App должен ощущаться как одно приложение, а не как набор внешних ссылок.
-
-Это означает:
-- из бота открывается один основной web_app entry;
-- у бота должна быть постоянная menu button на каталог; inline `/start`-кнопка считается fallback, а не единственным входом;
-- для нового неавторизованного пользователя этот entry обязан идти через bootstrap auth surface, а не в защищённый каталог напрямую;
-- далее пользователь ходит по внутренним маршрутам приложения;
-- `/help` и витрина открываются внутри того же webview;
-- повторные bot-команды не должны быть обязательным способом навигации;
-- если нужен возврат, используется browser/webview history внутри приложения, а не новое сообщение в чате.
-
-Recovery contract:
-- если Telegram cookie ещё не выставлен, user-facing recovery surfaces должны показывать primary CTA на deep link `/start payload`, а не generic `Открыть бота`;
-- primary label recovery CTA = `Начать авторизацию в Telegram`;
-- bot по recovery payload должен присылать свежую web_app-кнопку на bootstrap route;
-- worker не должен пытаться реализовать «кнопку на сайте, которая сама отправляет `/start`» — это вне возможностей обычной web surface.
-
-### 4.3 Mini App menu contract
-
-Постоянное верхнее меню Mini App должно быть небольшим и предсказуемым.
-
-Primary tabs:
-- `Каталог`
-- `Подписки`
-- `История`
-
-Правила:
-- эти три пункта присутствуют всегда на subscriber-facing Mini App surfaces;
-- один из них всегда является активным;
-- `Статус`, `Помощь`, `Оплаты`, `Напоминания` не должны жить в primary menu;
-- они могут оставаться secondary screens или локальными page actions.
-- бизнесово неготовые пункты не удаляются из кода насовсем;
-- до отдельного product go-ahead они должны быть спрятаны в шаблонах через комментарии или equivalent dormant markup, чтобы worker не терял будущие точки возврата.
-
-Контекстный пункт:
-- `К стратегии` не является постоянным primary-tab;
-- он показывается только в strategy-detail контексте;
-- на checkout и других transaction/detail screens переход к стратегии должен быть локальным page action, а не постоянным пунктом меню.
-- если checkout открыт из продукта, локальный CTA назад к `К стратегии` должен оставаться видимым и вести на связанный strategy detail route.
-
-Маршрутизация активного состояния:
-- `/app/catalog` -> активен `Каталог`
-- `/app/strategies/{slug}` -> активен `К стратегии`, при этом `Каталог`, `Подписки`, `История` остаются видимыми
-- `/app/checkout/{product_ref}` -> активен ближайший product-flow контекст без появления отдельного active-tab; возврат к стратегии остается локальным CTA
-- `/app/subscriptions` и `/app/subscriptions/{id}` -> активны `Подписки`
-- `/app/timeline` и `/app/messages/{id}` -> активна `История`
-- `/app/payments*` -> не добавляют новый primary-tab; относятся к lifecycle `Подписки`
-
-Preview contract:
-- preview routes обязаны рендериться без дополнительных сущностей вроде `product`, если их не требует сам экран;
-- navigation partial не должен падать, если текущий screen context не содержит `product`.
-
-### 4.4 Temporary legal-doc visibility contract
-
-До отдельного business sign-off user-facing legal/checkout contract intentionally сокращен.
-
-Текущий временный режим:
-- в клиентском checkout и связанных public/Mini App surfaces показывается только `Дисклеймер`;
-- остальные документы (`offer`, `privacy`, `payment consent` и т.п.) пока не удаляются из проекта как сущности;
-- они должны быть временно спрятаны из пользовательского UI, предпочтительно через комментарии / dormant markup, а не через destructive removal.
-
-Это означает:
-- legal data model и backend support можно сохранять;
-- user-facing copy, buttons и checkbox-список не должны обещать документы, которые бизнес пока не готов открыть;
-- скрытые документы нельзя silently pre-check-ить или auto-submit-ить как уже принятые;
-- набор реально принимаемых consent-ов должен совпадать с набором документов, которые пользователь реально видит и подтверждает;
-- возврат полного document pack позже должен идти отдельным documented pass, а не случайным partial unhide.
-
-## 5. Canonical contract для витрины и страницы стратегии
-
-### 5.1 Главная страница Mini App
-
-Главная страница Mini App = витрина стратегий.
-
-Она должна отвечать на три вопроса еще до первого scroll:
-- какие стратегии доступны;
-- чем они различаются;
-- куда нажать, чтобы увидеть детали и тарифы.
-
-Первый экран витрины должен содержать:
-- ясный заголовок без техничного онбординга;
-- компактный trust/context layer:
-  - автор;
-  - риск;
-  - горизонт;
-  - минимальный капитал;
-  - доступные тарифы или стартовая цена;
-- один основной CTA на карточке;
-- вторичный CTA только если он не конкурирует с главным действием.
-
-### 5.2 Страница стратегии
-
-Текущий дизайн strategy detail упрощен. Для текущего цикла canonical contract такой:
-
-1. Hero block:
-- название стратегии;
-- автор;
-- риск;
-- минимальный капитал;
-- основной CTA на подписку;
-- secondary CTA только на `Тарифы`.
-
-2. Market snapshot block:
-- опциональный quote-strip;
-- это supporting context, а не главный продающий экран.
-
-3. Short description block:
-- короткое объяснение идеи стратегии;
-- текущий UI label = `Короткое описание`.
-
-4. Description / mechanics block:
-- раскрытие механики простым языком;
-- текущий UI label = `Описание`.
-
-5. Tariffs block:
-- список тарифов и CTA на checkout;
-- это обязательный коммерческий блок текущего дизайна.
-
-6. Legal visibility:
-- на пользовательском экране сейчас visible only `Дисклеймер`;
-- остальные legal documents не считаются обязательными для текущего дизайна, пока не будет отдельного business-ready решения.
-
-Для текущего pass-а не являются обязательными на самой strategy detail:
-- отдельный `FAQ` section;
-- отдельный `market scope` section;
-- отдельный `risk` section;
-- отдельные audience-блоки `кому подходит / кому не подходит`.
-- отдельный user-facing pack из нескольких legal documents.
-
-Если эти блоки возвращаются позже, это должен быть отдельный documented design change, а не случайный partial rollback шаблона.
-
-### 5.3 Материалы-референсы
-
-`Straddle.pdf` и приложенные Figma-screen'ы считаются reference materials, а не эталоном.
-
-Из них допустимо брать:
-- четкую структуру "идея -> механизм -> риск -> сценарии";
-- сильный one-thesis hero;
-- ясную визуальную иерархию;
-- ощущение продукта, а не набора форм.
-
-Нельзя слепо переносить:
-- слайдовый формат презентации;
-- длинные серые текстовые простыни;
-- дублирующиеся CTA;
-- QR-only платежный сценарий как основной mobile flow;
-- макет как есть без адаптации к Mini App и browser preview.
-
-### 5.4 Контентный контракт для strategy detail
-
-Для текущего дизайна минимальный содержательный набор такой:
-- `hero_summary` или fallback `short_description`
-- `holding_period_note`
-- `risk_rule`
-- `thesis`
-- `mechanics`
-
-Поддерживаемые, но не обязательные в текущем рендере поля:
-- `market_scope`
-- `entry_logic`
-- `instrument_examples`
-- `who_is_it_for`
-- `who_is_it_not_for`
-- `faq_items`
-
-Правило текущего цикла:
-- tests и product contract должны проверять только те narrative blocks, которые реально считаются canonical для текущего дизайна;
-- если UI intentionally упрощен, тесты обязаны быть пересобраны под этот contract, а не держать старые названия секций.
-
-### 5.5 Structured deal authoring contract
-
-Structured deal в author composer не должен зависеть только от локального master-catalog.
-
-Canonical contract:
-- автор может указать локальный инструмент из autocomplete;
-- если нужного инструмента нет в каталоге, composer может принять точный ticker/symbol в input;
-- на submit backend делает exact lookup через текущий provider endpoint;
-- если provider подтверждает инструмент, backend создаёт или переиспользует локальную запись в `instruments`;
-- только после materialize/import появляется валидный `structured_instrument_id`, и дальше форма работает как обычный локальный instrument flow;
-- минимально обязательные поля для structured deal:
-  - локальный `structured_instrument_id`
-  - цена
-  - количество
-- buy/sell считается always-selected UI control и не требует отдельного product workaround;
-- отсутствие live quote не должно блокировать сохранение и публикацию;
-- но отсутствие materialized local instrument не считается допустимым submit state;
-- текущий provider contract для этого flow = full match по `symbol`, не like-search;
-- preview, email и Telegram delivery должны отображать imported instrument единообразно, без `None`, raw JSON и пустых placeholder-ов.
-
-## 6. Visual identity contract
-
-Текущий ручной pass ввел новый visual mark `D / DESK`.
-
-Для следующего implementation pass нужно соблюдать правило:
-- если `D / DESK` принимается как новый UI brand mark, он должен быть нормализован во всех top-level shells;
-- нельзя оставлять mixed branding вида `D / DESK` в `base.html`, но `PC / PitchCopyTrade` в `staff_base.html`, `login.html` и preview surfaces.
-
-При этом:
-- visual brand slots можно менять независимо от внутренних технических имен;
-- юридические/system identifiers не должны переименовываться стихийно вместе с декоративным brand mark.
-
-## 7. Straddle как reference-стратегия
-
-Тема `Straddle` задает полезный пример для PitchCopyTrade:
-- стратегия продается не тикером, а механизмом заработка;
-- ключевая ценность формулируется как доступ к рыночному сценарию;
-- ограничение риска должно быть объяснено отдельно от обещания доходности.
-
-Для карточки/деталей стратегии этого типа целевой narrative:
-1. когда стратегия уместна;
-2. на чем именно она пытается заработать;
-3. чем ограничен риск;
-4. как инвестор получает идеи и какие действия от него ожидаются.
-
-В MVP это должно быть изложено на русском, короткими блоками, без презентационного мусора и без ощущения "PDF вставили в web".
-
-## 8. Real-time market data contract
-
-### 8.1 Источник
-
-Canonical source для real-time quote data:
-- provider origin задается через `INSTRUMENT_QUOTE_PROVIDER_BASE_URL`;
-- в `.env` должен передаваться только origin, например `https://meta.pbull.kz` или internal-network `http://meta-api-1:8000`;
-- code-owned endpoint path: `/api/marketData/forceDataSymbol`;
-- итоговый request: `{origin}/api/marketData/forceDataSymbol?symbol={ticker}`.
-
-Пример структуры подтвержден файлом `NVTK.json`.
-
-### 8.2 Нормализованный backend contract
-
-Backend не должен прокидывать ответ поставщика в шаблон как есть.
-
-Нужен нормализованный слой с полями уровня продукта:
-- `symbol`;
-- `display_name`;
-- `last_price`;
-- `currency`;
-- `change_abs`;
-- `change_pct`;
-- `open_price`;
-- `high_price`;
-- `low_price`;
-- `prev_close_price`;
-- `volume`;
-- `updated_at`.
-
-### 8.3 Правила интеграции
-
-- источником тикера считается локальный `Instrument.ticker`;
-- provider-adapter живет на backend, не в шаблонах;
-- сетевой сбой или пустой ответ не должен валить страницу стратегии или форму рекомендации;
-- UI должен уметь показать controlled fallback:
-  - нет данных;
-  - данные устарели;
-  - источник временно недоступен;
-- нужен короткий cache TTL, чтобы не бить внешний API на каждый рендер страницы.
-
-## 9. Надежность checkout и подписок
-
-### 9.1 Canonical expectation
-
-Нажатие `Создать заявку на оплату` должно:
-- одинаково работать в desktop browser, mobile browser и Telegram Mini App;
-- либо создавать `payment + subscription` и отдавать ожидаемый следующий экран;
-- либо возвращать controlled business error без `500`.
-
-### 9.2 Недопустимые состояния
-
-Недопустимы:
-- кнопка не делает ничего на desktop, но работает на mobile;
-- `Internal Server Error` при оформлении подписки;
-- созданный `payment` без ожидаемого subscriber-facing follow-up;
-- "успех" без фактически созданной подписки;
-- raw JSON parse error после staff login redirect.
-
-## 10. Локальный preview contract для исследования
-
-Для локальной работы без Docker основной product-critical режим = `db`.
-
-`file` остается быстрым вспомогательным режимом для preview/smoke и верстки, но не является главным критерием готовности.
-
-Локальный контур должен поддерживать:
-- публичные GET/POST;
-- browser preview public views;
-- browser preview Mini App views через demo subscriber link;
-- быстрый reset runtime данных.
-
-Для Mini App важно различать:
-- `browser preview` для верстки и быстрого редактирования;
-- `real Telegram WebApp check` для финальной валидации initData, webview-поведения и deeplink-сценариев.
-
-## 11. Что не входит в текущий цикл
-
-В текущий цикл не входят:
-- новый большой staff redesign;
-- расширение CRM-like сущностей;
-- новая авторизация для subscriber вне Telegram как primary path;
-- рефакторинг ради рефакторинга без влияния на MVP subscriber flow.
+
+This file is the stable project contract used by AI Pipeline v8 tasks and reviews.
+
+## Product profile
+
+PitchCopyTrade is a Telegram-first marketplace for subscriptions to investment strategy messages.
+
+Main surfaces:
+
+- public catalog and checkout;
+- Telegram Mini App subscriber workspace;
+- web staff surfaces for admin, author and moderator;
+- background worker for lifecycle jobs, delivery and scheduled publishing.
+
+## Current runtime direction
+
+The active runtime target is DB mode:
+
+```text
+APP_DATA_MODE=db
+```
+
+DB mode means PostgreSQL with SQLAlchemy 2 async and Alembic migrations.
+
+Legacy areas that should be removed, migrated or avoided in new feature work:
+
+- `APP_DATA_MODE=file`;
+- JSON-backed file repositories;
+- `storage/seed/*` demo datasets;
+- `storage/runtime/*` as a persistence model;
+- old local file-mode parity tasks.
+
+New tasks must not expand legacy file mode unless the task explicitly asks to remove, migrate or clean it.
+
+## Architecture rules
+
+- API routes handle HTTP, forms and templates; business logic lives in services.
+- Data access belongs in repositories or well-scoped DB utilities, not templates.
+- Alembic migrations are required for DB schema changes.
+- Payments and subscriptions must keep strict state transitions.
+- Checkout must not grant access before final paid or confirmed state.
+- Pending, failed, cancelled and expired payment states must not grant delivery access.
+- Subscriber data must be scoped to the current Telegram identity.
+- Author data must be scoped to the author's allowed strategies/messages.
+- Admin and moderator actions must not bypass role checks.
+
+## Subscriber UX contract
+
+- Subscriber product UX is Telegram-first and Mini App-first.
+- Bot command surface should stay minimal.
+- Protected subscriber web fallback must not become the primary UX.
+- Telegram WebApp data must be validated by backend code.
+- UI text visible to users must be Russian.
+- Do not add onboarding or help text unless the task explicitly requests it.
+
+## Staff and author contract
+
+- Admin, author and moderator are staff/web surfaces.
+- Author workspace is message-centric.
+- Canonical author surfaces include:
+  - `/author/messages`;
+  - `/author/messages/new`;
+  - `/author/messages/<id>/edit`.
+- Author UI uses unified composer plus history table.
+
+## AI Pipeline v8 usage
+
+- Task workflow rules live in `doc/task.md`.
+- Project-specific AI settings live in `doc/ai/chatgpt/project-settings.md`.
+- Task templates live in `doc/ai/chatgpt/task-template.md` and `doc/ai/chatgpt/followup-template.md`.
+- Review rules live in `doc/ai/chatgpt/reviewer.instructions.md`.
+- `doc/review.md` is only a short pointer to the current review gate.
+- Historical task notes live in `doc/changelog.md`.
